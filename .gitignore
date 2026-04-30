@@ -30,6 +30,15 @@ coverage.xml
 *.log
 
 # ========================
+# SQLite
+# ========================
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# ========================
 # Failsafe Secrets
 # ========================
 .env
