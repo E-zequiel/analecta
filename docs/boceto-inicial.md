@@ -1,0 +1,33 @@
+- #Proyectos Quiero hacer una app que tome como input una URL y que procese y guarde su contenido en formato Markdown, creando el .md y almacenándolo en local, en un directorio de archivos previamente seleccionado por el usuario en la configuración de la app.
+	- Tomaría la idea de Wallabag como referencia pero simplificaría la herramienta, usando Python o Rust y la menor cantidad de dependencias posibles. Que sea estrictamente local. No debe ser una extensión de navegador.
+		- Usaría Python siempre y cuando sea óptimo. Si para algunas áreas de la aplicación es merecedor usar Rust en vez de Python, que así se haga.
+		- Documentación de Wallabag: https://doc.wallabag.org/.
+		- Repo de Wallabag: https://github.com/wallabag/wallabag.
+	- Mi idea es fusionar el objetivo de Wallabag con el de Obsidian, y hacerlo todo opensource. Me apoyaría fuertemente en la idea de Logseq.
+		- Web de Obsidian: https://obsidian.md/.
+		- Web de Logseq: https://logseq.com/
+	- ¿Qué es Wallabag? Según su README.md: 'wallabag is a web application allowing you to save web pages for later reading. Click, save and read it when you want. It extracts content so that you won't be distracted by pop-ups and cie.' Es eficiente en su exclusión de pop-ups y publicidad pero a veces falla en la extracción y excluye contenido que forma parte de un artículo, típicamente pasa con algunos gráficos. Esto mi aplicación debe mejorarlo.
+	- Me gustaría que sea una app simple y local, con el menor campo de ataque de seguridad.
+	- Con ella gestionaría artículos en la web, videos (usando la transcripción proporcionada por YouTube y notificando cuando la misma no exista), publicaciones en redes sociales como Substack o X, etc.
+	- Tendría un dashboard como el de Wallabag pero corriendo en local, no en el navegador, con los artículos en formato Markdown, pudiendo gestionar allí las entradas según categorías basadas en hashtags, teniendo favoritos, eliminados, leídos, no leídos, para recomendar, etc.
+	- Tanto el dashboard como el visor de texto debería verse muy similar a Obsidian. Debería tener la posibilidad de editar allí mismo el .md si yo quisiera, pero por defecto la edición estaría bloqueada, con un botón para desbloquear, igual que hace Obsidian.
+	- Las imágenes pertenecientes a un artículo en la web deben descargarse en local. Si esto no es posible, deben referenciarse. Pero no deben perderse. Esto es crítico en artículos que contienen gráficos.
+		- Logseq funciona bien con imágenes: por defecto -esto puede modificarse en settings- Logseq va a descargar las imágenes en el directorio de archivos local y va a embeberla con este formato Markdown: `![image.png](../assets/image_1772997440779_0.png)`. Es excelente porque tengo las imágenes en mi PC y las veo en Logseq tal cual las veo en el web site. Quiero replicar ese comportamiento.
+		- https://docs.logseq.com/#/page/embed%20media%20-%20audio%2C%20photos%2C%20videos
+	- Quisiera que implemente el uso que hace Logseq de los hashtags (que difiere considerablemente del uso que hace Obsidian de los mismos) y que además incorpore los `template::` de Logseq, de manera tal que pueda crear una red de interconexiones entre artículos a través de los hashtags. Utilizaría esos hashtags para catalogar cada artículo.
+		- Ver docs/arquitectura-transversal-pkm.md
+	- Considerar uso de FastAPI o en su defecto Playwright.
+	- Considerar como posibilidad una integración con la barra de tareas (tal vez como Applet), para poder introducir directo desde allí el link.
+	- Quiero que sea cross platform pero fácilmente mantenible, no quiero tener versiones diferenciadas para cada sistema operativo. Si esto no es posible, entonces me quedo con una versión nativa de Linux. Plenamente compatible con Wayland.
+	- Considerar uso de Flet o Reflex o cualquiera que sea la solución más óptima con el fin de no usar JavaScript. Quiero salirme lo menos posible de Python o Rust.
+			- [Video sobre Flet y Reflex](https://youtu.be/yl4MIEh8Wcw?si=h9OTrwHdtCPdJClZ&t=285)
+	- La aplicación debe integrar la funcionalidad que tiene Obsidian: Obsidian URL. De manera que pueda generar links de cada artículo almacenado en el directorio de archivos de mi aplicación que pueda copiar y pegar en Logseq u Obsidian, y que clickeando en esos links se me abra ese artículo en mi aplicación.
+	- También tiene que mostrar una opción de 'Ver en el system file'.
+	- La fuente tipográfica debería ser JetBrains Mono (la versión original). No obstante, debería considerar la posibilidad de usar JetBrainsMono Nerd Font.
+		- https://www.jetbrains.com/lp/mono/
+		- https://www.nerdfonts.com/
+		- https://www.nerdfonts.com/assets/css/webfont.css
+		- https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/JetBrainsMono.zip
+	- La interfaz gráfica debe construirse a partir de este theme de Obsidian: https://github.com/tcmmichaelb139/obsidian-tokyonight.
+	- El nombre de mi aplicación debe ser en latín. No debe haberse usado antes en una aplicación o empresa conocida.
+	- Debo tener bien definido y resuelto el modo en el que mi app se va a actualizar, eliminando lo mejor posible toda fricción. Quiero que sea fácil pero también seguro para el usuario.

@@ -1,0 +1,37 @@
+# ========================
+# Python-generated files
+# ========================
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# ========================
+# Environment
+# ========================
+.venv/
+env/
+
+# ========================
+# Claude Code / AI State
+# ========================
+.claude/settings.local.json
+
+# ========================
+# Testing & Coverage
+# ========================
+.pytest_cache/
+.hypothesis/
+htmlcov/
+.coverage
+coverage.xml
+*.log
+
+# ========================
+# Failsafe Secrets
+# ========================
+.env
+.env.*
+!.env.example
