@@ -45,6 +45,8 @@ src/analecta/
 ├── storage/
 │   ├── vault.py
 │   └── index.py
+├── migrations/
+│   └── 001_init.sql
 ├── pkm/
 │   ├── tags.py
 │   ├── templates.py
@@ -138,7 +140,7 @@ Schema changes go in a new `migrations/NNN_description.sql` file. Never mutate e
 | Asset directory | `{vault}/assets/{slug}/` |
 | Logseq image embed | `![{original_name}](../assets/{slug}/{sha256[:16]}.{ext})` |
 | Hashtag | `snake_case` · line-suffix only · never `##heading`-style |
-| Migration | `migrations/NNN_description.sql` (3-digit zero-padded) |
+| Migration | `src/analecta/migrations/NNN_description.sql` (3-digit zero-padded) |
 | Config file | `~/.config/analecta/config.toml` |
 | Vault default | `~/.local/share/analecta/vault/` |
 
