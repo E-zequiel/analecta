@@ -22,7 +22,29 @@ def run() -> None:
     log = logging.getLogger(__name__)
     log.info("analecta started (vault=%s, dev=%s)", config.vault_path, args.dev)
 
-    # M8: launch PySide6 QApplication here
+    import asyncio
+    import sys
+
+    import qasync
+    from PySide6.QtWidgets import QApplication
+
+    from analecta.ui.fonts import load_font
+    from analecta.ui.main_window import MainWindow
+    from analecta.ui.theme import load_stylesheet
+
+    app = QApplication(sys.argv)
+    app.setApplicationName("Analecta")
+    app.setStyleSheet(load_stylesheet())
+    load_font(config.font_variant)
+
+    loop = qasync.QEventLoop(app)
+    asyncio.set_event_loop(loop)
+
+    window = MainWindow(config)
+    window.show()
+
+    with loop:
+        loop.run_forever()
 
 
 if __name__ == "__main__":
