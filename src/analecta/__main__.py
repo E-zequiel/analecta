@@ -7,7 +7,9 @@ def run() -> None:
     """CLI entry point for `python -m analecta`."""
     parser = argparse.ArgumentParser(prog="analecta", description="PKM vault manager")
     parser.add_argument("--dev", action="store_true", help="Enable debug logging")
-    parser.add_argument("--vault", type=Path, metavar="PATH", help="Override vault path")
+    parser.add_argument(
+        "--vault", type=Path, metavar="PATH", help="Override vault path"
+    )
     args = parser.parse_args()
 
     from analecta.config import load_config, setup_logging

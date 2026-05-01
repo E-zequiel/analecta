@@ -5,6 +5,7 @@ Expert guidelines for designing, refactoring, and executing Python tests using p
 
 ## Environment & Execution
 - All test executions and dependency management must be performed using `uv` (e.g., `mise exec -- uv run pytest`).
+- Run `mise exec -- uv run ruff check src/ tests/` before committing. All checks must pass with zero errors.
 - Ensure all configurations (pytest, coverage, formatting, marks) are strictly centralized in `pyproject.toml`.
 - Never create, modify, or suggest legacy configuration files such as `.coveragerc`, `pytest.ini`, or `setup.cfg`.
 

@@ -231,7 +231,9 @@ def test_search_by_title(index: VaultIndex):
 
 def test_search_by_body_after_fts_update(index: VaultIndex):
     entry_id = index.add_entry(_entry(title="Some Article", url="https://a.com"))
-    index.update_fts_content(entry_id, "Some Article", "coroutines are fundamental to asyncio")
+    index.update_fts_content(
+        entry_id, "Some Article", "coroutines are fundamental to asyncio"
+    )
     results = index.search("coroutines")
     assert len(results) == 1
 

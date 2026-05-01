@@ -68,7 +68,9 @@ class VaultManager:
         """
         return self.assets_path / slug
 
-    def write_page(self, content: str, title: str, date: datetime | None = None) -> Path:
+    def write_page(
+        self, content: str, title: str, date: datetime | None = None
+    ) -> Path:
         """Write Markdown content to the vault and return its path.
 
         Args:
