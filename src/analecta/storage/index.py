@@ -236,6 +236,26 @@ class VaultIndex:
         )
         self._conn.commit()
 
+    def get_entry_ids_by_tag(self, tag: str) -> list[int]:
+        """Return IDs of all entries tagged with *tag*.
+
+        Args:
+            tag: Tag name to look up.
+
+        Returns:
+            List of entry IDs. Empty if the tag does not exist.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT et.entry_id
+            FROM entry_tags et
+            JOIN tags t ON et.tag_id = t.id
+            WHERE t.name = ?
+            """,
+            (tag,),
+        ).fetchall()
+        return [row[0] for row in rows]
+
     def search(self, query: str) -> list[EntryRecord]:
         """Full-text search across title and content using FTS5.
 
