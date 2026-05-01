@@ -256,6 +256,17 @@ class VaultIndex:
         ).fetchall()
         return [row[0] for row in rows]
 
+    def list_tags(self) -> list[tuple[str, int]]:
+        """Return all tags sorted by entry count descending.
+
+        Returns:
+            List of ``(name, count)`` tuples.
+        """
+        rows = self._conn.execute(
+            "SELECT name, count FROM tags ORDER BY count DESC, name ASC"
+        ).fetchall()
+        return [(row[0], row[1]) for row in rows]
+
     def search(self, query: str) -> list[EntryRecord]:
         """Full-text search across title and content using FTS5.
 

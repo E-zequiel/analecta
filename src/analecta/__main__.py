@@ -28,6 +28,8 @@ def run() -> None:
     import qasync
     from PySide6.QtWidgets import QApplication
 
+    from analecta.storage.index import VaultIndex
+    from analecta.ui.dashboard import DashboardWidget
     from analecta.ui.fonts import load_font
     from analecta.ui.main_window import MainWindow
     from analecta.ui.theme import load_stylesheet
@@ -40,7 +42,11 @@ def run() -> None:
     loop = qasync.QEventLoop(app)
     asyncio.set_event_loop(loop)
 
+    index = VaultIndex(config.vault_path / "analecta.db")
+    app.aboutToQuit.connect(index.close)
+
     window = MainWindow(config)
+    DashboardWidget(index, window)
     window.show()
 
     with loop:
