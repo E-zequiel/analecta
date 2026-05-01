@@ -80,7 +80,7 @@ tests/
 M1 → M5 → M2 → M3 → M4 → M6 → M7 → M8 → M9 → M10 → M11 → M12 → M13 → M14
 ```
 
-**Do not touch M8+ until M1–M6 pass their tests.**
+**Do not touch M8+ until M1–M7 pass their tests.**
 
 ---
 
@@ -159,6 +159,9 @@ Schema changes go in a new `migrations/NNN_description.sql` file. Never mutate e
 ## Security Constraints
 
 - VirusTotal API key: stored in system keyring via `keyring` library exclusively. Never in `config.toml`, never in env vars, never logged.
+- VirusTotal Public API rate limits: **4 requests/min · 500 requests/day** (per ToS). The polling loop in `security/virustotal.py` must enforce a minimum of **15 s between consecutive API calls**. Exceeding limits causes permanent account ban.
+- VirusTotal privacy: every URL submitted to VT is indexed in their public database. The UI (M12 Settings) **must display a one-time opt-in disclaimer** before the first scan informing the user of this. Never submit URLs silently.
+- VirusTotal ToS: Public API is non-commercial only. The app must remain free and open-source. Any monetisation path requires a Premium API licence.
 - `analecta://` URL scheme handler: validate and sanitize the `id` parameter before any DB query. Treat it as untrusted input.
 - Asset downloader: validate `Content-Type` header before writing. Reject non-image MIME types.
 - playwright: headless only, no persistent profile, sandbox flag enabled.
