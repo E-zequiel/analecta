@@ -10,6 +10,14 @@ _LOG_PATH = Path.home() / ".local" / "share" / "analecta" / "analecta.log"
 
 
 class AppConfig(BaseModel):
+    """Application configuration loaded from ``~/.config/analecta/config.toml``.
+
+    Attributes:
+        vault_path: Root directory of the local vault.
+        font_variant: JetBrains Mono variant to load (``regular`` or ``nerd``).
+        update_channel: Release channel for the built-in updater.
+    """
+
     vault_path: Path = Path.home() / ".local" / "share" / "analecta" / "vault"
     font_variant: Literal["regular", "nerd"] = "regular"
     update_channel: Literal["stable", "dev"] = "stable"
