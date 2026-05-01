@@ -20,6 +20,11 @@ env/
 .claude/settings.local.json
 
 # ========================
+# Linting
+# ========================
+.ruff_cache/
+
+# ========================
 # Testing & Coverage
 # ========================
 .pytest_cache/
