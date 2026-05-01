@@ -1,7 +1,7 @@
 import importlib.resources
 import json
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -18,7 +18,7 @@ class EntryRecord:
         source_type: One of ``article``, ``youtube``, ``substack``, ``x``.
         created_at: ISO 8601 timestamp.
         updated_at: ISO 8601 timestamp.
-        status: One of ``unread``, ``read``, ``favorite``, ``deleted``, ``to_recommend``.
+        status: Entry status (unread/read/favorite/deleted/to_recommend).
         tags_json: JSON-encoded list of tag name strings.
         id: Database row id; ``None`` before insertion.
     """
@@ -117,7 +117,8 @@ class VaultIndex:
         cur = self._conn.execute(
             """
             INSERT INTO entries
-                (title, url, file_path, source_type, created_at, updated_at, status, tags_json)
+                (title, url, file_path, source_type,
+                 created_at, updated_at, status, tags_json)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (

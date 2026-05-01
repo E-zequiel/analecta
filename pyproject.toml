@@ -25,6 +25,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "pytest-mock>=3.15.1",
     "pytest-socket>=0.7.0",
+    "ruff>=0.15.12",
 ]
 
 [tool.pytest.ini_options]
@@ -45,3 +46,26 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
 ]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 88
+
+[tool.ruff.lint]
+# E: pycodestyle  F: Pyflakes  B: flake8-bugbear  I: isort  D: pydocstyle
+select = ["E", "F", "B", "I", "D"]
+ignore = [
+    "D100",  # module-level docstrings not required
+    "D104",  # package-level docstrings not required
+    "D105",  # magic method docstrings not required
+    "D107",  # __init__ args documented in class docstring (Google style)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D101", "D103"]  # test functions and classes don't need docstrings
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
