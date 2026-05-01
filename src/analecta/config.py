@@ -16,11 +16,15 @@ class AppConfig(BaseModel):
         vault_path: Root directory of the local vault.
         font_variant: JetBrains Mono variant to load (``regular`` or ``nerd``).
         update_channel: Release channel for the built-in updater.
+        virustotal_enabled: Whether to offer VirusTotal URL scanning. Requires
+            the user's API key to be present in the system keyring. Disabled
+            by default.
     """
 
     vault_path: Path = Path.home() / ".local" / "share" / "analecta" / "vault"
     font_variant: Literal["regular", "nerd"] = "regular"
     update_channel: Literal["stable", "dev"] = "stable"
+    virustotal_enabled: bool = False
 
     @field_validator("vault_path", mode="before")
     @classmethod

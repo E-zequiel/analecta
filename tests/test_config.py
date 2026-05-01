@@ -16,6 +16,7 @@ def test_appconfig_defaults():
     assert config.vault_path == Path.home() / ".local" / "share" / "analecta" / "vault"
     assert config.font_variant == "regular"
     assert config.update_channel == "stable"
+    assert config.virustotal_enabled is False
 
 
 def test_appconfig_vault_path_expanduser():
@@ -55,6 +56,17 @@ def test_load_config_reads_update_channel(tmp_path: Path):
     cfg_file.write_text('update_channel = "dev"\n')
     config = load_config(cfg_file)
     assert config.update_channel == "dev"
+
+
+def test_load_config_reads_virustotal_enabled(tmp_path: Path):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text("virustotal_enabled = true\n")
+    config = load_config(cfg_file)
+    assert config.virustotal_enabled is True
+
+
+def test_appconfig_virustotal_disabled_by_default():
+    assert AppConfig().virustotal_enabled is False
 
 
 def test_load_config_invalid_field_raises(tmp_path: Path):
