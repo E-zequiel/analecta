@@ -12,15 +12,11 @@ def run() -> None:
     )
     args = parser.parse_args()
 
-    from analecta.config import load_config, setup_logging
+    from analecta.config import CONFIG_PATH, load_config, save_config, setup_logging
 
     setup_logging(dev=args.dev)
-    config = load_config()
-    if args.vault:
-        config = config.model_copy(update={"vault_path": args.vault})
 
     log = logging.getLogger(__name__)
-    log.info("analecta started (vault=%s, dev=%s)", config.vault_path, args.dev)
 
     import asyncio
     import sys
@@ -42,7 +38,22 @@ def run() -> None:
     app.setApplicationName("Analecta")
     app.setQuitOnLastWindowClosed(False)
     app.setStyleSheet(load_stylesheet())
+
+    if not CONFIG_PATH.exists() and not args.vault:
+        from analecta.ui.first_run import FirstRunDialog
+
+        dlg = FirstRunDialog()
+        dlg.exec()
+        config = dlg.result_config
+        save_config(config)
+    else:
+        config = load_config()
+
+    if args.vault:
+        config = config.model_copy(update={"vault_path": args.vault})
+
     load_font(config.font_variant)
+    log.info("analecta started (vault=%s, dev=%s)", config.vault_path, args.dev)
 
     loop = qasync.QEventLoop(app)
     asyncio.set_event_loop(loop)
@@ -99,11 +110,65 @@ def run() -> None:
     tray.quit_requested.connect(app.quit)
     app.aboutToQuit.connect(tray.hide)
 
+    async def _process_url(url: str) -> None:
+        import sqlite3
+
+        from analecta.extraction.assets import AssetDownloader
+        from analecta.extraction.core import ExtractionError, extract
+        from analecta.markdown.converter import MarkdownConverter
+        from analecta.storage.index import EntryRecord
+        from analecta.storage.vault import VaultManager
+
+        vault = VaultManager(config.vault_path)
+        vault.ensure_dirs()
+
+        from datetime import datetime, timezone
+
+        created_dt = datetime.now(tz=timezone.utc)
+        created_at = created_dt.isoformat()
+
+        try:
+            content = await extract(url)
+        except NotImplementedError as exc:
+            tray.notify_error("Analecta", str(exc))
+            return
+        except ExtractionError as exc:
+            tray.notify_error("Analecta", f"Extraction failed: {exc}")
+            return
+
+        page_path = vault.page_path(content.title, created_dt)
+        slug = page_path.stem
+        content.html = await AssetDownloader().process(
+            content.html, slug, config.vault_path
+        )
+
+        markdown = MarkdownConverter().convert(content, created_at)
+        file_path = vault.write_page(markdown, content.title, created_dt)
+
+        entry = EntryRecord(
+            title=content.title,
+            url=url,
+            file_path=str(file_path),
+            source_type=content.source_type,
+            created_at=created_at,
+            updated_at=created_at,
+        )
+        try:
+            entry_id = index.add_entry(entry)
+        except sqlite3.IntegrityError:
+            tray.notify_error("Analecta", f"Already in vault: {content.title}")
+            return
+
+        index.update_fts_content(entry_id, content.title, markdown)
+        dashboard.refresh()
+        tray.notify_success("Analecta", f"Saved: {content.title}")
+        log.info("saved entry %d: %s", entry_id, url)
+
     def _on_add_url(url: str) -> None:
         window.show()
         window.raise_()
         window.activateWindow()
-        log.info("add URL from tray: %s", url)
+        asyncio.ensure_future(_process_url(url))
 
     tray.add_url_requested.connect(_on_add_url)
 
