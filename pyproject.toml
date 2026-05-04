@@ -22,6 +22,10 @@ dependencies = [
     "youtube-transcript-api>=1.2.4",
 ]
 
+[project.urls]
+Homepage = "https://github.com/E-zequiel/analecta"
+Repository = "https://github.com/E-zequiel/analecta"
+
 [project.scripts]
 analecta = "analecta:main"
 
@@ -82,3 +86,6 @@ convention = "google"
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.basedpyright]
+typeCheckingMode = "strict"
