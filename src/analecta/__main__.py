@@ -11,6 +11,9 @@ def run() -> None:
     parser.add_argument(
         "--vault", type=Path, metavar="PATH", help="Override vault path"
     )
+    parser.add_argument(
+        "url", nargs="?", metavar="URL", help="analecta:// URL to open"
+    )
     args = parser.parse_args()
 
     from analecta.config import CONFIG_PATH, load_config, save_config, setup_logging
@@ -109,7 +112,12 @@ def run() -> None:
     tray.open_requested.connect(window.raise_)
     tray.open_requested.connect(window.activateWindow)
     tray.quit_requested.connect(app.quit)
-    app.aboutToQuit.connect(tray.hide)
+
+    def _hide_tray() -> None:
+        tray.hide()
+        app.processEvents()
+
+    app.aboutToQuit.connect(_hide_tray)
 
     # SIGINT (Ctrl+C) and SIGHUP (terminal close) do not emit aboutToQuit —
     # route them through app.quit() so the tray is always hidden on exit.
@@ -177,6 +185,29 @@ def run() -> None:
         asyncio.ensure_future(_process_url(url))
 
     tray.add_url_requested.connect(_on_add_url)
+
+    # Register analecta:// URL scheme handler if not yet done.
+    import shutil
+
+    from analecta.pkm.url_scheme import is_scheme_registered, register_scheme
+
+    if not is_scheme_registered():
+        try:
+            register_scheme(shutil.which("analecta") or sys.argv[0])
+        except Exception:
+            log.warning("analecta:// URL scheme registration failed", exc_info=True)
+
+    # If launched via xdg-open with an analecta:// URL, open the target entry.
+    from analecta.pkm.url_scheme import parse_url
+
+    if args.url:
+        scheme_entry_id = parse_url(args.url)
+        if scheme_entry_id is not None:
+            entry = index.get_entry(scheme_entry_id)
+            if entry is not None:
+                _show_viewer(entry)
+            else:
+                log.warning("analecta:// URL references unknown entry id %d", scheme_entry_id)
 
     window.show()
 
