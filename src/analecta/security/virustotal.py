@@ -16,7 +16,7 @@ from analecta.config import AppConfig
 
 _VT_BASE = "https://www.virustotal.com/api/v3"
 _KEYRING_SERVICE = "analecta"
-_KEYRING_KEY = "virustotal_api_key"
+_KEYRING_KEY = "VIRUSTOTAL_API_KEY"
 _POLL_INTERVAL = 15.0  # seconds — keeps calls within 4 req/min Public API limit
 _MAX_POLLS = 10  # ~2.5 minutes maximum wait
 

@@ -219,7 +219,7 @@ Two-layer model:
 
 | Secret | BSM Key | Runtime storage |
 |--------|---------|-----------------|
-| VirusTotal API key | `virustotal_api_key` | `keyring.get_password("analecta", "virustotal_api_key")` |
+| VirusTotal API key | `VIRUSTOTAL_API_KEY` | `keyring.get_password("analecta", "VIRUSTOTAL_API_KEY")` |
 
 ---
 
