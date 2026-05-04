@@ -22,7 +22,13 @@ def config():
 
 @pytest.fixture
 def make_tray(config, qtbot):
-    """Create SystemTray instances that unregister from DBus on teardown."""
+    """Create SystemTray instances that deregister from DBus on teardown.
+
+    Calls hide() on each instance then waits 100 ms so the Qt event loop
+    can deliver the StatusNotifierItem deregistration DBus message before
+    the pytest process exits. Without the wait, the message is queued but
+    never sent, leaving a ghost icon in the desktop panel.
+    """
     created = []
 
     def factory(**kwargs):
@@ -33,6 +39,7 @@ def make_tray(config, qtbot):
     yield factory
     for t in created:
         t.hide()
+    qtbot.wait(100)
 
 
 # ---------------------------------------------------------------------------
