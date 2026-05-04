@@ -59,6 +59,21 @@ def parse_url(url: str) -> int | None:
     return entry_id if entry_id > 0 else None
 
 
+def is_scheme_registered(desktop_dir: Path | None = None) -> bool:
+    """Return True if the analecta:// handler desktop file already exists.
+
+    Args:
+        desktop_dir: Directory to check. Defaults to
+            ``~/.local/share/applications/``.
+
+    Returns:
+        ``True`` when ``analecta.desktop`` is present in *desktop_dir*.
+    """
+    if desktop_dir is None:
+        desktop_dir = Path.home() / ".local" / "share" / "applications"
+    return (desktop_dir / "analecta.desktop").exists()
+
+
 def register_scheme(app_exec: str, desktop_dir: Path | None = None) -> None:
     """Register the ``analecta://`` URL scheme for the current user.
 

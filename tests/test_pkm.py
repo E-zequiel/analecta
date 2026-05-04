@@ -2,7 +2,7 @@ import pytest
 
 from analecta.pkm.tags import get_backlinks, get_cooccurrences
 from analecta.pkm.templates import list_template_pages, write_template_page
-from analecta.pkm.url_scheme import make_url, parse_url, register_scheme
+from analecta.pkm.url_scheme import is_scheme_registered, make_url, parse_url, register_scheme
 from analecta.storage.index import EntryRecord, VaultIndex
 
 # ---------------------------------------------------------------------------
@@ -237,3 +237,17 @@ def test_register_scheme_creates_desktop_dir(mocker, tmp_path):
     nested = tmp_path / "a" / "b" / "applications"
     register_scheme("/usr/bin/analecta", desktop_dir=nested)
     assert nested.is_dir()
+
+
+# ---------------------------------------------------------------------------
+# url_scheme — is_scheme_registered
+# ---------------------------------------------------------------------------
+
+
+def test_is_scheme_registered_false_when_missing(tmp_path):
+    assert is_scheme_registered(desktop_dir=tmp_path) is False
+
+
+def test_is_scheme_registered_true_when_present(tmp_path):
+    (tmp_path / "analecta.desktop").write_text("[Desktop Entry]\n")
+    assert is_scheme_registered(desktop_dir=tmp_path) is True
