@@ -368,6 +368,10 @@ class DashboardWidget:
         self._page.model.refresh(entries)
         self._sidebar.refresh_tags(self._index.list_tags())
 
+    def refresh(self) -> None:
+        """Re-query the index and update the entry list and tag tree."""
+        self._refresh()
+
     @property
     def page(self) -> DashboardPage:
         """The dashboard content page."""

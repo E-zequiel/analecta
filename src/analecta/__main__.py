@@ -33,6 +33,7 @@ def run() -> None:
     from analecta.ui.fonts import load_font
     from analecta.ui.main_window import MainWindow
     from analecta.ui.theme import load_stylesheet
+    from analecta.ui.viewer import ArticleViewer
 
     app = QApplication(sys.argv)
     app.setApplicationName("Analecta")
@@ -46,7 +47,23 @@ def run() -> None:
     app.aboutToQuit.connect(index.close)
 
     window = MainWindow(config)
-    DashboardWidget(index, window)
+    dashboard = DashboardWidget(index, window)
+
+    viewer = ArticleViewer(config, index)
+    window.content.addWidget(viewer)
+
+    def _show_viewer(entry) -> None:
+        if entry is None:
+            return
+        viewer.load_entry(entry)
+        window.content.setCurrentWidget(viewer)
+
+    dashboard.page.entry_selected.connect(_show_viewer)
+    viewer.back_requested.connect(
+        lambda: window.content.setCurrentWidget(dashboard.page)
+    )
+    viewer.status_changed.connect(lambda _id, _status: dashboard.refresh())
+
     window.show()
 
     with loop:
