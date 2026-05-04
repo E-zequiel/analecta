@@ -108,7 +108,13 @@ def run() -> None:
 
     window.show()
 
+    from analecta.updater.checker import check_and_notify
+
+    async def _check_updates() -> None:
+        await check_and_notify(config, window)
+
     with loop:
+        asyncio.ensure_future(_check_updates())
         loop.run_forever()
 
 
