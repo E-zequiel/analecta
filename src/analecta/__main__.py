@@ -30,6 +30,7 @@ def run() -> None:
 
     from analecta.storage.index import VaultIndex
     from analecta.ui.dashboard import DashboardWidget
+    from analecta.ui.editor import ArticleEditor
     from analecta.ui.fonts import load_font
     from analecta.ui.main_window import MainWindow
     from analecta.ui.theme import load_stylesheet
@@ -63,6 +64,21 @@ def run() -> None:
         lambda: window.content.setCurrentWidget(dashboard.page)
     )
     viewer.status_changed.connect(lambda _id, _status: dashboard.refresh())
+
+    editor = ArticleEditor(config, index)
+    window.content.addWidget(editor)
+
+    def _show_editor(entry) -> None:
+        if entry is None:
+            return
+        editor.load_entry(entry)
+        window.content.setCurrentWidget(editor)
+
+    viewer.entry_unlocked.connect(_show_editor)
+    editor.close_requested.connect(
+        lambda: window.content.setCurrentWidget(viewer)
+    )
+    editor.saved.connect(lambda _entry: dashboard.refresh())
 
     window.show()
 
