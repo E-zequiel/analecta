@@ -13,6 +13,7 @@ dependencies = [
     "markdownify>=0.14.1",
     "mdit-py-plugins>=0.4.0",
     "pydantic>=2.13.3",
+    "tomli-w>=1.0.0",
     "PySide6>=6.9.0",
     "pyyaml>=6.0.2",
     "qasync>=0.27.1",
