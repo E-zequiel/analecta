@@ -13,7 +13,7 @@ VALID_UPDATE_CHANNELS = {"stable", "dev"}
 
 def test_appconfig_defaults():
     config = AppConfig()
-    assert config.vault_path == Path.home() / ".local" / "share" / "analecta" / "vault"
+    assert config.vault_path == Path.home() / "Documents" / "analecta"
     assert config.font_variant == "regular"
     assert config.update_channel == "stable"
     assert config.virustotal_enabled is False
