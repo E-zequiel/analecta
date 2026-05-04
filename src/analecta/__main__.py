@@ -33,6 +33,7 @@ def run() -> None:
     from analecta.ui.editor import ArticleEditor
     from analecta.ui.fonts import load_font
     from analecta.ui.main_window import MainWindow
+    from analecta.ui.settings import SettingsPanel
     from analecta.ui.theme import load_stylesheet
     from analecta.ui.viewer import ArticleViewer
 
@@ -79,6 +80,15 @@ def run() -> None:
         lambda: window.content.setCurrentWidget(viewer)
     )
     editor.saved.connect(lambda _entry: dashboard.refresh())
+
+    settings = SettingsPanel(config)
+    window.content.addWidget(settings)
+    settings.cancelled.connect(
+        lambda: window.content.setCurrentWidget(dashboard.page)
+    )
+    settings.config_saved.connect(
+        lambda new_cfg: window.content.setCurrentWidget(dashboard.page)
+    )
 
     window.show()
 
