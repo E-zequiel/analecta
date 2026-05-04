@@ -1,5 +1,6 @@
 import argparse
 import logging
+import signal
 from pathlib import Path
 
 
@@ -109,6 +110,11 @@ def run() -> None:
     tray.open_requested.connect(window.activateWindow)
     tray.quit_requested.connect(app.quit)
     app.aboutToQuit.connect(tray.hide)
+
+    # SIGINT (Ctrl+C) and SIGHUP (terminal close) do not emit aboutToQuit —
+    # route them through app.quit() so the tray is always hidden on exit.
+    signal.signal(signal.SIGINT, lambda *_: app.quit())
+    signal.signal(signal.SIGHUP, lambda *_: app.quit())
 
     async def _process_url(url: str) -> None:
         import sqlite3
