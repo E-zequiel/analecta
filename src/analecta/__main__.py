@@ -12,15 +12,11 @@ def run() -> None:
     )
     args = parser.parse_args()
 
-    from analecta.config import load_config, setup_logging
+    from analecta.config import CONFIG_PATH, load_config, save_config, setup_logging
 
     setup_logging(dev=args.dev)
-    config = load_config()
-    if args.vault:
-        config = config.model_copy(update={"vault_path": args.vault})
 
     log = logging.getLogger(__name__)
-    log.info("analecta started (vault=%s, dev=%s)", config.vault_path, args.dev)
 
     import asyncio
     import sys
@@ -42,7 +38,22 @@ def run() -> None:
     app.setApplicationName("Analecta")
     app.setQuitOnLastWindowClosed(False)
     app.setStyleSheet(load_stylesheet())
+
+    if not CONFIG_PATH.exists() and not args.vault:
+        from analecta.ui.first_run import FirstRunDialog
+
+        dlg = FirstRunDialog()
+        dlg.exec()
+        config = dlg.result_config
+        save_config(config)
+    else:
+        config = load_config()
+
+    if args.vault:
+        config = config.model_copy(update={"vault_path": args.vault})
+
     load_font(config.font_variant)
+    log.info("analecta started (vault=%s, dev=%s)", config.vault_path, args.dev)
 
     loop = qasync.QEventLoop(app)
     asyncio.set_event_loop(loop)
