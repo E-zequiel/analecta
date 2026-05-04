@@ -24,13 +24,14 @@ _KEYRING_SERVICE = "analecta"
 _KEYRING_KEY = "VIRUSTOTAL_API_KEY"
 
 _VT_DISCLAIMER = (
-    "VirusTotal is a free service operated by Google that analyses URLs "
-    "using over 70 antivirus scanners.\n\n"
-    "⚠ Privacy notice: every URL you submit is indexed in VirusTotal's "
-    "public database and may be visible to other users.\n\n"
-    "The Public API is for non-commercial use only. Using this app for "
-    "commercial purposes requires a VirusTotal Premium licence.\n\n"
-    "Do you accept these terms and wish to enable VirusTotal scanning?"
+    "⚠ VIRUSTOTAL INTEGRATION\n"
+    "URLs submitted are stored publicly. Do NOT send URLs containing "
+    "private data, tokens, or credentials.\n\n"
+    "This feature requires your own Public API Key and is for "
+    "non-commercial use only. By enabling this, you agree to "
+    "VirusTotal's Terms of Service (https://cloud.google.com/terms/secops) "
+    "and Privacy Notice (https://cloud.google.com/terms/secops/privacy-notice).\n\n"
+    "Enable VirusTotal scanning and configure API Key?"
 )
 
 
