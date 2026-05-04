@@ -22,7 +22,7 @@ class AppConfig(BaseModel):
             by default.
     """
 
-    vault_path: Path = Path.home() / "Documents" / "analecta"
+    vault_path: Path = Path.home() / "Documents" / "Analecta"
     font_variant: Literal["regular", "nerd"] = "regular"
     update_channel: Literal["stable", "dev"] = "stable"
     virustotal_enabled: bool = False
