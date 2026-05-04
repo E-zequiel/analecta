@@ -97,6 +97,7 @@ def run() -> None:
     tray.open_requested.connect(window.raise_)
     tray.open_requested.connect(window.activateWindow)
     tray.quit_requested.connect(app.quit)
+    app.aboutToQuit.connect(tray.hide)
 
     def _on_add_url(url: str) -> None:
         window.show()
