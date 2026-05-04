@@ -3,6 +3,7 @@ import tomllib
 from pathlib import Path
 from typing import Literal
 
+import tomli_w
 from pydantic import BaseModel, field_validator
 
 CONFIG_PATH = Path.home() / ".config" / "analecta" / "config.toml"
@@ -46,6 +47,26 @@ def load_config(config_path: Path = CONFIG_PATH) -> AppConfig:
     with config_path.open("rb") as fh:
         data = tomllib.load(fh)
     return AppConfig.model_validate(data)
+
+
+def save_config(config: AppConfig, config_path: Path = CONFIG_PATH) -> None:
+    """Persist *config* to TOML at *config_path*.
+
+    Creates parent directories if they do not exist.
+
+    Args:
+        config: Configuration to write.
+        config_path: Destination path. Defaults to the standard config file.
+    """
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "vault_path": str(config.vault_path),
+        "font_variant": config.font_variant,
+        "update_channel": config.update_channel,
+        "virustotal_enabled": config.virustotal_enabled,
+    }
+    with config_path.open("wb") as fh:
+        tomli_w.dump(data, fh)
 
 
 def setup_logging(dev: bool = False) -> None:
