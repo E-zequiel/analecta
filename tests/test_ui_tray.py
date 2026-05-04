@@ -1,6 +1,5 @@
 """Tests for M13 system tray."""
 
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -8,7 +7,6 @@ import pytest
 from analecta.config import AppConfig
 from analecta.ui.tray import (
     SystemTray,
-    _AUTOSTART_FILE,
     _get_exec_path,
     _is_autostart_enabled,
     _make_icon,
@@ -20,6 +18,21 @@ from analecta.ui.tray import (
 @pytest.fixture
 def config():
     return AppConfig()
+
+
+@pytest.fixture
+def make_tray(config, qtbot):
+    """Create SystemTray instances that unregister from DBus on teardown."""
+    created = []
+
+    def factory(**kwargs):
+        t = SystemTray(config, **kwargs)
+        created.append(t)
+        return t
+
+    yield factory
+    for t in created:
+        t.hide()
 
 
 # ---------------------------------------------------------------------------
@@ -111,27 +124,23 @@ def test_remove_autostart_no_error_when_missing(tmp_path):
 
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
-def test_tray_creates(mock_ae, qtbot, config):
-    tray = SystemTray(config)
-    assert tray is not None
+def test_tray_creates(mock_ae, make_tray):
+    assert make_tray() is not None
 
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
-def test_tray_has_correct_tooltip(mock_ae, qtbot, config):
-    tray = SystemTray(config)
-    assert tray.toolTip() == "Analecta"
+def test_tray_has_correct_tooltip(mock_ae, make_tray):
+    assert make_tray().toolTip() == "Analecta"
 
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=True)
-def test_tray_autostart_checked_when_enabled(mock_ae, qtbot, config):
-    tray = SystemTray(config)
-    assert tray._autostart_action.isChecked()
+def test_tray_autostart_checked_when_enabled(mock_ae, make_tray):
+    assert make_tray()._autostart_action.isChecked()
 
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
-def test_tray_autostart_unchecked_when_disabled(mock_ae, qtbot, config):
-    tray = SystemTray(config)
-    assert not tray._autostart_action.isChecked()
+def test_tray_autostart_unchecked_when_disabled(mock_ae, make_tray):
+    assert not make_tray()._autostart_action.isChecked()
 
 
 # ---------------------------------------------------------------------------
@@ -140,8 +149,8 @@ def test_tray_autostart_unchecked_when_disabled(mock_ae, qtbot, config):
 
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
-def test_open_action_emits_open_requested(mock_ae, qtbot, config):
-    tray = SystemTray(config)
+def test_open_action_emits_open_requested(mock_ae, make_tray):
+    tray = make_tray()
     received = []
     tray.open_requested.connect(lambda: received.append(True))
     tray._open_action.trigger()
@@ -149,8 +158,8 @@ def test_open_action_emits_open_requested(mock_ae, qtbot, config):
 
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
-def test_quit_action_emits_quit_requested(mock_ae, qtbot, config):
-    tray = SystemTray(config)
+def test_quit_action_emits_quit_requested(mock_ae, make_tray):
+    tray = make_tray()
     received = []
     tray.quit_requested.connect(lambda: received.append(True))
     tray._quit_action.trigger()
@@ -158,10 +167,10 @@ def test_quit_action_emits_quit_requested(mock_ae, qtbot, config):
 
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
-def test_double_click_emits_open_requested(mock_ae, qtbot, config):
+def test_double_click_emits_open_requested(mock_ae, make_tray):
     from PySide6.QtWidgets import QSystemTrayIcon
 
-    tray = SystemTray(config)
+    tray = make_tray()
     received = []
     tray.open_requested.connect(lambda: received.append(True))
     tray._on_activated(QSystemTrayIcon.ActivationReason.DoubleClick)
@@ -169,10 +178,10 @@ def test_double_click_emits_open_requested(mock_ae, qtbot, config):
 
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
-def test_single_click_does_not_emit_open_requested(mock_ae, qtbot, config):
+def test_single_click_does_not_emit_open_requested(mock_ae, make_tray):
     from PySide6.QtWidgets import QSystemTrayIcon
 
-    tray = SystemTray(config)
+    tray = make_tray()
     received = []
     tray.open_requested.connect(lambda: received.append(True))
     tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
@@ -186,9 +195,9 @@ def test_single_click_does_not_emit_open_requested(mock_ae, qtbot, config):
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
 @patch("analecta.ui.tray.QApplication.clipboard")
-def test_add_url_emits_signal_for_http(mock_cb, mock_ae, qtbot, config):
+def test_add_url_emits_signal_for_http(mock_cb, mock_ae, make_tray):
     mock_cb.return_value.text.return_value = "http://example.com"
-    tray = SystemTray(config)
+    tray = make_tray()
     received = []
     tray.add_url_requested.connect(received.append)
     tray._on_add_url()
@@ -197,9 +206,9 @@ def test_add_url_emits_signal_for_http(mock_cb, mock_ae, qtbot, config):
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
 @patch("analecta.ui.tray.QApplication.clipboard")
-def test_add_url_emits_signal_for_https(mock_cb, mock_ae, qtbot, config):
+def test_add_url_emits_signal_for_https(mock_cb, mock_ae, make_tray):
     mock_cb.return_value.text.return_value = "https://example.com/path?q=1"
-    tray = SystemTray(config)
+    tray = make_tray()
     received = []
     tray.add_url_requested.connect(received.append)
     tray._on_add_url()
@@ -208,9 +217,9 @@ def test_add_url_emits_signal_for_https(mock_cb, mock_ae, qtbot, config):
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
 @patch("analecta.ui.tray.QApplication.clipboard")
-def test_add_url_strips_whitespace(mock_cb, mock_ae, qtbot, config):
+def test_add_url_strips_whitespace(mock_cb, mock_ae, make_tray):
     mock_cb.return_value.text.return_value = "  https://example.com  "
-    tray = SystemTray(config)
+    tray = make_tray()
     received = []
     tray.add_url_requested.connect(received.append)
     tray._on_add_url()
@@ -219,9 +228,9 @@ def test_add_url_strips_whitespace(mock_cb, mock_ae, qtbot, config):
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
 @patch("analecta.ui.tray.QApplication.clipboard")
-def test_add_url_shows_warning_for_invalid(mock_cb, mock_ae, qtbot, config):
+def test_add_url_shows_warning_for_invalid(mock_cb, mock_ae, make_tray):
     mock_cb.return_value.text.return_value = "not a url"
-    tray = SystemTray(config)
+    tray = make_tray()
     received = []
     tray.add_url_requested.connect(received.append)
     with patch.object(tray, "showMessage") as mock_msg:
@@ -237,17 +246,15 @@ def test_add_url_shows_warning_for_invalid(mock_cb, mock_ae, qtbot, config):
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
 @patch("analecta.ui.tray._write_autostart")
-def test_autostart_toggle_on_calls_write(mock_write, mock_ae, qtbot, config):
-    tray = SystemTray(config)
-    tray._on_autostart_toggled(True)
+def test_autostart_toggle_on_calls_write(mock_write, mock_ae, make_tray):
+    make_tray()._on_autostart_toggled(True)
     mock_write.assert_called_once()
 
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
 @patch("analecta.ui.tray._remove_autostart")
-def test_autostart_toggle_off_calls_remove(mock_remove, mock_ae, qtbot, config):
-    tray = SystemTray(config)
-    tray._on_autostart_toggled(False)
+def test_autostart_toggle_off_calls_remove(mock_remove, mock_ae, make_tray):
+    make_tray()._on_autostart_toggled(False)
     mock_remove.assert_called_once()
 
 
@@ -257,10 +264,10 @@ def test_autostart_toggle_off_calls_remove(mock_remove, mock_ae, qtbot, config):
 
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
-def test_notify_success_calls_show_message(mock_ae, qtbot, config):
+def test_notify_success_calls_show_message(mock_ae, make_tray):
     from PySide6.QtWidgets import QSystemTrayIcon
 
-    tray = SystemTray(config)
+    tray = make_tray()
     with patch.object(tray, "showMessage") as mock_msg:
         tray.notify_success("Title", "Body")
     mock_msg.assert_called_once_with(
@@ -269,10 +276,10 @@ def test_notify_success_calls_show_message(mock_ae, qtbot, config):
 
 
 @patch("analecta.ui.tray._is_autostart_enabled", return_value=False)
-def test_notify_error_calls_show_message(mock_ae, qtbot, config):
+def test_notify_error_calls_show_message(mock_ae, make_tray):
     from PySide6.QtWidgets import QSystemTrayIcon
 
-    tray = SystemTray(config)
+    tray = make_tray()
     with patch.object(tray, "showMessage") as mock_msg:
         tray.notify_error("Error", "Details")
     mock_msg.assert_called_once_with(
