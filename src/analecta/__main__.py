@@ -112,7 +112,12 @@ def run() -> None:
     tray.open_requested.connect(window.raise_)
     tray.open_requested.connect(window.activateWindow)
     tray.quit_requested.connect(app.quit)
-    app.aboutToQuit.connect(tray.hide)
+
+    def _hide_tray() -> None:
+        tray.hide()
+        app.processEvents()
+
+    app.aboutToQuit.connect(_hide_tray)
 
     # SIGINT (Ctrl+C) and SIGHUP (terminal close) do not emit aboutToQuit —
     # route them through app.quit() so the tray is always hidden on exit.
