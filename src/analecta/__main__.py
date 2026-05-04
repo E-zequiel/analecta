@@ -35,10 +35,12 @@ def run() -> None:
     from analecta.ui.main_window import MainWindow
     from analecta.ui.settings import SettingsPanel
     from analecta.ui.theme import load_stylesheet
+    from analecta.ui.tray import SystemTray
     from analecta.ui.viewer import ArticleViewer
 
     app = QApplication(sys.argv)
     app.setApplicationName("Analecta")
+    app.setQuitOnLastWindowClosed(False)
     app.setStyleSheet(load_stylesheet())
     load_font(config.font_variant)
 
@@ -89,6 +91,20 @@ def run() -> None:
     settings.config_saved.connect(
         lambda new_cfg: window.content.setCurrentWidget(dashboard.page)
     )
+
+    tray = SystemTray(config, app)
+    tray.open_requested.connect(window.show)
+    tray.open_requested.connect(window.raise_)
+    tray.open_requested.connect(window.activateWindow)
+    tray.quit_requested.connect(app.quit)
+
+    def _on_add_url(url: str) -> None:
+        window.show()
+        window.raise_()
+        window.activateWindow()
+        log.info("add URL from tray: %s", url)
+
+    tray.add_url_requested.connect(_on_add_url)
 
     window.show()
 
