@@ -54,3 +54,20 @@ coverage.xml
 .env
 .env.*
 !.env.example
+
+# ========================
+# Node
+# ========================
+node_modules/
+
+# ========================
+# Rust / Tauri
+# ========================
+src-tauri/target/
+src-tauri/binaries/
+
+# ========================
+# SvelteKit
+# ========================
+frontend/build/
+frontend/.svelte-kit/
