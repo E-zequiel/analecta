@@ -1,2 +1,5 @@
 [tools]
-python = "3.14"
+python = "3.13"
+node   = "lts"
+rust   = "stable"
+pnpm   = "latest"
