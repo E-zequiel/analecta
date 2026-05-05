@@ -1,2 +1,0 @@
-- Que tenga integración opcional con VirusTotal de manera que, si selecciono la opción pertinente, escanee el link previamente a cualquier operación con el sitio web. Si no hay ningún warning de VirusTotal, que siga el trabajo normal, si hay warnings que le dé la opción al usuario si continúa o no con el trabajo. Que en ambos casos me dé la posibilidad de ver el resultado del escaneo.
-- 
