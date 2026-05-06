@@ -179,7 +179,7 @@ def test_make_url_entry_1():
 
 
 @pytest.mark.parametrize(
-    "url,expected",
+    ("url", "expected"),
     [
         ("analecta://open?id=1", 1),
         ("analecta://open?id=42", 42),

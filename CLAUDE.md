@@ -26,6 +26,7 @@ Architecture: Tauri shell (Rust) + Python sidecar (FastAPI) + SvelteKit frontend
 | HTTP client | **httpx** (async). `requests` is forbidden. |
 | Package managers | Python: **uv** · Node: **pnpm** · Toolchain: **mise** |
 | Testing | **pytest** (backend) |
+| IDE | **Zed** |
 | Distribution | **Tauri bundle only** — no PyPI, no `uv tool` |
 
 Global default overrides: no PostgreSQL, no Docker, no PySide6, no PyQt6.

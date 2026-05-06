@@ -191,7 +191,7 @@ class AssetDownloader:
             HTML with rewritten src attributes.
         """
 
-        def _replace_tag(m: re.Match) -> str:
+        def _replace_tag(m: re.Match[str]) -> str:
             tag = m.group(0)
             src_m = _SRC_ATTR_RE.search(tag)
             if not src_m:

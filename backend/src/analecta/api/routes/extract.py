@@ -1,6 +1,6 @@
 import asyncio
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -54,7 +54,7 @@ async def extract_url(
     """
     await asyncio.to_thread(vault.ensure_dirs)
 
-    created_dt = datetime.now(tz=timezone.utc)
+    created_dt = datetime.now(tz=UTC)
     created_at = created_dt.isoformat()
 
     try:

@@ -48,7 +48,7 @@ def _make_app(
     )
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         index = VaultIndex(config.vault_path / "analecta.db")
         app.state.config = config
         app.state.index = index
@@ -71,13 +71,13 @@ def _make_app(
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> Generator[TestClient, None, None]:
+def client(tmp_path: Path) -> Generator[TestClient]:
     with TestClient(_make_app(tmp_path)) as c:
         yield c
 
 
 @pytest.fixture
-def vt_client(tmp_path: Path) -> Generator[TestClient, None, None]:
+def vt_client(tmp_path: Path) -> Generator[TestClient]:
     """App with virustotal_enabled=True and one seeded entry."""
     app = _make_app(tmp_path, virustotal_enabled=True)
     cfg = AppConfig(vault_path=tmp_path / "vault", virustotal_enabled=True)

@@ -42,7 +42,7 @@ async def events(request: Request) -> EventSourceResponse:
     """
     bus: EventBus = request.app.state.event_bus
 
-    async def _gen() -> AsyncGenerator[dict[str, str], None]:
+    async def _gen() -> AsyncGenerator[dict[str, str]]:
         async with bus.subscribe() as q:
             while True:
                 event = await q.get()

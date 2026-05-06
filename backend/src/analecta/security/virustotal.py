@@ -7,7 +7,7 @@ the polling loop to avoid triggering the rate limiter.
 
 import asyncio
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 import keyring
@@ -136,7 +136,9 @@ class VirusTotalScanner:
         response.raise_for_status()
         return response.json()["data"]["id"]
 
-    async def _poll(self, analysis_id: str, client: httpx.AsyncClient) -> dict:
+    async def _poll(
+        self, analysis_id: str, client: httpx.AsyncClient
+    ) -> dict[str, Any]:
         for _ in range(self._max_polls):
             await asyncio.sleep(self._poll_interval)
             response = await client.get(f"{_VT_BASE}/analyses/{analysis_id}")

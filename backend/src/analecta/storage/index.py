@@ -2,7 +2,7 @@ import importlib.resources
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -305,7 +305,7 @@ class VaultIndex:
 
 
 def _now() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()
+    return datetime.now(tz=UTC).isoformat()
 
 
 def _row_to_entry(row: sqlite3.Row) -> EntryRecord:

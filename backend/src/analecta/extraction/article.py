@@ -1,6 +1,5 @@
 import httpx
 import trafilatura
-import trafilatura.settings
 from readability import Document
 
 from analecta.extraction.core import ExtractedContent, ExtractionError, SourceExtractor
@@ -53,7 +52,7 @@ class ArticleExtractor(SourceExtractor):
         )
         if content:
             meta = trafilatura.extract_metadata(html, default_url=url)
-            title = (meta.title or "") if meta is not None else ""
+            title = meta.title or ""
             return ExtractedContent(
                 title=title,
                 html=content,

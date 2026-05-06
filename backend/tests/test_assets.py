@@ -28,7 +28,7 @@ _HTML_DUPLICATE = (
 
 
 @pytest.mark.parametrize(
-    "ct,expected",
+    ("ct", "expected"),
     [
         ("image/jpeg", ".jpg"),
         ("image/png", ".png"),
@@ -51,7 +51,7 @@ def test_ext_from_content_type(ct, expected):
 
 
 @pytest.mark.parametrize(
-    "url,expected",
+    ("url", "expected"),
     [
         ("https://cdn.example.com/img/photo.jpg", ".jpg"),
         ("https://cdn.example.com/img/logo.PNG", ".png"),
@@ -69,7 +69,7 @@ def test_ext_from_url(url, expected):
 
 
 @pytest.mark.parametrize(
-    "url,expected",
+    ("url", "expected"),
     [
         ("https://example.com/path/photo.jpg", "photo.jpg"),
         ("https://example.com/logo.svg", "logo.svg"),
