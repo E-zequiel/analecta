@@ -54,6 +54,8 @@ coverage.xml
 .env
 .env.*
 !.env.example
+*.key
+*.pem
 
 # ========================
 # Node
