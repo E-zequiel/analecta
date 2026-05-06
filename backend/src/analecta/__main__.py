@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def run() -> None:
-    """CLI entry point for `python -m analecta`."""
+    """CLI entry point for `python -m analecta` (legacy PySide6 path, unused on hybrid branch)."""
     parser = argparse.ArgumentParser(prog="analecta", description="PKM vault manager")
     parser.add_argument("--dev", action="store_true", help="Enable debug logging")
     parser.add_argument(
@@ -222,4 +222,5 @@ def run() -> None:
 
 
 if __name__ == "__main__":
-    run()
+    from analecta.server import main
+    main()
