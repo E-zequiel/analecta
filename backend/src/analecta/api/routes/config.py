@@ -87,10 +87,18 @@ async def update_config(
         The updated configuration.
     """
     updated = AppConfig(
-        vault_path=Path(body.vault_path) if body.vault_path is not None else config.vault_path,
-        font_variant=body.font_variant if body.font_variant is not None else config.font_variant,
-        update_channel=body.update_channel if body.update_channel is not None else config.update_channel,
-        virustotal_enabled=body.virustotal_enabled if body.virustotal_enabled is not None else config.virustotal_enabled,
+        vault_path=Path(body.vault_path)
+        if body.vault_path is not None
+        else config.vault_path,
+        font_variant=body.font_variant
+        if body.font_variant is not None
+        else config.font_variant,
+        update_channel=body.update_channel
+        if body.update_channel is not None
+        else config.update_channel,
+        virustotal_enabled=body.virustotal_enabled
+        if body.virustotal_enabled is not None
+        else config.virustotal_enabled,
     )
     await asyncio.to_thread(save_config, updated)
     request.app.state.config = updated

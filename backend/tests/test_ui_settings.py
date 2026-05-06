@@ -1,12 +1,11 @@
 """Tests for M12 settings panel."""
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from analecta.config import AppConfig, save_config
-from analecta.ui.settings import SettingsPanel, _KEYRING_KEY, _KEYRING_SERVICE
+from analecta.ui.settings import _KEYRING_KEY, _KEYRING_SERVICE, SettingsPanel
 
 
 @pytest.fixture
@@ -125,8 +124,7 @@ def test_settings_api_key_echo_mode_is_password(mock_kr, qtbot, config):
 
 
 @patch("analecta.ui.settings.keyring.get_password", return_value=None)
-@patch("analecta.ui.settings.QMessageBox.question",
-       return_value=MagicMock())
+@patch("analecta.ui.settings.QMessageBox.question", return_value=MagicMock())
 def test_vt_disclaimer_shown_on_first_enable(mock_qmb, mock_kr, qtbot, config):
     from PySide6.QtWidgets import QMessageBox
 
@@ -213,7 +211,9 @@ def test_save_writes_api_key_to_keyring(mock_save, mock_set, mock_get, qtbot, co
 @patch("analecta.ui.settings.keyring.get_password", return_value=None)
 @patch("analecta.ui.settings.keyring.set_password")
 @patch("analecta.ui.settings.save_config")
-def test_save_skips_keyring_when_key_empty(mock_save, mock_set, mock_get, qtbot, config):
+def test_save_skips_keyring_when_key_empty(
+    mock_save, mock_set, mock_get, qtbot, config
+):
     panel = SettingsPanel(config)
     qtbot.addWidget(panel)
     panel._vt_key_edit.setText("")

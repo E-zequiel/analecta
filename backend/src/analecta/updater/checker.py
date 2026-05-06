@@ -176,9 +176,7 @@ class UpdateDialog(QDialog):
             self._later_btn.setEnabled(True)
 
 
-async def check_and_notify(
-    config: AppConfig, parent: QWidget | None = None
-) -> None:
+async def check_and_notify(config: AppConfig, parent: QWidget | None = None) -> None:
     """Check PyPI for a newer version and show UpdateDialog if one exists.
 
     Silently skips on network errors so startup is never blocked.

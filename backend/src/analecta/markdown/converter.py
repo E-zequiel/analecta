@@ -7,9 +7,7 @@ import markdownify
 from analecta.extraction.core import ExtractedContent
 from analecta.markdown.frontmatter import build_frontmatter
 
-_STRIP_RE = re.compile(
-    r"<(script|style)[^>]*>.*?</\1>", re.DOTALL | re.IGNORECASE
-)
+_STRIP_RE = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.DOTALL | re.IGNORECASE)
 
 
 class MarkdownConverter:

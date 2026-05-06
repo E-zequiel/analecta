@@ -2,7 +2,12 @@ import pytest
 
 from analecta.pkm.tags import get_backlinks, get_cooccurrences
 from analecta.pkm.templates import list_template_pages, write_template_page
-from analecta.pkm.url_scheme import is_scheme_registered, make_url, parse_url, register_scheme
+from analecta.pkm.url_scheme import (
+    is_scheme_registered,
+    make_url,
+    parse_url,
+    register_scheme,
+)
 from analecta.storage.index import EntryRecord, VaultIndex
 
 # ---------------------------------------------------------------------------

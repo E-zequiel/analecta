@@ -350,17 +350,11 @@ class DashboardWidget:
             except Exception:
                 entries = []
             if self._tag:
-                entries = [
-                    e for e in entries
-                    if self._tag in json.loads(e.tags_json)
-                ]
+                entries = [e for e in entries if self._tag in json.loads(e.tags_json)]
         elif self._tag:
             status = None if self._filter == "all" else self._filter
             all_entries = self._index.list_entries(status)
-            entries = [
-                e for e in all_entries
-                if self._tag in json.loads(e.tags_json)
-            ]
+            entries = [e for e in all_entries if self._tag in json.loads(e.tags_json)]
         else:
             status = None if self._filter == "all" else self._filter
             entries = self._index.list_entries(status)

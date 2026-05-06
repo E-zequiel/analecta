@@ -53,7 +53,15 @@ def test_stylesheet_contains_font_family():
 
 
 _ALL_COLORS = [
-    BG, BG_DARK, BG_FLOAT, BG_HIGHLIGHT, FG, FG_DIM, ACCENT, BORDER, SELECTION
+    BG,
+    BG_DARK,
+    BG_FLOAT,
+    BG_HIGHLIGHT,
+    FG,
+    FG_DIM,
+    ACCENT,
+    BORDER,
+    SELECTION,
 ]
 
 
