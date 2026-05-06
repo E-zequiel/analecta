@@ -8,7 +8,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from analecta.api.routes import system
+from analecta.api.routes import entries, search, system, tags
 from analecta.config import load_config, setup_logging
 from analecta.storage.index import VaultIndex
 
@@ -52,6 +52,9 @@ app.add_middleware(
     allow_credentials=True,
 )
 
+app.include_router(entries.router, prefix="/api/v1")
+app.include_router(search.router, prefix="/api/v1")
+app.include_router(tags.router, prefix="/api/v1")
 app.include_router(system.router, prefix="/api/v1")
 
 
