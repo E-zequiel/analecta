@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from analecta.api.deps import get_config, get_event_bus, get_index
+from analecta.api.events import EventBus
 from analecta.config import AppConfig
 from analecta.security.virustotal import (
     VirusTotalKeyError,
@@ -91,7 +92,7 @@ async def set_key(body: KeyIn) -> None:
 async def scan_entry(
     body: ScanIn,
     index: VaultIndex = Depends(get_index),
-    event_bus: "asyncio.Queue[dict[str, object]]" = Depends(get_event_bus),
+    event_bus: EventBus = Depends(get_event_bus),
     config: AppConfig = Depends(get_config),
 ) -> ScanOut:
     """Submit an entry's URL to VirusTotal and return the analysis result.
@@ -113,13 +114,17 @@ async def scan_entry(
         HTTPException: 429 if the VirusTotal rate limit is exceeded.
     """
     if not config.virustotal_enabled:
-        raise HTTPException(status_code=403, detail="VirusTotal scanning is not enabled")
+        raise HTTPException(
+            status_code=403, detail="VirusTotal scanning is not enabled"
+        )
 
     entry = await asyncio.to_thread(index.get_entry, body.entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    await event_bus.put({"type": "scan_progress", "entry_id": body.entry_id, "status": "started"})
+    event_bus.put_nowait(
+        {"type": "scan_progress", "entry_id": body.entry_id, "status": "started"}
+    )
 
     try:
         result = await VirusTotalScanner().scan(entry.url)
@@ -128,7 +133,7 @@ async def scan_entry(
     except VirusTotalRateLimitError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
 
-    await event_bus.put(
+    event_bus.put_nowait(
         {"type": "scan_completed", "entry_id": body.entry_id, "verdict": result.verdict}
     )
     return ScanOut(

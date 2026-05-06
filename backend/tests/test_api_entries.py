@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -8,12 +7,12 @@ from fastapi import FastAPI
 from pytest_mock import MockerFixture
 from starlette.testclient import TestClient
 
+from analecta.api.events import EventBus
 from analecta.api.routes.entries import router as entries_router
 from analecta.api.routes.search import router as search_router
 from analecta.api.routes.tags import router as tags_router
 from analecta.config import AppConfig
 from analecta.storage.index import EntryRecord, VaultIndex
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -42,7 +41,7 @@ def _make_app(tmp_path: Path) -> FastAPI:
         index = VaultIndex(config.vault_path / "analecta.db")
         app.state.config = config
         app.state.index = index
-        app.state.event_bus = asyncio.Queue[dict[str, object]]()
+        app.state.event_bus = EventBus()
         yield
         index.close()
 
@@ -151,7 +150,9 @@ def test_patch_entry_status(seeded_client: TestClient) -> None:
 
 def test_patch_entry_tags(seeded_client: TestClient) -> None:
     entry_id = seeded_client.get("/api/v1/entries").json()[0]["id"]
-    r = seeded_client.patch(f"/api/v1/entries/{entry_id}", json={"tags": ["rust", "wasm"]})
+    r = seeded_client.patch(
+        f"/api/v1/entries/{entry_id}", json={"tags": ["rust", "wasm"]}
+    )
     assert r.status_code == 200
     assert set(r.json()["tags"]) == {"rust", "wasm"}
 

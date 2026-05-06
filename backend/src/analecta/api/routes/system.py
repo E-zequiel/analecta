@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -6,6 +5,8 @@ from importlib.metadata import version
 
 from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
+
+from analecta.api.events import EventBus
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -39,15 +40,12 @@ async def events(request: Request) -> EventSourceResponse:
     Returns:
         An SSE stream that yields events until the client disconnects.
     """
-    event_bus: asyncio.Queue[dict[str, object]] = request.app.state.event_bus
+    bus: EventBus = request.app.state.event_bus
 
     async def _gen() -> AsyncGenerator[dict[str, str], None]:
-        while True:
-            try:
-                event = event_bus.get_nowait()
-            except asyncio.QueueEmpty:
-                await asyncio.sleep(0.05)
-                continue
-            yield {"data": json.dumps(event)}
+        async with bus.subscribe() as q:
+            while True:
+                event = await q.get()
+                yield {"data": json.dumps(event)}
 
     return EventSourceResponse(_gen())

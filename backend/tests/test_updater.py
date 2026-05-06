@@ -1,6 +1,5 @@
 """Tests for M14 update checker."""
 
-import subprocess
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -35,7 +34,9 @@ def test_get_current_version_returns_string():
 
 
 def test_get_current_version_from_metadata():
-    with patch("analecta.updater.checker.importlib.metadata.version", return_value="1.2.3"):
+    with patch(
+        "analecta.updater.checker.importlib.metadata.version", return_value="1.2.3"
+    ):
         assert get_current_version() == "1.2.3"
 
 
@@ -143,7 +144,9 @@ async def test_fetch_latest_version_status_error():
 def test_run_upgrade_success():
     mock_result = MagicMock()
     mock_result.returncode = 0
-    with patch("analecta.updater.checker.subprocess.run", return_value=mock_result) as mock_run:
+    with patch(
+        "analecta.updater.checker.subprocess.run", return_value=mock_result
+    ) as mock_run:
         assert run_upgrade() is True
     mock_run.assert_called_once_with(
         ["uv", "tool", "upgrade", "analecta"],
@@ -220,8 +223,10 @@ async def test_do_upgrade_success_prompts_restart(qtbot):
 
     with (
         patch("analecta.updater.checker.run_upgrade", return_value=True),
-        patch("analecta.updater.checker.QMessageBox.question",
-              return_value=QMessageBox.StandardButton.No) as mock_qmb,
+        patch(
+            "analecta.updater.checker.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.No,
+        ) as mock_qmb,
         patch("analecta.updater.checker.restart"),
     ):
         await dialog._do_upgrade()
@@ -238,8 +243,10 @@ async def test_do_upgrade_success_restarts_when_confirmed(qtbot):
 
     with (
         patch("analecta.updater.checker.run_upgrade", return_value=True),
-        patch("analecta.updater.checker.QMessageBox.question",
-              return_value=QMessageBox.StandardButton.Yes),
+        patch(
+            "analecta.updater.checker.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ),
         patch("analecta.updater.checker.restart") as mock_restart,
     ):
         await dialog._do_upgrade()
@@ -268,7 +275,10 @@ async def test_do_upgrade_failure_shows_error(qtbot):
 async def test_check_and_notify_no_dialog_when_up_to_date(qtbot, config):
     with (
         patch("analecta.updater.checker.get_current_version", return_value="0.2.0"),
-        patch("analecta.updater.checker.fetch_latest_version", new=AsyncMock(return_value="0.2.0")),
+        patch(
+            "analecta.updater.checker.fetch_latest_version",
+            new=AsyncMock(return_value="0.2.0"),
+        ),
         patch("analecta.updater.checker.UpdateDialog") as mock_dlg,
     ):
         await check_and_notify(config)
@@ -280,7 +290,10 @@ async def test_check_and_notify_no_dialog_when_up_to_date(qtbot, config):
 async def test_check_and_notify_no_dialog_on_network_error(qtbot, config):
     with (
         patch("analecta.updater.checker.get_current_version", return_value="0.1.0"),
-        patch("analecta.updater.checker.fetch_latest_version", new=AsyncMock(return_value=None)),
+        patch(
+            "analecta.updater.checker.fetch_latest_version",
+            new=AsyncMock(return_value=None),
+        ),
         patch("analecta.updater.checker.UpdateDialog") as mock_dlg,
     ):
         await check_and_notify(config)
@@ -293,8 +306,13 @@ async def test_check_and_notify_shows_dialog_when_update_available(qtbot, config
     mock_instance = MagicMock()
     with (
         patch("analecta.updater.checker.get_current_version", return_value="0.1.0"),
-        patch("analecta.updater.checker.fetch_latest_version", new=AsyncMock(return_value="0.2.0")),
-        patch("analecta.updater.checker.UpdateDialog", return_value=mock_instance) as mock_dlg,
+        patch(
+            "analecta.updater.checker.fetch_latest_version",
+            new=AsyncMock(return_value="0.2.0"),
+        ),
+        patch(
+            "analecta.updater.checker.UpdateDialog", return_value=mock_instance
+        ) as mock_dlg,
     ):
         await check_and_notify(config)
 

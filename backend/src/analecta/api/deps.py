@@ -1,8 +1,8 @@
-import asyncio
 from typing import cast
 
 from fastapi import Request
 
+from analecta.api.events import EventBus
 from analecta.config import AppConfig
 from analecta.storage.index import VaultIndex
 from analecta.storage.vault import VaultManager
@@ -45,13 +45,13 @@ def get_vault(request: Request) -> VaultManager:
     return VaultManager(config.vault_path)
 
 
-def get_event_bus(request: Request) -> "asyncio.Queue[dict[str, object]]":
-    """Return the singleton SSE event bus from application state.
+def get_event_bus(request: Request) -> EventBus:
+    """Return the singleton EventBus from application state.
 
     Args:
         request: Current HTTP request (injected by FastAPI).
 
     Returns:
-        The shared asyncio Queue used to publish SSE events.
+        The shared EventBus used to publish SSE events.
     """
-    return cast("asyncio.Queue[dict[str, object]]", request.app.state.event_bus)
+    return cast(EventBus, request.app.state.event_bus)

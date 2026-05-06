@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -7,6 +6,7 @@ from fastapi import Depends, FastAPI
 from starlette.testclient import TestClient
 
 from analecta.api.deps import get_config, get_event_bus, get_index, get_vault
+from analecta.api.events import EventBus
 from analecta.config import AppConfig
 from analecta.storage.index import VaultIndex
 from analecta.storage.vault import VaultManager
@@ -19,7 +19,7 @@ def _make_app(tmp_path: Path) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.config = config
         app.state.index = VaultIndex(config.vault_path / "analecta.db")
-        app.state.event_bus = asyncio.Queue[dict[str, object]]()
+        app.state.event_bus = EventBus()
         yield
         app.state.index.close()
 
@@ -35,7 +35,7 @@ def _make_app(tmp_path: Path) -> FastAPI:
 
     @test_app.get("/test/bus-type")
     async def _bus_type(
-        bus: "asyncio.Queue[dict[str, object]]" = Depends(get_event_bus),
+        bus: EventBus = Depends(get_event_bus),
     ) -> dict[str, str]:
         return {"type": type(bus).__name__}
 
@@ -69,7 +69,7 @@ def test_get_event_bus_singleton(tmp_path: Path) -> None:
     with TestClient(_make_app(tmp_path)) as client:
         r = client.get("/test/bus-type")
     assert r.status_code == 200
-    assert r.json()["type"] == "Queue"
+    assert r.json()["type"] == "EventBus"
 
 
 def test_get_config_returns_app_config(tmp_path: Path) -> None:

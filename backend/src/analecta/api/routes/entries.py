@@ -70,6 +70,14 @@ class EntryOut(BaseModel):
 
 
 def entry_out(record: EntryRecord) -> EntryOut:
+    """Convert a storage EntryRecord to the API EntryOut model.
+
+    Args:
+        record: Row from the entries table (must have a non-None id).
+
+    Returns:
+        Serialisable EntryOut instance.
+    """
     assert record.id is not None
     return EntryOut(
         id=record.id,
@@ -180,7 +188,9 @@ async def patch_entry(
     if (new_tags := body.tags) is not None:
         await asyncio.to_thread(index.update_tags, entry_id, new_tags)
     if (fts := body.fts) is not None:
-        await asyncio.to_thread(index.update_fts_content, entry_id, fts.title, fts.content)
+        await asyncio.to_thread(
+            index.update_fts_content, entry_id, fts.title, fts.content
+        )
     updated = await asyncio.to_thread(index.get_entry, entry_id)
     assert updated is not None
     return entry_out(updated)

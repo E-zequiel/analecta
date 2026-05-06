@@ -123,8 +123,14 @@ class VaultIndex:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                entry.title, entry.url, entry.file_path, entry.source_type,
-                entry.created_at, entry.updated_at, entry.status, entry.tags_json,
+                entry.title,
+                entry.url,
+                entry.file_path,
+                entry.source_type,
+                entry.created_at,
+                entry.updated_at,
+                entry.status,
+                entry.tags_json,
             ),
         )
         entry_id = cur.lastrowid
@@ -296,6 +302,7 @@ class VaultIndex:
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
 
 def _now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()

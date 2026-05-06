@@ -37,9 +37,7 @@ class ArticleExtractor(SourceExtractor):
         return self._parse(html, url)
 
     async def _fetch(self, url: str) -> str:
-        async with httpx.AsyncClient(
-            follow_redirects=True, timeout=_TIMEOUT
-        ) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=_TIMEOUT) as client:
             response = await client.get(url, headers=_HEADERS)
             response.raise_for_status()
             return response.text

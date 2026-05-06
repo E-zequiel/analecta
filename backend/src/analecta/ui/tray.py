@@ -105,9 +105,7 @@ class SystemTray(QSystemTrayIcon):
             title: Notification title.
             message: Notification body.
         """
-        self.showMessage(
-            title, message, QSystemTrayIcon.MessageIcon.Information, 4000
-        )
+        self.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 4000)
 
     def notify_error(self, title: str, message: str) -> None:
         """Show a critical balloon notification.
@@ -116,9 +114,7 @@ class SystemTray(QSystemTrayIcon):
             title: Notification title.
             message: Notification body.
         """
-        self.showMessage(
-            title, message, QSystemTrayIcon.MessageIcon.Critical, 4000
-        )
+        self.showMessage(title, message, QSystemTrayIcon.MessageIcon.Critical, 4000)
 
     # ------------------------------------------------------------------
     # Private helpers

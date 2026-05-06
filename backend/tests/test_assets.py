@@ -11,16 +11,15 @@ from analecta.extraction.assets import (
 )
 
 _HTML_WITH_IMAGES = (
-    '<html><body>'
+    "<html><body>"
     '<img src="https://example.com/photo.jpg" alt="A photo">'
     '<img src="https://example.com/logo.png">'
-    '</body></html>'
+    "</body></html>"
 )
 _HTML_NO_IMAGES = "<html><body><p>No images.</p></body></html>"
 _HTML_DATA_URI = '<img src="data:image/png;base64,abc123">'
 _HTML_DUPLICATE = (
-    '<img src="https://example.com/same.jpg">'
-    '<img src="https://example.com/same.jpg">'
+    '<img src="https://example.com/same.jpg"><img src="https://example.com/same.jpg">'
 )
 
 # ---------------------------------------------------------------------------

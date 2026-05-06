@@ -146,16 +146,12 @@ async def test_poll_raises_on_rate_limit(mocker):
 @pytest.mark.asyncio
 async def test_poll_retries_until_completed(mocker):
     in_progress_attrs = {"status": "in-progress", "stats": {}}
-    in_progress = _resp(
-        mocker, json_body={"data": {"attributes": in_progress_attrs}}
-    )
+    in_progress = _resp(mocker, json_body={"data": {"attributes": in_progress_attrs}})
     completed_attrs = {"status": "completed", "stats": _CLEAN_STATS}
     completed = _resp(mocker, json_body={"data": {"attributes": completed_attrs}})
 
     client = mocker.AsyncMock()
-    client.get = mocker.AsyncMock(
-        side_effect=[in_progress, in_progress, completed]
-    )
+    client.get = mocker.AsyncMock(side_effect=[in_progress, in_progress, completed])
 
     result = await _scanner(max_polls=5)._poll(_ID, client)
     assert result["status"] == "completed"
