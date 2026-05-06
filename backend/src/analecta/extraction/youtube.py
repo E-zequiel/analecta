@@ -1,5 +1,6 @@
 import asyncio
 import re
+from typing import Any
 
 from youtube_transcript_api import (
     NoTranscriptFound,
@@ -59,7 +60,7 @@ class YouTubeExtractor(SourceExtractor):
             metadata={"video_id": video_id, "language": lang},
         )
 
-    def _fetch_transcript(self, video_id: str) -> tuple[list, str]:
+    def _fetch_transcript(self, video_id: str) -> tuple[list[Any], str]:
         try:
             listing = YouTubeTranscriptApi().list(video_id)
             try:
@@ -77,5 +78,5 @@ class YouTubeExtractor(SourceExtractor):
                 f"No transcripts available for video {video_id}."
             ) from exc
 
-    def _to_html(self, transcript_data: list) -> str:
+    def _to_html(self, transcript_data: list[Any]) -> str:
         return "\n".join(f"<p>{entry.text}</p>" for entry in transcript_data)

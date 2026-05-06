@@ -133,7 +133,7 @@ def test_convert_preserves_img_src():
 
 
 @pytest.mark.parametrize(
-    "raw,expected",
+    ("raw", "expected"),
     [
         ("Python", "python"),
         ("machine learning", "machine_learning"),

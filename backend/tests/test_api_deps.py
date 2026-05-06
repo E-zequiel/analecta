@@ -16,7 +16,7 @@ def _make_app(tmp_path: Path) -> FastAPI:
     config = AppConfig(vault_path=tmp_path / "vault")
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         app.state.config = config
         app.state.index = VaultIndex(config.vault_path / "analecta.db")
         app.state.event_bus = EventBus()

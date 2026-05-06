@@ -1,6 +1,7 @@
 import argparse
 import logging
 import signal
+from datetime import UTC
 from pathlib import Path
 
 
@@ -130,9 +131,9 @@ def run() -> None:
         vault = VaultManager(config.vault_path)
         vault.ensure_dirs()
 
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        created_dt = datetime.now(tz=timezone.utc)
+        created_dt = datetime.now(tz=UTC)
         created_at = created_dt.isoformat()
 
         try:

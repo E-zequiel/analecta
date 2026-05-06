@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -14,7 +14,7 @@ from analecta.storage.vault import VaultManager, _slugify
 
 
 def _now() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()
+    return datetime.now(tz=UTC).isoformat()
 
 
 def _entry(**kwargs) -> EntryRecord:
@@ -83,17 +83,17 @@ def test_vault_ensure_dirs_creates_tree(vault: VaultManager):
 
 
 def test_vault_page_path_format(vault: VaultManager):
-    dt = datetime(2026, 4, 30, tzinfo=timezone.utc)
+    dt = datetime(2026, 4, 30, tzinfo=UTC)
     assert vault.page_path("My Article", dt).name == "2026-04-30-my-article.md"
 
 
 def test_vault_page_path_fallback_slug(vault: VaultManager):
-    dt = datetime(2026, 4, 30, tzinfo=timezone.utc)
+    dt = datetime(2026, 4, 30, tzinfo=UTC)
     assert vault.page_path("!!!", dt).name == "2026-04-30-entry.md"
 
 
 def test_vault_write_page_creates_file(vault: VaultManager):
-    dt = datetime(2026, 4, 30, tzinfo=timezone.utc)
+    dt = datetime(2026, 4, 30, tzinfo=UTC)
     path = vault.write_page("# Content", "My Article", dt)
     assert path.exists()
     assert path.read_text() == "# Content"
@@ -149,7 +149,8 @@ def test_context_manager(tmp_path: Path):
 
 def test_add_entry_returns_int(index: VaultIndex):
     entry_id = index.add_entry(_entry())
-    assert isinstance(entry_id, int) and entry_id >= 1
+    assert isinstance(entry_id, int)
+    assert entry_id >= 1
 
 
 def test_get_entry_roundtrip(index: VaultIndex):

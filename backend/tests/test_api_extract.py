@@ -26,7 +26,7 @@ def _make_app(tmp_path: Path) -> FastAPI:
     config = AppConfig(vault_path=tmp_path / "vault")
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         index = VaultIndex(config.vault_path / "analecta.db")
         app.state.config = config
         app.state.index = index
@@ -41,7 +41,7 @@ def _make_app(tmp_path: Path) -> FastAPI:
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> Generator[TestClient, None, None]:
+def client(tmp_path: Path) -> Generator[TestClient]:
     with TestClient(_make_app(tmp_path)) as c:
         yield c
 
@@ -95,7 +95,7 @@ def test_extract_publishes_sse_event(tmp_path: Path, mocker: MockerFixture) -> N
     bus._queues.append(sink)
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         index = VaultIndex(config.vault_path / "analecta.db")
         app.state.config = config
         app.state.index = index

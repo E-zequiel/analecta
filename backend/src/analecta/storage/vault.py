@@ -1,6 +1,6 @@
 import re
 import unicodedata
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -52,7 +52,7 @@ class VaultManager:
             Absolute path under pages/ following ``YYYY-MM-DD-{slug}.md``.
         """
         if date is None:
-            date = datetime.now(tz=timezone.utc)
+            date = datetime.now(tz=UTC)
         slug = _slugify(title) or "entry"
         filename = f"{date.strftime('%Y-%m-%d')}-{slug}.md"
         return self.pages_path / filename
