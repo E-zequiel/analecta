@@ -94,6 +94,7 @@ quote-style = "double"
 
 [tool.basedpyright]
 typeCheckingMode = "strict"
+reportUnusedFunction = "none"
 exclude = [
     "src/analecta/ui",           # pending deletion (G2)
     "src/analecta/updater",      # pending deletion (G3)
