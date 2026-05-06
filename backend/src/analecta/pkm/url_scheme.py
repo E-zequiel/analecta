@@ -95,9 +95,7 @@ def register_scheme(app_exec: str, desktop_dir: Path | None = None) -> None:
     desktop_dir.mkdir(parents=True, exist_ok=True)
 
     desktop_file = desktop_dir / "analecta.desktop"
-    desktop_file.write_text(
-        _DESKTOP_ENTRY.format(exec=app_exec), encoding="utf-8"
-    )
+    desktop_file.write_text(_DESKTOP_ENTRY.format(exec=app_exec), encoding="utf-8")
 
     subprocess.run(
         [

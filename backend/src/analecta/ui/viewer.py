@@ -204,9 +204,7 @@ class ArticleViewer(QWidget):
         h.addStretch()
 
         self._edit_btn = _flat_btn("Edit")
-        self._edit_btn.clicked.connect(
-            lambda: self.entry_unlocked.emit(self._entry)
-        )
+        self._edit_btn.clicked.connect(lambda: self.entry_unlocked.emit(self._entry))
         h.addWidget(self._edit_btn)
 
         h.addSpacing(8)
@@ -225,9 +223,7 @@ class ArticleViewer(QWidget):
 
         if self._config.virustotal_enabled:
             self._vt_btn: QPushButton | None = _flat_btn("VirusTotal")
-            self._vt_btn.clicked.connect(
-                lambda: self.scan_requested.emit(self._entry)
-            )
+            self._vt_btn.clicked.connect(lambda: self.scan_requested.emit(self._entry))
             h.addWidget(self._vt_btn)
         else:
             self._vt_btn = None
@@ -235,21 +231,15 @@ class ArticleViewer(QWidget):
         h.addSpacing(8)
 
         self._read_btn = _flat_btn("Read", checkable=True)
-        self._read_btn.clicked.connect(
-            lambda: self._toggle_status("read")
-        )
+        self._read_btn.clicked.connect(lambda: self._toggle_status("read"))
         h.addWidget(self._read_btn)
 
         self._fav_btn = _flat_btn("Favorite", checkable=True)
-        self._fav_btn.clicked.connect(
-            lambda: self._toggle_status("favorite")
-        )
+        self._fav_btn.clicked.connect(lambda: self._toggle_status("favorite"))
         h.addWidget(self._fav_btn)
 
         self._rec_btn = _flat_btn("Recommend", checkable=True)
-        self._rec_btn.clicked.connect(
-            lambda: self._toggle_status("to_recommend")
-        )
+        self._rec_btn.clicked.connect(lambda: self._toggle_status("to_recommend"))
         h.addWidget(self._rec_btn)
 
         return bar

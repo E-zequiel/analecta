@@ -312,7 +312,7 @@ def test_dashboard_widget_loads_entries_on_init(qtbot, config, index):
 
 
 def test_dashboard_widget_filter_unread(qtbot, config, index):
-    id1 = index.add_entry(_entry(url="https://a.com/1"))
+    index.add_entry(_entry(url="https://a.com/1"))
     id2 = index.add_entry(_entry(url="https://a.com/2"))
     index.update_status(id2, "read")
     window = MainWindow(config)

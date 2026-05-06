@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,6 +9,7 @@ from pytest_mock import MockerFixture
 from starlette.responses import StreamingResponse
 from starlette.testclient import TestClient
 
+from analecta.api.events import EventBus
 from analecta.api.routes.config import router as config_router
 from analecta.api.routes.pkm import router as pkm_router
 from analecta.api.routes.security import router as security_router
@@ -17,7 +17,6 @@ from analecta.api.routes.system import router as system_router
 from analecta.config import AppConfig
 from analecta.security.virustotal import ScanResult, VirusTotalScanner
 from analecta.storage.index import EntryRecord, VaultIndex
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -53,7 +52,7 @@ def _make_app(
         index = VaultIndex(config.vault_path / "analecta.db")
         app.state.config = config
         app.state.index = index
-        app.state.event_bus = asyncio.Queue[dict[str, object]]()
+        app.state.event_bus = EventBus()
         app.state.port = 0
         yield
         index.close()
@@ -172,9 +171,10 @@ def test_scan_200(vt_client: TestClient, mocker: MockerFixture) -> None:
         undetected=80,
         harmless=10,
     )
-    mocker.patch.object(VirusTotalScanner, "scan", new_callable=AsyncMock, return_value=fake_result)
+    mocker.patch.object(
+        VirusTotalScanner, "scan", new_callable=AsyncMock, return_value=fake_result
+    )
 
-    entries = vt_client.get("/api/v1/entries") if False else None  # unused, entry seeded in fixture
     r = vt_client.post("/api/v1/security/virustotal/scan", json={"entry_id": 1})
     assert r.status_code == 200
     data = r.json()

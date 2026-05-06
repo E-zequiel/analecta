@@ -117,7 +117,6 @@ def test_highlighter_does_not_crash_on_markdown(qtbot):
 
 
 def test_highlighter_fence_state(qtbot):
-    from PySide6.QtGui import QTextDocument
     from PySide6.QtWidgets import QPlainTextEdit
 
     editor = QPlainTextEdit()
@@ -246,6 +245,7 @@ def test_editor_save_updates_tags(qtbot, config, index, tmp_path):
     e._save_btn.click()
     saved = index.get_entry(eid)
     import json
+
     tags = json.loads(saved.tags_json)
     assert "python" in tags
     assert "ai" in tags
@@ -289,8 +289,12 @@ def test_editor_revert_restores_content(qtbot, config, index, tmp_path):
     md_file = tmp_path / "original.md"
     md_file.write_text("# Original content", encoding="utf-8")
     entry = EntryRecord(
-        title="Test", url="https://example.com", file_path=str(md_file),
-        source_type="article", created_at=_now(), updated_at=_now(),
+        title="Test",
+        url="https://example.com",
+        file_path=str(md_file),
+        source_type="article",
+        created_at=_now(),
+        updated_at=_now(),
     )
     eid = index.add_entry(entry)
     entry = index.get_entry(eid)

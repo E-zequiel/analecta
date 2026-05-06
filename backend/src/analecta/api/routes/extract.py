@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from analecta.api.deps import get_event_bus, get_index, get_vault
+from analecta.api.events import EventBus
 from analecta.api.routes.entries import EntryOut, entry_out
 from analecta.extraction.assets import AssetDownloader
 from analecta.extraction.core import ExtractionError, extract
@@ -31,7 +32,7 @@ async def extract_url(
     body: ExtractIn,
     index: VaultIndex = Depends(get_index),
     vault: VaultManager = Depends(get_vault),
-    event_bus: asyncio.Queue[dict[str, object]] = Depends(get_event_bus),
+    event_bus: EventBus = Depends(get_event_bus),
 ) -> EntryOut:
     """Run the full extraction pipeline for a URL and persist the result.
 
@@ -84,7 +85,7 @@ async def extract_url(
     try:
         entry_id = await asyncio.to_thread(index.add_entry, entry)
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=409, detail="URL already in vault")
+        raise HTTPException(status_code=409, detail="URL already in vault") from None
 
     await asyncio.to_thread(index.update_fts_content, entry_id, content.title, markdown)
     event_bus.put_nowait({"type": "entry_added", "id": entry_id})

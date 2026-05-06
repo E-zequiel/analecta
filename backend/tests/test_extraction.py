@@ -135,9 +135,7 @@ async def test_youtube_extractor_returns_content(mocker):
     mocker.patch.object(
         YouTubeExtractor, "_fetch_transcript", return_value=(_TRANSCRIPT, "en")
     )
-    result = await YouTubeExtractor().extract(
-        "https://youtube.com/watch?v=dQw4w9WgXcQ"
-    )
+    result = await YouTubeExtractor().extract("https://youtube.com/watch?v=dQw4w9WgXcQ")
     assert result.source_type == "youtube"
     assert result.metadata["video_id"] == "dQw4w9WgXcQ"
     assert result.metadata["language"] == "en"
@@ -183,9 +181,7 @@ async def test_youtube_extractor_falls_back_to_any_language(mocker):
 @pytest.mark.asyncio
 async def test_substack_extractor_returns_substack_type(mocker):
     mocker.patch.object(ArticleExtractor, "_fetch", return_value=_ARTICLE_HTML)
-    result = await SubstackExtractor().extract(
-        "https://example.substack.com/p/test"
-    )
+    result = await SubstackExtractor().extract("https://example.substack.com/p/test")
     assert result.source_type == "substack"
     assert result.metadata["platform"] == "substack"
 

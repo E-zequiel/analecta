@@ -2,19 +2,20 @@ import asyncio
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import cast
 
 import pytest
 from fastapi import FastAPI
 from pytest_mock import MockerFixture
 from starlette.testclient import TestClient
 
-from analecta.api.routes.extract import router as extract_router
+from analecta.api.events import EventBus
 from analecta.api.routes.entries import router as entries_router
+from analecta.api.routes.extract import router as extract_router
 from analecta.config import AppConfig
 from analecta.extraction.assets import AssetDownloader
-from analecta.extraction.core import ExtractionError, ExtractedContent
-from analecta.storage.index import EntryRecord, VaultIndex
-
+from analecta.extraction.core import ExtractedContent, ExtractionError
+from analecta.storage.index import VaultIndex
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -29,7 +30,7 @@ def _make_app(tmp_path: Path) -> FastAPI:
         index = VaultIndex(config.vault_path / "analecta.db")
         app.state.config = config
         app.state.index = index
-        app.state.event_bus = asyncio.Queue[dict[str, object]]()
+        app.state.event_bus = EventBus()
         yield
         index.close()
 
@@ -85,12 +86,13 @@ def test_extract_creates_entry(
     assert len(r2.json()) == 1
 
 
-def test_extract_publishes_sse_event(
-    tmp_path: Path, mocker: MockerFixture
-) -> None:
-    """Successful extraction puts entry_added on the event bus."""
+def test_extract_publishes_sse_event(tmp_path: Path, mocker: MockerFixture) -> None:
+    """Successful extraction delivers entry_added to EventBus subscribers."""
     config = AppConfig(vault_path=tmp_path / "vault")
-    bus: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+    bus = EventBus()
+    # Manually subscribe a sink queue so put_nowait has somewhere to deliver.
+    sink: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+    bus._queues.append(sink)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -102,6 +104,7 @@ def test_extract_publishes_sse_event(
         index.close()
 
     from fastapi import FastAPI as _FastAPI
+
     app = _FastAPI(lifespan=lifespan)
     app.include_router(extract_router, prefix="/api/v1")
 
@@ -111,8 +114,8 @@ def test_extract_publishes_sse_event(
     with TestClient(app) as c:
         c.post("/api/v1/extract", json={"url": "https://example.com/article"})
 
-    assert not bus.empty()
-    event = bus.get_nowait()
+    assert not sink.empty()
+    event = cast(dict[str, object], sink.get_nowait())
     assert event["type"] == "entry_added"
     assert isinstance(event["id"], int)
 

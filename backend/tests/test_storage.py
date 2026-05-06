@@ -12,6 +12,7 @@ from analecta.storage.vault import VaultManager, _slugify
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
@@ -45,6 +46,7 @@ def vault(tmp_path: Path) -> VaultManager:
 # _slugify
 # ---------------------------------------------------------------------------
 
+
 def test_slugify_basic():
     assert _slugify("Hello World") == "hello-world"
 
@@ -72,6 +74,7 @@ def test_slugify_empty_returns_empty():
 # ---------------------------------------------------------------------------
 # VaultManager
 # ---------------------------------------------------------------------------
+
 
 def test_vault_ensure_dirs_creates_tree(vault: VaultManager):
     vault.ensure_dirs()
@@ -104,6 +107,7 @@ def test_vault_asset_dir(vault: VaultManager):
 # ---------------------------------------------------------------------------
 # VaultIndex — migrations
 # ---------------------------------------------------------------------------
+
 
 def test_schema_migrations_table_exists(index: VaultIndex):
     row = index._conn.execute(
@@ -141,6 +145,7 @@ def test_context_manager(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # VaultIndex — CRUD
 # ---------------------------------------------------------------------------
+
 
 def test_add_entry_returns_int(index: VaultIndex):
     entry_id = index.add_entry(_entry())
@@ -187,9 +192,7 @@ def test_update_tags_sets_json(index: VaultIndex):
 def test_update_tags_syncs_tags_table(index: VaultIndex):
     entry_id = index.add_entry(_entry())
     index.update_tags(entry_id, ["python", "sqlite"])
-    row = index._conn.execute(
-        "SELECT count FROM tags WHERE name = 'python'"
-    ).fetchone()
+    row = index._conn.execute("SELECT count FROM tags WHERE name = 'python'").fetchone()
     assert row[0] == 1
 
 
@@ -197,9 +200,7 @@ def test_update_tags_replaces_previous(index: VaultIndex):
     entry_id = index.add_entry(_entry())
     index.update_tags(entry_id, ["python", "sqlite"])
     index.update_tags(entry_id, ["python"])
-    row = index._conn.execute(
-        "SELECT count FROM tags WHERE name = 'sqlite'"
-    ).fetchone()
+    row = index._conn.execute("SELECT count FROM tags WHERE name = 'sqlite'").fetchone()
     assert row[0] == 0
 
 
@@ -220,6 +221,7 @@ def test_list_entries_by_status(index: VaultIndex):
 # ---------------------------------------------------------------------------
 # VaultIndex — FTS5 search
 # ---------------------------------------------------------------------------
+
 
 def test_search_by_title(index: VaultIndex):
     index.add_entry(_entry(title="asyncio coroutines", url="https://a.com"))

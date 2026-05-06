@@ -8,7 +8,17 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from analecta.api.routes import config, entries, extract, pkm, search, security, system, tags
+from analecta.api.events import EventBus
+from analecta.api.routes import (
+    config,
+    entries,
+    extract,
+    pkm,
+    search,
+    security,
+    system,
+    tags,
+)
 from analecta.config import load_config, setup_logging
 from analecta.storage.index import VaultIndex
 
@@ -33,7 +43,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     index = VaultIndex(config.vault_path / "analecta.db")
     app.state.config = config
     app.state.index = index
-    app.state.event_bus = asyncio.Queue[dict[str, object]]()
+    app.state.event_bus = EventBus()
     log.info("sidecar ready")
     print("SIDECAR_READY", flush=True)
     yield

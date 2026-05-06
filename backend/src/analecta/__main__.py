@@ -5,15 +5,13 @@ from pathlib import Path
 
 
 def run() -> None:
-    """CLI entry point for `python -m analecta` (legacy PySide6 path, unused on hybrid branch)."""
+    """CLI entry point — legacy PySide6 path, unused on the hybrid branch."""
     parser = argparse.ArgumentParser(prog="analecta", description="PKM vault manager")
     parser.add_argument("--dev", action="store_true", help="Enable debug logging")
     parser.add_argument(
         "--vault", type=Path, metavar="PATH", help="Override vault path"
     )
-    parser.add_argument(
-        "url", nargs="?", metavar="URL", help="analecta:// URL to open"
-    )
+    parser.add_argument("url", nargs="?", metavar="URL", help="analecta:// URL to open")
     args = parser.parse_args()
 
     from analecta.config import CONFIG_PATH, load_config, save_config, setup_logging
@@ -93,16 +91,12 @@ def run() -> None:
         window.content.setCurrentWidget(editor)
 
     viewer.entry_unlocked.connect(_show_editor)
-    editor.close_requested.connect(
-        lambda: window.content.setCurrentWidget(viewer)
-    )
+    editor.close_requested.connect(lambda: window.content.setCurrentWidget(viewer))
     editor.saved.connect(lambda _entry: dashboard.refresh())
 
     settings = SettingsPanel(config)
     window.content.addWidget(settings)
-    settings.cancelled.connect(
-        lambda: window.content.setCurrentWidget(dashboard.page)
-    )
+    settings.cancelled.connect(lambda: window.content.setCurrentWidget(dashboard.page))
     settings.config_saved.connect(
         lambda new_cfg: window.content.setCurrentWidget(dashboard.page)
     )
@@ -207,7 +201,9 @@ def run() -> None:
             if entry is not None:
                 _show_viewer(entry)
             else:
-                log.warning("analecta:// URL references unknown entry id %d", scheme_entry_id)
+                log.warning(
+                    "analecta:// URL references unknown entry id %d", scheme_entry_id
+                )
 
     window.show()
 
@@ -223,4 +219,5 @@ def run() -> None:
 
 if __name__ == "__main__":
     from analecta.server import main
+
     main()

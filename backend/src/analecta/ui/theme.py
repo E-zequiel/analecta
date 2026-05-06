@@ -9,27 +9,27 @@ Palette sourced from tcmmichaelb139/obsidian-tokyonight theme.css,
 # ---------------------------------------------------------------------------
 
 # Backgrounds (darkest → lightest)
-BG_DARK2 = "#121218"       # --bg_dark2
-BG_DARK = "#16161e"        # --bg_dark
-BG = "#1a1b26"             # --bg  (main window background)
-BG_FLOAT = "#24283b"       # --bg_highlight_dark  (panels, inputs)
-BG_HIGHLIGHT = "#292e42"   # --bg_highlight  (hover, secondary panels)
+BG_DARK2 = "#121218"  # --bg_dark2
+BG_DARK = "#16161e"  # --bg_dark
+BG = "#1a1b26"  # --bg  (main window background)
+BG_FLOAT = "#24283b"  # --bg_highlight_dark  (panels, inputs)
+BG_HIGHLIGHT = "#292e42"  # --bg_highlight  (hover, secondary panels)
 
 # Foreground
-FG = "#c0caf5"             # --fg
-FG_DARK = "#a9b1d6"        # --fg_dark
-FG_DIM = "#565f89"         # --comment  (dim text, status bar)
-BORDER = "#414868"         # --terminal_black
+FG = "#c0caf5"  # --fg
+FG_DARK = "#a9b1d6"  # --fg_dark
+FG_DIM = "#565f89"  # --comment  (dim text, status bar)
+BORDER = "#414868"  # --terminal_black
 
 # Accent / semantic
-ACCENT = "#7aa2f7"         # --blue     (primary accent)
-SELECTION = "#3d59a1"      # --blue0    (selected items)
-CYAN = "#7dcfff"           # --cyan
-MAGENTA = "#bb9af7"        # --magenta
-GREEN = "#9ece6a"          # --green
-ORANGE = "#ff9e64"         # --orange
-YELLOW = "#e0af68"         # --yellow
-RED = "#ff757f"            # --red
+ACCENT = "#7aa2f7"  # --blue     (primary accent)
+SELECTION = "#3d59a1"  # --blue0    (selected items)
+CYAN = "#7dcfff"  # --cyan
+MAGENTA = "#bb9af7"  # --magenta
+GREEN = "#9ece6a"  # --green
+ORANGE = "#ff9e64"  # --orange
+YELLOW = "#e0af68"  # --yellow
+RED = "#ff757f"  # --red
 
 
 def load_stylesheet() -> str:
