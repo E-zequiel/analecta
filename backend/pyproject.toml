@@ -47,6 +47,7 @@ dev = [
     "pytest-qt>=4.4.0",
     "pytest-socket>=0.7.0",
     "ruff>=0.15.12",
+    "basedpyright>=1.18.0",
 ]
 
 [tool.pytest.ini_options]
@@ -93,3 +94,11 @@ quote-style = "double"
 
 [tool.basedpyright]
 typeCheckingMode = "strict"
+exclude = [
+    "src/analecta/ui",           # pending deletion (G2)
+    "src/analecta/updater",      # pending deletion (G3)
+    "src/analecta/__main__.py",  # pending cleanup (G4)
+    "src/analecta/extraction",   # readability/bs4/youtube-transcript-api have no stubs
+    "src/analecta/markdown",     # markdownify has no stubs
+    "src/analecta/security",     # VirusTotal JSON responses untyped
+]
