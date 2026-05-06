@@ -80,7 +80,8 @@ class VaultIndex:
 
         migrations_dir = importlib.resources.files("analecta") / "migrations"
         sql_files = sorted(
-            r for r in migrations_dir.iterdir() if r.name.endswith(".sql")
+            (r for r in migrations_dir.iterdir() if r.name.endswith(".sql")),
+            key=lambda r: r.name,
         )
 
         applied = {
@@ -127,6 +128,7 @@ class VaultIndex:
             ),
         )
         entry_id = cur.lastrowid
+        assert entry_id is not None  # guaranteed after INSERT
         self._conn.execute(
             "INSERT INTO entries_fts (rowid, title, content) VALUES (?, ?, ?)",
             (entry_id, entry.title, ""),
