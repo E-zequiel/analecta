@@ -37,7 +37,7 @@ def _make_app(tmp_path: Path) -> FastAPI:
     config = AppConfig(vault_path=tmp_path / "vault")
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         index = VaultIndex(config.vault_path / "analecta.db")
         app.state.config = config
         app.state.index = index
@@ -58,14 +58,14 @@ def _make_app(tmp_path: Path) -> FastAPI:
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> Generator[TestClient, None, None]:
+def client(tmp_path: Path) -> Generator[TestClient]:
     """Empty app — no entries."""
     with TestClient(_make_app(tmp_path)) as c:
         yield c
 
 
 @pytest.fixture
-def seeded_client(tmp_path: Path) -> Generator[TestClient, None, None]:
+def seeded_client(tmp_path: Path) -> Generator[TestClient]:
     """App pre-seeded with two entries (unread tagged 'python', read)."""
     app = _make_app(tmp_path)
     config = AppConfig(vault_path=tmp_path / "vault")

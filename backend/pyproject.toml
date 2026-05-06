@@ -48,12 +48,19 @@ dev = [
     "pytest-socket>=0.7.0",
     "ruff>=0.15.12",
     "basedpyright>=1.18.0",
+    "types-beautifulsoup4>=4.12.0.20250516",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
 addopts = "--cov=analecta --cov-branch --cov-report=term-missing"
+filterwarnings = [
+    # uvicorn 0.46 uses websockets.legacy API deprecated in websockets 14+
+    "ignore::DeprecationWarning:websockets",
+    "ignore::DeprecationWarning:uvicorn",
+]
 markers = [
     "integration: tests that make real network calls (deselect with '-m not integration')",
 ]
@@ -75,7 +82,8 @@ line-length = 88
 
 [tool.ruff.lint]
 # E: pycodestyle  F: Pyflakes  B: flake8-bugbear  I: isort  D: pydocstyle
-select = ["E", "F", "B", "I", "D"]
+# UP: pyupgrade  RUF: ruff-native  ASYNC: flake8-async  PT: flake8-pytest-style
+select = ["E", "F", "B", "I", "D", "UP", "RUF", "ASYNC", "PT"]
 ignore = [
     "B008",  # FastAPI: Depends() in argument defaults is the intended pattern
     "D100",  # module-level docstrings not required
@@ -85,7 +93,11 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["D101", "D103"]  # test functions and classes don't need docstrings
+"tests/**" = ["D"]  # test files need no docstrings
+# Pending deletion — do not fix issues in these modules
+"src/analecta/__main__.py" = ["RUF006", "UP"]
+"src/analecta/ui/**" = ["RUF003", "RUF100", "RUF006"]
+"src/analecta/updater/**" = ["RUF006"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -96,12 +108,17 @@ quote-style = "double"
 [tool.basedpyright]
 typeCheckingMode = "strict"
 reportUnusedFunction = "none"
+# Relax Unknown-related reports caused by stub-less third-party libraries.
+# This keeps our own code in scope for type-checking without erroring on
+# untyped external API returns (trafilatura, markdownify, youtube-transcript-api, etc.).
+reportMissingTypeStubs = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownVariableType = "none"
+reportUnknownParameterType = "none"
 include = ["src/analecta"]
 exclude = [
     "src/analecta/ui",           # pending deletion (G2)
     "src/analecta/updater",      # pending deletion (G3)
     "src/analecta/__main__.py",  # pending cleanup (G4)
-    "src/analecta/extraction",   # readability/bs4/youtube-transcript-api have no stubs
-    "src/analecta/markdown",     # markdownify has no stubs
-    "src/analecta/security",     # VirusTotal JSON responses untyped
 ]

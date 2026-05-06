@@ -48,7 +48,7 @@ class EntryListModel(QAbstractListModel):
         super().__init__(parent)
         self._entries: list[EntryRecord] = []
 
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         """Return the number of rows under *parent*."""
         return 0 if parent.isValid() else len(self._entries)
 

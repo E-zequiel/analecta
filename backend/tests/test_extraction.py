@@ -38,7 +38,7 @@ _SPARSE_HTML = "<html><body><div>" + "<p>word</p>" * 30 + "</div></body></html>"
 
 
 @pytest.mark.parametrize(
-    "url,expected",
+    ("url", "expected"),
     [
         ("https://youtube.com/watch?v=abc", "youtube"),
         ("https://www.youtube.com/watch?v=abc", "youtube"),
@@ -62,7 +62,7 @@ def test_detect_source_type(url, expected):
 
 
 @pytest.mark.parametrize(
-    "url,expected",
+    ("url", "expected"),
     [
         ("https://youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"),
         ("https://youtube.com/watch?list=PL&v=dQw4w9WgXcQ", "dQw4w9WgXcQ"),

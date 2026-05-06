@@ -19,10 +19,6 @@ env/
 # ========================
 .claude/settings.local.json
 
-# ========================
-# IDE
-# ========================
-.zed/
 
 # ========================
 # Linting
@@ -68,6 +64,11 @@ node_modules/
 src-tauri/target/
 src-tauri/binaries/
 src-tauri/gen/
+
+# ========================
+# PyInstaller build stage
+# ========================
+backend/.build/
 
 # ========================
 # SvelteKit

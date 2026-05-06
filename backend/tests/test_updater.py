@@ -57,7 +57,7 @@ def test_get_current_version_fallback_to_dunder():
 
 
 @pytest.mark.parametrize(
-    "v, expected",
+    ("v", "expected"),
     [
         ("1.2.3", (1, 2, 3)),
         ("0.1.0", (0, 1, 0)),
@@ -70,7 +70,7 @@ def test_parse_version(v, expected):
 
 
 @pytest.mark.parametrize(
-    "current, latest, expected",
+    ("current", "latest", "expected"),
     [
         ("0.1.0", "0.2.0", True),
         ("0.1.0", "1.0.0", True),

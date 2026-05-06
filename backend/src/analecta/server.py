@@ -37,7 +37,7 @@ def _find_free_port() -> int:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """FastAPI lifespan — initialises singletons and signals sidecar readiness."""
     config = load_config()
     index = VaultIndex(config.vault_path / "analecta.db")

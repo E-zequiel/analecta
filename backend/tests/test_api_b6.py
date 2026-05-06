@@ -70,7 +70,7 @@ def test_put_nowait_no_subscribers_is_noop() -> None:
 
 def _make_app(tmp_path: Path) -> FastAPI:
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         cfg = AppConfig(vault_path=tmp_path / "vault")
         index = VaultIndex(cfg.vault_path / "analecta.db")
         app.state.config = cfg
@@ -108,7 +108,7 @@ async def test_sse_receives_entry_added(tmp_path: Path, mocker: MockerFixture) -
     loop = asyncio.get_event_loop()
     serve_task = loop.create_task(server.serve())
 
-    while not server.started:
+    while not server.started:  # noqa: ASYNC110 — polling uvicorn internal state, Event not applicable
         await asyncio.sleep(0.01)
 
     port: int = server.servers[0].sockets[0].getsockname()[1]
