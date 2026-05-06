@@ -1,0 +1,206 @@
+import asyncio
+import json
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from analecta.api.deps import get_index
+from analecta.storage.index import EntryRecord, VaultIndex
+
+log = logging.getLogger(__name__)
+router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+
+
+class FtsPatch(BaseModel):
+    """FTS content to reindex alongside an entry update.
+
+    Attributes:
+        title: New title for the FTS index.
+        content: Full plain-text body for the FTS index.
+    """
+
+    title: str
+    content: str
+
+
+class EntryPatchIn(BaseModel):
+    """Partial-update body for PATCH /entries/{id}.
+
+    Attributes:
+        status: New status value, if provided.
+        tags: Replacement tag list, if provided.
+        fts: FTS content to reindex, if provided.
+    """
+
+    status: str | None = None
+    tags: list[str] | None = None
+    fts: FtsPatch | None = None
+
+
+class EntryOut(BaseModel):
+    """Serialised entry returned by the API.
+
+    Attributes:
+        id: Database row id.
+        title: Article title.
+        url: Source URL.
+        file_path: Absolute path to the vault Markdown file.
+        source_type: One of article / youtube / substack / x.
+        created_at: ISO 8601 creation timestamp.
+        updated_at: ISO 8601 last-update timestamp.
+        status: Entry status string.
+        tags: List of tag names.
+    """
+
+    id: int
+    title: str
+    url: str
+    file_path: str
+    source_type: str
+    created_at: str
+    updated_at: str
+    status: str
+    tags: list[str]
+
+
+def entry_out(record: EntryRecord) -> EntryOut:
+    assert record.id is not None
+    return EntryOut(
+        id=record.id,
+        title=record.title,
+        url=record.url,
+        file_path=record.file_path,
+        source_type=record.source_type,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        status=record.status,
+        tags=json.loads(record.tags_json),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/entries", response_model=list[EntryOut])
+async def list_entries(
+    status: str | None = None,
+    tag: str | None = None,
+    q: str | None = None,
+    index: VaultIndex = Depends(get_index),
+) -> list[EntryOut]:
+    """List entries with optional filters.
+
+    When *q* is present, delegates to FTS5 search; otherwise lists by status /
+    tag. Filters compose: *status* and *tag* are applied after FTS when *q* is
+    also set.
+
+    Args:
+        status: Optional status filter (unread / read / favorite / …).
+        tag: Optional tag name filter.
+        q: Optional FTS5 query string.
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        List of matching entries ordered by relevance or creation date.
+    """
+    if q:
+        records = await asyncio.to_thread(index.search, q)
+        if status:
+            records = [r for r in records if r.status == status]
+        if tag:
+            tag_ids = set(await asyncio.to_thread(index.get_entry_ids_by_tag, tag))
+            records = [r for r in records if r.id in tag_ids]
+    elif tag:
+        ids = await asyncio.to_thread(index.get_entry_ids_by_tag, tag)
+        records: list[EntryRecord] = []
+        for eid in ids:
+            entry = await asyncio.to_thread(index.get_entry, eid)
+            if entry is not None and (status is None or entry.status == status):
+                records.append(entry)
+    else:
+        records = await asyncio.to_thread(index.list_entries, status)
+    return [entry_out(r) for r in records]
+
+
+@router.get("/entries/{entry_id}", response_model=EntryOut)
+async def get_entry(
+    entry_id: int,
+    index: VaultIndex = Depends(get_index),
+) -> EntryOut:
+    """Fetch a single entry by id.
+
+    Args:
+        entry_id: Database row id.
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        The matching entry.
+
+    Raises:
+        HTTPException: 404 if the entry does not exist.
+    """
+    record = await asyncio.to_thread(index.get_entry, entry_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    return entry_out(record)
+
+
+@router.patch("/entries/{entry_id}", response_model=EntryOut)
+async def patch_entry(
+    entry_id: int,
+    body: EntryPatchIn,
+    index: VaultIndex = Depends(get_index),
+) -> EntryOut:
+    """Partially update an entry's status, tags, and/or FTS content.
+
+    Args:
+        entry_id: Database row id.
+        body: Fields to update (all optional).
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        The updated entry.
+
+    Raises:
+        HTTPException: 404 if the entry does not exist.
+    """
+    record = await asyncio.to_thread(index.get_entry, entry_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    if (new_status := body.status) is not None:
+        await asyncio.to_thread(index.update_status, entry_id, new_status)
+    if (new_tags := body.tags) is not None:
+        await asyncio.to_thread(index.update_tags, entry_id, new_tags)
+    if (fts := body.fts) is not None:
+        await asyncio.to_thread(index.update_fts_content, entry_id, fts.title, fts.content)
+    updated = await asyncio.to_thread(index.get_entry, entry_id)
+    assert updated is not None
+    return entry_out(updated)
+
+
+@router.delete("/entries/{entry_id}", status_code=204)
+async def delete_entry(
+    entry_id: int,
+    index: VaultIndex = Depends(get_index),
+) -> None:
+    """Soft-delete an entry (sets status to 'deleted').
+
+    Args:
+        entry_id: Database row id.
+        index: Injected VaultIndex singleton.
+
+    Raises:
+        HTTPException: 404 if the entry does not exist.
+    """
+    record = await asyncio.to_thread(index.get_entry, entry_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    await asyncio.to_thread(index.soft_delete, entry_id)
