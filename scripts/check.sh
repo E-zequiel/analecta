@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Static checks + tests for Python sidecar and Rust shell.
+# Static checks + tests for Python sidecar, Rust shell, and SvelteKit frontend.
 # Run from the repo root: ./scripts/check.sh
 # Exit code is non-zero if any step fails.
 set -euo pipefail
@@ -44,5 +44,14 @@ mise exec -- cargo clippy -- -D warnings
 
 echo "==> cargo test"
 mise exec -- cargo test
+
+# ── SvelteKit frontend ────────────────────────────────────────────────────────
+cd "$REPO_ROOT"
+
+echo "==> svelte-check"
+mise exec -- pnpm --filter frontend check
+
+echo "==> vite build"
+mise exec -- pnpm --filter frontend build
 
 echo "==> all checks passed"
