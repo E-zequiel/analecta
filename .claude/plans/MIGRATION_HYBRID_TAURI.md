@@ -239,8 +239,8 @@ Incluir nota: GNOME requiere extensión `AppIndicator and KStatusNotifierItem Su
 **Archivo:** `src-tauri/tauri.conf.json`.
 **Contenido (puntos críticos):**
 - `productName: "Analecta"`, `identifier: "io.analecta.desktop"`, `version` desde `package.json`.
-- `build.beforeDevCommand: "npm run dev --workspace frontend"`.
-- `build.beforeBuildCommand: "npm run build --workspace frontend && python scripts/build_sidecar.py"`.
+- `build.beforeDevCommand: "pnpm --filter frontend dev"`.
+- `build.beforeBuildCommand: "pnpm --filter frontend build && python scripts/build_sidecar.py"`.
 - `build.devUrl: "http://localhost:5173"`, `build.frontendDist: "../frontend/build"`.
 - `app.windows[0]`: 1280x800, title "Analecta", min 800x600.
 - `app.security.csp`: `"default-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* ipc: http://ipc.localhost; img-src 'self' asset: data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' asset:; script-src 'self'"`.
@@ -268,14 +268,14 @@ Incluir nota: GNOME requiere extensión `AppIndicator and KStatusNotifierItem Su
 ### Fase D — Frontend SvelteKit
 
 #### D1. Scaffolding + theming base
-**Comando:** `npm create svelte@latest frontend -- --template skeleton --types typescript`. Agregar deps: `markdown-it`, `markdown-it-task-lists`, `markdown-it-footnote`, `@codemirror/lang-markdown`, `@codemirror/state`, `@codemirror/view`, `@uiw/codemirror-theme-tokyo-night`, `@tauri-apps/api`, `@tauri-apps/plugin-shell` etc.
+**Comando:** `pnpm create svelte@latest frontend -- --template skeleton --types typescript`. Agregar deps: `markdown-it`, `markdown-it-task-lists`, `markdown-it-footnote`, `@codemirror/lang-markdown`, `@codemirror/state`, `@codemirror/view`, `@uiw/codemirror-theme-tokyo-night`, `@tauri-apps/api`, `@tauri-apps/plugin-shell` etc.
 **Archivos:** `svelte.config.js` con `@sveltejs/adapter-static` (Tauri necesita output estático). `frontend/src/lib/theme/palette.ts` con constantes Tokyo Night exportadas como CSS vars en `app.css`. `frontend/static/fonts/JetBrainsMono-*.ttf` bundleadas; `@font-face` en `app.css`.
-**Verificación:** `npm run build` produce `frontend/build/` estático con 0 errores TS.
+**Verificación:** `pnpm build` produce `frontend/build/` estático con 0 errores TS.
 
 #### D2. Bootstrap: esperar sidecar
 **Archivo:** `frontend/src/lib/stores/sidecar.ts`.
 **Cambios:** store `port = writable<number | null>(null)`. En `+layout.svelte` `onMount`, suscribirse a evento Tauri `sidecar-ready` con `listen('sidecar-ready', e => port.set(e.payload.port))`. Renderizar `<SidecarLoadingScreen />` mientras `port` es null. Si tras 10s sigue null, mostrar mensaje de error con stderr capturado.
-**Verificación:** levantar `npm run tauri dev`; primera pantalla muestra spinner ~200ms y luego carga la dashboard vacía.
+**Verificación:** levantar `pnpm tauri dev`; primera pantalla muestra spinner ~200ms y luego carga la dashboard vacía.
 
 #### D3. API client tipado
 **Archivo:** `frontend/src/lib/api/client.ts`.
@@ -367,17 +367,17 @@ Incluir nota: GNOME requiere extensión `AppIndicator and KStatusNotifierItem Su
 **Verificación:** primera ejecución compila; segunda termina en <1s con mensaje "cached".
 
 #### F3. Build local end-to-end
-**Comando:** `npm run tauri build` desde la raíz.
+**Comando:** `pnpm tauri build` desde la raíz.
 **Verificación:** produce `src-tauri/target/release/bundle/{deb,appimage,rpm}/`. Instalar el `.deb`: `sudo apt install ./Analecta_*.deb`. Lanzar `analecta`: arranca, sidecar levanta, dashboard carga.
 
 #### F4. CI: `release.yml`
 **Archivo:** `.github/workflows/release.yml`.
-**Cambios:** matriz inicial **sólo `ubuntu-22.04`** (Windows/macOS en fase posterior). Pasos: install system deps, setup mise, install backend deps con `uv`, install frontend deps con `npm ci`, run `python scripts/build_sidecar.py`, rename con target triple, `tauri-action@v1` con `--target x86_64-unknown-linux-gnu`. Trigger: tag `v*`. Output: GitHub Release draft con `.deb`/`.AppImage`/`.rpm`.
+**Cambios:** matriz inicial **sólo `ubuntu-22.04`** (Windows/macOS en fase posterior). Pasos: install system deps, setup mise, install backend deps con `uv`, install frontend deps con `pnpm install --frozen-lockfile`, run `python scripts/build_sidecar.py`, rename con target triple, `tauri-action@v1` con `--target x86_64-unknown-linux-gnu`. Trigger: tag `v*`. Output: GitHub Release draft con `.deb`/`.AppImage`/`.rpm`.
 **Verificación:** crear tag de prueba `v0.2.0-alpha.1` en branch; workflow pasa verde y publica draft.
 
 #### F5. CI: `ci.yml`
 **Archivo:** `.github/workflows/ci.yml`.
-**Cambios:** en cada PR: `uv run pytest backend/tests`, `npm run check` (svelte-check), `cargo check` en `src-tauri`. Sin build de bundle (lento).
+**Cambios:** en cada PR: `uv run pytest backend/tests`, `pnpm check` (svelte-check), `cargo check` en `src-tauri`. Sin build de bundle (lento).
 **Verificación:** PR de prueba dispara los 3 jobs en paralelo, todos verdes en <5min.
 
 #### F6. Tauri updater
@@ -392,7 +392,7 @@ Incluir nota: GNOME requiere extensión `AppIndicator and KStatusNotifierItem Su
 #### G1. Smoke E2E con Playwright (opcional, recomendado)
 **Archivo:** `frontend/e2e/smoke.spec.ts`.
 **Cambios:** Playwright en modo Tauri (`@tauri-apps/cli` expone WebDriver experimental). Test único: arrancar app, esperar dashboard, dispatch URL via `tauri-driver`, verificar entry visible.
-**Verificación:** `npm run e2e` pasa.
+**Verificación:** `pnpm e2e` pasa.
 
 #### G2. Eliminar `backend/src/analecta/ui/`
 **Acción:** borrar el directorio completo. Eliminar imports residuales en `__main__.py` (queda sólo el shim que llama a `server.py`). Eliminar `qasync`, `PySide6`, `pytest-qt` de `backend/pyproject.toml`. Borrar `backend/tests/test_ui_*.py`.

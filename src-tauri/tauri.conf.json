@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "identifier": "io.analecta.desktop",
   "build": {
+    "beforeDevCommand": "pnpm --filter frontend dev",
+    "beforeBuildCommand": "pnpm --filter frontend build && python scripts/build_sidecar.py",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../frontend/build"
   },
@@ -18,7 +20,7 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* ipc: http://ipc.localhost; img-src 'self' asset: data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' asset:; script-src 'self'",
       "assetProtocol": {
         "enable": true,
         "scope": ["**"]
@@ -28,6 +30,15 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": []
+    "icon": ["icons/icon.png"],
+    "externalBin": ["binaries/analecta-sidecar"],
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
   }
 }
