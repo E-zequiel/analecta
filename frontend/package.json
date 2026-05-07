@@ -10,6 +10,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "devDependencies": {
+    "@types/markdown-it": "^14",
     "@sveltejs/adapter-static": "^3",
     "@sveltejs/kit": "^2",
     "@sveltejs/vite-plugin-svelte": "^5",
@@ -23,6 +24,7 @@
     "@codemirror/state": "^6",
     "@codemirror/view": "^6",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-fs": "^2",
     "@tauri-apps/plugin-shell": "^2",
     "@uiw/codemirror-theme-tokyo-night": "^4",
     "markdown-it": "^14",
