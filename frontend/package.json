@@ -10,10 +10,10 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "devDependencies": {
-    "@types/markdown-it": "^14",
     "@sveltejs/adapter-static": "^3",
     "@sveltejs/kit": "^2",
     "@sveltejs/vite-plugin-svelte": "^5",
+    "@types/markdown-it": "^14",
     "svelte": "^5",
     "svelte-check": "^4",
     "typescript": "^5",
@@ -28,6 +28,7 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-fs": "^2",
+    "@tauri-apps/plugin-opener": "^2.5.4",
     "@tauri-apps/plugin-shell": "^2",
     "@uiw/codemirror-theme-tokyo-night": "^4",
     "markdown-it": "^14",
