@@ -311,6 +311,25 @@ Incluir nota: GNOME requiere extensión `AppIndicator and KStatusNotifierItem Su
 
 ### Fase E — Integraciones OS vía plugins Tauri
 
+#### E0. Dynamic fs scope — vault path restriction
+**Context:** `capabilities/default.json` currently grants `fs:allow-read-text-file` and `fs:allow-write-text-file` with scope `$HOME/**`. This is a temporary shortcut. The correct scope must be strictly `<vault_path>/**`, dynamic at runtime, and must survive vault relocation.
+
+**Constraints:**
+- Vault may live outside `$HOME` (e.g. secondary disk at `/mnt/` or `/media/`).
+- Root-domain paths must never be granted by default.
+- Scope must be exactly the chosen vault directory, nothing broader.
+- Scope must update when the user relocates the vault.
+
+**Archivos:** `src-tauri/src/sidecar.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/commands.rs` (new), `src-tauri/capabilities/default.json`, `backend/src/analecta/server.py`.
+
+**Cambios:**
+1. Sidecar emits `VAULT_PATH:/absolute/path` to stdout (after `LISTENING_ON_PORT` / `SIDECAR_READY`). `sidecar.rs` captures it, stores in `SidecarState` (or a dedicated `VaultState`).
+2. On capture, Rust calls `app.fs_scope().allow_directory(&vault_path, true)` to grant access strictly to that directory tree.
+3. New Rust command `update_vault_scope(new_path: String)` in `commands.rs`: revokes old scope (`deny_directory`), grants new scope (`allow_directory`). Frontend calls this after `PUT /api/v1/config` changes the vault path.
+4. `capabilities/default.json`: reduce static scope to a non-existent sentinel path so all real access comes from the runtime grant.
+
+**Verificación:** vault on secondary disk (`/mnt/data/vault/`) — read and write succeed; path outside vault (e.g. `$HOME/.ssh/`) — access denied; relocate vault via settings — new path accessible, old path denied.
+
 #### E1. Tray
 **Archivos:** `src-tauri/src/lib.rs` (extender), `src-tauri/Cargo.toml`.
 **Cambios:** `TrayIconBuilder` con menú: "Add URL from clipboard", "Open Analecta", "Start with system" (toggle), "Quit". Iconos PNG generados con `tauri icon`. Double-click → emit `open-window` al frontend (que llama `WebviewWindow::show()`).

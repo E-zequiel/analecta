@@ -20,6 +20,8 @@
     "vite": "^6"
   },
   "dependencies": {
+    "@babel/runtime": "^7",
+    "@codemirror/commands": "^6",
     "@codemirror/lang-markdown": "^6",
     "@codemirror/state": "^6",
     "@codemirror/view": "^6",
