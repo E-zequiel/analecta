@@ -6,6 +6,7 @@ use std::sync::Mutex;
 
 use sidecar::{SidecarPort, SidecarState};
 use tauri::{Emitter, Manager, WindowEvent};
+use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,6 +39,19 @@ pub fn run() {
         .setup(|app| {
             sidecar::spawn_sidecar(app.handle())?;
             tray::setup_tray(app.handle())?;
+
+            #[cfg(debug_assertions)]
+            app.deep_link().register("analecta")?;
+
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                for url in event.urls() {
+                    if url.scheme() == "analecta" {
+                        let _ = handle.emit("deep-link", url.to_string());
+                    }
+                }
+            });
+
             Ok(())
         })
         .on_window_event(|window, event| {
