@@ -23,7 +23,11 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![commands::update_vault_scope])
+        .invoke_handler(tauri::generate_handler![
+            commands::update_vault_scope,
+            commands::notify_success,
+            commands::notify_error,
+        ])
         .manage(SidecarState(Mutex::new(None)))
         .setup(|app| {
             sidecar::spawn_sidecar(app.handle())?;
