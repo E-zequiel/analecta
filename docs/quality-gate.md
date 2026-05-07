@@ -1,7 +1,7 @@
-# Quality Gate — Ruff + Basedpyright + pytest
+# Quality Gate — Ruff + Basedpyright + pytest + Clippy
 
 > Living document. Reflects active decisions on linting, type-checking, and testing.
-> Update whenever `backend/pyproject.toml` configuration changes.
+> Update whenever `backend/pyproject.toml` or `src-tauri/` configuration changes.
 
 ---
 
@@ -13,10 +13,13 @@
 
 Steps in order:
 
-1. `ruff format --check .` — formatting
-2. `ruff check .` — linting
-3. `basedpyright` — strict type-checking
-4. `pytest -m "not integration"` — unit tests
+1. `ruff format --check .` — Python formatting
+2. `ruff check .` — Python linting
+3. `basedpyright` — Python strict type-checking
+4. `pytest -m "not integration"` — Python unit tests
+5. `cargo fmt --check` — Rust formatting
+6. `cargo clippy -- -D warnings` — Rust linting (warnings treated as errors)
+7. `cargo test` — Rust unit tests
 
 The script fails on the first step that does not pass (`set -euo pipefail`). Every
 implementation block is considered complete **only after this script passes clean**.
@@ -169,3 +172,38 @@ Modules with intentionally low coverage:
 | `updater/` | ~99% | Deleted in G3; current tests cover non-Qt logic |
 | `__main__.py` | 0% | Replaced in G4 |
 | `config.py` | ~60% | `load_config` from file and `save_config` lack I/O tests |
+
+---
+
+## Rust (cargo fmt + clippy + test)
+
+### Formatting
+
+`cargo fmt --check` enforces the default `rustfmt` style. No custom `rustfmt.toml`
+is used — the defaults are idiomatic and sufficient.
+
+### Clippy
+
+`cargo clippy -- -D warnings` runs Clippy in strict mode: every warning is treated
+as a compile error. No per-crate `#![allow(...)]` suppressions are permitted except
+where a Clippy lint is demonstrably wrong for this codebase.
+
+### External binary stub
+
+`tauri-build` validates at compile time that every entry in `bundle.externalBin`
+(`tauri.conf.json`) exists on disk. The sidecar binary
+(`src-tauri/binaries/analecta-sidecar-<triple>`) is produced by F1/F2 (PyInstaller
++ `scripts/build_sidecar.py`) and is gitignored.
+
+`check.sh` creates a zero-byte stub at that path if the real binary is absent,
+using `rustc --print host-tuple` for the target triple — the same mechanism that
+`build_sidecar.py` uses for the rename. This ensures:
+
+- **Before F1**: the stub allows `cargo clippy` and `cargo test` to run.
+- **After F1**: `build_sidecar.py` overwrites the stub with the real binary.
+- **Repeated `check.sh` runs after F1**: the `if [[ ! -f ... ]]` guard is a no-op.
+
+### Tests
+
+`cargo test` runs with 0 Rust unit tests until the sidecar lifecycle logic (C4)
+is implemented. The gate still passes — `cargo test` exits 0 with an empty suite.
