@@ -1,0 +1,78 @@
+@font-face {
+	font-family: 'JetBrains Mono';
+	src: url('/fonts/JetBrainsMono-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'JetBrains Mono';
+	src: url('/fonts/JetBrainsMono-Italic.ttf') format('truetype');
+	font-weight: 400;
+	font-style: italic;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'JetBrains Mono';
+	src: url('/fonts/JetBrainsMono-Bold.ttf') format('truetype');
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'JetBrains Mono';
+	src: url('/fonts/JetBrainsMono-BoldItalic.ttf') format('truetype');
+	font-weight: 700;
+	font-style: italic;
+	font-display: swap;
+}
+
+/* Tokyo Night dark palette — tcmmichaelb139/obsidian-tokyonight */
+:root {
+	/* Backgrounds */
+	--bg: #1a1b26;
+	--bg-dark: #16161e;
+	--bg-dark2: #121218;
+	--bg-alt: #24283b;
+	--bg-highlight: #292e42;
+	/* Foregrounds */
+	--fg: #c0caf5;
+	--fg-dark: #a9b1d6;
+	--fg-muted: #565f89;
+	/* Accents */
+	--accent: #7aa2f7;
+	--accent-dark: #3d59a1;
+	--accent-warm: #ff9e64;
+	/* Syntax / status */
+	--cyan: #7dcfff;
+	--green: #9ece6a;
+	--yellow: #e0af68;
+	--magenta: #bb9af7;
+	--red: #ff757f;
+	--red-alt: #db4b4b;
+	--teal: #1abc9c;
+	/* Structure */
+	--border: #292e42;
+	--terminal: #414868;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+	background-color: var(--bg);
+	color: var(--fg);
+	font-family: 'JetBrains Mono', monospace;
+	font-size: 14px;
+	-webkit-font-smoothing: antialiased;
+}
