@@ -7,6 +7,7 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 pub struct SidecarState(pub Mutex<Option<CommandChild>>);
+pub struct SidecarPort(pub Mutex<Option<u16>>);
 
 #[derive(Serialize, Clone)]
 struct SidecarReadyPayload {
@@ -27,6 +28,7 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
                     log::info!("[sidecar stdout] {line}");
                     if let Some(port_str) = line.strip_prefix("LISTENING_ON_PORT:") {
                         if let Ok(port) = port_str.trim().parse::<u16>() {
+                            *handle.state::<SidecarPort>().0.lock().unwrap() = Some(port);
                             let _ = handle.emit("sidecar-ready", SidecarReadyPayload { port });
                         }
                     } else if let Some(path_str) = line.strip_prefix("VAULT_PATH:") {
