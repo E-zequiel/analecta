@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { listen } from '@tauri-apps/api/event';
-	import { entries as entriesApi, type Entry } from '$lib/api/client';
+	import { exists } from '@tauri-apps/plugin-fs';
+	import { entries as entriesApi, config as configApi, type Entry } from '$lib/api/client';
 	import { selectedTag } from '$lib/stores/ui';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
@@ -11,6 +13,7 @@
 	let searchQuery = $state('');
 	let entryList = $state<Entry[]>([]);
 	let loading = $state(false);
+	let checking = $state(true);
 
 	$effect(() => {
 		const params = {
@@ -39,6 +42,20 @@
 		};
 	});
 
+	onMount(async () => {
+		try {
+			const cfg = await configApi.get();
+			const vaultExists = await exists(cfg.vault_path);
+			if (!vaultExists) {
+				goto('/first-run');
+				return;
+			}
+		} catch {
+			// if check fails, stay on dashboard
+		}
+		checking = false;
+	});
+
 	onMount(() => {
 		const unlistenPromise = listen('entry_added', () => {
 			entriesApi
@@ -59,15 +76,17 @@
 	});
 </script>
 
-<div class="dashboard">
-	<div class="toolbar">
-		<SearchInput onSearch={(q) => (searchQuery = q)} />
-		<FilterBar active={filter} onChange={(f) => (filter = f)} />
+{#if !checking}
+	<div class="dashboard">
+		<div class="toolbar">
+			<SearchInput onSearch={(q) => (searchQuery = q)} />
+			<FilterBar active={filter} onChange={(f) => (filter = f)} />
+		</div>
+		<div class="list-wrap">
+			<EntryList entries={entryList} {loading} />
+		</div>
 	</div>
-	<div class="list-wrap">
-		<EntryList entries={entryList} {loading} />
-	</div>
-</div>
+{/if}
 
 <style>
 	.dashboard {
