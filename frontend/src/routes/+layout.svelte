@@ -25,6 +25,14 @@
 			timedOut = true;
 		}, 10_000);
 
+		// Sidecar may have started before the frontend mounted — poll once.
+		invoke<number | null>('get_sidecar_port').then((existingPort) => {
+			if (existingPort !== null) {
+				clearTimeout(timeout);
+				port.set(existingPort);
+			}
+		});
+
 		const unlistenSidecar = listen<{ port: number }>('sidecar-ready', (event) => {
 			clearTimeout(timeout);
 			port.set(event.payload.port);
