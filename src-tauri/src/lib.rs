@@ -1,5 +1,6 @@
 mod commands;
 mod sidecar;
+mod tray;
 
 use std::sync::Mutex;
 
@@ -26,6 +27,7 @@ pub fn run() {
         .manage(SidecarState(Mutex::new(None)))
         .setup(|app| {
             sidecar::spawn_sidecar(app.handle())?;
+            tray::setup_tray(app.handle())?;
             Ok(())
         })
         .on_window_event(|window, event| {
