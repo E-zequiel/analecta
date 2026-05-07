@@ -3,6 +3,7 @@ use tauri::{
     tray::{TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager,
 };
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_notification::NotificationExt;
 
@@ -42,7 +43,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 });
             }
             "open" => show_main_window(app),
-            "toggle-autostart" => { /* E9 */ }
+            "toggle-autostart" => toggle_autostart(app),
             "quit" => app.exit(0),
             _ => {}
         })
@@ -96,6 +97,31 @@ async fn add_url_from_clipboard(app: AppHandle) {
         Err(e) => {
             notify(&app, &format!("Request failed: {e}"));
         }
+    }
+}
+
+fn toggle_autostart(app: &AppHandle) {
+    let autolaunch = app.autolaunch();
+    match autolaunch.is_enabled() {
+        Ok(enabled) => {
+            let result = if enabled {
+                autolaunch.disable()
+            } else {
+                autolaunch.enable()
+            };
+            match result {
+                Ok(()) => {
+                    let msg = if enabled {
+                        "Autostart disabled."
+                    } else {
+                        "Autostart enabled."
+                    };
+                    notify(app, msg);
+                }
+                Err(e) => notify(app, &format!("Autostart error: {e}")),
+            }
+        }
+        Err(e) => notify(app, &format!("Autostart error: {e}")),
     }
 }
 
