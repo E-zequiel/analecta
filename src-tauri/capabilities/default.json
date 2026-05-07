@@ -17,6 +17,7 @@
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
     "updater:default",
-    { "identifier": "fs:allow-read-text-file", "allow": [{ "path": "$HOME/**" }] }
+    { "identifier": "fs:allow-read-text-file", "allow": [{ "path": "$HOME/**" }] },
+    { "identifier": "fs:allow-write-text-file", "allow": [{ "path": "$HOME/**" }] }
   ]
 }
