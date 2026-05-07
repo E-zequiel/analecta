@@ -4,7 +4,7 @@ mod tray;
 
 use std::sync::Mutex;
 
-use sidecar::SidecarState;
+use sidecar::{SidecarPort, SidecarState};
 use tauri::{Manager, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -29,6 +29,7 @@ pub fn run() {
             commands::notify_error,
         ])
         .manage(SidecarState(Mutex::new(None)))
+        .manage(SidecarPort(Mutex::new(None)))
         .setup(|app| {
             sidecar::spawn_sidecar(app.handle())?;
             tray::setup_tray(app.handle())?;

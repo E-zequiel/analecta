@@ -3,6 +3,10 @@ use tauri::{
     tray::{TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager,
 };
+use tauri_plugin_clipboard_manager::ClipboardExt;
+use tauri_plugin_notification::NotificationExt;
+
+use crate::sidecar::SidecarPort;
 
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(
@@ -31,7 +35,12 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             }
         })
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "add-url" => { /* E3 */ }
+            "add-url" => {
+                let handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    add_url_from_clipboard(handle).await;
+                });
+            }
             "open" => show_main_window(app),
             "toggle-autostart" => { /* E9 */ }
             "quit" => app.exit(0),
@@ -42,9 +51,66 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+async fn add_url_from_clipboard(app: AppHandle) {
+    let url = match app.clipboard().read_text() {
+        Ok(text) => text.trim().to_string(),
+        Err(e) => {
+            notify(&app, &format!("Could not read clipboard: {e}"));
+            return;
+        }
+    };
+
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        notify(&app, "Clipboard does not contain a valid URL.");
+        return;
+    }
+
+    let port = match *app.state::<SidecarPort>().0.lock().unwrap() {
+        Some(p) => p,
+        None => {
+            notify(&app, "Sidecar not ready — try again in a moment.");
+            return;
+        }
+    };
+
+    #[derive(serde::Serialize)]
+    struct ExtractBody {
+        url: String,
+    }
+
+    let client = reqwest::Client::new();
+    match client
+        .post(format!("http://localhost:{port}/api/v1/extract"))
+        .json(&ExtractBody { url })
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => {
+            notify(&app, "Entry saved.");
+        }
+        Ok(r) => {
+            let status = r.status();
+            let body = r.text().await.unwrap_or_default();
+            notify(&app, &format!("Extraction failed ({status}): {body}"));
+        }
+        Err(e) => {
+            notify(&app, &format!("Request failed: {e}"));
+        }
+    }
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+fn notify(app: &AppHandle, body: &str) {
+    let _ = app
+        .notification()
+        .builder()
+        .title("Analecta")
+        .body(body)
+        .show();
 }
