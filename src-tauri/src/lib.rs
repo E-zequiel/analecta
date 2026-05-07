@@ -5,7 +5,7 @@ mod tray;
 use std::sync::Mutex;
 
 use sidecar::{SidecarPort, SidecarState};
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -13,7 +13,12 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {}))
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            tray::show_main_window(app);
+            if let Some(url) = argv.iter().find(|a| a.starts_with("analecta://")) {
+                let _ = app.emit("deep-link", url.clone());
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())

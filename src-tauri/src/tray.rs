@@ -99,7 +99,7 @@ async fn add_url_from_clipboard(app: AppHandle) {
     }
 }
 
-fn show_main_window(app: &AppHandle) {
+pub fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.set_focus();
