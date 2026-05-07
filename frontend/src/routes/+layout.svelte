@@ -2,30 +2,68 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
+	import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 	import { port } from '$lib/stores/sidecar';
 	import { entryAddedTick } from '$lib/stores/sse';
+	import { pkm } from '$lib/api/client';
 	import SidecarLoadingScreen from '$lib/components/SidecarLoadingScreen.svelte';
 	import TagTree from '$lib/components/TagTree.svelte';
 
 	let { children } = $props();
 	let timedOut = $state(false);
+	let pendingDeepLink = $state<string | null>(null);
+
+	async function handleDeepLink(rawUrl: string) {
+		pendingDeepLink = rawUrl;
+	}
 
 	onMount(() => {
 		const timeout = setTimeout(() => {
 			timedOut = true;
 		}, 10_000);
 
-		const unlistenPromise = listen<{ port: number }>('sidecar-ready', (event) => {
+		const unlistenSidecar = listen<{ port: number }>('sidecar-ready', (event) => {
 			clearTimeout(timeout);
 			port.set(event.payload.port);
 		});
 
+		// "App not running" case: URL that launched the app
+		getCurrent().then((urls) => {
+			if (urls && urls.length > 0) handleDeepLink(urls[0]);
+		});
+
+		// "App not running" case: subsequent URLs while app is open via plugin
+		const unlistenDeepLink = onOpenUrl((urls) => {
+			if (urls.length > 0) handleDeepLink(urls[0]);
+		});
+
+		// "App already running" case: relayed via single-instance Rust emit
+		const unlistenRelay = listen<string>('deep-link', (event) => {
+			handleDeepLink(event.payload);
+		});
+
 		return () => {
 			clearTimeout(timeout);
-			unlistenPromise.then((unlisten) => unlisten());
+			unlistenSidecar.then((u) => u());
+			unlistenDeepLink.then((u) => u());
+			unlistenRelay.then((u) => u());
 		};
+	});
+
+	$effect(() => {
+		const p = $port;
+		const url = pendingDeepLink;
+		if (p === null || url === null) return;
+
+		pendingDeepLink = null;
+		pkm.parseUrl(url).then((result) => {
+			if (result.entry_id !== null) {
+				goto(`/viewer/${result.entry_id}`);
+			}
+		});
 	});
 
 	$effect(() => {
