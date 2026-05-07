@@ -46,6 +46,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.event_bus = EventBus()
     log.info("sidecar ready")
     print("SIDECAR_READY", flush=True)
+    print(f"VAULT_PATH:{config.vault_path}", flush=True)
     yield
     index.close()
     log.info("sidecar shut down")
