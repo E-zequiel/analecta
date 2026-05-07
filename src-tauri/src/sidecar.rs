@@ -2,6 +2,7 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_fs::FsExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
@@ -27,6 +28,14 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> 
                     if let Some(port_str) = line.strip_prefix("LISTENING_ON_PORT:") {
                         if let Ok(port) = port_str.trim().parse::<u16>() {
                             let _ = handle.emit("sidecar-ready", SidecarReadyPayload { port });
+                        }
+                    } else if let Some(path_str) = line.strip_prefix("VAULT_PATH:") {
+                        let path = path_str.trim();
+                        match handle.fs_scope().allow_directory(path, true) {
+                            Ok(()) => log::info!("[sidecar] fs scope granted for {path}"),
+                            Err(e) => {
+                                log::error!("[sidecar] failed to grant fs scope for {path}: {e}")
+                            }
                         }
                     }
                 }
