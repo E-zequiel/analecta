@@ -1,6 +1,13 @@
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 use tauri_plugin_fs::FsExt;
 use tauri_plugin_notification::NotificationExt;
+
+use crate::sidecar::SidecarPort;
+
+#[tauri::command]
+pub fn get_sidecar_port(port: State<SidecarPort>) -> Option<u16> {
+    *port.0.lock().unwrap()
+}
 
 #[tauri::command]
 pub fn update_vault_scope(app: AppHandle, vault_path: String) -> Result<(), String> {
