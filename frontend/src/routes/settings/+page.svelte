@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { invoke } from '@tauri-apps/api/core';
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
 	import { config as configApi, security } from '$lib/api/client';
 
@@ -9,6 +10,7 @@
 		update_channel: 'stable' as 'stable' | 'dev',
 		virustotal_enabled: false
 	});
+	let initialVaultPath = $state('');
 	let vtApiKey = $state('');
 	let vtKeyExists = $state(false);
 	let showDisclaimer = $state(false);
@@ -25,6 +27,7 @@
 				update_channel: cfg.update_channel,
 				virustotal_enabled: cfg.virustotal_enabled
 			};
+			initialVaultPath = cfg.vault_path;
 			vtKeyExists = keyStatus.exists;
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
@@ -60,6 +63,10 @@
 				update_channel: form.update_channel,
 				virustotal_enabled: form.virustotal_enabled
 			});
+			if (form.vault_path !== initialVaultPath) {
+				await invoke('update_vault_scope', { vaultPath: form.vault_path });
+				initialVaultPath = form.vault_path;
+			}
 			if (vtApiKey) {
 				await security.setKey(vtApiKey);
 				vtApiKey = '';

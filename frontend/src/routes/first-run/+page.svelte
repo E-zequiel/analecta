@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { invoke } from '@tauri-apps/api/core';
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
 	import { config as configApi } from '$lib/api/client';
 
@@ -18,6 +19,7 @@
 		error = '';
 		try {
 			await configApi.update({ vault_path: vaultPath });
+			await invoke('update_vault_scope', { vaultPath });
 			goto('/');
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
