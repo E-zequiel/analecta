@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities (C3 will populate permissions)",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
