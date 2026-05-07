@@ -2,8 +2,10 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
 	import { port } from '$lib/stores/sidecar';
+	import { entryAddedTick } from '$lib/stores/sse';
 	import SidecarLoadingScreen from '$lib/components/SidecarLoadingScreen.svelte';
 	import TagTree from '$lib/components/TagTree.svelte';
 
@@ -24,6 +26,26 @@
 			clearTimeout(timeout);
 			unlistenPromise.then((unlisten) => unlisten());
 		};
+	});
+
+	$effect(() => {
+		const p = $port;
+		if (p === null) return;
+
+		const source = new EventSource(`http://localhost:${p}/api/v1/system/events`);
+		source.addEventListener('message', async (ev) => {
+			try {
+				const data = JSON.parse(ev.data) as { type: string };
+				if (data.type === 'entry_added') {
+					entryAddedTick.update((n) => n + 1);
+					await invoke('notify_success', { title: 'Analecta', body: 'New entry saved.' });
+				}
+			} catch {
+				// ignore malformed events
+			}
+		});
+
+		return () => source.close();
 	});
 
 	const navItems = [
