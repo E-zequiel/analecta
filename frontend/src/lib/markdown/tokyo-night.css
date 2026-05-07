@@ -1,0 +1,176 @@
+/* Tokyo Night — markdown body styles */
+
+.markdown-body {
+	color: var(--fg);
+	line-height: 1.7;
+	font-size: 14px;
+	word-break: break-word;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+	color: var(--fg);
+	font-weight: 700;
+	line-height: 1.3;
+	margin: 1.5rem 0 0.75rem;
+}
+
+.markdown-body h1 { font-size: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+.markdown-body h2 { font-size: 1.25rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+.markdown-body h3 { font-size: 1.1rem; }
+.markdown-body h4 { font-size: 1rem; color: var(--fg-dark); }
+.markdown-body h5,
+.markdown-body h6 { font-size: 0.9rem; color: var(--fg-muted); }
+
+.markdown-body p {
+	margin: 0.75rem 0;
+}
+
+.markdown-body a {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+.markdown-body a:hover {
+	text-decoration: underline;
+	color: var(--cyan);
+}
+
+.markdown-body strong {
+	font-weight: 700;
+	color: var(--fg);
+}
+
+.markdown-body em {
+	font-style: italic;
+	color: var(--fg-dark);
+}
+
+.markdown-body code {
+	font-family: inherit;
+	font-size: 0.9em;
+	background: var(--bg-alt);
+	color: var(--cyan);
+	padding: 0.15em 0.4em;
+	border-radius: 3px;
+	border: 1px solid var(--border);
+}
+
+.markdown-body pre {
+	background: var(--bg-dark);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 1rem;
+	overflow-x: auto;
+	margin: 1rem 0;
+}
+
+.markdown-body pre code {
+	background: none;
+	border: none;
+	padding: 0;
+	color: var(--fg);
+	font-size: 13px;
+}
+
+.markdown-body blockquote {
+	margin: 1rem 0;
+	padding: 0.5rem 1rem;
+	border-left: 3px solid var(--accent-dark);
+	background: var(--bg-alt);
+	color: var(--fg-muted);
+	border-radius: 0 4px 4px 0;
+}
+
+.markdown-body blockquote p {
+	margin: 0;
+}
+
+.markdown-body hr {
+	border: none;
+	border-top: 1px solid var(--border);
+	margin: 1.5rem 0;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+	padding-left: 1.5rem;
+	margin: 0.75rem 0;
+}
+
+.markdown-body li {
+	margin: 0.25rem 0;
+}
+
+.markdown-body li > ul,
+.markdown-body li > ol {
+	margin: 0.25rem 0;
+}
+
+/* Task lists */
+.markdown-body .task-list-item {
+	list-style: none;
+	margin-left: -1.5rem;
+	padding-left: 1.5rem;
+}
+
+.markdown-body .task-list-item input[type='checkbox'] {
+	accent-color: var(--accent);
+	margin-right: 0.4rem;
+}
+
+/* Tables */
+.markdown-body table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 1rem 0;
+	font-size: 13px;
+}
+
+.markdown-body th {
+	background: var(--bg-alt);
+	color: var(--fg);
+	font-weight: 700;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid var(--border);
+	text-align: left;
+}
+
+.markdown-body td {
+	padding: 0.4rem 0.75rem;
+	border: 1px solid var(--border);
+	color: var(--fg-dark);
+}
+
+.markdown-body tr:nth-child(even) td {
+	background: var(--bg-alt);
+}
+
+/* Images */
+.markdown-body img {
+	max-width: 100%;
+	border-radius: 4px;
+	margin: 0.5rem 0;
+}
+
+/* Footnotes */
+.markdown-body .footnotes {
+	margin-top: 2rem;
+	padding-top: 1rem;
+	border-top: 1px solid var(--border);
+	font-size: 12px;
+	color: var(--fg-muted);
+}
+
+.markdown-body .footnote-ref a {
+	font-size: 11px;
+	vertical-align: super;
+}
+
+.markdown-body .footnote-backref {
+	font-size: 11px;
+}

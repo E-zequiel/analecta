@@ -19,6 +19,7 @@ tauri = { version = "2", features = ["protocol-asset"] }
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
 tauri-plugin-shell = "2"
+tauri-plugin-fs = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
