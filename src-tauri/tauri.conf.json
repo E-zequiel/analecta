@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Analecta",
+  "version": "0.1.0",
+  "identifier": "io.analecta.desktop",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../frontend/build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Analecta",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": []
+  }
+}
