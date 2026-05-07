@@ -5,6 +5,7 @@
 	import { listen } from '@tauri-apps/api/event';
 	import { port } from '$lib/stores/sidecar';
 	import SidecarLoadingScreen from '$lib/components/SidecarLoadingScreen.svelte';
+	import TagTree from '$lib/components/TagTree.svelte';
 
 	let { children } = $props();
 	let timedOut = $state(false);
@@ -49,7 +50,7 @@
 				{/each}
 			</nav>
 			<div class="tag-tree">
-				<!-- tag tree: D5 -->
+				<TagTree />
 			</div>
 		</aside>
 		<main>
