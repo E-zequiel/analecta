@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { listen } from '@tauri-apps/api/event';
 	import { tags as tagsApi, type Tag } from '$lib/api/client';
 	import { selectedTag } from '$lib/stores/ui';
+	import { entryAddedTick } from '$lib/stores/sse';
 
 	let tagList = $state<Tag[]>([]);
 
@@ -16,10 +16,15 @@
 
 	onMount(() => {
 		fetchTags();
-		const unlistenPromise = listen('entry_added', fetchTags);
-		return () => {
-			unlistenPromise.then((u) => u());
-		};
+	});
+
+	let prevTick = 0;
+	$effect(() => {
+		const tick = $entryAddedTick;
+		if (tick > prevTick) {
+			prevTick = tick;
+			fetchTags();
+		}
 	});
 
 	function select(name: string) {
