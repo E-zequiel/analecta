@@ -1,6 +1,21 @@
 {
   "identifier": "default",
-  "description": "Default capabilities (C3 will populate permissions)",
+  "description": "Default window capabilities",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "shell:allow-spawn",
+    "shell:allow-execute",
+    "dialog:allow-open",
+    "notification:default",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
+    "opener:allow-open-url",
+    "opener:allow-open-path",
+    "deep-link:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
+    "updater:default"
+  ]
 }
