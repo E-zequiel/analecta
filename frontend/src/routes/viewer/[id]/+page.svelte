@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { open } from '@tauri-apps/plugin-shell';
+	import { openUrl, openPath } from '@tauri-apps/plugin-opener';
 	import { readTextFile } from '@tauri-apps/plugin-fs';
 	import { entries as entriesApi, config as configApi, security, type Entry, type ScanResult } from '$lib/api/client';
 	import { createRenderer } from '$lib/markdown/renderer';
@@ -43,13 +43,13 @@
 
 	async function openInBrowser() {
 		if (!entry) return;
-		await open(entry.url);
+		await openUrl(entry.url);
 	}
 
 	async function openFiles() {
 		if (!entry) return;
 		const dir = entry.file_path.substring(0, entry.file_path.lastIndexOf('/'));
-		await open(dir);
+		await openPath(dir);
 	}
 
 	async function runScan() {
@@ -70,7 +70,7 @@
 		const link = (e.target as HTMLElement).closest('a');
 		if (link?.href && (link.href.startsWith('http://') || link.href.startsWith('https://'))) {
 			e.preventDefault();
-			open(link.href);
+			openUrl(link.href);
 		}
 	}
 </script>
