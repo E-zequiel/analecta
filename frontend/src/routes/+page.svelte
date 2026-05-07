@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { listen } from '@tauri-apps/api/event';
 	import { exists } from '@tauri-apps/plugin-fs';
 	import { entries as entriesApi, config as configApi, type Entry } from '$lib/api/client';
 	import { selectedTag } from '$lib/stores/ui';
+	import { entryAddedTick } from '$lib/stores/sse';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import EntryList from '$lib/components/EntryList.svelte';
@@ -56,23 +57,22 @@
 		checking = false;
 	});
 
-	onMount(() => {
-		const unlistenPromise = listen('entry_added', () => {
-			entriesApi
-				.list({
-					status: filter === 'all' ? undefined : filter,
-					tag: $selectedTag ?? undefined,
-					q: searchQuery || undefined
-				})
-				.then((data) => {
-					entryList = data;
-				})
-				.catch(() => {});
-		});
-
-		return () => {
-			unlistenPromise.then((u) => u());
-		};
+	let prevTick = 0;
+	$effect(() => {
+		const tick = $entryAddedTick;
+		if (tick <= prevTick) return;
+		prevTick = tick;
+		const params = untrack(() => ({
+			status: filter === 'all' ? undefined : filter,
+			tag: $selectedTag ?? undefined,
+			q: searchQuery || undefined
+		}));
+		entriesApi
+			.list(params)
+			.then((data) => {
+				entryList = data;
+			})
+			.catch(() => {});
 	});
 </script>
 
