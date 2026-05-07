@@ -26,6 +26,7 @@
     "@codemirror/state": "^6",
     "@codemirror/view": "^6",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-fs": "^2",
     "@tauri-apps/plugin-shell": "^2",
     "@uiw/codemirror-theme-tokyo-night": "^4",
