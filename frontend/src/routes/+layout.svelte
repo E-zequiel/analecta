@@ -6,15 +6,18 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
 	import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
+	import { check, type Update } from '@tauri-apps/plugin-updater';
 	import { port } from '$lib/stores/sidecar';
 	import { entryAddedTick } from '$lib/stores/sse';
 	import { pkm } from '$lib/api/client';
 	import SidecarLoadingScreen from '$lib/components/SidecarLoadingScreen.svelte';
 	import TagTree from '$lib/components/TagTree.svelte';
+	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 
 	let { children } = $props();
 	let timedOut = $state(false);
 	let pendingDeepLink = $state<string | null>(null);
+	let pendingUpdate = $state<Update | null>(null);
 
 	async function handleDeepLink(rawUrl: string) {
 		pendingDeepLink = rawUrl;
@@ -75,6 +78,13 @@
 	});
 
 	$effect(() => {
+		if ($port === null) return;
+		check().then((update) => {
+			if (update?.available) pendingUpdate = update;
+		}).catch(() => {});
+	});
+
+	$effect(() => {
 		const p = $port;
 		if (p === null) return;
 
@@ -107,6 +117,9 @@
 {#if $port === null}
 	<SidecarLoadingScreen {timedOut} />
 {:else}
+	{#if pendingUpdate}
+		<UpdateBanner update={pendingUpdate} />
+	{/if}
 	<div class="shell">
 		<aside class="sidebar">
 			<div class="logo">Analecta</div>
