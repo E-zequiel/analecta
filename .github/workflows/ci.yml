@@ -31,7 +31,7 @@ jobs:
         working-directory: backend
 
       - name: Run tests
-        run: mise exec -- uv run pytest tests -v -p no:qt -m "not integration"
+        run: mise exec -- uv run pytest tests -v -p no:pytest-qt -m "not integration"
         working-directory: backend
 
   check-frontend:
