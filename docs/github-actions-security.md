@@ -36,6 +36,7 @@ uses: actions/checkout@v4
 | `actions/checkout` | `v6.0.2` | `de0fac2e4500dabe0009e67214ff5f5447ce83dd` | 2026-05-08 |
 | `jdx/mise-action` | `v4.0.1` | `1648a7812b9aeae629881980618f079932869151` | 2026-05-08 |
 | `tauri-apps/tauri-action` | `action-v0.6.2` | `84b9d35b5fc46c1e45415bdb6144030364f7ebc5` | 2026-05-08 |
+| `bitwarden/sm-action` | `v3.0.0` | `27c0c9dcab679d7250dbab91227c85b49ffa5e0f` | 2026-05-08 |
 
 ### How to resolve a SHA for a new action or version
 
@@ -90,25 +91,27 @@ Both expressions resolve to the same auto-generated job token, but `${{ github.t
 | Secret | Source | Used by | Purpose |
 |--------|--------|---------|---------|
 | `github.token` | Auto (runner) | `tauri-action` | Create GitHub Release, upload assets |
-| `TAURI_SIGNING_PRIVATE_KEY` | GitHub secret | `tauri-action` | Sign release bundles (Tauri updater) |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | GitHub secret | `tauri-action` | Decrypt the signing key if passphrase-protected |
+| `BWS_ACCESS_TOKEN` | GitHub secret | `sm-action` | Read-only BSM machine account token |
+| `TAURI_SIGNING_PRIVATE_KEY` | BSM via `sm-action` | `tauri-action` | Sign release bundles (Tauri updater) |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | BSM via `sm-action` | `tauri-action` | Decrypt the signing key if passphrase-protected |
 
-All three values are injected only in the `env:` block of the `tauri-action` step. No other step in the workflow has access to them.
+`TAURI_SIGNING_PRIVATE_KEY` is **not** stored as a GitHub secret. It lives in Bitwarden Secrets Manager and is injected at runtime by `bitwarden/sm-action`. See `docs/bitwarden-secrets-manager.md` for the full secret management architecture.
 
-`github.token` auto-expires when the job ends. If somehow extracted mid-job, its remaining TTL is measured in seconds. `TAURI_SIGNING_PRIVATE_KEY` has no expiry — see rotation procedure below.
+`github.token` auto-expires when the job ends. `BWS_ACCESS_TOKEN` is low-blast-radius (read-only BSM access). `TAURI_SIGNING_PRIVATE_KEY` has no expiry — see rotation procedure below.
 
 ### Why `TAURI_SIGNING_PRIVATE_KEY` is the highest-risk secret
 
 - It signs every release bundle. A leaked key allows an attacker to publish malicious updates that the auto-updater will accept and install silently on users' machines.
-- Rotation requires re-generating the keypair and publishing a new `pubkey` in `tauri.conf.json` — which means existing installations can no longer auto-update until users manually reinstall.
-- **If this key is ever suspected to be compromised: rotate immediately and publish a forced manual update.**
+- Rotation requires re-generating the keypair and publishing a new `pubkey` in `tauri.conf.json` — existing installations cannot auto-update until users manually reinstall.
+- **If this key is ever suspected compromised: rotate immediately and publish a forced manual update.**
+- Storing it in BSM (not as a GitHub secret) reduces the attack surface: GitHub credential leaks do not expose it.
 
 ### Rotation procedure for `TAURI_SIGNING_PRIVATE_KEY`
 
-1. Generate a new keypair: `mise exec -- cargo tauri signer generate -w ~/.tauri/analecta.key`
-2. Update `plugins.updater.pubkey` in `src-tauri/tauri.conf.json` with the new public key.
-3. Remove the old `TAURI_SIGNING_PRIVATE_KEY` GitHub secret and add the new one.
-4. Tag and release a new version — this version is signed with the new key.
+1. Generate a new keypair without writing to disk: `mise exec -- cargo tauri signer generate` (no `-w` flag — keys printed to stdout only).
+2. Update the secret value in the **BSM Web App** (Web App only — local machine account is read-only).
+3. Update `plugins.updater.pubkey` in `src-tauri/tauri.conf.json` with the new public key.
+4. Tag and release a new version — signed with the new key.
 5. Users must manually install this version; the old auto-updater cannot verify the new signature.
 
 ---
