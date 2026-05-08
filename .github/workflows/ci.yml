@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Default: no permissions. Each job declares only what it needs.
+permissions: {}
+
+# Cancel in-progress runs for the same branch/PR when new commits are pushed.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-22.04
+    if: github.repository == 'E-zequiel/analecta'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151  # v4.0.1
+
+      - name: Install Python dependencies
+        run: mise exec -- uv sync --frozen
+        working-directory: backend
+
+      - name: Run tests
+        run: mise exec -- uv run pytest tests -v
+        working-directory: backend
+
+  check-frontend:
+    runs-on: ubuntu-22.04
+    if: github.repository == 'E-zequiel/analecta'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151  # v4.0.1
+
+      - name: Install frontend dependencies
+        run: mise exec -- pnpm install --frozen-lockfile
+
+      - name: Svelte type check
+        run: mise exec -- pnpm --filter frontend check
+
+  check-rust:
+    runs-on: ubuntu-22.04
+    if: github.repository == 'E-zequiel/analecta'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install system dependencies
+        run: bash scripts/system_deps.sh
+
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151  # v4.0.1
+
+      - name: Cargo check
+        run: mise exec -- cargo check
+        working-directory: src-tauri
