@@ -654,6 +654,14 @@ Dado que Tauri no soporta compilación cruzada (no se puede compilar el binario 
 
 El workflow debe compilar el sidecar Python **en cada plataforma**, porque PyInstaller genera binarios específicos de la plataforma. El `build_sidecar.py` debe ejecutarse en el runner de Linux, el de macOS y el de Windows respectivamente.
 
+> **Security notice:** The example below is a generic reference for the multi-platform
+> pattern. The workflow used in this project applies additional hardening controls
+> (SHA-pinned actions, `permissions: {}` at workflow level, repo guard, secret injection
+> via Bitwarden Secrets Manager instead of GitHub Secrets) that are not shown here to
+> keep the example readable. See [`docs/github-actions-security.md`](github-actions-security.md)
+> for the complete security policy and the actual workflow at
+> [`.github/workflows/release.yml`](../.github/workflows/release.yml).
+
 ### `release.yml` completo y funcional
 
 ```yaml

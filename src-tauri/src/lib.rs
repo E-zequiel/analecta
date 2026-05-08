@@ -28,7 +28,8 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_opener::init())
-        // tauri-plugin-updater requires plugins.updater config (pubkey + endpoints) — wired in F6
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_sidecar_port,
             commands::update_vault_scope,

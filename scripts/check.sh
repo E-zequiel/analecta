@@ -24,16 +24,15 @@ mise exec -- uv run pytest -m "not integration"
 # ── Rust shell ────────────────────────────────────────────────────────────────
 cd "$REPO_ROOT/src-tauri"
 
-# tauri-build validates externalBin existence at compile time; the real binary
-# is produced by F1/F2 (PyInstaller + build_sidecar.py). Create a zero-byte stub
-# so clippy/test can run without a full sidecar build. Uses the same host-tuple
-# logic as build_sidecar.py so the path always matches. The binaries/ dir is
-# gitignored, so the stub is never committed and is overwritten by F2 when built.
-TARGET_TRIPLE=$(mise exec -- rustc --print host-tuple)
-SIDECAR="$REPO_ROOT/src-tauri/binaries/analecta-sidecar-$TARGET_TRIPLE"
-if [[ ! -f "$SIDECAR" ]]; then
-    mkdir -p "$(dirname "$SIDECAR")"
-    touch "$SIDECAR"
+# tauri-build validates the resources glob `binaries/analecta-sidecar/**/*` at
+# compile time. The real onedir is produced by scripts/build_sidecar.py (F2).
+# If it hasn't been built yet, create a minimal placeholder so clippy/test can
+# run. The placeholder is never committed (binaries/ is gitignored) and is
+# ignored once the real onedir is present.
+SIDECAR_DIR="$REPO_ROOT/src-tauri/binaries/analecta-sidecar"
+if [[ ! -d "$SIDECAR_DIR" ]]; then
+    mkdir -p "$SIDECAR_DIR/_internal"
+    touch "$SIDECAR_DIR/_internal/placeholder"
 fi
 
 echo "==> cargo fmt --check"

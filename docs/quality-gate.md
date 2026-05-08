@@ -190,18 +190,25 @@ where a Clippy lint is demonstrably wrong for this codebase.
 
 ### External binary stub
 
-`tauri-build` validates at compile time that every entry in `bundle.externalBin`
-(`tauri.conf.json`) exists on disk. The sidecar binary
-(`src-tauri/binaries/analecta-sidecar-<triple>`) is produced by F1/F2 (PyInstaller
+`tauri-build` validates at compile time that the glob declared in `bundle.resources`
+(`tauri.conf.json`) matches at least one file. The sidecar onedir
+(`src-tauri/binaries/analecta-sidecar/`) is produced by F1/F2 (PyInstaller
 + `scripts/build_sidecar.py`) and is gitignored.
 
-`check.sh` creates a zero-byte stub at that path if the real binary is absent,
-using `rustc --print host-tuple` for the target triple — the same mechanism that
-`build_sidecar.py` uses for the rename. This ensures:
+`check.sh` creates a minimal placeholder directory if the real onedir is absent:
+
+```
+src-tauri/binaries/analecta-sidecar/
+└── _internal/
+    └── placeholder    (zero-byte file)
+```
+
+This satisfies the `binaries/analecta-sidecar/**/*` glob that `tauri-build` checks.
+No target triple is needed in the directory name — the glob covers the entire tree.
 
 - **Before F1**: the stub allows `cargo clippy` and `cargo test` to run.
-- **After F1**: `build_sidecar.py` overwrites the stub with the real binary.
-- **Repeated `check.sh` runs after F1**: the `if [[ ! -f ... ]]` guard is a no-op.
+- **After F1**: `build_sidecar.py` produces the real onedir; `check.sh` skips creation.
+- **Repeated `check.sh` runs after F1**: the `if [[ ! -d ... ]]` guard is a no-op.
 
 ### Tests
 
