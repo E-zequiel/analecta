@@ -68,7 +68,8 @@ src-tauri/gen/
 # ========================
 # PyInstaller build stage
 # ========================
-backend/.build/
+.build/
+backend/build/
 
 # ========================
 # SvelteKit
