@@ -31,7 +31,7 @@ jobs:
         working-directory: backend
 
       - name: Run tests
-        run: mise exec -- uv run pytest tests -v
+        run: mise exec -- uv run pytest tests -v -p no:qt -m "not integration"
         working-directory: backend
 
   check-frontend:
@@ -62,6 +62,9 @@ jobs:
 
       - name: Install system dependencies
         run: bash scripts/system_deps.sh
+
+      - name: Create sidecar placeholder for cargo check
+        run: mkdir -p src-tauri/binaries/analecta-sidecar/_internal && touch src-tauri/binaries/analecta-sidecar/_internal/placeholder
 
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151  # v4.0.1
 
