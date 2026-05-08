@@ -38,7 +38,7 @@
     "active": true,
     "targets": "all",
     "icon": ["icons/icon.png"],
-    "externalBin": ["binaries/analecta-sidecar"],
+    "resources": ["binaries/analecta-sidecar/**/*"],
     "linux": {
       "deb": {
         "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]

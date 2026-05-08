@@ -66,14 +66,10 @@ def main() -> None:
     inner_triple = out_dir / f"analecta-sidecar-{triple}"
     inner.rename(inner_triple)
 
-    # Write the entry-point wrapper Tauri uses as the sidecar binary.
-    # tauri-build copies this file to target/debug/, so $0 is unreliable;
-    # the absolute path keeps _internal/ resolvable from any working directory.
-    wrapper = BINARIES / f"analecta-sidecar-{triple}"
-    wrapper.write_text(
-        f'#!/usr/bin/env bash\nexec "{inner_triple}" "$@"\n'
-    )
-    wrapper.chmod(0o755)
+    # Clean up any leftover wrapper script from earlier build strategy.
+    old_wrapper = BINARIES / f"analecta-sidecar-{triple}"
+    if old_wrapper.exists() and not old_wrapper.is_dir():
+        old_wrapper.unlink()
 
     CACHE_FILE.parent.mkdir(exist_ok=True)
     CACHE_FILE.write_text(current)
