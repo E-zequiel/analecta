@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::Serialize;
@@ -5,6 +6,9 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_fs::FsExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
+
+// Injected by build.rs from Cargo's TARGET variable.
+const TARGET: &str = env!("TARGET");
 
 pub struct SidecarState(pub Mutex<Option<CommandChild>>);
 pub struct SidecarPort(pub Mutex<Option<u16>>);
@@ -14,8 +18,30 @@ struct SidecarReadyPayload {
     port: u16,
 }
 
+fn sidecar_binary(_app: &AppHandle) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let name = format!("analecta-sidecar-{TARGET}");
+
+    // In dev builds, use the onedir directly from the source tree.
+    #[cfg(debug_assertions)]
+    return Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("binaries/analecta-sidecar")
+        .join(&name));
+
+    // In release builds, the onedir is bundled as a resource.
+    // List-form resources preserve the full path from src-tauri/, so the
+    // onedir lands at resource_dir/binaries/analecta-sidecar/ with _internal/
+    // adjacent to the binary — exactly what PyInstaller's bootloader expects.
+    #[cfg(not(debug_assertions))]
+    Ok(_app
+        .path()
+        .resource_dir()?
+        .join("binaries/analecta-sidecar")
+        .join(name))
+}
+
 pub fn spawn_sidecar(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let (mut rx, child) = app.shell().sidecar("analecta-sidecar")?.spawn()?;
+    let binary = sidecar_binary(app)?;
+    let (mut rx, child) = app.shell().command(binary.to_str().unwrap()).spawn()?;
 
     *app.state::<SidecarState>().0.lock().unwrap() = Some(child);
 
