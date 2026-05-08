@@ -56,7 +56,7 @@ app = FastAPI(title="Analecta", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://tauri.localhost"],
+    allow_origins=["http://tauri.localhost", "tauri://localhost"],
     allow_origin_regex=r"http://localhost(:\d+)?",
     allow_methods=["*"],
     allow_headers=["*"],
