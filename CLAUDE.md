@@ -19,6 +19,7 @@ Architecture: Tauri shell (Rust) + Python sidecar (FastAPI) + SvelteKit frontend
 |-------|-----------|
 | Shell | **Tauri 2.0** (Rust + WebKitGTK) |
 | Frontend | **SvelteKit + TypeScript + Vite** |
+| Icons | **lucide-svelte** |
 | Markdown render | **markdown-it** (client-side) |
 | Editor | **CodeMirror 6** + `@uiw/codemirror-theme-tokyo-night` |
 | Backend sidecar | **Python 3.13 · FastAPI · uvicorn** |
@@ -58,9 +59,17 @@ analecta/
 ├── frontend/                       # SvelteKit
 │   ├── src/
 │   │   ├── lib/api/                # typed HTTP client
-│   │   ├── lib/stores/
+│   │   ├── lib/stores/             # sidecar, sse, ui (selectedTag, sidebarCollapsed, libraryOpen,
+│   │   │                           #   expandedSections, activeSection, searchOpen)
 │   │   ├── lib/markdown/           # markdown-it config
 │   │   ├── lib/components/
+│   │   │   ├── Sidebar.svelte      # Obsidian-style navigator (collapsible rail, expandable sections)
+│   │   │   ├── SearchDialog.svelte # modal search (Ctrl+K)
+│   │   │   ├── EntryList.svelte
+│   │   │   ├── MarkdownEditor.svelte
+│   │   │   ├── SidecarLoadingScreen.svelte
+│   │   │   ├── TagTree.svelte      # rendered inside Sidebar.svelte
+│   │   │   └── UpdateBanner.svelte
 │   │   └── routes/                 # +page.svelte, viewer/[id], editor/[id], settings, first-run
 │   ├── static/fonts/               # JetBrainsMono bundled
 │   └── package.json
@@ -114,8 +123,10 @@ analecta/
 
 ### Frontend rules
 
-- **Palette** (Tokyo Night): `bg=#1a1b26` · `fg=#c0caf5` · `accent=#7aa2f7`. CSS variables only.
-- **Font**: JetBrains Mono. Bundled in `frontend/static/fonts/`. `@font-face` in `app.css`.
+- **Palette** (Tokyo Night): `bg=#1a1b26` · `fg=#c0caf5` · `accent=#ff757f` (red). CSS variables only. Never hardcode hex — always use the CSS custom properties defined in `app.css`.
+- **Font**: JetBrains Mono. Bundled in `frontend/static/fonts/`. `@font-face` in `app.css`. Base font-size: **16.33px**.
+- **Icons**: `lucide-svelte`. Import by PascalCase name (`import { Settings, SquareLibrary } from 'lucide-svelte'`). Always use the named exports — do not import raw SVG. Verify icon names against `node_modules/lucide-svelte/dist/icons/index.d.ts`.
+- **Sidebar**: Obsidian-style file-explorer navigator. Collapsible (44px rail / 260px full, `Ctrl+B`). Sections: all, unread, read, favorite, recommend, Tags — each expandable with `ChevronRight`. Settings gear icon at bottom. Search opens via `ScanSearch` icon or `Ctrl+K`.
 - **Markdown render**: `markdown-it` + plugins, client-side. No round-trips to the sidecar.
 - **Editor**: CodeMirror 6 with `@uiw/codemirror-theme-tokyo-night`.
 - **Sidecar bootstrap**: never render content before `sidecar-ready` event is received.
@@ -124,7 +135,7 @@ analecta/
 ### Distribution
 
 - **Tauri bundle only**: `.deb`, `.rpm`, `.AppImage`. No PyPI, no `uv tool`.
-- Updates via `tauri-plugin-updater`. Private key stored as GitHub secret `TAURI_SIGNING_PRIVATE_KEY`.
+- Updates via `tauri-plugin-updater`. Signing key (`TAURI_SIGNING_PRIVATE_KEY`) stored in **Bitwarden Secrets Manager** — injected at CI runtime by `bitwarden/sm-action`. `BWS_ACCESS_TOKEN` is the only GitHub Secret in the repo.
 - CI release builds triggered by version tag (`v*`) via `.github/workflows/release.yml`.
 
 ### OS integration notes

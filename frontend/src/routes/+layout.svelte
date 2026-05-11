@@ -1,24 +1,46 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
 	import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
-	import { check, type Update } from '@tauri-apps/plugin-updater';
+	import type { Update } from '@tauri-apps/plugin-updater';
 	import { port } from '$lib/stores/sidecar';
 	import { entryAddedTick } from '$lib/stores/sse';
+	import { sidebarCollapsed, sidebarWidth, searchOpen } from '$lib/stores/ui';
 	import { pkm, config as configApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 	import SidecarLoadingScreen from '$lib/components/SidecarLoadingScreen.svelte';
-	import TagTree from '$lib/components/TagTree.svelte';
+	import Sidebar from '$lib/components/Sidebar.svelte';
+	import SearchDialog from '$lib/components/SearchDialog.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 
 	let { children } = $props();
 	let timedOut = $state(false);
 	let pendingDeepLink = $state<string | null>(null);
 	let pendingUpdate = $state<Update | null>(null);
+	let isResizing = $state(false);
+
+	function startResize(e: PointerEvent) {
+		if ($sidebarCollapsed) return;
+		e.preventDefault();
+		isResizing = true;
+		const startX = e.clientX;
+		const startWidth = $sidebarWidth;
+
+		function onMove(ev: PointerEvent) {
+			sidebarWidth.set(Math.max(160, Math.min(480, startWidth + ev.clientX - startX)));
+		}
+		function onUp() {
+			isResizing = false;
+			window.removeEventListener('pointermove', onMove);
+			window.removeEventListener('pointerup', onUp);
+		}
+		window.addEventListener('pointermove', onMove);
+		window.addEventListener('pointerup', onUp);
+	}
+
 
 	async function handleDeepLink(rawUrl: string) {
 		pendingDeepLink = rawUrl;
@@ -29,7 +51,6 @@
 			timedOut = true;
 		}, 10_000);
 
-		// Sidecar may have started before the frontend mounted — poll once.
 		invoke<number | null>('get_sidecar_port').then((existingPort) => {
 			if (existingPort !== null) {
 				clearTimeout(timeout);
@@ -42,26 +63,36 @@
 			port.set(event.payload.port);
 		});
 
-		// "App not running" case: URL that launched the app
 		getCurrent().then((urls) => {
 			if (urls && urls.length > 0) handleDeepLink(urls[0]);
 		});
 
-		// "App not running" case: subsequent URLs while app is open via plugin
 		const unlistenDeepLink = onOpenUrl((urls) => {
 			if (urls.length > 0) handleDeepLink(urls[0]);
 		});
 
-		// "App already running" case: relayed via single-instance Rust emit
 		const unlistenRelay = listen<string>('deep-link', (event) => {
 			handleDeepLink(event.payload);
 		});
+
+		function handleKey(e: KeyboardEvent) {
+			if (e.ctrlKey && e.key === 'b') {
+				sidebarCollapsed.update((v) => !v);
+				e.preventDefault();
+			}
+			if (e.ctrlKey && e.key === 'k') {
+				searchOpen.set(true);
+				e.preventDefault();
+			}
+		}
+		window.addEventListener('keydown', handleKey);
 
 		return () => {
 			clearTimeout(timeout);
 			unlistenSidecar.then((u) => u());
 			unlistenDeepLink.then((u) => u());
 			unlistenRelay.then((u) => u());
+			window.removeEventListener('keydown', handleKey);
 		};
 	});
 
@@ -80,16 +111,22 @@
 
 	$effect(() => {
 		if ($port === null) return;
-		check().then((update) => {
-			if (update?.available) pendingUpdate = update;
-		}).catch(() => {});
+		import('@tauri-apps/plugin-updater')
+			.then(({ check }) => check())
+			.then((update) => {
+				if (update?.available) pendingUpdate = update;
+			})
+			.catch(() => {});
 	});
 
 	$effect(() => {
 		if ($port === null) return;
-		configApi.get().then((cfg) => {
-			applyFont(cfg.font_variant, cfg.custom_font_path);
-		}).catch(() => {});
+		configApi
+			.get()
+			.then((cfg) => {
+				applyFont(cfg.font_variant, cfg.custom_font_path, cfg.font_size);
+			})
+			.catch(() => {});
 	});
 
 	$effect(() => {
@@ -111,15 +148,6 @@
 
 		return () => source.close();
 	});
-
-	const navItems = [
-		{ href: '/', label: 'Dashboard' },
-		{ href: '/settings', label: 'Settings' }
-	];
-
-	function isActive(href: string, pathname: string): boolean {
-		return href === '/' ? pathname === '/' : pathname.startsWith(href);
-	}
 </script>
 
 {#if $port === null}
@@ -128,24 +156,22 @@
 	{#if pendingUpdate}
 		<UpdateBanner update={pendingUpdate} />
 	{/if}
-	<div class="shell">
-		<aside class="sidebar">
-			<div class="logo">Analecta</div>
-			<nav>
-				{#each navItems as item}
-					<a href={item.href} class:active={isActive(item.href, $page.url.pathname)}>
-						{item.label}
-					</a>
-				{/each}
-			</nav>
-			<div class="tag-tree">
-				<TagTree />
-			</div>
-		</aside>
+	<div class="shell" class:resizing={isResizing}>
+		<Sidebar />
+		{#if !$sidebarCollapsed}
+			<div
+				class="resize-handle"
+				role="separator"
+				aria-orientation="vertical"
+				aria-label="Resize sidebar"
+				onpointerdown={startResize}
+			></div>
+		{/if}
 		<main>
 			{@render children()}
 		</main>
 	</div>
+	<SearchDialog />
 {/if}
 
 <style>
@@ -155,53 +181,24 @@
 		overflow: hidden;
 	}
 
-	.sidebar {
-		width: 260px;
+	.shell.resizing {
+		cursor: col-resize;
+		user-select: none;
+	}
+
+	.resize-handle {
+		width: 4px;
 		flex-shrink: 0;
-		background: var(--bg-dark);
-		border-right: 1px solid var(--border);
-		display: flex;
-		flex-direction: column;
-		overflow-y: auto;
+		background: transparent;
+		cursor: col-resize;
+		transition: background 0.15s;
+		outline: none;
 	}
 
-	.logo {
-		padding: 1.25rem 1rem;
-		font-weight: 700;
-		color: var(--fg);
-		letter-spacing: 0.02em;
-		border-bottom: 1px solid var(--border);
-	}
-
-	nav {
-		padding: 0.5rem 0;
-	}
-
-	nav a {
-		display: block;
-		padding: 0.5rem 1rem;
-		margin: 0.125rem 0.5rem;
-		color: var(--fg-muted);
-		text-decoration: none;
-		border-radius: 4px;
-		transition: color 0.15s, background 0.15s;
-	}
-
-	nav a:hover {
-		color: var(--fg);
-		background: var(--bg-highlight);
-	}
-
-	nav a.active {
-		color: var(--accent);
-		background: var(--bg-highlight);
-	}
-
-	.tag-tree {
-		flex: 1;
-		padding: 0.5rem 0;
-		border-top: 1px solid var(--border);
-		margin-top: 0.5rem;
+	.resize-handle:hover,
+	.shell.resizing .resize-handle {
+		background: var(--accent);
+		opacity: 0.45;
 	}
 
 	main {

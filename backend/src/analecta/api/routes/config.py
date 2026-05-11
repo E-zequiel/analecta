@@ -19,6 +19,7 @@ class ConfigOut(BaseModel):
     Attributes:
         vault_path: Absolute path to the vault directory.
         font_variant: Font selection (``regular``, ``nerd``, or ``custom``).
+        font_size: Base UI font size in pixels.
         custom_font_path: Path to user-supplied ``.ttf`` when variant is ``custom``.
         update_channel: Release channel (``stable`` or ``dev``).
         virustotal_enabled: Whether VirusTotal scanning is enabled.
@@ -26,6 +27,7 @@ class ConfigOut(BaseModel):
 
     vault_path: str
     font_variant: str
+    font_size: float
     custom_font_path: str | None
     update_channel: str
     virustotal_enabled: bool
@@ -37,6 +39,7 @@ class ConfigIn(BaseModel):
     Attributes:
         vault_path: New vault path string, if provided.
         font_variant: New font variant, if provided.
+        font_size: New base font size in pixels, if provided.
         custom_font_path: New custom font path; ``None`` clears it.
         update_channel: New update channel, if provided.
         virustotal_enabled: New VT toggle value, if provided.
@@ -44,6 +47,7 @@ class ConfigIn(BaseModel):
 
     vault_path: str | None = None
     font_variant: Literal["regular", "nerd", "custom"] | None = None
+    font_size: float | None = None
     custom_font_path: str | None = None
     update_channel: Literal["stable", "dev"] | None = None
     virustotal_enabled: bool | None = None
@@ -53,6 +57,7 @@ def _config_out(cfg: AppConfig) -> ConfigOut:
     return ConfigOut(
         vault_path=str(cfg.vault_path),
         font_variant=cfg.font_variant,
+        font_size=cfg.font_size,
         custom_font_path=cfg.custom_font_path,
         update_channel=cfg.update_channel,
         virustotal_enabled=cfg.virustotal_enabled,
@@ -98,6 +103,7 @@ async def update_config(
         font_variant=body.font_variant
         if body.font_variant is not None
         else config.font_variant,
+        font_size=body.font_size if body.font_size is not None else config.font_size,
         custom_font_path=body.custom_font_path
         if "custom_font_path" in body.model_fields_set
         else config.custom_font_path,
