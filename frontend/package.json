@@ -26,6 +26,7 @@
     "@codemirror/state": "^6",
     "@codemirror/view": "^6",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
     "@tauri-apps/plugin-deep-link": "^2.4.9",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-fs": "^2",
@@ -34,6 +35,7 @@
     "@tauri-apps/plugin-shell": "^2",
     "@tauri-apps/plugin-updater": "^2",
     "@uiw/codemirror-theme-tokyo-night": "^4",
+    "lucide-svelte": "^1.0.1",
     "markdown-it": "^14",
     "markdown-it-footnote": "^4",
     "markdown-it-task-lists": "^2"

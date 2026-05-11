@@ -26,6 +26,7 @@ class AppConfig(BaseModel):
 
     vault_path: Path = Path.home() / "Documents" / "Analecta"
     font_variant: Literal["regular", "nerd", "custom"] = "regular"
+    font_size: float = 16.33
     custom_font_path: str | None = None
     update_channel: Literal["stable", "dev"] = "stable"
     virustotal_enabled: bool = False
@@ -65,6 +66,7 @@ def save_config(config: AppConfig, config_path: Path = CONFIG_PATH) -> None:
     data: dict[str, object] = {
         "vault_path": str(config.vault_path),
         "font_variant": config.font_variant,
+        "font_size": config.font_size,
         "update_channel": config.update_channel,
         "virustotal_enabled": config.virustotal_enabled,
     }
