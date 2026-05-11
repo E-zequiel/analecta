@@ -15,7 +15,9 @@ class AppConfig(BaseModel):
 
     Attributes:
         vault_path: Root directory of the local vault.
-        font_variant: JetBrains Mono variant to load (``regular`` or ``nerd``).
+        font_variant: Font selection — ``regular``, ``nerd``, or ``custom``.
+        custom_font_path: Absolute path to a user-supplied ``.ttf`` file.
+            Only used when ``font_variant`` is ``custom``.
         update_channel: Release channel for the built-in updater.
         virustotal_enabled: Whether to offer VirusTotal URL scanning. Requires
             the user's API key to be present in the system keyring. Disabled
@@ -23,7 +25,8 @@ class AppConfig(BaseModel):
     """
 
     vault_path: Path = Path.home() / "Documents" / "Analecta"
-    font_variant: Literal["regular", "nerd"] = "regular"
+    font_variant: Literal["regular", "nerd", "custom"] = "regular"
+    custom_font_path: str | None = None
     update_channel: Literal["stable", "dev"] = "stable"
     virustotal_enabled: bool = False
 
@@ -59,12 +62,14 @@ def save_config(config: AppConfig, config_path: Path = CONFIG_PATH) -> None:
         config_path: Destination path. Defaults to the standard config file.
     """
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    data = {
+    data: dict[str, object] = {
         "vault_path": str(config.vault_path),
         "font_variant": config.font_variant,
         "update_channel": config.update_channel,
         "virustotal_enabled": config.virustotal_enabled,
     }
+    if config.custom_font_path is not None:
+        data["custom_font_path"] = config.custom_font_path
     with config_path.open("wb") as fh:
         tomli_w.dump(data, fh)
 

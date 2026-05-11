@@ -3,14 +3,16 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
 	import { config as configApi, security } from '$lib/api/client';
+	import { applyFont } from '$lib/font';
 
 	let form = $state({
 		vault_path: '',
-		font_variant: 'regular' as 'regular' | 'nerd',
+		font_variant: 'regular' as 'regular' | 'nerd' | 'custom',
 		update_channel: 'stable' as 'stable' | 'dev',
 		virustotal_enabled: false
 	});
 	let initialVaultPath = $state('');
+	let customFontPath = $state('');
 	let vtApiKey = $state('');
 	let vtKeyExists = $state(false);
 	let showDisclaimer = $state(false);
@@ -28,6 +30,7 @@
 				virustotal_enabled: cfg.virustotal_enabled
 			};
 			initialVaultPath = cfg.vault_path;
+			customFontPath = cfg.custom_font_path ?? '';
 			vtKeyExists = keyStatus.exists;
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
@@ -37,6 +40,14 @@
 	async function browseVault() {
 		const selected = await openDialog({ directory: true, multiple: false });
 		if (typeof selected === 'string') form.vault_path = selected;
+	}
+
+	async function browseFont() {
+		const selected = await openDialog({
+			multiple: false,
+			filters: [{ name: 'TrueType Font', extensions: ['ttf'] }]
+		});
+		if (typeof selected === 'string') customFontPath = selected;
 	}
 
 	function handleVtToggle() {
@@ -60,13 +71,11 @@
 			await configApi.update({
 				vault_path: form.vault_path,
 				font_variant: form.font_variant,
+				custom_font_path: customFontPath || null,
 				update_channel: form.update_channel,
 				virustotal_enabled: form.virustotal_enabled
 			});
-			const family = form.font_variant === 'nerd'
-				? "'JetBrains Mono NF', monospace"
-				: "'JetBrains Mono', monospace";
-			document.documentElement.style.setProperty('--font-family', family);
+			await applyFont(form.font_variant, customFontPath || null);
 			if (form.vault_path !== initialVaultPath) {
 				await invoke('update_vault_scope', { vaultPath: form.vault_path });
 				initialVaultPath = form.vault_path;
@@ -109,8 +118,24 @@
 			<select id="font-variant" bind:value={form.font_variant}>
 				<option value="regular">JetBrains Mono</option>
 				<option value="nerd">JetBrains Mono Nerd Font</option>
+				<option value="custom">Custom…</option>
 			</select>
 		</div>
+		{#if form.font_variant === 'custom'}
+			<div class="field">
+				<label for="custom-font-path">Font file (.ttf)</label>
+				<div class="path-row">
+					<input
+						id="custom-font-path"
+						type="text"
+						readonly
+						placeholder="No font selected"
+						value={customFontPath}
+					/>
+					<button onclick={browseFont}>Browse…</button>
+				</div>
+			</div>
+		{/if}
 	</section>
 
 	<section>
