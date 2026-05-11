@@ -31,7 +31,7 @@ jobs:
         working-directory: backend
 
       - name: Run tests
-        run: mise exec -- uv run pytest tests -v -m "not integration" --ignore=tests/test_updater.py
+        run: mise exec -- uv run pytest tests -v -m "not integration"
         working-directory: backend
 
   check-frontend:

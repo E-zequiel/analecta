@@ -50,9 +50,7 @@ analecta/
 │   │   ├── storage/
 │   │   ├── migrations/
 │   │   ├── pkm/
-│   │   ├── security/
-│   │   ├── ui/                     # PENDING DELETION — block G2
-│   │   └── updater/                # PENDING DELETION — block G3
+│   │   └── security/
 │   ├── tests/
 │   ├── pyproject.toml
 │   ├── backend.spec                # PyInstaller
@@ -270,5 +268,3 @@ Two-layer model:
 - Do not use `requests`. Do not use PyQt6. Do not use PostgreSQL.
 - Do not use `npm`. Use `pnpm` exclusively for all Node.js package management.
 - Do not read `~/.config/analecta/config.toml` or any file matching the global deny rules in `~/.claude/settings.json`.
-- `backend/src/analecta/ui/` is pending deletion (block G2). Do not add code there.
-- `backend/src/analecta/updater/` is pending deletion (block G3). Do not add code there.
