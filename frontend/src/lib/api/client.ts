@@ -49,14 +49,16 @@ export interface Tag {
 
 export interface AppConfig {
 	vault_path: string;
-	font_variant: 'regular' | 'nerd';
+	font_variant: 'regular' | 'nerd' | 'custom';
+	custom_font_path: string | null;
 	update_channel: 'stable' | 'dev';
 	virustotal_enabled: boolean;
 }
 
 export interface AppConfigUpdate {
 	vault_path?: string;
-	font_variant?: 'regular' | 'nerd';
+	font_variant?: 'regular' | 'nerd' | 'custom';
+	custom_font_path?: string | null;
 	update_channel?: 'stable' | 'dev';
 	virustotal_enabled?: boolean;
 }

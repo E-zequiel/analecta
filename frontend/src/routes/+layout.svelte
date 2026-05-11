@@ -10,6 +10,7 @@
 	import { port } from '$lib/stores/sidecar';
 	import { entryAddedTick } from '$lib/stores/sse';
 	import { pkm, config as configApi } from '$lib/api/client';
+	import { applyFont } from '$lib/font';
 	import SidecarLoadingScreen from '$lib/components/SidecarLoadingScreen.svelte';
 	import TagTree from '$lib/components/TagTree.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
@@ -87,10 +88,7 @@
 	$effect(() => {
 		if ($port === null) return;
 		configApi.get().then((cfg) => {
-			const family = cfg.font_variant === 'nerd'
-				? "'JetBrains Mono NF', monospace"
-				: "'JetBrains Mono', monospace";
-			document.documentElement.style.setProperty('--font-family', family);
+			applyFont(cfg.font_variant, cfg.custom_font_path);
 		}).catch(() => {});
 	});
 

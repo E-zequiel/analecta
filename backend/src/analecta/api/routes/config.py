@@ -18,13 +18,15 @@ class ConfigOut(BaseModel):
 
     Attributes:
         vault_path: Absolute path to the vault directory.
-        font_variant: JetBrains Mono variant (``regular`` or ``nerd``).
+        font_variant: Font selection (``regular``, ``nerd``, or ``custom``).
+        custom_font_path: Path to user-supplied ``.ttf`` when variant is ``custom``.
         update_channel: Release channel (``stable`` or ``dev``).
         virustotal_enabled: Whether VirusTotal scanning is enabled.
     """
 
     vault_path: str
     font_variant: str
+    custom_font_path: str | None
     update_channel: str
     virustotal_enabled: bool
 
@@ -35,12 +37,14 @@ class ConfigIn(BaseModel):
     Attributes:
         vault_path: New vault path string, if provided.
         font_variant: New font variant, if provided.
+        custom_font_path: New custom font path; ``None`` clears it.
         update_channel: New update channel, if provided.
         virustotal_enabled: New VT toggle value, if provided.
     """
 
     vault_path: str | None = None
-    font_variant: Literal["regular", "nerd"] | None = None
+    font_variant: Literal["regular", "nerd", "custom"] | None = None
+    custom_font_path: str | None = None
     update_channel: Literal["stable", "dev"] | None = None
     virustotal_enabled: bool | None = None
 
@@ -49,6 +53,7 @@ def _config_out(cfg: AppConfig) -> ConfigOut:
     return ConfigOut(
         vault_path=str(cfg.vault_path),
         font_variant=cfg.font_variant,
+        custom_font_path=cfg.custom_font_path,
         update_channel=cfg.update_channel,
         virustotal_enabled=cfg.virustotal_enabled,
     )
@@ -93,6 +98,9 @@ async def update_config(
         font_variant=body.font_variant
         if body.font_variant is not None
         else config.font_variant,
+        custom_font_path=body.custom_font_path
+        if "custom_font_path" in body.model_fields_set
+        else config.custom_font_path,
         update_channel=body.update_channel
         if body.update_channel is not None
         else config.update_channel,
