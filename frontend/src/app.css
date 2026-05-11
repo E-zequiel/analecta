@@ -89,6 +89,8 @@
 	/* Structure */
 	--border: #292e42;
 	--terminal: #414868;
+	/* Typography */
+	--font-family: 'JetBrains Mono', monospace;
 }
 
 *,
@@ -104,7 +106,7 @@ body {
 	height: 100%;
 	background-color: var(--bg);
 	color: var(--fg);
-	font-family: 'JetBrains Mono', monospace;
+	font-family: var(--font-family);
 	font-size: 14px;
 	-webkit-font-smoothing: antialiased;
 }
