@@ -63,6 +63,10 @@
 				update_channel: form.update_channel,
 				virustotal_enabled: form.virustotal_enabled
 			});
+			const family = form.font_variant === 'nerd'
+				? "'JetBrains Mono NF', monospace"
+				: "'JetBrains Mono', monospace";
+			document.documentElement.style.setProperty('--font-family', family);
 			if (form.vault_path !== initialVaultPath) {
 				await invoke('update_vault_scope', { vaultPath: form.vault_path });
 				initialVaultPath = form.vault_path;

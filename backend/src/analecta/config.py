@@ -7,7 +7,7 @@ import tomli_w
 from pydantic import BaseModel, field_validator
 
 CONFIG_PATH = Path.home() / ".config" / "analecta" / "config.toml"
-_LOG_PATH = Path.home() / ".local" / "share" / "analecta" / "analecta.log"
+_LOG_PATH = Path.home() / ".local" / "share" / "analecta" / "analecta-sidecar.log"
 
 
 class AppConfig(BaseModel):
@@ -81,10 +81,9 @@ def setup_logging(dev: bool = False) -> None:
     root = logging.getLogger()
     root.setLevel(log_level)
 
-    if dev:
-        sh = logging.StreamHandler()
-        sh.setFormatter(fmt)
-        root.addHandler(sh)
+    sh = logging.StreamHandler()
+    sh.setFormatter(fmt)
+    root.addHandler(sh)
 
     _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     fh = logging.FileHandler(_LOG_PATH)
