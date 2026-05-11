@@ -17,7 +17,7 @@
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
     "updater:default",
-    "process:allow-relaunch",
+    "process:allow-restart",
     { "identifier": "fs:allow-read-text-file", "allow": [{ "path": "/nonexistent/analecta-sentinel" }] },
     { "identifier": "fs:allow-write-text-file", "allow": [{ "path": "/nonexistent/analecta-sentinel" }] },
     { "identifier": "fs:allow-exists", "allow": [{ "path": "/nonexistent/analecta-sentinel" }] }
