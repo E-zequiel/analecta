@@ -1,0 +1,60 @@
+name: Dependency Update
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Every Monday at 06:00 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  update:
+    name: Check and update dependencies
+    runs-on: ubuntu-22.04
+    if: github.repository == 'E-zequiel/analecta'
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151  # v4.0.1
+
+      - name: Install Python dependencies
+        run: mise exec -- uv sync --frozen
+        working-directory: backend
+
+      - name: Install Node dependencies
+        run: mise exec -- pnpm install --frozen-lockfile
+
+      - name: Run age-gated dependency update
+        run: mise exec -- python scripts/deps_update.py --pr-body-file /tmp/pr-body.md
+
+      - name: Check for lock file changes
+        id: changes
+        run: |
+          git diff --quiet -- backend/uv.lock pnpm-lock.yaml src-tauri/Cargo.lock \
+            && echo "changed=false" >> "$GITHUB_OUTPUT" \
+            || echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Nothing to update
+        if: steps.changes.outputs.changed == 'false'
+        run: echo "All dependencies are up to date or within cooldown."
+
+      - name: Commit and open PR
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="deps-update/$(date -u +%Y-%m-%d)"
+          git checkout -b "$BRANCH"
+          git add backend/uv.lock pnpm-lock.yaml src-tauri/Cargo.lock
+          git commit -m "chore(deps): weekly dependency update $(date -u +%Y-%m-%d)"
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "chore(deps): dependency update $(date -u +%Y-%m-%d)" \
+            --body-file /tmp/pr-body.md \
+            --base main
+        env:
+          GH_TOKEN: ${{ github.token }}
