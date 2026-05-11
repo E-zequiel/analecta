@@ -72,7 +72,11 @@ jobs:
       contents: write  # Minimum needed to create a GitHub Release
 ```
 
-`contents: write` is required because `tauri-apps/tauri-action` calls the GitHub Releases API to create the release and upload `.deb`, `.AppImage`, and `.rpm` assets. No other permission (`packages`, `id-token`, `pull-requests`, etc.) is granted.
+`contents: write` is required because `tauri-apps/tauri-action` calls the GitHub Releases API to create the release and upload `.deb`, `.AppImage`, and `.rpm` assets.
+
+`pull-requests: write` is required in `deps-update.yml` so that `gh pr create` (run with `github.token`) can open a PR for the weekly dependency update branch. This permission is declared at the job level only for that job; the release job does not hold it.
+
+No other permission (`packages`, `id-token`, etc.) is granted to any job.
 
 ### Known platform limitation
 
@@ -152,11 +156,67 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 
 ---
 
+## Control 7: Age-Gated Dependency Updates
+
+`.github/workflows/deps-update.yml` runs on a weekly schedule (Mondays 06:00 UTC) and via `workflow_dispatch` (repo write-access users only). It updates Python, Node, and Rust lock files, but applies a **cooldown gate** before touching any package:
+
+1. Detect outdated packages via `uv`, `pnpm outdated`, and `cargo update --dry-run`.
+2. Query the upstream registry for the new version's release date (PyPI JSON API, npm registry `time` map, crates.io API).
+3. **Skip** any package released fewer than 3 days ago — this prevents "day-zero supply chain" attacks where a malicious release is injected before the community has time to detect and report it.
+4. Apply updates selectively via `uv lock --upgrade-package`, `pnpm update --filter`, and `cargo update --precise`.
+5. Open a pull request summarising what was updated and what was held back (with eligibility dates).
+
+**Bypass via `workflow_dispatch`:** The `cooldown` input (default `3`) can be set to `0` to bypass the gate. `workflow_dispatch` requires repository write access, so this bypass is not available to external contributors.
+
+**Provenance note:** Lock file hashes provide **integrity** (package content matches the recorded hash). Full **SLSA provenance attestation** (where/how the package was built) is not yet implemented — ecosystem-wide support for Python, Node, and Rust remains immature. This is a known gap, not an oversight.
+
+---
+
+## Repository-Level Settings
+
+These settings are configured in GitHub → Settings → Actions → General and complement the workflow-level controls. They are not visible in workflow files but are part of the security posture.
+
+### Actions permissions allowlist (configured 2026-05-08)
+
+- **Mode:** "Allow E-zequiel, and select non-E-zequiel, actions"
+- Allow actions created by GitHub: ✅ (covers `actions/*`)
+- Allow actions by Marketplace verified creators: ❌ (too broad)
+- **Explicit allowlist:** `jdx/mise-action@*`, `bitwarden/sm-action@*`, `tauri-apps/tauri-action@*`
+- Require actions to be pinned to a full-length commit SHA: ✅ (enforced as a repo-level backstop)
+
+Any action not in this list — even if added to a workflow file — cannot run. Update the allowlist when adding a new external action, then add it to the inventory table in Control 1.
+
+### Workflow permissions (configured 2026-05-11)
+
+- **Default token permission:** "Read repository contents and packages permissions" (read-only; `GITHUB_TOKEN` has no write access unless a job explicitly declares it)
+- **Allow GitHub Actions to create and approve pull requests:** ✅ (required for `deps-update.yml` to run `gh pr create` with `github.token`)
+
+This is consistent with the `permissions: {}` / per-job grant pattern. The read-only default means a workflow author who forgets to declare permissions gets the safe default, not accidental write access.
+
+### Fork pull request workflows (action required when repo goes public)
+
+When the repository is made public, the **"Fork pull request workflows"** section becomes visible under Actions → General. Set it to **"Require approval for first-time contributors"**. This prevents external fork PRs from triggering CI without prior review, blocking CI credit abuse and potential secret exfiltration from untrusted contributors.
+
+---
+
 ## Maintenance Checklist
 
-When Dependabot opens a SHA-update PR:
+### When Dependabot opens a SHA-update PR
 
 1. **Verify the new tag**: check the action's release notes for breaking changes or security advisories.
 2. **Check the SHA independently**: compare the PR's new SHA against `https://api.github.com/repos/{owner}/{repo}/git/ref/tags/{new-tag}`.
 3. **Review the diff**: Dependabot shows only the SHA change in the workflow file — also read the action's own diff for that version range.
 4. **Merge only if clean**: do not auto-merge action updates that touch steps with access to `TAURI_SIGNING_PRIVATE_KEY`.
+5. **Update the inventory table** in Control 1 with the new SHA and verification date.
+
+### When adding a new external action
+
+1. Resolve the immutable SHA (see Control 1 for the `curl` procedure).
+2. Add the action to the **Actions permissions allowlist** in GitHub Settings before adding it to the workflow file.
+3. Add it to the inventory table in Control 1.
+
+### When the `deps-update.yml` weekly PR lands
+
+1. Review the PR body — it lists every package updated and every package held back with its eligibility date.
+2. Run `./scripts/check.sh` locally against the updated lock files before merging.
+3. If a package was skipped due to cooldown and you need it urgently, re-run the workflow via `workflow_dispatch` with `cooldown` set to `0`.
