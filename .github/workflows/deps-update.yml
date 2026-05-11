@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '0 6 * * 1'  # Every Monday at 06:00 UTC
   workflow_dispatch:
+    inputs:
+      cooldown:
+        description: 'Release cooldown in days (0 to bypass)'
+        default: '3'
+        type: number
 
 permissions: {}
 
@@ -29,7 +34,9 @@ jobs:
         run: mise exec -- pnpm install --frozen-lockfile
 
       - name: Run age-gated dependency update
-        run: mise exec -- python scripts/deps_update.py --pr-body-file /tmp/pr-body.md
+        run: |
+          COOLDOWN="${{ github.event.inputs.cooldown || '3' }}"
+          mise exec -- python scripts/deps_update.py --cooldown "$COOLDOWN" --pr-body-file /tmp/pr-body.md
 
       - name: Check for lock file changes
         id: changes
