@@ -8,6 +8,7 @@
 	let form = $state({
 		vault_path: '',
 		font_variant: 'regular' as 'regular' | 'nerd' | 'custom',
+		font_size: 16.33,
 		update_channel: 'stable' as 'stable' | 'dev',
 		virustotal_enabled: false
 	});
@@ -26,6 +27,7 @@
 			form = {
 				vault_path: cfg.vault_path,
 				font_variant: cfg.font_variant,
+				font_size: cfg.font_size,
 				update_channel: cfg.update_channel,
 				virustotal_enabled: cfg.virustotal_enabled
 			};
@@ -71,11 +73,12 @@
 			await configApi.update({
 				vault_path: form.vault_path,
 				font_variant: form.font_variant,
+				font_size: form.font_size,
 				custom_font_path: customFontPath || null,
 				update_channel: form.update_channel,
 				virustotal_enabled: form.virustotal_enabled
 			});
-			await applyFont(form.font_variant, customFontPath || null);
+			await applyFont(form.font_variant, customFontPath || null, form.font_size);
 			if (form.vault_path !== initialVaultPath) {
 				await invoke('update_vault_scope', { vaultPath: form.vault_path });
 				initialVaultPath = form.vault_path;
@@ -120,6 +123,21 @@
 				<option value="nerd">JetBrains Mono Nerd Font</option>
 				<option value="custom">Custom…</option>
 			</select>
+		</div>
+		<div class="field">
+			<label for="font-size">Base font size: {form.font_size} px</label>
+			<div class="range-row">
+				<span class="range-min">10</span>
+				<input
+					id="font-size"
+					type="range"
+					min="10"
+					max="24"
+					step="0.5"
+					bind:value={form.font_size}
+				/>
+				<span class="range-max">24</span>
+			</div>
 		</div>
 		{#if form.font_variant === 'custom'}
 			<div class="field">
@@ -189,11 +207,22 @@
 
 <!-- VirusTotal disclaimer modal -->
 {#if showDisclaimer}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div class="modal-backdrop" onclick={() => (showDisclaimer = false)}>
-		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-		<div class="modal" onclick={(e) => e.stopPropagation()}>
-			<h3>VirusTotal — Privacy Notice</h3>
+	<div
+		class="modal-backdrop"
+		role="presentation"
+		onclick={() => (showDisclaimer = false)}
+		onkeydown={(e) => { if (e.key === 'Escape') showDisclaimer = false; }}
+	>
+		<div
+			class="modal"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="vt-disclaimer-title"
+			tabindex="-1"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
+		>
+			<h3 id="vt-disclaimer-title">VirusTotal — Privacy Notice</h3>
 			<ul>
 				<li>Every URL you scan is <strong>submitted to VirusTotal and indexed publicly</strong> in their database.</li>
 				<li>The Public API is <strong>non-commercial only</strong>. Analecta must remain free and open-source.</li>
@@ -274,6 +303,27 @@
 
 	.path-row input {
 		flex: 1;
+	}
+
+	.range-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.range-row input[type='range'] {
+		flex: 1;
+		padding: 0;
+		border: none;
+		background: none;
+		accent-color: var(--accent);
+	}
+
+	.range-min,
+	.range-max {
+		font-size: 11px;
+		color: var(--fg-muted);
+		flex-shrink: 0;
 	}
 
 	.path-row button,

@@ -1,7 +1,7 @@
 <script lang="ts">
 	let { active, onChange }: { active: string; onChange: (status: string) => void } = $props();
 
-	const filters = ['all', 'unread', 'read', 'favorite', 'recommend', 'deleted'];
+	const filters = ['all', 'unread', 'read', 'favorite', 'recommend'];
 </script>
 
 <div class="filter-bar">

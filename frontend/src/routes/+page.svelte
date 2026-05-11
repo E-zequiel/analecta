@@ -4,24 +4,19 @@
 	import { goto } from '$app/navigation';
 	import { exists } from '@tauri-apps/plugin-fs';
 	import { entries as entriesApi, config as configApi, type Entry } from '$lib/api/client';
-	import { selectedTag } from '$lib/stores/ui';
+	import { activeSection, selectedTag } from '$lib/stores/ui';
 	import { entryAddedTick } from '$lib/stores/sse';
-	import SearchInput from '$lib/components/SearchInput.svelte';
-	import FilterBar from '$lib/components/FilterBar.svelte';
 	import EntryList from '$lib/components/EntryList.svelte';
 
-	let filter = $state('all');
-	let searchQuery = $state('');
 	let entryList = $state<Entry[]>([]);
 	let loading = $state(false);
 	let checking = $state(true);
 
 	$effect(() => {
-		const params = {
-			status: filter === 'all' ? undefined : filter,
-			tag: $selectedTag ?? undefined,
-			q: searchQuery || undefined
-		};
+		const status = $activeSection === 'all' ? undefined : $activeSection;
+		const tag = $selectedTag ?? undefined;
+
+		const params = { status, tag };
 
 		let cancelled = false;
 		loading = true;
@@ -62,13 +57,10 @@
 		const tick = $entryAddedTick;
 		if (tick <= prevTick) return;
 		prevTick = tick;
-		const params = untrack(() => ({
-			status: filter === 'all' ? undefined : filter,
-			tag: $selectedTag ?? undefined,
-			q: searchQuery || undefined
-		}));
+		const status = untrack(() => ($activeSection === 'all' ? undefined : $activeSection));
+		const tag = untrack(() => $selectedTag ?? undefined);
 		entriesApi
-			.list(params)
+			.list({ status, tag })
 			.then((data) => {
 				entryList = data;
 			})
@@ -78,10 +70,6 @@
 
 {#if !checking}
 	<div class="dashboard">
-		<div class="toolbar">
-			<SearchInput onSearch={(q) => (searchQuery = q)} />
-			<FilterBar active={filter} onChange={(f) => (filter = f)} />
-		</div>
 		<div class="list-wrap">
 			<EntryList entries={entryList} {loading} />
 		</div>
@@ -93,15 +81,6 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-	}
-
-	.toolbar {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		padding: 0.75rem 1rem;
-		border-bottom: 1px solid var(--border);
-		background: var(--bg);
 	}
 
 	.list-wrap {

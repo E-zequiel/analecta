@@ -2,12 +2,17 @@
 # PyInstaller spec for the Analecta sidecar (FastAPI + uvicorn, onedir mode).
 # Build: cd backend && mise exec -- uv run pyinstaller backend.spec --distpath ../src-tauri/binaries
 
+from PyInstaller.utils.hooks import collect_data_files  # noqa: E402
+
 a = Analysis(
     ['src/analecta/__main__.py'],
     pathex=['src'],
     binaries=[],
     datas=[
         ('src/analecta/migrations/*.sql', 'analecta/migrations'),
+        # trafilatura reads settings.cfg at import time via Path(__file__).parent;
+        # without this, configparser raises NoOptionError on min_extracted_size.
+        *collect_data_files('trafilatura'),
     ],
     hiddenimports=[
         # Dynamic loaders not reachable by static analysis

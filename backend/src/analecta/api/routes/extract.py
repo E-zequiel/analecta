@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import sqlite3
 from datetime import UTC, datetime
 
@@ -14,6 +15,7 @@ from analecta.markdown.converter import MarkdownConverter
 from analecta.storage.index import EntryRecord, VaultIndex
 from analecta.storage.vault import VaultManager
 
+log = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -51,45 +53,59 @@ async def extract_url(
     Raises:
         HTTPException: 422 if extraction fails or the source is unsupported.
         HTTPException: 409 if the URL already exists in the vault.
+        HTTPException: 500 if an unexpected error occurs anywhere in the pipeline.
     """
-    await asyncio.to_thread(vault.ensure_dirs)
-
-    created_dt = datetime.now(tz=UTC)
-    created_at = created_dt.isoformat()
-
     try:
-        content = await extract(body.url)
-    except NotImplementedError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except ExtractionError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        await asyncio.to_thread(vault.ensure_dirs)
 
-    page_path = vault.page_path(content.title, created_dt)
-    slug = page_path.stem
-    content.html = await AssetDownloader().process(content.html, slug, vault.vault_path)
+        created_dt = datetime.now(tz=UTC)
+        created_at = created_dt.isoformat()
 
-    markdown = MarkdownConverter().convert(content, created_at)
-    file_path = await asyncio.to_thread(
-        vault.write_page, markdown, content.title, created_dt
-    )
+        try:
+            content = await extract(body.url)
+        except NotImplementedError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except ExtractionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    entry = EntryRecord(
-        title=content.title,
-        url=body.url,
-        file_path=str(file_path),
-        source_type=content.source_type,
-        created_at=created_at,
-        updated_at=created_at,
-    )
+        page_path = vault.page_path(content.title, created_dt)
+        slug = page_path.stem
+        content.html = await AssetDownloader().process(
+            content.html, slug, vault.vault_path
+        )
 
-    try:
-        entry_id = await asyncio.to_thread(index.add_entry, entry)
-    except sqlite3.IntegrityError:
-        raise HTTPException(status_code=409, detail="URL already in vault") from None
+        markdown = MarkdownConverter().convert(content, created_at)
+        file_path = await asyncio.to_thread(
+            vault.write_page, markdown, content.title, created_dt
+        )
 
-    await asyncio.to_thread(index.update_fts_content, entry_id, content.title, markdown)
-    event_bus.put_nowait({"type": "entry_added", "id": entry_id})
+        entry = EntryRecord(
+            title=content.title,
+            url=body.url,
+            file_path=str(file_path),
+            source_type=content.source_type,
+            created_at=created_at,
+            updated_at=created_at,
+        )
 
-    result = await asyncio.to_thread(index.get_entry, entry_id)
-    assert result is not None
-    return entry_out(result)
+        try:
+            entry_id = await asyncio.to_thread(index.add_entry, entry)
+        except sqlite3.IntegrityError:
+            raise HTTPException(
+                status_code=409, detail="URL already in vault"
+            ) from None
+
+        await asyncio.to_thread(
+            index.update_fts_content, entry_id, content.title, markdown
+        )
+        event_bus.put_nowait({"type": "entry_added", "id": entry_id})
+
+        result = await asyncio.to_thread(index.get_entry, entry_id)
+        assert result is not None
+        return entry_out(result)
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("Extract pipeline failed for %s", body.url)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

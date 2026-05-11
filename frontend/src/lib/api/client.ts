@@ -50,6 +50,7 @@ export interface Tag {
 export interface AppConfig {
 	vault_path: string;
 	font_variant: 'regular' | 'nerd' | 'custom';
+	font_size: number;
 	custom_font_path: string | null;
 	update_channel: 'stable' | 'dev';
 	virustotal_enabled: boolean;
@@ -58,6 +59,7 @@ export interface AppConfig {
 export interface AppConfigUpdate {
 	vault_path?: string;
 	font_variant?: 'regular' | 'nerd' | 'custom';
+	font_size?: number;
 	custom_font_path?: string | null;
 	update_channel?: 'stable' | 'dev';
 	virustotal_enabled?: boolean;

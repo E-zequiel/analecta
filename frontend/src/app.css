@@ -75,8 +75,8 @@
 	--fg-dark: #a9b1d6;
 	--fg-muted: #565f89;
 	/* Accents */
-	--accent: #7aa2f7;
-	--accent-dark: #3d59a1;
+	--accent: #ff757f;
+	--accent-dark: #db4b4b;
 	--accent-warm: #ff9e64;
 	/* Syntax / status */
 	--cyan: #7dcfff;
@@ -107,6 +107,24 @@ body {
 	background-color: var(--bg);
 	color: var(--fg);
 	font-family: var(--font-family);
-	font-size: 14px;
+	font-size: var(--font-size-base, 16.33px);
 	-webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+	width: 4px;
+	height: 4px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: var(--terminal);
+	border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: var(--fg-muted);
 }
