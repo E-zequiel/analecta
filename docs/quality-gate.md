@@ -57,9 +57,6 @@ implementation block is considered complete **only after this script passes clea
 | Pattern | Ignored rules | Reason |
 |---------|--------------|--------|
 | `tests/**` | `D` (all) | Test files do not need docstrings |
-| `src/analecta/__main__.py` | `RUF006`, `UP` | Pending deletion (G4) — not worth fixing |
-| `src/analecta/ui/**` | `RUF003`, `RUF100`, `RUF006` | Pending deletion (G2) — not worth fixing |
-| `src/analecta/updater/**` | `RUF006` | Pending deletion (G3) — not worth fixing |
 
 ### ASYNC110 in integration tests
 
@@ -101,11 +98,7 @@ control flow, our own types, function signatures, and return types.
 
 ### Excluded modules
 
-| Module | Reason |
-|--------|--------|
-| `src/analecta/ui` | Pending deletion (block G2) |
-| `src/analecta/updater` | Pending deletion (block G3) |
-| `src/analecta/__main__.py` | Pending cleanup (block G4) |
+No modules are currently excluded from basedpyright. All source is in scope.
 
 ### Third-party stubs installed as dev dependencies
 
@@ -168,9 +161,7 @@ Modules with intentionally low coverage:
 | Module | Coverage | Reason |
 |--------|----------|--------|
 | `server.py` | ~0% | uvicorn entrypoint; tested via integration, not unit |
-| `ui/` | 0% | Pending deletion (G2) |
-| `updater/` | ~99% | Deleted in G3; current tests cover non-Qt logic |
-| `__main__.py` | 0% | Replaced in G4 |
+| `__main__.py` | 0% | Three-line shim; no logic to test |
 | `config.py` | ~60% | `load_config` from file and `save_config` lack I/O tests |
 
 ---

@@ -19,7 +19,7 @@ echo "==> basedpyright"
 mise exec -- uv run basedpyright
 
 echo "==> pytest (unit)"
-mise exec -- uv run pytest -m "not integration" --ignore=tests/test_updater.py
+mise exec -- uv run pytest -m "not integration"
 
 # ── Rust shell ────────────────────────────────────────────────────────────────
 cd "$REPO_ROOT/src-tauri"
