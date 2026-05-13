@@ -1,13 +1,36 @@
 """HTML-to-Markdown converter — M4 pipeline."""
 
 import re
+from typing import Any
 
-import markdownify
+import markdownify as markdownify_lib
+from bs4 import Tag
 
 from analecta.extraction.core import ExtractedContent
 from analecta.markdown.frontmatter import build_frontmatter
 
 _STRIP_RE = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.DOTALL | re.IGNORECASE)
+
+
+class _Converter(markdownify_lib.MarkdownConverter):
+    """markdownify subclass that fixes double-fencing of <pre><code> blocks.
+
+    markdownify processes both the <pre> wrapper and the inner <code> tag,
+    producing six backticks instead of three. This override handles the pair
+    as a unit, delegating inner text extraction directly to BeautifulSoup.
+    """
+
+    def convert_pre(self, el: Tag, text: str, convert_as_inline: bool) -> str:  # type: ignore[override]
+        code = el.find("code")
+        if isinstance(code, Tag):
+            classes = code.get("class") or []
+            lang = " ".join(str(c) for c in classes).replace("language-", "").strip()
+            return f"\n\n```{lang}\n{code.get_text()}\n```\n\n"
+        return f"\n\n```\n{text.strip()}\n```\n\n"
+
+
+def _md(**kwargs: Any) -> _Converter:
+    return _Converter(heading_style="ATX", bullets="-", **kwargs)
 
 
 class MarkdownConverter:
@@ -41,4 +64,4 @@ class MarkdownConverter:
             Markdown string with ATX headings and ``-`` list bullets.
         """
         clean = _STRIP_RE.sub("", html)
-        return markdownify.markdownify(clean, heading_style="ATX", bullets="-")
+        return _md().convert(clean)
