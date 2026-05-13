@@ -14,6 +14,14 @@ function resolveImagePath(markdownFilePath: string, relativeSrc: string): string
 	return resolved.join('/');
 }
 
+function stripFrontmatter(source: string): string {
+	if (!source.startsWith('---\n') && !source.startsWith('---\r\n')) return source;
+	const end = source.indexOf('\n---', 4);
+	if (end === -1) return source;
+	const afterClose = source.indexOf('\n', end + 1);
+	return afterClose === -1 ? '' : source.slice(afterClose + 1);
+}
+
 export function createRenderer(markdownFilePath: string): (source: string) => string {
 	const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
 		.use(footnote)
@@ -31,5 +39,5 @@ export function createRenderer(markdownFilePath: string): (source: string) => st
 		return defaultImage(tokens, idx, options, env, self);
 	};
 
-	return (source: string) => md.render(source);
+	return (source: string) => md.render(stripFrontmatter(source));
 }
