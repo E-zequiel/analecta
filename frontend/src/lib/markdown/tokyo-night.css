@@ -49,14 +49,23 @@
 	color: var(--cyan);
 }
 
+.markdown-body h1 strong, .markdown-body h1 em,
+.markdown-body h2 strong, .markdown-body h2 em,
+.markdown-body h3 strong, .markdown-body h3 em,
+.markdown-body h4 strong, .markdown-body h4 em,
+.markdown-body h5 strong, .markdown-body h5 em,
+.markdown-body h6 strong, .markdown-body h6 em {
+	color: inherit;
+}
+
 .markdown-body code {
 	font-family: inherit;
-	font-size: 0.9em;
-	background: var(--bg-alt);
-	color: var(--cyan);
-	padding: 0.15em 0.4em;
-	border-radius: 3px;
-	border: 1px solid var(--border);
+	font-size: 0.88em;
+	background: var(--bg-highlight);
+	color: var(--fg);
+	padding: 0.1em 0.4em;
+	border-radius: 5px;
+	border: none;
 }
 
 .markdown-body pre {

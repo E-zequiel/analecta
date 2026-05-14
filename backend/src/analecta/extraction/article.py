@@ -42,35 +42,33 @@ class ArticleExtractor(SourceExtractor):
             return response.text
 
     def _parse(self, html: str, url: str) -> ExtractedContent:
-        content = trafilatura.extract(
-            html,
-            url=url,
-            output_format="html",
-            include_tables=True,
-            include_images=True,
-            fast=True,
-        )
-        if content:
-            meta = trafilatura.extract_metadata(html, default_url=url)
-            title = meta.title or ""
-            return ExtractedContent(
-                title=title,
-                html=content,
-                url=url,
-                source_type="article",
-                metadata={"extractor": "trafilatura"},
-            )
-
-        # Fallback: readability-lxml
+        meta = trafilatura.extract_metadata(html, default_url=url)
         doc = Document(html)
-        content = doc.summary()
+
+        readability_html = doc.summary() or ""
+        traf_html = (
+            trafilatura.extract(
+                html, output_format="html", include_comments=False, include_tables=True
+            )
+            or ""
+        )
+
+        # Prefer readability: it preserves <code>/<pre> structure correctly.
+        # Fall back to trafilatura when it extracts substantially more content
+        # (e.g. short API reference pages that readability prunes too aggressively).
+        if len(traf_html) > len(readability_html) * 1.5:
+            content, extractor = traf_html, "trafilatura"
+        else:
+            content, extractor = readability_html, "readability"
+
         if not content or len(content) < _MIN_CONTENT_LEN:
             raise ExtractionError(f"Could not extract content from {url}")
 
+        title = (meta.title if meta else None) or doc.title() or ""
         return ExtractedContent(
-            title=doc.title(),
+            title=title,
             html=content,
             url=url,
             source_type="article",
-            metadata={"extractor": "readability"},
+            metadata={"extractor": extractor},
         )
