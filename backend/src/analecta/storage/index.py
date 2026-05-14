@@ -227,6 +227,26 @@ class VaultIndex:
         """
         self.update_status(entry_id, "deleted")
 
+    def hard_delete(self, entry_id: int) -> None:
+        """Permanently remove an entry and all its associations from the database.
+
+        Removes entry_tags rows, recalculates tag counts, removes the FTS index
+        row, and deletes the entry row. Does not touch the vault file — caller
+        is responsible for file removal.
+
+        Args:
+            entry_id: Target row id.
+        """
+        self._conn.execute("DELETE FROM entry_tags WHERE entry_id = ?", (entry_id,))
+        self._conn.execute(
+            "UPDATE tags SET count = ("
+            "  SELECT COUNT(*) FROM entry_tags WHERE tag_id = tags.id"
+            ")"
+        )
+        self._conn.execute("DELETE FROM entries_fts WHERE rowid = ?", (entry_id,))
+        self._conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+        self._conn.commit()
+
     def update_fts_content(self, entry_id: int, title: str, content: str) -> None:
         """Replace the FTS5 row for an entry with updated title and body.
 
