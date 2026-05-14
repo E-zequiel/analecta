@@ -66,11 +66,13 @@
 		}
 	}
 
-	function handleContentClick(e: MouseEvent) {
+	async function handleContentClick(e: MouseEvent) {
 		const link = (e.target as HTMLElement).closest('a');
-		if (link?.href && (link.href.startsWith('http://') || link.href.startsWith('https://'))) {
-			e.preventDefault();
-			openUrl(link.href);
+		if (!link) return;
+		const href = link.getAttribute('href') ?? '';
+		e.preventDefault();
+		if (href.startsWith('http://') || href.startsWith('https://')) {
+			await openUrl(href);
 		}
 	}
 </script>
@@ -224,7 +226,7 @@
 	.entry-title {
 		font-size: 1.4rem;
 		font-weight: 700;
-		color: var(--fg);
+		color: var(--red);
 		margin: 0 0 1.5rem;
 		line-height: 1.3;
 	}

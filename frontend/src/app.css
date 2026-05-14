@@ -71,12 +71,12 @@
 	--bg-alt: #24283b;
 	--bg-highlight: #292e42;
 	/* Foregrounds */
-	--fg: #c0caf5;
+	--fg: #d9e0f2;
 	--fg-dark: #a9b1d6;
 	--fg-muted: #565f89;
 	/* Accents */
-	--accent: #ff757f;
-	--accent-dark: #db4b4b;
+	--accent: #e0af68;
+	--accent-dark: #c99a4b;
 	--accent-warm: #ff9e64;
 	/* Syntax / status */
 	--cyan: #7dcfff;
@@ -109,6 +109,7 @@ body {
 	font-family: var(--font-family);
 	font-size: var(--font-size-base, 16.33px);
 	-webkit-font-smoothing: antialiased;
+	text-rendering: geometricPrecision;
 }
 
 ::-webkit-scrollbar {
