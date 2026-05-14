@@ -18,6 +18,23 @@
 	let entry = $state<Entry | null>(null);
 	let html = $state('');
 	let vtEnabled = $state(false);
+	let contentEl = $state<HTMLElement | null>(null);
+
+	$effect(() => {
+		function handleKeydown(e: KeyboardEvent) {
+			if (!contentEl) return;
+			if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+			const step = 120;
+			if (e.key === 'ArrowDown') { contentEl.scrollBy(0, step); e.preventDefault(); }
+			else if (e.key === 'ArrowUp') { contentEl.scrollBy(0, -step); e.preventDefault(); }
+			else if (e.key === 'PageDown') { contentEl.scrollBy(0, contentEl.clientHeight * 0.85); e.preventDefault(); }
+			else if (e.key === 'PageUp') { contentEl.scrollBy(0, -contentEl.clientHeight * 0.85); e.preventDefault(); }
+			else if (e.key === 'Home') { contentEl.scrollTo(0, 0); e.preventDefault(); }
+			else if (e.key === 'End') { contentEl.scrollTo(0, contentEl.scrollHeight); e.preventDefault(); }
+		}
+		window.addEventListener('keydown', handleKeydown);
+		return () => window.removeEventListener('keydown', handleKeydown);
+	});
 	let scanning = $state(false);
 	let scanResult = $state<ScanResult | null>(null);
 	let scanError = $state('');
@@ -132,7 +149,7 @@
 	{#if error}
 		<div class="error-banner">{error}</div>
 	{:else if entry && html}
-		<div class="content">
+		<div class="content" bind:this={contentEl}>
 			<h1 class="entry-title">{entry.title}</h1>
 			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 			<div class="markdown-body" onclick={handleContentClick}>
