@@ -76,7 +76,7 @@
 	h1 {
 		margin: 0 0 0.5rem;
 		font-size: 1.3rem;
-		font-weight: 700;
+		font-weight: 600;
 		color: var(--fg);
 	}
 
@@ -150,7 +150,7 @@
 		color: var(--fg);
 		font-family: inherit;
 		font-size: 14px;
-		font-weight: 700;
+		font-weight: 600;
 		cursor: pointer;
 		transition: background 0.15s;
 	}

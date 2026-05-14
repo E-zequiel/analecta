@@ -16,32 +16,16 @@
 
 @font-face {
 	font-family: 'JetBrains Mono';
-	src: url('/fonts/JetBrainsMono-Regular.ttf') format('truetype');
-	font-weight: 400;
+	src: url('/fonts/JetBrainsMono-SemiBold.ttf') format('truetype');
+	font-weight: 600;
 	font-style: normal;
 	font-display: swap;
 }
 
 @font-face {
 	font-family: 'JetBrains Mono';
-	src: url('/fonts/JetBrainsMono-Italic.ttf') format('truetype');
-	font-weight: 400;
-	font-style: italic;
-	font-display: swap;
-}
-
-@font-face {
-	font-family: 'JetBrains Mono';
-	src: url('/fonts/JetBrainsMono-Bold.ttf') format('truetype');
-	font-weight: 700;
-	font-style: normal;
-	font-display: swap;
-}
-
-@font-face {
-	font-family: 'JetBrains Mono';
-	src: url('/fonts/JetBrainsMono-BoldItalic.ttf') format('truetype');
-	font-weight: 700;
+	src: url('/fonts/JetBrainsMono-SemiBoldItalic.ttf') format('truetype');
+	font-weight: 600;
 	font-style: italic;
 	font-display: swap;
 }
@@ -64,32 +48,16 @@
 
 @font-face {
 	font-family: 'JetBrains Mono NF';
-	src: url('/fonts/JetBrainsMonoNerdFont-Regular.ttf') format('truetype');
-	font-weight: 400;
+	src: url('/fonts/JetBrainsMonoNerdFont-SemiBold.ttf') format('truetype');
+	font-weight: 600;
 	font-style: normal;
 	font-display: swap;
 }
 
 @font-face {
 	font-family: 'JetBrains Mono NF';
-	src: url('/fonts/JetBrainsMonoNerdFont-Italic.ttf') format('truetype');
-	font-weight: 400;
-	font-style: italic;
-	font-display: swap;
-}
-
-@font-face {
-	font-family: 'JetBrains Mono NF';
-	src: url('/fonts/JetBrainsMonoNerdFont-Bold.ttf') format('truetype');
-	font-weight: 700;
-	font-style: normal;
-	font-display: swap;
-}
-
-@font-face {
-	font-family: 'JetBrains Mono NF';
-	src: url('/fonts/JetBrainsMonoNerdFont-BoldItalic.ttf') format('truetype');
-	font-weight: 700;
+	src: url('/fonts/JetBrainsMonoNerdFont-SemiBoldItalic.ttf') format('truetype');
+	font-weight: 600;
 	font-style: italic;
 	font-display: swap;
 }
@@ -139,7 +107,7 @@ body {
 	background-color: var(--bg);
 	color: var(--fg);
 	font-family: var(--font-family);
-	font-size: var(--font-size-base, 17px);
+	font-size: var(--font-ui-size, 14px);
 	font-weight: 300;
 	text-rendering: geometricPrecision;
 }
