@@ -7,8 +7,13 @@
 	import { entries as entriesApi, config as configApi, security, type Entry, type ScanResult } from '$lib/api/client';
 	import { createRenderer } from '$lib/markdown/renderer';
 	import '$lib/markdown/tokyo-night.css';
+	import { lastViewedId } from '$lib/stores/ui';
 
 	const entryId = $derived(parseInt($page.params['id'] as string));
+
+	$effect(() => {
+		if (!isNaN(entryId)) lastViewedId.set(entryId);
+	});
 
 	let entry = $state<Entry | null>(null);
 	let html = $state('');

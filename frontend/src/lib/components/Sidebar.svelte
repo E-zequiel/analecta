@@ -4,34 +4,41 @@
 	import { goto } from '$app/navigation';
 	import {
 		ChevronsRightLeft,
-		ListChevronsDownUp,
-		ListChevronsUpDown,
-		SquareLibrary,
+		ChevronsDownUp,
+		ChevronsUpDown,
 		ScanSearch,
 		ClipboardPaste,
 		ChevronRight,
 		ChevronDown,
-		Settings
+		Settings,
+		Library,
+		EyeClosed,
+		Eye,
+		Bookmark,
+		Gem,
+		BrainCircuit,
+		Origami,
+		BookOpenText
 	} from 'lucide-svelte';
 	import { readText } from '@tauri-apps/plugin-clipboard-manager';
 	import { entries as entriesApi, tags as tagsApi, extract as extractApi, type Entry, type Tag } from '$lib/api/client';
 	import {
 		sidebarCollapsed,
 		sidebarWidth,
-		libraryOpen,
 		expandedSections,
 		activeSection,
 		selectedTag,
-		searchOpen
+		searchOpen,
+		lastViewedId
 	} from '$lib/stores/ui';
 	import { entryAddedTick } from '$lib/stores/sse';
 
 	const SECTIONS = [
-		{ id: 'all', label: 'All' },
-		{ id: 'unread', label: 'Unread' },
-		{ id: 'read', label: 'Read' },
-		{ id: 'favorite', label: 'Favorite' },
-		{ id: 'recommend', label: 'Recommend' }
+		{ id: 'all',       label: 'LIBRARY',  icon: Library   },
+		{ id: 'unread',    label: 'UNREAD',   icon: EyeClosed },
+		{ id: 'read',      label: 'READ',     icon: Eye       },
+		{ id: 'favorite',  label: 'BOOKMARK', icon: Bookmark  },
+		{ id: 'recommend', label: 'GEM',      icon: Gem       }
 	] as const;
 
 	type SectionId = (typeof SECTIONS)[number]['id'];
@@ -107,15 +114,6 @@
 		fetchTags();
 	}
 
-	function toggleLibrary() {
-		if ($sidebarCollapsed) {
-			sidebarCollapsed.set(false);
-			libraryOpen.set(true);
-		} else {
-			libraryOpen.update((v) => !v);
-		}
-	}
-
 	function openSearch() {
 		searchOpen.set(true);
 	}
@@ -184,6 +182,10 @@
 		goto(`/viewer/${id}`);
 	}
 
+	function goLast() {
+		if ($lastViewedId !== null) goto(`/viewer/${$lastViewedId}`);
+	}
+
 	const isSettingsActive = $derived($page.url.pathname.startsWith('/settings'));
 </script>
 
@@ -199,40 +201,13 @@
 		</button>
 		{#if !$sidebarCollapsed}
 			<button class="icon-btn" onclick={collapseAll} title="Collapse all sections">
-				<ListChevronsDownUp size={15} />
+				<ChevronsDownUp size={15} />
 			</button>
 			<button class="icon-btn" onclick={expandAll} title="Expand all sections">
-				<ListChevronsUpDown size={15} />
+				<ChevronsUpDown size={15} />
 			</button>
-		{/if}
-	</div>
-
-	<!-- Section type icons -->
-	<div class="icon-row">
-		<button
-			class="icon-btn"
-			class:active={$libraryOpen && !$sidebarCollapsed}
-			onclick={toggleLibrary}
-			title="Library"
-		>
-			<SquareLibrary size={18} />
-		</button>
-
-		{#if !$sidebarCollapsed}
-			<button
-				class="icon-btn paste-btn"
-				class:paste-ok={pasteStatus === 'ok'}
-				class:paste-err={pasteStatus === 'error'}
-				class:paste-loading={pasteStatus === 'loading'}
-				onclick={pasteUrl}
-				title="Add URL from clipboard"
-				disabled={pasteStatus === 'loading'}
-			>
-				<ClipboardPaste size={18} />
-			</button>
-
-			<button class="icon-btn" onclick={openSearch} title="Search (Ctrl+K)">
-				<ScanSearch size={18} />
+			<button class="icon-btn search-btn" onclick={openSearch} title="Search (Ctrl+K)">
+				<ScanSearch size={15} />
 			</button>
 		{/if}
 	</div>
@@ -244,9 +219,10 @@
 	{/if}
 
 	<!-- Navigator (hidden when collapsed) -->
-	{#if !$sidebarCollapsed && $libraryOpen}
+	{#if !$sidebarCollapsed}
 		<nav class="nav" transition:slide={{ duration: 180 }}>
 			{#each SECTIONS as section}
+				{@const SectionIcon = section.icon}
 				<div class="section-row">
 					<button
 						class="chevron-btn"
@@ -264,6 +240,7 @@
 						class:active={$activeSection === section.id}
 						onclick={() => selectSection(section.id)}
 					>
+						<SectionIcon size={13} />
 						<span class="label-text">{section.label}</span>
 						{#if counts[section.id] !== undefined}
 							<span class="count">{counts[section.id]}</span>
@@ -299,7 +276,8 @@
 					{/if}
 				</button>
 				<button class="section-label" onclick={toggleTags}>
-					<span class="label-text">Tags</span>
+					<BrainCircuit size={13} />
+					<span class="label-text">TAGS</span>
 					{#if tagList.length > 0}
 						<span class="count">{tagList.length}</span>
 					{/if}
@@ -325,20 +303,27 @@
 		</nav>
 	{/if}
 
-	<div class="sidebar-spacer"></div>
-
-	<!-- Settings -->
-	<div class="settings-row">
-		<a
-			href="/settings"
-			class="settings-link"
-			class:active={isSettingsActive}
-			title="Settings"
+	<!-- Bottom bar -->
+	<div class="bottom-bar">
+		<button class="icon-btn" onclick={() => goto('/')} title="Home">
+			<Origami size={18} />
+		</button>
+		<button class="icon-btn" onclick={goLast} title="Last viewed" disabled={$lastViewedId === null}>
+			<BookOpenText size={18} />
+		</button>
+		<button
+			class="icon-btn paste-btn"
+			class:paste-ok={pasteStatus === 'ok'}
+			class:paste-err={pasteStatus === 'error'}
+			class:paste-loading={pasteStatus === 'loading'}
+			onclick={pasteUrl}
+			title="Add URL from clipboard"
+			disabled={pasteStatus === 'loading'}
 		>
+			<ClipboardPaste size={18} />
+		</button>
+		<a href="/settings" class="icon-btn settings-btn" class:active={isSettingsActive} title="Settings">
 			<Settings size={18} />
-			{#if !$sidebarCollapsed}
-				<span class="settings-label">Settings</span>
-			{/if}
 		</a>
 	</div>
 </aside>
@@ -363,19 +348,15 @@
 	.toolbar {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
+		gap: 2px;
 		padding: 6px 6px 4px;
 		border-bottom: 1px solid var(--border);
 		flex-shrink: 0;
+		min-height: 40px;
 	}
 
-	.icon-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 6px 6px 4px;
-		border-bottom: 1px solid var(--border);
-		flex-shrink: 0;
+	.search-btn {
+		margin-left: auto;
 	}
 
 	.icon-btn {
@@ -392,6 +373,7 @@
 		cursor: pointer;
 		transition: color 0.15s, background 0.15s;
 		flex-shrink: 0;
+		text-decoration: none;
 	}
 
 	.icon-btn:hover {
@@ -404,7 +386,7 @@
 	}
 
 	.icon-btn:disabled {
-		opacity: 0.5;
+		opacity: 0.4;
 		cursor: not-allowed;
 	}
 
@@ -466,7 +448,7 @@
 	.section-label {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
+		gap: 5px;
 		flex: 1;
 		min-width: 0;
 		padding: 3px 6px;
@@ -475,11 +457,12 @@
 		border-radius: 4px;
 		color: var(--fg-muted);
 		font-family: inherit;
-		font-size: 0.82rem;
-		font-weight: 600;
+		font-size: 0.78rem;
+		font-weight: 300;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 		cursor: pointer;
 		text-align: left;
-		letter-spacing: 0.01em;
 		transition: color 0.12s, background 0.12s;
 	}
 
@@ -499,7 +482,7 @@
 	.count {
 		font-size: 0.72rem;
 		color: var(--fg-muted);
-		margin-left: 6px;
+		margin-left: auto;
 		flex-shrink: 0;
 	}
 
@@ -558,39 +541,19 @@
 		font-style: italic;
 	}
 
-	.sidebar-spacer { flex: 1; }
-
-	.settings-row {
+	.bottom-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
 		padding: 6px;
 		border-top: 1px solid var(--border);
 		flex-shrink: 0;
 	}
 
-	.settings-link {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 5px 6px;
-		border-radius: 4px;
-		color: var(--fg-muted);
-		text-decoration: none;
-		transition: color 0.15s, background 0.15s;
-	}
-
-	.settings-link:hover {
-		color: var(--fg);
-		background: var(--bg-highlight);
-	}
-
-	.settings-link.active {
-		color: var(--accent);
-		background: var(--bg-highlight);
-	}
-
-	.settings-label {
-		font-size: 0.82rem;
-		font-weight: 600;
-		white-space: nowrap;
-		overflow: hidden;
+	.sidebar.collapsed .bottom-bar {
+		flex-direction: column;
+		justify-content: center;
+		gap: 4px;
+		padding: 6px 0;
 	}
 </style>
