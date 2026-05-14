@@ -177,8 +177,7 @@ def test_delete_entry_204(seeded_client: TestClient) -> None:
     r = seeded_client.delete(f"/api/v1/entries/{entry_id}")
     assert r.status_code == 204
     r2 = seeded_client.get(f"/api/v1/entries/{entry_id}")
-    assert r2.status_code == 200
-    assert r2.json()["status"] == "deleted"
+    assert r2.status_code == 404
 
 
 def test_delete_entry_404(client: TestClient) -> None:

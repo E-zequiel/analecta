@@ -31,7 +31,7 @@
 		searchOpen,
 		lastViewedId
 	} from '$lib/stores/ui';
-	import { entryAddedTick } from '$lib/stores/sse';
+	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
 
 	const SECTIONS = [
 		{ id: 'all',       label: 'LIBRARY',  icon: Library   },
@@ -85,16 +85,28 @@
 		fetchTags();
 	});
 
-	let prevTick = 0;
-	$effect(() => {
-		const tick = $entryAddedTick;
-		if (tick <= prevTick) return;
-		prevTick = tick;
+	function refreshAll() {
 		fetchCounts();
 		for (const id of $expandedSections) {
 			if (id === 'tags') fetchTags();
 			else fetchSection(id);
 		}
+	}
+
+	let prevAddedTick = 0;
+	$effect(() => {
+		const tick = $entryAddedTick;
+		if (tick <= prevAddedTick) return;
+		prevAddedTick = tick;
+		refreshAll();
+	});
+
+	let prevChangedTick = 0;
+	$effect(() => {
+		const tick = $entryChangedTick;
+		if (tick <= prevChangedTick) return;
+		prevChangedTick = tick;
+		refreshAll();
 	});
 
 	function toggleCollapsed() {

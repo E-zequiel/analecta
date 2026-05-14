@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -10,6 +11,11 @@ from analecta.storage.index import EntryRecord, VaultIndex
 
 log = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _unlink_if_exists(path: Path) -> None:
+    if path.exists():
+        path.unlink()
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +207,7 @@ async def delete_entry(
     entry_id: int,
     index: VaultIndex = Depends(get_index),
 ) -> None:
-    """Soft-delete an entry (sets status to 'deleted').
+    """Permanently delete an entry from the database and remove its vault file.
 
     Args:
         entry_id: Database row id.
@@ -213,4 +219,6 @@ async def delete_entry(
     record = await asyncio.to_thread(index.get_entry, entry_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Entry not found")
-    await asyncio.to_thread(index.soft_delete, entry_id)
+    file_path = Path(record.file_path)
+    await asyncio.to_thread(index.hard_delete, entry_id)
+    await asyncio.to_thread(_unlink_if_exists, file_path)
