@@ -22,9 +22,11 @@ async function loadCustomFont(fontPath: string): Promise<string | null> {
 export async function applyFont(
 	variant: 'regular' | 'nerd' | 'custom',
 	customPath: string | null,
-	fontSize: number = 16.33
+	uiFontSize: number = 14.0,
+	readingFontSize: number = 17.0
 ): Promise<void> {
-	document.documentElement.style.setProperty('--font-size-base', `${fontSize}px`);
+	document.documentElement.style.setProperty('--font-ui-size', `${uiFontSize}px`);
+	document.documentElement.style.setProperty('--font-text-size', `${readingFontSize}px`);
 
 	if (variant === 'custom' && customPath) {
 		const family = await loadCustomFont(customPath);
