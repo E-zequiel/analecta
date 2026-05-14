@@ -28,7 +28,7 @@ class AppConfig(BaseModel):
 
     vault_path: Path = Path.home() / "Documents" / "Analecta"
     font_variant: Literal["regular", "nerd", "custom"] = "regular"
-    ui_font_size: float = 14.0
+    ui_font_size: float = 16.0
     reading_font_size: float = 17.0
     custom_font_path: str | None = None
     update_channel: Literal["stable", "dev"] = "stable"

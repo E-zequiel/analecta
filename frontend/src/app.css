@@ -107,7 +107,7 @@ body {
 	background-color: var(--bg);
 	color: var(--fg);
 	font-family: var(--font-family);
-	font-size: var(--font-ui-size, 14px);
+	font-size: var(--font-ui-size, 16px);
 	font-weight: 300;
 	text-rendering: geometricPrecision;
 }

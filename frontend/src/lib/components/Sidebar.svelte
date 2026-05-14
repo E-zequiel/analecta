@@ -197,17 +197,17 @@
 	<!-- Top toolbar -->
 	<div class="toolbar">
 		<button class="icon-btn" onclick={toggleCollapsed} title="Toggle sidebar">
-			<ChevronsRightLeft size={15} />
+			<ChevronsRightLeft size={18} />
 		</button>
 		{#if !$sidebarCollapsed}
 			<button class="icon-btn" onclick={collapseAll} title="Collapse all sections">
-				<ChevronsDownUp size={15} />
+				<ChevronsDownUp size={18} />
 			</button>
 			<button class="icon-btn" onclick={expandAll} title="Expand all sections">
-				<ChevronsUpDown size={15} />
+				<ChevronsUpDown size={18} />
 			</button>
 			<button class="icon-btn search-btn" onclick={openSearch} title="Search (Ctrl+K)">
-				<ScanSearch size={15} />
+				<ScanSearch size={18} />
 			</button>
 		{/if}
 	</div>
@@ -240,7 +240,7 @@
 						class:active={$activeSection === section.id}
 						onclick={() => selectSection(section.id)}
 					>
-						<SectionIcon size={13} />
+						<SectionIcon size={18} />
 						<span class="label-text">{section.label}</span>
 						{#if counts[section.id] !== undefined}
 							<span class="count">{counts[section.id]}</span>
@@ -276,7 +276,7 @@
 					{/if}
 				</button>
 				<button class="section-label" onclick={toggleTags}>
-					<BrainCircuit size={13} />
+					<BrainCircuit size={18} />
 					<span class="label-text">TAGS</span>
 					{#if tagList.length > 0}
 						<span class="count">{tagList.length}</span>
@@ -305,7 +305,7 @@
 
 	<!-- Bottom bar -->
 	<div class="bottom-bar">
-		<button class="icon-btn" onclick={() => goto('/')} title="Home">
+		<button class="icon-btn" onclick={() => goto('/')} title="Collectio">
 			<Origami size={18} />
 		</button>
 		<button class="icon-btn" onclick={goLast} title="Last viewed" disabled={$lastViewedId === null}>
@@ -455,10 +455,10 @@
 		background: none;
 		border: none;
 		border-radius: 4px;
-		color: var(--fg-muted);
+		color: var(--fg-dark);
 		font-family: inherit;
 		font-size: 0.78rem;
-		font-weight: 300;
+		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		cursor: pointer;
