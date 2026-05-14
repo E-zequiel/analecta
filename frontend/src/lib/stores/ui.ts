@@ -7,3 +7,4 @@ export const libraryOpen = writable(true);
 export const expandedSections = writable<Set<string>>(new Set());
 export const activeSection = writable<string>('all');
 export const searchOpen = writable(false);
+export const lastViewedId = writable<number | null>(null);
