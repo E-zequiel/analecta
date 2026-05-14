@@ -7,6 +7,7 @@
     "shell:allow-spawn",
     "shell:allow-execute",
     "dialog:allow-open",
+    "dialog:allow-confirm",
     "notification:default",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",

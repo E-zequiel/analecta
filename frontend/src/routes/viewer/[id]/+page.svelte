@@ -2,12 +2,33 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { openUrl, openPath } from '@tauri-apps/plugin-opener';
+	import { openUrl } from '@tauri-apps/plugin-opener';
+	import { confirm } from '@tauri-apps/plugin-dialog';
 	import { readTextFile } from '@tauri-apps/plugin-fs';
-	import { entries as entriesApi, config as configApi, security, type Entry, type ScanResult } from '$lib/api/client';
+	import {
+		CornerUpLeft,
+		PenLine,
+		Link,
+		Shredder,
+		ShieldCheck,
+		AArrowDown,
+		AArrowUp,
+		Eye,
+		EyeClosed,
+		Bookmark,
+		Gem
+	} from 'lucide-svelte';
+	import {
+		entries as entriesApi,
+		config as configApi,
+		security,
+		type Entry,
+		type ScanResult
+	} from '$lib/api/client';
 	import { createRenderer } from '$lib/markdown/renderer';
 	import '$lib/markdown/tokyo-night.css';
 	import { lastViewedId } from '$lib/stores/ui';
+	import { entryChangedTick } from '$lib/stores/sse';
 
 	const entryId = $derived(parseInt($page.params['id'] as string));
 
@@ -19,6 +40,7 @@
 	let html = $state('');
 	let vtEnabled = $state(false);
 	let contentEl = $state<HTMLElement | null>(null);
+	let readingFontSize = $state(17);
 
 	$effect(() => {
 		function handleKeydown(e: KeyboardEvent) {
@@ -35,6 +57,7 @@
 		window.addEventListener('keydown', handleKeydown);
 		return () => window.removeEventListener('keydown', handleKeydown);
 	});
+
 	let scanning = $state(false);
 	let scanResult = $state<ScanResult | null>(null);
 	let scanError = $state('');
@@ -45,6 +68,7 @@
 			const [e, cfg] = await Promise.all([entriesApi.get(entryId), configApi.get()]);
 			entry = e;
 			vtEnabled = cfg.virustotal_enabled;
+			readingFontSize = cfg.reading_font_size;
 			const source = await readTextFile(e.file_path);
 			html = createRenderer(e.file_path)(source);
 		} catch (err) {
@@ -55,7 +79,9 @@
 	async function setStatus(status: string) {
 		if (!entry) return;
 		const newStatus = entry.status === status ? 'unread' : status;
+		if (newStatus === entry.status) return;
 		entry = await entriesApi.patch(entry.id, { status: newStatus });
+		entryChangedTick.update((n) => n + 1);
 	}
 
 	async function copyUrl() {
@@ -63,15 +89,19 @@
 		await navigator.clipboard.writeText(`analecta://open?id=${entry.id}`);
 	}
 
-	async function openInBrowser() {
+	async function deleteEntry() {
 		if (!entry) return;
-		await openUrl(entry.url);
+		const ok = await confirm(`Delete "${entry.title}"?`, { title: 'Confirm Delete', kind: 'warning' });
+		if (!ok) return;
+		await entriesApi.delete(entry.id);
+		entryChangedTick.update((n) => n + 1);
+		goto('/');
 	}
 
-	async function openFiles() {
-		if (!entry) return;
-		const dir = entry.file_path.substring(0, entry.file_path.lastIndexOf('/'));
-		await openPath(dir);
+	function adjustFontSize(delta: number) {
+		readingFontSize = Math.max(12, Math.min(24, readingFontSize + delta));
+		document.documentElement.style.setProperty('--font-text-size', `${readingFontSize}px`);
+		configApi.update({ reading_font_size: readingFontSize }).catch(() => {});
 	}
 
 	async function runScan() {
@@ -101,36 +131,75 @@
 
 <div class="viewer">
 	<div class="toolbar">
-		<button class="btn-icon" onclick={() => goto('/')}>← Back</button>
-
+		<!-- Left: navigation -->
+		<button class="btn-icon" onclick={() => goto('/')} title="Back">
+			<CornerUpLeft size={16} />
+		</button>
 		{#if entry}
-			<button class="btn-icon" onclick={() => goto(`/editor/${entry!.id}`)}>Edit</button>
-			<button class="btn-icon" onclick={copyUrl}>Copy URL</button>
-			<button class="btn-icon" onclick={openInBrowser}>Open</button>
-			<button class="btn-icon" onclick={openFiles}>Files</button>
+			<button class="btn-icon" onclick={() => goto(`/editor/${entry!.id}`)} title="Edit">
+				<PenLine size={16} />
+			</button>
+			<button class="btn-icon" onclick={copyUrl} title="Copy URL">
+				<Link size={16} />
+			</button>
+			<button class="btn-icon" onclick={deleteEntry} title="Delete">
+				<Shredder size={16} />
+			</button>
 			{#if vtEnabled}
-				<button class="btn-icon" onclick={runScan} disabled={scanning}>
-					{scanning ? 'Scanning…' : 'VirusTotal'}
+				<button
+					class="btn-icon"
+					onclick={runScan}
+					disabled={scanning}
+					title={scanning ? 'Scanning…' : 'VirusTotal'}
+				>
+					<ShieldCheck size={16} />
 				</button>
 			{/if}
+		{/if}
 
-			<span class="spacer"></span>
+		<span class="spacer"></span>
 
-			<button
-				class="btn-toggle"
-				class:active={entry.status === 'read'}
-				onclick={() => setStatus('read')}
-			>Read</button>
-			<button
-				class="btn-toggle"
-				class:active={entry.status === 'favorite'}
-				onclick={() => setStatus('favorite')}
-			>Favorite</button>
-			<button
-				class="btn-toggle"
-				class:active={entry.status === 'recommend'}
-				onclick={() => setStatus('recommend')}
-			>Recommend</button>
+		<!-- Center: font size controls -->
+		<div class="font-controls">
+			<button class="btn-icon" onclick={() => adjustFontSize(-1)} title="Decrease font size">
+				<AArrowDown size={16} />
+			</button>
+			<span class="font-size-label">{readingFontSize}px</span>
+			<button class="btn-icon" onclick={() => adjustFontSize(1)} title="Increase font size">
+				<AArrowUp size={16} />
+			</button>
+		</div>
+
+		<span class="spacer"></span>
+
+		<!-- Right: status toggles -->
+		{#if entry}
+			<div class="status-controls">
+				<button
+					class="btn-icon"
+					class:active={entry.status === 'read'}
+					onclick={() => setStatus('read')}
+					title="Read"
+				><Eye size={16} /></button>
+				<button
+					class="btn-icon"
+					class:active={entry.status === 'unread'}
+					onclick={() => setStatus('unread')}
+					title="Unread"
+				><EyeClosed size={16} /></button>
+				<button
+					class="btn-icon"
+					class:active={entry.status === 'favorite'}
+					onclick={() => setStatus('favorite')}
+					title="Bookmark"
+				><Bookmark size={16} /></button>
+				<button
+					class="btn-icon"
+					class:active={entry.status === 'recommend'}
+					onclick={() => setStatus('recommend')}
+					title="Gem"
+				><Gem size={16} /></button>
+			</div>
 		{/if}
 	</div>
 
@@ -150,10 +219,12 @@
 		<div class="error-banner">{error}</div>
 	{:else if entry && html}
 		<div class="content" bind:this={contentEl}>
-			<h1 class="entry-title">{entry.title}</h1>
-			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-			<div class="markdown-body" onclick={handleContentClick}>
-				{@html html}
+			<div class="content-inner">
+				<h1 class="entry-title">{entry.title}</h1>
+				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+				<div class="markdown-body" onclick={handleContentClick}>
+					{@html html}
+				</div>
 			</div>
 		</div>
 	{:else if !error}
@@ -171,44 +242,66 @@
 	.toolbar {
 		display: flex;
 		align-items: center;
-		gap: 0.25rem;
-		padding: 0.5rem 1rem;
+		gap: 2px;
+		padding: 0 6px;
 		border-bottom: 1px solid var(--border);
 		background: var(--bg-dark);
 		flex-shrink: 0;
+		min-height: 40px;
 	}
 
 	.spacer {
 		flex: 1;
 	}
 
-	.btn-icon,
-	.btn-toggle {
-		padding: 0.3rem 0.6rem;
+	.font-controls {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.font-size-label {
+		font-size: 0.72rem;
+		color: var(--fg-muted);
+		padding: 0 4px;
+		min-width: 2.8rem;
+		text-align: center;
+	}
+
+	.status-controls {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.btn-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		padding: 0;
 		background: none;
 		border: 1px solid transparent;
 		border-radius: 4px;
 		color: var(--fg-muted);
 		font-family: inherit;
-		font-size: 12px;
 		cursor: pointer;
 		transition: color 0.15s, background 0.15s, border-color 0.15s;
-		white-space: nowrap;
+		flex-shrink: 0;
 	}
 
-	.btn-icon:hover:not(:disabled),
-	.btn-toggle:hover:not(:disabled) {
+	.btn-icon:hover:not(:disabled) {
 		color: var(--fg);
 		background: var(--bg-highlight);
 	}
 
-	.btn-icon:disabled,
-	.btn-toggle:disabled {
+	.btn-icon:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
 
-	.btn-toggle.active {
+	.btn-icon.active {
 		color: var(--accent);
 		border-color: var(--accent-dark);
 		background: var(--bg-highlight);
@@ -241,8 +334,12 @@
 	.content {
 		flex: 1;
 		overflow-y: auto;
+	}
+
+	.content-inner {
+		max-width: 720px;
+		margin: 0 auto;
 		padding: 2rem;
-		max-width: 860px;
 	}
 
 	.entry-title {
