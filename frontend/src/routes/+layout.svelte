@@ -124,7 +124,7 @@
 		configApi
 			.get()
 			.then((cfg) => {
-				applyFont(cfg.font_variant, cfg.custom_font_path, cfg.font_size);
+				applyFont(cfg.font_variant, cfg.custom_font_path, cfg.ui_font_size, cfg.reading_font_size);
 			})
 			.catch(() => {});
 	});

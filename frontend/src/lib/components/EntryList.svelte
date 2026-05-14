@@ -90,7 +90,7 @@
 
 	.title {
 		font-size: 13px;
-		font-weight: 700;
+		font-weight: 600;
 		color: var(--fg);
 		overflow: hidden;
 		text-overflow: ellipsis;

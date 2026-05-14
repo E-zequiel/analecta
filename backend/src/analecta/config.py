@@ -16,6 +16,8 @@ class AppConfig(BaseModel):
     Attributes:
         vault_path: Root directory of the local vault.
         font_variant: Font selection — ``regular``, ``nerd``, or ``custom``.
+        ui_font_size: Font size for UI chrome (sidebar, toolbar) in pixels.
+        reading_font_size: Font size for article reading area in pixels.
         custom_font_path: Absolute path to a user-supplied ``.ttf`` file.
             Only used when ``font_variant`` is ``custom``.
         update_channel: Release channel for the built-in updater.
@@ -26,7 +28,8 @@ class AppConfig(BaseModel):
 
     vault_path: Path = Path.home() / "Documents" / "Analecta"
     font_variant: Literal["regular", "nerd", "custom"] = "regular"
-    font_size: float = 16.33
+    ui_font_size: float = 14.0
+    reading_font_size: float = 17.0
     custom_font_path: str | None = None
     update_channel: Literal["stable", "dev"] = "stable"
     virustotal_enabled: bool = False
@@ -66,7 +69,8 @@ def save_config(config: AppConfig, config_path: Path = CONFIG_PATH) -> None:
     data: dict[str, object] = {
         "vault_path": str(config.vault_path),
         "font_variant": config.font_variant,
-        "font_size": config.font_size,
+        "ui_font_size": config.ui_font_size,
+        "reading_font_size": config.reading_font_size,
         "update_channel": config.update_channel,
         "virustotal_enabled": config.virustotal_enabled,
     }

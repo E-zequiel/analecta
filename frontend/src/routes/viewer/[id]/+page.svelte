@@ -225,7 +225,7 @@
 
 	.entry-title {
 		font-size: 1.4rem;
-		font-weight: 700;
+		font-weight: 600;
 		color: var(--red);
 		margin: 0 0 1.5rem;
 		line-height: 1.3;
