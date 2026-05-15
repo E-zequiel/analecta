@@ -157,6 +157,23 @@ def test_patch_entry_tags(seeded_client: TestClient) -> None:
     assert set(r.json()["tags"]) == {"rust", "wasm"}
 
 
+def test_patch_entry_flags(seeded_client: TestClient) -> None:
+    entry_id = seeded_client.get("/api/v1/entries").json()[0]["id"]
+    r = seeded_client.patch(f"/api/v1/entries/{entry_id}", json={"flags": ["bookmark"]})
+    assert r.status_code == 200
+    assert r.json()["flags"] == ["bookmark"]
+
+
+def test_list_entries_filter_flag(seeded_client: TestClient) -> None:
+    entry_id = seeded_client.get("/api/v1/entries").json()[0]["id"]
+    seeded_client.patch(f"/api/v1/entries/{entry_id}", json={"flags": ["gem"]})
+    r = seeded_client.get("/api/v1/entries?flag=gem")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 1
+    assert data[0]["id"] == entry_id
+
+
 def test_patch_entry_404(client: TestClient) -> None:
     r = client.patch("/api/v1/entries/9999", json={"status": "read"})
     assert r.status_code == 404
