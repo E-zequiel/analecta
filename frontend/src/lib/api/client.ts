@@ -57,6 +57,8 @@ export interface AppConfig {
 	custom_font_path: string | null;
 	update_channel: 'stable' | 'dev';
 	virustotal_enabled: boolean;
+	theme: 'dark' | 'light';
+	accent_color: 'red' | 'yellow' | 'green' | 'cyan';
 }
 
 export interface AppConfigUpdate {
@@ -67,6 +69,8 @@ export interface AppConfigUpdate {
 	custom_font_path?: string | null;
 	update_channel?: 'stable' | 'dev';
 	virustotal_enabled?: boolean;
+	theme?: 'dark' | 'light';
+	accent_color?: 'red' | 'yellow' | 'green' | 'cyan';
 }
 
 export interface ScanResult {

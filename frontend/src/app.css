@@ -93,6 +93,26 @@
 	--font-family: 'JetBrains Mono', monospace;
 }
 
+/* Tokyo Night Light palette */
+.theme-light {
+	--bg: #d5d6db;
+	--bg-dark: #cbccd1;
+	--bg-alt: #c0c1c7;
+	--bg-highlight: #babbbf;
+	--fg: #343b58;
+	--fg-dark: #565a6e;
+	--fg-muted: #9699a3;
+	--border: #b4b5ba;
+	--terminal: #9699a3;
+	--red: #c52f65;
+	--yellow: #a07025;
+	--green: #587539;
+	--cyan: #0f4b6e;
+	--magenta: #7847bd;
+	--accent-warm: #cc7012;
+	color-scheme: light;
+}
+
 *,
 *::before,
 *::after {
