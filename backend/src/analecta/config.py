@@ -24,6 +24,8 @@ class AppConfig(BaseModel):
         virustotal_enabled: Whether to offer VirusTotal URL scanning. Requires
             the user's API key to be present in the system keyring. Disabled
             by default.
+        theme: UI colour theme — ``dark`` or ``light``.
+        accent_color: Active accent colour drawn from the Tokyo Night palette.
     """
 
     vault_path: Path = Path.home() / "Documents" / "Analecta"
@@ -33,6 +35,8 @@ class AppConfig(BaseModel):
     custom_font_path: str | None = None
     update_channel: Literal["stable", "dev"] = "stable"
     virustotal_enabled: bool = False
+    theme: Literal["dark", "light"] = "dark"
+    accent_color: Literal["red", "yellow", "green", "cyan"] = "yellow"
 
     @field_validator("vault_path", mode="before")
     @classmethod
@@ -73,6 +77,8 @@ def save_config(config: AppConfig, config_path: Path = CONFIG_PATH) -> None:
         "reading_font_size": config.reading_font_size,
         "update_channel": config.update_channel,
         "virustotal_enabled": config.virustotal_enabled,
+        "theme": config.theme,
+        "accent_color": config.accent_color,
     }
     if config.custom_font_path is not None:
         data["custom_font_path"] = config.custom_font_path

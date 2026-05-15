@@ -5,13 +5,22 @@
 	import { config as configApi, security } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 
+	const ACCENT_OPTIONS = [
+		{ id: 'red',    label: 'Red'    },
+		{ id: 'yellow', label: 'Yellow' },
+		{ id: 'green',  label: 'Green'  },
+		{ id: 'cyan',   label: 'Cyan'   },
+	] as const satisfies { id: 'red' | 'yellow' | 'green' | 'cyan'; label: string }[];
+
 	let form = $state({
 		vault_path: '',
 		font_variant: 'regular' as 'regular' | 'nerd' | 'custom',
-		ui_font_size: 14.0,
+		ui_font_size: 16.0,
 		reading_font_size: 17.0,
 		update_channel: 'stable' as 'stable' | 'dev',
-		virustotal_enabled: false
+		virustotal_enabled: false,
+		theme: 'dark' as 'dark' | 'light',
+		accent_color: 'yellow' as 'red' | 'yellow' | 'green' | 'cyan',
 	});
 	let initialVaultPath = $state('');
 	let customFontPath = $state('');
@@ -26,6 +35,8 @@
 	let uiFontSaved = $state(false);
 	let readingFontSaved = $state(false);
 	let channelSaved = $state(false);
+	let themeSaved = $state(false);
+	let accentSaved = $state(false);
 
 	// VT section
 	let vtSaving = $state(false);
@@ -46,6 +57,10 @@
 		node.select();
 	}
 
+	function applyCurrentFont(): Promise<void> {
+		return applyFont(form.font_variant, customFontPath || null, form.ui_font_size, form.reading_font_size, form.theme, form.accent_color);
+	}
+
 	function startEditUiFont() { origUiFont = form.ui_font_size; editingUiFont = true; }
 	function commitUiFont() {
 		form.ui_font_size = Math.min(20, Math.max(10, form.ui_font_size));
@@ -54,7 +69,7 @@
 	}
 	function cancelUiFont() {
 		form.ui_font_size = origUiFont;
-		applyFont(form.font_variant, customFontPath || null, form.ui_font_size, form.reading_font_size);
+		applyCurrentFont();
 		editingUiFont = false;
 	}
 
@@ -66,7 +81,7 @@
 	}
 	function cancelReadingFont() {
 		form.reading_font_size = origReadingFont;
-		applyFont(form.font_variant, customFontPath || null, form.ui_font_size, form.reading_font_size);
+		applyCurrentFont();
 		editingReadingFont = false;
 	}
 
@@ -79,7 +94,9 @@
 				ui_font_size: cfg.ui_font_size,
 				reading_font_size: cfg.reading_font_size,
 				update_channel: cfg.update_channel,
-				virustotal_enabled: cfg.virustotal_enabled
+				virustotal_enabled: cfg.virustotal_enabled,
+				theme: cfg.theme,
+				accent_color: cfg.accent_color,
 			};
 			initialVaultPath = cfg.vault_path;
 			customFontPath = cfg.custom_font_path ?? '';
@@ -117,7 +134,7 @@
 
 	async function autoSaveFontVariant() {
 		try {
-			await applyFont(form.font_variant, customFontPath || null, form.ui_font_size, form.reading_font_size);
+			await applyCurrentFont();
 			await configApi.update({ font_variant: form.font_variant, custom_font_path: customFontPath || null });
 			flash((v) => (fontVariantSaved = v));
 		} catch (err) {
@@ -137,7 +154,7 @@
 	}
 
 	function onUiFontInput() {
-		applyFont(form.font_variant, customFontPath || null, form.ui_font_size, form.reading_font_size);
+		applyCurrentFont();
 		if (uiFontTimer) clearTimeout(uiFontTimer);
 		uiFontTimer = setTimeout(async () => {
 			try {
@@ -150,7 +167,7 @@
 	}
 
 	function onReadingFontInput() {
-		applyFont(form.font_variant, customFontPath || null, form.ui_font_size, form.reading_font_size);
+		applyCurrentFont();
 		if (readingFontTimer) clearTimeout(readingFontTimer);
 		readingFontTimer = setTimeout(async () => {
 			try {
@@ -166,6 +183,36 @@
 		try {
 			await configApi.update({ update_channel: form.update_channel });
 			flash((v) => (channelSaved = v));
+		} catch (err) {
+			error = err instanceof Error ? err.message : String(err);
+		}
+	}
+
+	function toggleTheme() {
+		form.theme = form.theme === 'dark' ? 'light' : 'dark';
+		autoSaveTheme();
+	}
+
+	async function autoSaveTheme() {
+		try {
+			await applyCurrentFont();
+			await configApi.update({ theme: form.theme });
+			flash((v) => (themeSaved = v));
+		} catch (err) {
+			error = err instanceof Error ? err.message : String(err);
+		}
+	}
+
+	function selectAccent(id: 'red' | 'yellow' | 'green' | 'cyan') {
+		form.accent_color = id;
+		autoSaveAccent();
+	}
+
+	async function autoSaveAccent() {
+		try {
+			await applyCurrentFont();
+			await configApi.update({ accent_color: form.accent_color });
+			flash((v) => (accentSaved = v));
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		}
@@ -330,6 +377,38 @@
 				</div>
 			</div>
 		{/if}
+	</section>
+
+	<section>
+		<h2>Appearance</h2>
+		<div class="field toggle-field">
+			<label for="theme-toggle">Theme {#if themeSaved}<span class="saved-tag">✓</span>{/if}</label>
+			<button
+				id="theme-toggle"
+				role="switch"
+				aria-checked={form.theme === 'light'}
+				class="toggle"
+				class:on={form.theme === 'light'}
+				onclick={toggleTheme}
+			>
+				{form.theme === 'light' ? 'Light' : 'Dark'}
+			</button>
+		</div>
+		<div class="field" role="group" aria-labelledby="accent-label">
+			<span id="accent-label" class="field-caption">
+				Accent color {#if accentSaved}<span class="saved-tag">✓</span>{/if}
+			</span>
+			<div class="accent-swatches">
+				{#each ACCENT_OPTIONS as opt}
+					<button
+						class="swatch swatch-{opt.id}"
+						class:active={form.accent_color === opt.id}
+						title={opt.label}
+						onclick={() => selectAccent(opt.id)}
+					></button>
+				{/each}
+			</div>
+		</div>
 	</section>
 
 	<section>
@@ -604,6 +683,42 @@
 		border-color: var(--accent-dark);
 		background: var(--bg-highlight);
 		color: var(--accent);
+	}
+
+	/* Accent colour swatches */
+	.field-caption {
+		font-size: 12px;
+		color: var(--fg-muted);
+	}
+
+	.accent-swatches {
+		display: flex;
+		gap: 0.6rem;
+	}
+
+	.swatch {
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		border: 2px solid transparent;
+		cursor: pointer;
+		padding: 0;
+		transition: border-color 0.12s, transform 0.1s;
+	}
+
+	.swatch-red    { background: var(--red);    }
+	.swatch-yellow { background: var(--yellow); }
+	.swatch-green  { background: var(--green);  }
+	.swatch-cyan   { background: var(--cyan);   }
+
+	.swatch.active {
+		border-color: var(--fg);
+		transform: scale(1.2);
+	}
+
+	.swatch:hover:not(.active) {
+		transform: scale(1.1);
+		border-color: var(--fg-muted);
 	}
 
 	.vt-actions {
