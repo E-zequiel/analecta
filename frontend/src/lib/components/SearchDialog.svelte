@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { entries as entriesApi, type Entry } from '$lib/api/client';
 	import { searchOpen } from '$lib/stores/ui';
+	import { navigateInTab } from '$lib/stores/tabs';
 
 	let query = $state('');
 	let results = $state<Entry[]>([]);
@@ -42,9 +42,9 @@
 		searchOpen.set(false);
 	}
 
-	function open(id: number) {
+	function open(entry: Entry) {
 		close();
-		goto(`/viewer/${id}`);
+		navigateInTab(entry.id, entry.title);
 	}
 
 	function handleKey(e: KeyboardEvent) {
@@ -75,7 +75,7 @@
 					<p class="hint">No results.</p>
 				{:else}
 					{#each results as entry (entry.id)}
-						<button class="result-item" onclick={() => open(entry.id)}>
+						<button class="result-item" onclick={() => open(entry)}>
 							<span class="result-title">{entry.title}</span>
 							<span class="result-meta">{entry.source_type}</span>
 						</button>

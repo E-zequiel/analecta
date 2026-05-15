@@ -31,6 +31,7 @@
 	import { createRenderer } from '$lib/markdown/renderer';
 	import '$lib/markdown/tokyo-night.css';
 	import { lastViewedId } from '$lib/stores/ui';
+	import { ensureEntryTab, closeTab } from '$lib/stores/tabs';
 	import { entryChangedTick } from '$lib/stores/sse';
 
 	const entryId = $derived(parseInt($page.params['id'] as string));
@@ -99,17 +100,50 @@
 		if (tagsOpen && tagAddInputEl) tagAddInputEl.focus();
 	});
 
-	onMount(async () => {
-		try {
-			const [e, cfg] = await Promise.all([entriesApi.get(entryId), configApi.get()]);
-			entry = e;
+	// Config is stable across entries — fetch once on mount.
+	onMount(() => {
+		configApi.get().then((cfg) => {
 			vtEnabled = cfg.virustotal_enabled;
 			readingFontSize = cfg.reading_font_size;
-			const source = await readTextFile(e.file_path);
-			html = createRenderer(e.file_path)(source);
-		} catch (err) {
-			error = err instanceof Error ? err.message : String(err);
-		}
+		}).catch(() => {});
+	});
+
+	// Re-fetch entry whenever the route param changes (same-component navigation).
+	$effect(() => {
+		const id = entryId;
+		if (isNaN(id)) return;
+
+		entry = null;
+		html = '';
+		error = '';
+		scanning = false;
+		scanResult = null;
+		scanError = '';
+		tagsOpen = false;
+
+		let cancelled = false;
+
+		entriesApi
+			.get(id)
+			.then((e) => {
+				if (cancelled) return Promise.reject('cancelled');
+				entry = e;
+				ensureEntryTab(id, e.title);
+				return readTextFile(e.file_path);
+			})
+			.then((source) => {
+				if (cancelled) return;
+				html = createRenderer(entry!.file_path)(source);
+			})
+			.catch((err) => {
+				if (!cancelled && err !== 'cancelled') {
+					error = err instanceof Error ? err.message : String(err);
+				}
+			});
+
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	async function setStatus(status: string) {
@@ -141,7 +175,7 @@
 		if (!ok) return;
 		await entriesApi.delete(entry.id);
 		entryChangedTick.update((n) => n + 1);
-		goto('/');
+		closeTab(`viewer-${entry.id}`);
 	}
 
 	function adjustFontSize(delta: number) {
@@ -204,7 +238,7 @@
 <div class="viewer">
 	<div class="toolbar">
 		<!-- Left: navigation -->
-		<button class="btn-icon" onclick={() => goto('/')} title="Back">
+		<button class="btn-icon" onclick={() => closeTab(`viewer-${entryId}`)} title="Back">
 			<CornerUpLeft size={16} />
 		</button>
 		{#if entry}
