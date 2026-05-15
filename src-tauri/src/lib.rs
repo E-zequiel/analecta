@@ -47,6 +47,7 @@ pub fn run() {
 
             let handle = app.handle().clone();
             app.deep_link().on_open_url(move |event| {
+                tray::show_main_window(&handle);
                 for url in event.urls() {
                     if url.scheme() == "analecta" {
                         let _ = handle.emit("deep-link", url.to_string());
