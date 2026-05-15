@@ -147,6 +147,24 @@ export const entries = {
 export const tags = {
 	list(): Promise<Tag[]> {
 		return apiFetch<Tag[]>('/tags');
+	},
+
+	create(name: string): Promise<Tag> {
+		return apiFetch<Tag>('/tags', {
+			method: 'POST',
+			body: JSON.stringify({ name })
+		});
+	},
+
+	rename(name: string, newName: string): Promise<Tag> {
+		return apiFetch<Tag>(`/tags/${encodeURIComponent(name)}`, {
+			method: 'PUT',
+			body: JSON.stringify({ new_name: newName })
+		});
+	},
+
+	delete(name: string): Promise<void> {
+		return apiFetch<void>(`/tags/${encodeURIComponent(name)}`, { method: 'DELETE' });
 	}
 };
 

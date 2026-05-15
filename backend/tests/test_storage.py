@@ -249,3 +249,73 @@ def test_search_no_results(index: VaultIndex):
 def test_search_invalid_fts_syntax_raises(index: VaultIndex):
     with pytest.raises(sqlite3.OperationalError):
         index.search("AND")
+
+
+# ---------------------------------------------------------------------------
+# VaultIndex — tag management (create / rename / delete)
+# ---------------------------------------------------------------------------
+
+
+def test_create_tag(index: VaultIndex):
+    index.create_tag("python")
+    assert any(name == "python" for name, _ in index.list_tags())
+
+
+def test_create_tag_idempotent(index: VaultIndex):
+    index.create_tag("python")
+    index.create_tag("python")  # should not raise
+    assert sum(1 for name, _ in index.list_tags() if name == "python") == 1
+
+
+def test_rename_tag_updates_table(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["python"])
+    index.rename_tag("python", "py")
+    names = [n for n, _ in index.list_tags()]
+    assert "py" in names
+    assert "python" not in names
+
+
+def test_rename_tag_updates_entries_json(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["python", "sqlite"])
+    index.rename_tag("python", "py")
+    import json as _json
+
+    tags = _json.loads(index.get_entry(entry_id).tags_json)
+    assert "py" in tags
+    assert "python" not in tags
+    assert "sqlite" in tags
+
+
+def test_rename_tag_conflict_raises(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["python", "sqlite"])
+    with pytest.raises(ValueError, match="already exists"):
+        index.rename_tag("python", "sqlite")
+
+
+def test_rename_tag_nonexistent_noop(index: VaultIndex):
+    index.rename_tag("nonexistent", "other")  # should not raise
+
+
+def test_delete_tag_removes_from_table(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["python"])
+    index.delete_tag("python")
+    assert not any(name == "python" for name, _ in index.list_tags())
+
+
+def test_delete_tag_removes_from_entries_json(index: VaultIndex):
+    import json as _json
+
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["python", "sqlite"])
+    index.delete_tag("python")
+    tags = _json.loads(index.get_entry(entry_id).tags_json)
+    assert "python" not in tags
+    assert "sqlite" in tags
+
+
+def test_delete_tag_nonexistent_noop(index: VaultIndex):
+    index.delete_tag("nonexistent")  # should not raise

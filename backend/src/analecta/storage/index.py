@@ -323,6 +323,98 @@ class VaultIndex:
         ).fetchall()
         return [row[0] for row in rows]
 
+    def create_tag(self, name: str) -> None:
+        """Create a standalone tag with no entries.
+
+        Args:
+            name: Tag name to create. Does nothing if it already exists.
+        """
+        self._conn.execute(
+            "INSERT OR IGNORE INTO tags (name, count) VALUES (?, 0)", (name,)
+        )
+        self._conn.commit()
+
+    def rename_tag(self, old_name: str, new_name: str) -> None:
+        """Rename a tag globally.
+
+        Updates the tags table and re-serialises ``tags_json`` in all affected entries.
+
+        Args:
+            old_name: Current tag name.
+            new_name: Replacement tag name.
+
+        Raises:
+            ValueError: If a tag named *new_name* already exists.
+        """
+        tag_row = self._conn.execute(
+            "SELECT id FROM tags WHERE name = ?", (old_name,)
+        ).fetchone()
+        if tag_row is None:
+            return
+        tag_id = tag_row["id"]
+        if self._conn.execute(
+            "SELECT id FROM tags WHERE name = ?", (new_name,)
+        ).fetchone():
+            raise ValueError(f"Tag '{new_name}' already exists")
+        entry_ids = [
+            row[0]
+            for row in self._conn.execute(
+                "SELECT entry_id FROM entry_tags WHERE tag_id = ?", (tag_id,)
+            ).fetchall()
+        ]
+        self._conn.execute("UPDATE tags SET name = ? WHERE id = ?", (new_name, tag_id))
+        now = _now()
+        for eid in entry_ids:
+            row = self._conn.execute(
+                "SELECT tags_json FROM entries WHERE id = ?", (eid,)
+            ).fetchone()
+            if row:
+                tags = [
+                    new_name if t == old_name else t
+                    for t in json.loads(row["tags_json"])
+                ]
+                self._conn.execute(
+                    "UPDATE entries SET tags_json = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(tags, ensure_ascii=False), now, eid),
+                )
+        self._conn.commit()
+
+    def delete_tag(self, name: str) -> None:
+        """Delete a tag globally.
+
+        Removes it from the tags table, entry_tags, and re-serialises ``tags_json``
+        in all affected entries.
+
+        Args:
+            name: Tag name to delete. Does nothing if it does not exist.
+        """
+        tag_row = self._conn.execute(
+            "SELECT id FROM tags WHERE name = ?", (name,)
+        ).fetchone()
+        if tag_row is None:
+            return
+        tag_id = tag_row["id"]
+        entry_ids = [
+            row[0]
+            for row in self._conn.execute(
+                "SELECT entry_id FROM entry_tags WHERE tag_id = ?", (tag_id,)
+            ).fetchall()
+        ]
+        now = _now()
+        for eid in entry_ids:
+            row = self._conn.execute(
+                "SELECT tags_json FROM entries WHERE id = ?", (eid,)
+            ).fetchone()
+            if row:
+                tags = [t for t in json.loads(row["tags_json"]) if t != name]
+                self._conn.execute(
+                    "UPDATE entries SET tags_json = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(tags, ensure_ascii=False), now, eid),
+                )
+        self._conn.execute("DELETE FROM entry_tags WHERE tag_id = ?", (tag_id,))
+        self._conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+        self._conn.commit()
+
     def list_tags(self) -> list[tuple[str, int]]:
         """Return all tags sorted by entry count descending.
 
