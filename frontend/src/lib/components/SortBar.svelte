@@ -40,7 +40,7 @@
 			title={opt.title}
 			onclick={() => onsort(opt.sortBy, opt.sortDir)}
 		>
-			<opt.Icon size={14} />
+			<opt.Icon size={18} />
 		</button>
 	{/each}
 </div>

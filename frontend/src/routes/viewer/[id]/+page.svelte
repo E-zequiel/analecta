@@ -239,17 +239,17 @@
 	<div class="toolbar">
 		<!-- Left: navigation -->
 		<button class="btn-icon" onclick={() => closeTab(`viewer-${entryId}`)} title="Back">
-			<CornerUpLeft size={16} />
+			<CornerUpLeft size={18} />
 		</button>
 		{#if entry}
 			<button class="btn-icon" onclick={() => goto(`/editor/${entry!.id}`)} title="Edit">
-				<PenLine size={16} />
+				<PenLine size={18} />
 			</button>
 			<button class="btn-icon" onclick={copyUrl} title="Copy URL">
-				<Link size={16} />
+				<Link size={18} />
 			</button>
 			<button class="btn-icon" onclick={deleteEntry} title="Delete">
-				<Shredder size={16} />
+				<Shredder size={18} />
 			</button>
 			{#if vtEnabled}
 				<button
@@ -258,7 +258,7 @@
 					disabled={scanning}
 					title={scanning ? 'Scanning…' : 'VirusTotal'}
 				>
-					<ShieldCheck size={16} />
+					<ShieldCheck size={18} />
 				</button>
 			{/if}
 		{/if}
@@ -268,11 +268,11 @@
 		<!-- Center: font size controls -->
 		<div class="font-controls">
 			<button class="btn-icon" onclick={() => adjustFontSize(-1)} title="Decrease font size">
-				<AArrowDown size={16} />
+				<AArrowDown size={18} />
 			</button>
 			<span class="font-size-label">{readingFontSize}px</span>
 			<button class="btn-icon" onclick={() => adjustFontSize(1)} title="Increase font size">
-				<AArrowUp size={16} />
+				<AArrowUp size={18} />
 			</button>
 		</div>
 
@@ -286,25 +286,25 @@
 					class:active={entry.status === 'read'}
 					onclick={() => setStatus('read')}
 					title="Read"
-				><Eye size={16} /></button>
+				><Eye size={18} /></button>
 				<button
 					class="btn-icon"
 					class:active={entry.status === 'unread'}
 					onclick={() => setStatus('unread')}
 					title="Unread"
-				><EyeClosed size={16} /></button>
+				><EyeClosed size={18} /></button>
 				<button
 					class="btn-icon"
 					class:active={entry.flags?.includes('bookmark')}
 					onclick={() => toggleFlag('bookmark')}
 					title="Bookmark"
-				><Bookmark size={16} /></button>
+				><Bookmark size={18} /></button>
 				<button
 					class="btn-icon"
 					class:active={entry.flags?.includes('gem')}
 					onclick={() => toggleFlag('gem')}
 					title="Gem"
-				><Gem size={16} /></button>
+				><Gem size={18} /></button>
 			</div>
 
 			<div class="tags-container" bind:this={tagsContainerEl}>
@@ -314,7 +314,7 @@
 					onclick={() => { tagsOpen = !tagsOpen; if (tagsOpen) fetchAllTags(); }}
 					title="Tags"
 				>
-					<BrainCircuit size={16} />
+					<BrainCircuit size={18} />
 				</button>
 
 				{#if tagsOpen}
