@@ -114,22 +114,27 @@ async def list_entries(
     flag: str | None = None,
     tag: str | None = None,
     q: str | None = None,
+    sort_by: str = "created_at",
+    sort_dir: str = "desc",
     index: VaultIndex = Depends(get_index),
 ) -> list[EntryOut]:
-    """List entries with optional filters.
+    """List entries with optional filters and sort control.
 
-    When *q* is present, delegates to FTS5 search; otherwise lists by status /
-    flag / tag. All filters compose.
+    When *q* is present, delegates to FTS5 search (BM25 relevance order,
+    sort_by/sort_dir ignored). Otherwise lists by status / flag / tag.
+    All filters compose.
 
     Args:
         status: Optional status filter (unread / read).
         flag: Optional flag filter (bookmark / gem).
         tag: Optional tag name filter.
         q: Optional FTS5 query string.
+        sort_by: Column to sort by — ``title`` or ``created_at`` (default).
+        sort_dir: Sort direction — ``asc`` or ``desc`` (default).
         index: Injected VaultIndex singleton.
 
     Returns:
-        List of matching entries ordered by relevance or creation date.
+        List of matching entries ordered by relevance or the specified sort.
     """
     if q:
         records = await asyncio.to_thread(index.search, q)
@@ -152,8 +157,19 @@ async def list_entries(
             if flag is not None and flag not in json.loads(entry.flags_json):
                 continue
             records.append(entry)
+        reverse = sort_dir.lower() == "desc"
+        if sort_by == "title":
+            records.sort(key=lambda r: r.title.lower(), reverse=reverse)
+        else:
+            records.sort(key=lambda r: r.created_at, reverse=reverse)
     else:
-        records = await asyncio.to_thread(index.list_entries, status=status, flag=flag)
+        records = await asyncio.to_thread(
+            index.list_entries,
+            status=status,
+            flag=flag,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+        )
     return [entry_out(r) for r in records]
 
 

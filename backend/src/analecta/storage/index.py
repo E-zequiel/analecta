@@ -6,6 +6,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+_ALLOWED_SORT_COLS: frozenset[str] = frozenset({"title", "created_at"})
+_ALLOWED_SORT_DIRS: frozenset[str] = frozenset({"asc", "desc"})
+
 
 @dataclass
 class EntryRecord:
@@ -159,18 +162,29 @@ class VaultIndex:
         return _row_to_entry(row) if row else None
 
     def list_entries(
-        self, status: str | None = None, flag: str | None = None
+        self,
+        status: str | None = None,
+        flag: str | None = None,
+        sort_by: str = "created_at",
+        sort_dir: str = "desc",
     ) -> list[EntryRecord]:
-        """List entries ordered by creation date descending.
+        """List entries with optional filters and sort control.
 
         Args:
             status: Optional status filter.
             flag: Optional flag filter (bookmark / gem); matches entries whose
                 flags_json array contains this value.
+            sort_by: Column to sort by — ``title`` or ``created_at``.
+                Defaults to ``created_at``.
+            sort_dir: Sort direction — ``asc`` or ``desc``. Defaults to ``desc``.
 
         Returns:
             List of matching ``EntryRecord`` objects.
         """
+        if sort_by not in _ALLOWED_SORT_COLS:
+            sort_by = "created_at"
+        if sort_dir not in _ALLOWED_SORT_DIRS:
+            sort_dir = "desc"
         conditions: list[str] = []
         params: list[str] = []
         if status is not None:
@@ -183,7 +197,7 @@ class VaultIndex:
             params.append(flag)
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         rows = self._conn.execute(
-            f"SELECT * FROM entries {where} ORDER BY created_at DESC",
+            f"SELECT * FROM entries {where} ORDER BY {sort_by} {sort_dir.upper()}",
             params,
         ).fetchall()
         return [_row_to_entry(r) for r in rows]

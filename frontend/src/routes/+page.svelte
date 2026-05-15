@@ -7,23 +7,32 @@
 	import { activeSection, selectedTag } from '$lib/stores/ui';
 	import { entryAddedTick } from '$lib/stores/sse';
 	import EntryList from '$lib/components/EntryList.svelte';
+	import SortBar from '$lib/components/SortBar.svelte';
 
 	let entryList = $state<Entry[]>([]);
 	let loading = $state(false);
 	let checking = $state(true);
+	let sortBy = $state<'title' | 'created_at'>('created_at');
+	let sortDir = $state<'asc' | 'desc'>('desc');
 
 	const FLAG_SECTIONS = new Set(['bookmark', 'gem']);
 
-	function sectionListParams(section: string, tag: string | undefined) {
-		if (section === 'library') return { tag };
-		if (FLAG_SECTIONS.has(section)) return { flag: section, tag };
-		return { status: section, tag };
+	function sectionListParams(
+		section: string,
+		tag: string | undefined,
+		by: 'title' | 'created_at',
+		dir: 'asc' | 'desc'
+	) {
+		const sort = { sort_by: by, sort_dir: dir };
+		if (section === 'library') return { tag, ...sort };
+		if (FLAG_SECTIONS.has(section)) return { flag: section, tag, ...sort };
+		return { status: section, tag, ...sort };
 	}
 
 	$effect(() => {
 		const section = $activeSection;
 		const tag = $selectedTag ?? undefined;
-		const params = sectionListParams(section, tag);
+		const params = sectionListParams(section, tag, sortBy, sortDir);
 
 		let cancelled = false;
 		loading = true;
@@ -66,8 +75,10 @@
 		prevTick = tick;
 		const section = untrack(() => $activeSection);
 		const tag = untrack(() => $selectedTag ?? undefined);
+		const by = untrack(() => sortBy);
+		const dir = untrack(() => sortDir);
 		entriesApi
-			.list(sectionListParams(section, tag))
+			.list(sectionListParams(section, tag, by, dir))
 			.then((data) => {
 				entryList = data;
 			})
@@ -77,6 +88,14 @@
 
 {#if !checking}
 	<div class="dashboard">
+		<SortBar
+			{sortBy}
+			{sortDir}
+			onsort={(by, dir) => {
+				sortBy = by;
+				sortDir = dir;
+			}}
+		/>
 		<div class="list-wrap">
 			<EntryList entries={entryList} {loading} />
 		</div>

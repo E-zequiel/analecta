@@ -120,7 +120,7 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 // ---------------------------------------------------------------------------
 
 export const entries = {
-	list(params?: { status?: string; flag?: string; tag?: string; q?: string }): Promise<Entry[]> {
+	list(params?: { status?: string; flag?: string; tag?: string; q?: string; sort_by?: 'title' | 'created_at'; sort_dir?: 'asc' | 'desc' }): Promise<Entry[]> {
 		const filtered = Object.entries(params ?? {}).filter(
 			(pair): pair is [string, string] => pair[1] !== undefined
 		);
