@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { afterNavigate } from '$app/navigation';
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
 	import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
@@ -9,11 +9,14 @@
 	import { port } from '$lib/stores/sidecar';
 	import { entryAddedTick } from '$lib/stores/sse';
 	import { sidebarCollapsed, sidebarWidth, searchOpen } from '$lib/stores/ui';
+	import { openEntryTab, syncActiveTabFromPath } from '$lib/stores/tabs';
 	import { pkm, config as configApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 	import SidecarLoadingScreen from '$lib/components/SidecarLoadingScreen.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import TabBar from '$lib/components/TabBar.svelte';
 	import SearchDialog from '$lib/components/SearchDialog.svelte';
+	import ContextMenu from '$lib/components/ContextMenu.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 
 	let { children } = $props();
@@ -96,6 +99,10 @@
 		};
 	});
 
+	afterNavigate(({ to }) => {
+		if (to) syncActiveTabFromPath(to.url.pathname);
+	});
+
 	$effect(() => {
 		const p = $port;
 		const url = pendingDeepLink;
@@ -104,7 +111,7 @@
 		pendingDeepLink = null;
 		pkm.parseUrl(url).then((result) => {
 			if (result.entry_id !== null) {
-				goto(`/viewer/${result.entry_id}`);
+				openEntryTab(result.entry_id, `Entry #${result.entry_id}`);
 			}
 		});
 	});
@@ -168,10 +175,12 @@
 			></div>
 		{/if}
 		<main>
+			<TabBar />
 			{@render children()}
 		</main>
 	</div>
 	<SearchDialog />
+	<ContextMenu />
 {/if}
 
 <style>

@@ -34,6 +34,8 @@
 		searchOpen,
 		lastViewedId
 	} from '$lib/stores/ui';
+	import { navigateInTab, openEntryTab, openSectionTab } from '$lib/stores/tabs';
+	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
 
 	const SECTIONS = [
@@ -235,23 +237,31 @@
 	}
 
 	function selectSection(id: SectionId) {
-		activeSection.set(id);
 		selectedTag.set(null);
 		toggleSection(id);
-		if ($page.url.pathname !== '/') goto('/');
+		if ($page.url.pathname.startsWith('/viewer')) {
+			openSectionTab(id);
+		} else {
+			activeSection.set(id);
+			if ($page.url.pathname !== '/') goto('/');
+		}
 	}
 
 	function selectTag(name: string) {
 		selectedTag.update((current) => (current === name ? null : name));
-		if ($page.url.pathname !== '/') goto('/');
+		if ($page.url.pathname.startsWith('/viewer')) {
+			openSectionTab('library');
+		} else if ($page.url.pathname !== '/') {
+			goto('/');
+		}
 	}
 
-	function openEntry(id: number) {
-		goto(`/viewer/${id}`);
+	function openEntry(id: number, title: string) {
+		navigateInTab(id, title);
 	}
 
 	function goLast() {
-		if ($lastViewedId !== null) goto(`/viewer/${$lastViewedId}`);
+		if ($lastViewedId !== null) navigateInTab($lastViewedId, `Entry #${$lastViewedId}`);
 	}
 
 	const isSettingsActive = $derived($page.url.pathname.startsWith('/settings'));
@@ -322,7 +332,8 @@
 							<button
 								class="entry-item"
 								class:active-entry={$page.params['id'] === String(entry.id)}
-								onclick={() => openEntry(entry.id)}
+								onclick={() => openEntry(entry.id, entry.title)}
+								oncontextmenu={(e) => showContextMenu(e, entry)}
 								title={entry.title}
 							>
 								{entry.title}

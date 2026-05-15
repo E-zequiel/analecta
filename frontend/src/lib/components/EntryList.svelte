@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import type { Entry } from '$lib/api/client';
+	import { navigateInTab, openEntryTab } from '$lib/stores/tabs';
+	import { showContextMenu } from '$lib/stores/contextMenu';
 
 	let { entries, loading = false }: { entries: Entry[]; loading?: boolean } = $props();
 
@@ -27,7 +28,17 @@
 		<p class="hint">No entries found.</p>
 	{:else}
 		{#each entries as entry (entry.id)}
-			<button class="entry-card" onclick={() => goto(`/viewer/${entry.id}`)}>
+			<button
+				class="entry-card"
+				onclick={() => navigateInTab(entry.id, entry.title)}
+				onmousedown={(e) => {
+					if (e.button === 1) {
+						e.preventDefault();
+						openEntryTab(entry.id, entry.title, true);
+					}
+				}}
+				oncontextmenu={(e) => showContextMenu(e, entry)}
+			>
 				<div class="entry-header">
 					<span class="title">{entry.title}</span>
 					<span class="source" style="color: {sourceColors[entry.source_type] ?? 'var(--fg-muted)'}">
