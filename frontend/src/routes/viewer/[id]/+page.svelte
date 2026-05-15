@@ -84,6 +84,16 @@
 		entryChangedTick.update((n) => n + 1);
 	}
 
+	async function toggleFlag(flag: string) {
+		if (!entry) return;
+		const current = entry.flags ?? [];
+		const newFlags = current.includes(flag)
+			? current.filter((f) => f !== flag)
+			: [...current, flag];
+		entry = await entriesApi.patch(entry.id, { flags: newFlags });
+		entryChangedTick.update((n) => n + 1);
+	}
+
 	async function copyUrl() {
 		if (!entry) return;
 		await navigator.clipboard.writeText(`analecta://open?id=${entry.id}`);
@@ -189,14 +199,14 @@
 				><EyeClosed size={16} /></button>
 				<button
 					class="btn-icon"
-					class:active={entry.status === 'favorite'}
-					onclick={() => setStatus('favorite')}
+					class:active={entry.flags?.includes('bookmark')}
+					onclick={() => toggleFlag('bookmark')}
 					title="Bookmark"
 				><Bookmark size={16} /></button>
 				<button
 					class="btn-icon"
-					class:active={entry.status === 'recommend'}
-					onclick={() => setStatus('recommend')}
+					class:active={entry.flags?.includes('gem')}
+					onclick={() => toggleFlag('gem')}
 					title="Gem"
 				><Gem size={16} /></button>
 			</div>

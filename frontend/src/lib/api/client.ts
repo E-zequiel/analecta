@@ -29,6 +29,7 @@ export interface Entry {
 	updated_at: string;
 	status: string;
 	tags: string[];
+	flags: string[];
 }
 
 export interface FtsPatch {
@@ -39,6 +40,7 @@ export interface FtsPatch {
 export interface EntryPatch {
 	status?: string;
 	tags?: string[];
+	flags?: string[];
 	fts?: FtsPatch;
 }
 
@@ -114,7 +116,7 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 // ---------------------------------------------------------------------------
 
 export const entries = {
-	list(params?: { status?: string; tag?: string; q?: string }): Promise<Entry[]> {
+	list(params?: { status?: string; flag?: string; tag?: string; q?: string }): Promise<Entry[]> {
 		const filtered = Object.entries(params ?? {}).filter(
 			(pair): pair is [string, string] => pair[1] !== undefined
 		);

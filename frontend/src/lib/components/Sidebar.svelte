@@ -34,14 +34,20 @@
 	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
 
 	const SECTIONS = [
-		{ id: 'all',       label: 'LIBRARY',  icon: Library   },
-		{ id: 'unread',    label: 'UNREAD',   icon: EyeClosed },
-		{ id: 'read',      label: 'READ',     icon: Eye       },
-		{ id: 'favorite',  label: 'BOOKMARK', icon: Bookmark  },
-		{ id: 'recommend', label: 'GEM',      icon: Gem       }
+		{ id: 'library',  label: 'LIBRARY',  icon: Library   },
+		{ id: 'unread',   label: 'UNREAD',   icon: EyeClosed },
+		{ id: 'read',     label: 'READ',     icon: Eye       },
+		{ id: 'bookmark', label: 'BOOKMARK', icon: Bookmark  },
+		{ id: 'gem',      label: 'GEM',      icon: Gem       }
 	] as const;
 
 	type SectionId = (typeof SECTIONS)[number]['id'];
+
+	function sectionParams(id: string): Parameters<typeof entriesApi.list>[0] {
+		if (id === 'library') return {};
+		if (id === 'bookmark' || id === 'gem') return { flag: id };
+		return { status: id };
+	}
 
 	let counts = $state<Record<string, number>>({});
 	let sectionEntries = $state<Map<string, Entry[]>>(new Map());
@@ -56,7 +62,7 @@
 		const results = await Promise.allSettled(
 			SECTIONS.map((s) =>
 				entriesApi
-					.list(s.id === 'all' ? {} : { status: s.id })
+					.list(sectionParams(s.id))
 					.then((r) => [s.id, r.length] as [string, number])
 			)
 		);
@@ -68,7 +74,7 @@
 	}
 
 	async function fetchSection(id: string) {
-		const data = await entriesApi.list(id === 'all' ? {} : { status: id });
+		const data = await entriesApi.list(sectionParams(id));
 		sectionEntries = new Map(sectionEntries).set(id, data);
 	}
 
@@ -119,8 +125,7 @@
 	}
 
 	function expandAll() {
-		const all = new Set(SECTIONS.map((s) => s.id));
-		expandedSections.set(all);
+		expandedSections.set(new Set(SECTIONS.map((s) => s.id)));
 		tagsExpanded = true;
 		for (const s of SECTIONS) fetchSection(s.id);
 		fetchTags();

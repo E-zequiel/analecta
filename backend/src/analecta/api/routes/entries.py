@@ -41,11 +41,13 @@ class EntryPatchIn(BaseModel):
     Attributes:
         status: New status value, if provided.
         tags: Replacement tag list, if provided.
+        flags: Replacement flags list, if provided.
         fts: FTS content to reindex, if provided.
     """
 
     status: str | None = None
     tags: list[str] | None = None
+    flags: list[str] | None = None
     fts: FtsPatch | None = None
 
 
@@ -62,6 +64,7 @@ class EntryOut(BaseModel):
         updated_at: ISO 8601 last-update timestamp.
         status: Entry status string.
         tags: List of tag names.
+        flags: List of flag strings (e.g. bookmark, gem).
     """
 
     id: int
@@ -73,6 +76,7 @@ class EntryOut(BaseModel):
     updated_at: str
     status: str
     tags: list[str]
+    flags: list[str]
 
 
 def entry_out(record: EntryRecord) -> EntryOut:
@@ -95,6 +99,7 @@ def entry_out(record: EntryRecord) -> EntryOut:
         updated_at=record.updated_at,
         status=record.status,
         tags=json.loads(record.tags_json),
+        flags=json.loads(record.flags_json),
     )
 
 
@@ -106,6 +111,7 @@ def entry_out(record: EntryRecord) -> EntryOut:
 @router.get("/entries", response_model=list[EntryOut])
 async def list_entries(
     status: str | None = None,
+    flag: str | None = None,
     tag: str | None = None,
     q: str | None = None,
     index: VaultIndex = Depends(get_index),
@@ -113,11 +119,11 @@ async def list_entries(
     """List entries with optional filters.
 
     When *q* is present, delegates to FTS5 search; otherwise lists by status /
-    tag. Filters compose: *status* and *tag* are applied after FTS when *q* is
-    also set.
+    flag / tag. All filters compose.
 
     Args:
-        status: Optional status filter (unread / read / favorite / …).
+        status: Optional status filter (unread / read).
+        flag: Optional flag filter (bookmark / gem).
         tag: Optional tag name filter.
         q: Optional FTS5 query string.
         index: Injected VaultIndex singleton.
@@ -129,6 +135,8 @@ async def list_entries(
         records = await asyncio.to_thread(index.search, q)
         if status:
             records = [r for r in records if r.status == status]
+        if flag:
+            records = [r for r in records if flag in json.loads(r.flags_json)]
         if tag:
             tag_ids = set(await asyncio.to_thread(index.get_entry_ids_by_tag, tag))
             records = [r for r in records if r.id in tag_ids]
@@ -137,10 +145,15 @@ async def list_entries(
         records: list[EntryRecord] = []
         for eid in ids:
             entry = await asyncio.to_thread(index.get_entry, eid)
-            if entry is not None and (status is None or entry.status == status):
-                records.append(entry)
+            if entry is None:
+                continue
+            if status is not None and entry.status != status:
+                continue
+            if flag is not None and flag not in json.loads(entry.flags_json):
+                continue
+            records.append(entry)
     else:
-        records = await asyncio.to_thread(index.list_entries, status)
+        records = await asyncio.to_thread(index.list_entries, status=status, flag=flag)
     return [entry_out(r) for r in records]
 
 
@@ -193,6 +206,8 @@ async def patch_entry(
         await asyncio.to_thread(index.update_status, entry_id, new_status)
     if (new_tags := body.tags) is not None:
         await asyncio.to_thread(index.update_tags, entry_id, new_tags)
+    if (new_flags := body.flags) is not None:
+        await asyncio.to_thread(index.update_flags, entry_id, new_flags)
     if (fts := body.fts) is not None:
         await asyncio.to_thread(
             index.update_fts_content, entry_id, fts.title, fts.content
