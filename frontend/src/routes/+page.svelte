@@ -12,11 +12,18 @@
 	let loading = $state(false);
 	let checking = $state(true);
 
-	$effect(() => {
-		const status = $activeSection === 'all' ? undefined : $activeSection;
-		const tag = $selectedTag ?? undefined;
+	const FLAG_SECTIONS = new Set(['bookmark', 'gem']);
 
-		const params = { status, tag };
+	function sectionListParams(section: string, tag: string | undefined) {
+		if (section === 'library') return { tag };
+		if (FLAG_SECTIONS.has(section)) return { flag: section, tag };
+		return { status: section, tag };
+	}
+
+	$effect(() => {
+		const section = $activeSection;
+		const tag = $selectedTag ?? undefined;
+		const params = sectionListParams(section, tag);
 
 		let cancelled = false;
 		loading = true;
@@ -57,10 +64,10 @@
 		const tick = $entryAddedTick;
 		if (tick <= prevTick) return;
 		prevTick = tick;
-		const status = untrack(() => ($activeSection === 'all' ? undefined : $activeSection));
+		const section = untrack(() => $activeSection);
 		const tag = untrack(() => $selectedTag ?? undefined);
 		entriesApi
-			.list({ status, tag })
+			.list(sectionListParams(section, tag))
 			.then((data) => {
 				entryList = data;
 			})

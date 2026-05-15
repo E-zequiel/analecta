@@ -31,6 +31,7 @@ class EntryRecord:
     updated_at: str
     status: str = "unread"
     tags_json: str = "[]"
+    flags_json: str = "[]"
     id: int | None = None
 
 
@@ -119,8 +120,8 @@ class VaultIndex:
             """
             INSERT INTO entries
                 (title, url, file_path, source_type,
-                 created_at, updated_at, status, tags_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 created_at, updated_at, status, tags_json, flags_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 entry.title,
@@ -131,6 +132,7 @@ class VaultIndex:
                 entry.updated_at,
                 entry.status,
                 entry.tags_json,
+                entry.flags_json,
             ),
         )
         entry_id = cur.lastrowid
@@ -156,24 +158,34 @@ class VaultIndex:
         ).fetchone()
         return _row_to_entry(row) if row else None
 
-    def list_entries(self, status: str | None = None) -> list[EntryRecord]:
+    def list_entries(
+        self, status: str | None = None, flag: str | None = None
+    ) -> list[EntryRecord]:
         """List entries ordered by creation date descending.
 
         Args:
             status: Optional status filter.
+            flag: Optional flag filter (bookmark / gem); matches entries whose
+                flags_json array contains this value.
 
         Returns:
             List of matching ``EntryRecord`` objects.
         """
+        conditions: list[str] = []
+        params: list[str] = []
         if status is not None:
-            rows = self._conn.execute(
-                "SELECT * FROM entries WHERE status = ? ORDER BY created_at DESC",
-                (status,),
-            ).fetchall()
-        else:
-            rows = self._conn.execute(
-                "SELECT * FROM entries ORDER BY created_at DESC"
-            ).fetchall()
+            conditions.append("status = ?")
+            params.append(status)
+        if flag is not None:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM json_each(flags_json) WHERE value = ?)"
+            )
+            params.append(flag)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        rows = self._conn.execute(
+            f"SELECT * FROM entries {where} ORDER BY created_at DESC",
+            params,
+        ).fetchall()
         return [_row_to_entry(r) for r in rows]
 
     def update_status(self, entry_id: int, status: str) -> None:
@@ -186,6 +198,19 @@ class VaultIndex:
         self._conn.execute(
             "UPDATE entries SET status = ?, updated_at = ? WHERE id = ?",
             (status, _now(), entry_id),
+        )
+        self._conn.commit()
+
+    def update_flags(self, entry_id: int, flags: list[str]) -> None:
+        """Replace an entry's flags list.
+
+        Args:
+            entry_id: Target row id.
+            flags: New list of flag strings (e.g. ``["bookmark"]``).
+        """
+        self._conn.execute(
+            "UPDATE entries SET flags_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(flags, ensure_ascii=False), _now(), entry_id),
         )
         self._conn.commit()
 
@@ -339,4 +364,5 @@ def _row_to_entry(row: sqlite3.Row) -> EntryRecord:
         updated_at=row["updated_at"],
         status=row["status"],
         tags_json=row["tags_json"],
+        flags_json=row["flags_json"],
     )
