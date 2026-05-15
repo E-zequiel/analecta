@@ -220,6 +220,62 @@ def test_list_tags_empty(client: TestClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# POST /tags
+# ---------------------------------------------------------------------------
+
+
+def test_create_tag(client: TestClient) -> None:
+    r = client.post("/api/v1/tags", json={"name": "python"})
+    assert r.status_code == 201
+    assert r.json()["name"] == "python"
+    assert r.json()["count"] == 0
+
+
+def test_create_tag_idempotent(client: TestClient) -> None:
+    client.post("/api/v1/tags", json={"name": "python"})
+    r = client.post("/api/v1/tags", json={"name": "python"})
+    assert r.status_code == 201
+
+
+# ---------------------------------------------------------------------------
+# PUT /tags/{name}
+# ---------------------------------------------------------------------------
+
+
+def test_rename_tag(seeded_client: TestClient) -> None:
+    r = seeded_client.put("/api/v1/tags/python", json={"new_name": "py"})
+    assert r.status_code == 200
+    assert r.json()["name"] == "py"
+    tags = seeded_client.get("/api/v1/tags").json()
+    names = [t["name"] for t in tags]
+    assert "py" in names
+    assert "python" not in names
+
+
+def test_rename_tag_conflict_409(seeded_client: TestClient) -> None:
+    seeded_client.post("/api/v1/tags", json={"name": "rust"})
+    r = seeded_client.put("/api/v1/tags/python", json={"new_name": "rust"})
+    assert r.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# DELETE /tags/{name}
+# ---------------------------------------------------------------------------
+
+
+def test_delete_tag(seeded_client: TestClient) -> None:
+    r = seeded_client.delete("/api/v1/tags/python")
+    assert r.status_code == 204
+    tags = seeded_client.get("/api/v1/tags").json()
+    assert not any(t["name"] == "python" for t in tags)
+
+
+def test_delete_tag_nonexistent_204(client: TestClient) -> None:
+    r = client.delete("/api/v1/tags/nonexistent")
+    assert r.status_code == 204
+
+
+# ---------------------------------------------------------------------------
 # GET /search
 # ---------------------------------------------------------------------------
 

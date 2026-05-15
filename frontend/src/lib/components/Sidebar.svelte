@@ -18,7 +18,10 @@
 		Gem,
 		BrainCircuit,
 		Origami,
-		BookOpenText
+		BookOpenText,
+		Plus,
+		Pencil,
+		Trash2
 	} from 'lucide-svelte';
 	import { readText } from '@tauri-apps/plugin-clipboard-manager';
 	import { entries as entriesApi, tags as tagsApi, extract as extractApi, type Entry, type Tag } from '$lib/api/client';
@@ -57,6 +60,16 @@
 	type PasteStatus = 'idle' | 'loading' | 'ok' | 'error';
 	let pasteStatus = $state<PasteStatus>('idle');
 	let pasteMessage = $state('');
+
+	let newTagExpanded = $state(false);
+	let newTagName = $state('');
+	let newTagInputEl = $state<HTMLInputElement | null>(null);
+	let editingTag = $state<string | null>(null);
+	let editTagValue = $state('');
+
+	$effect(() => {
+		if (newTagExpanded && newTagInputEl) newTagInputEl.focus();
+	});
 
 	async function fetchCounts() {
 		const results = await Promise.allSettled(
@@ -163,6 +176,44 @@
 			pasteMessage = e instanceof Error ? e.message : 'Extraction failed.';
 		}
 		setTimeout(() => (pasteStatus = 'idle'), 3000);
+	}
+
+	async function createTag() {
+		const name = newTagName.trim();
+		if (!name) { newTagExpanded = false; return; }
+		try {
+			await tagsApi.create(name);
+			newTagName = '';
+			newTagExpanded = false;
+			await fetchTags();
+		} catch {
+			// duplicate or other error — ignore
+		}
+	}
+
+	async function renameTag(oldName: string, newName: string) {
+		editingTag = null;
+		const trimmed = newName.trim();
+		if (!trimmed || trimmed === oldName) return;
+		try {
+			await tagsApi.rename(oldName, trimmed);
+			if ($selectedTag === oldName) selectedTag.set(trimmed);
+			await fetchTags();
+			entryChangedTick.update((n) => n + 1);
+		} catch {
+			// conflict or tag not found — ignore
+		}
+	}
+
+	async function deleteTag(name: string) {
+		try {
+			await tagsApi.delete(name);
+			if ($selectedTag === name) selectedTag.set(null);
+			await fetchTags();
+			entryChangedTick.update((n) => n + 1);
+		} catch {
+			// ignore
+		}
 	}
 
 	function toggleSection(id: string) {
@@ -299,19 +350,73 @@
 						<span class="count">{tagList.length}</span>
 					{/if}
 				</button>
+				<button
+					class="icon-btn create-tag-btn"
+					onclick={(e) => { e.stopPropagation(); newTagExpanded = !newTagExpanded; if (newTagExpanded) newTagName = ''; }}
+					title="Create tag"
+				>
+					<Plus size={13} />
+				</button>
 			</div>
+
+			{#if newTagExpanded}
+				<div class="new-tag-row" transition:slide={{ duration: 120 }}>
+					<input
+						class="tag-input"
+						type="text"
+						placeholder="Tag name…"
+						bind:value={newTagName}
+						bind:this={newTagInputEl}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') { e.preventDefault(); createTag(); }
+							else if (e.key === 'Escape') newTagExpanded = false;
+						}}
+						onblur={() => { if (!newTagName.trim()) newTagExpanded = false; }}
+					/>
+				</div>
+			{/if}
 
 			{#if tagsExpanded}
 				<div class="section-entries" transition:slide={{ duration: 140 }}>
 					{#each tagList as tag (tag.name)}
-						<button
-							class="entry-item"
-							class:active-entry={$selectedTag === tag.name}
-							onclick={() => selectTag(tag.name)}
-						>
-							<span class="tag-name">{tag.name}</span>
-							<span class="tag-count">{tag.count}</span>
-						</button>
+						{#if editingTag === tag.name}
+							<div class="tag-edit-row">
+								<input
+									class="tag-input"
+									type="text"
+									bind:value={editTagValue}
+									onkeydown={(e) => {
+										if (e.key === 'Enter') { e.preventDefault(); renameTag(tag.name, editTagValue); }
+										else if (e.key === 'Escape') editingTag = null;
+									}}
+									onblur={() => renameTag(tag.name, editTagValue)}
+								/>
+							</div>
+						{:else}
+							<div class="tag-item">
+								<button
+									class="tag-item-label"
+									class:active-entry={$selectedTag === tag.name}
+									onclick={() => selectTag(tag.name)}
+									title={tag.name}
+								>
+									<span class="tag-name">{tag.name}</span>
+									<span class="tag-count">{tag.count}</span>
+								</button>
+								<div class="tag-actions">
+									<button
+										class="tag-action-btn"
+										onclick={() => { editingTag = tag.name; editTagValue = tag.name; }}
+										title="Rename tag"
+									><Pencil size={11} /></button>
+									<button
+										class="tag-action-btn"
+										onclick={() => deleteTag(tag.name)}
+										title="Delete tag"
+									><Trash2 size={11} /></button>
+								</div>
+							</div>
+						{/if}
 					{:else}
 						<span class="empty-section">No tags</span>
 					{/each}
@@ -572,5 +677,104 @@
 		justify-content: center;
 		gap: 4px;
 		padding: 6px 0;
+	}
+
+	.create-tag-btn {
+		width: 22px;
+		height: 22px;
+		flex-shrink: 0;
+	}
+
+	.new-tag-row {
+		padding: 4px 8px 4px 26px;
+	}
+
+	.tag-edit-row {
+		padding: 2px 8px 2px 22px;
+	}
+
+	.tag-input {
+		width: 100%;
+		padding: 2px 6px;
+		background: var(--bg-highlight);
+		border: 1px solid var(--border);
+		border-radius: 3px;
+		color: var(--fg);
+		font-family: inherit;
+		font-size: 0.78rem;
+		outline: none;
+		box-sizing: border-box;
+	}
+
+	.tag-input:focus {
+		border-color: var(--accent-dark);
+	}
+
+	.tag-item {
+		display: flex;
+		align-items: center;
+		width: 100%;
+		border-radius: 3px;
+	}
+
+	.tag-item-label {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		flex: 1;
+		min-width: 0;
+		padding: 3px 4px 3px 8px;
+		background: none;
+		border: none;
+		border-radius: 3px 0 0 3px;
+		color: var(--fg-muted);
+		font-family: inherit;
+		font-size: 0.78rem;
+		cursor: pointer;
+		text-align: left;
+		overflow: hidden;
+		transition: color 0.12s, background 0.12s;
+	}
+
+	.tag-item-label:hover {
+		color: var(--fg);
+		background: var(--bg-highlight);
+	}
+
+	.tag-item-label.active-entry {
+		color: var(--accent);
+	}
+
+	.tag-actions {
+		display: flex;
+		align-items: center;
+		gap: 1px;
+		padding-right: 4px;
+		flex-shrink: 0;
+		opacity: 0;
+		transition: opacity 0.12s;
+	}
+
+	.tag-item:hover .tag-actions {
+		opacity: 1;
+	}
+
+	.tag-action-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		padding: 0;
+		background: none;
+		border: none;
+		border-radius: 2px;
+		color: var(--fg-muted);
+		cursor: pointer;
+		transition: color 0.12s;
+	}
+
+	.tag-action-btn:hover {
+		color: var(--fg);
 	}
 </style>

@@ -16,13 +16,16 @@
 		Eye,
 		EyeClosed,
 		Bookmark,
-		Gem
+		Gem,
+		BrainCircuit
 	} from 'lucide-svelte';
 	import {
 		entries as entriesApi,
+		tags as tagsApi,
 		config as configApi,
 		security,
 		type Entry,
+		type Tag,
 		type ScanResult
 	} from '$lib/api/client';
 	import { createRenderer } from '$lib/markdown/renderer';
@@ -62,6 +65,39 @@
 	let scanResult = $state<ScanResult | null>(null);
 	let scanError = $state('');
 	let error = $state('');
+
+	let tagsOpen = $state(false);
+	let newTagInput = $state('');
+	let allTags = $state<Tag[]>([]);
+	let tagsContainerEl = $state<HTMLElement | null>(null);
+	let tagAddInputEl = $state<HTMLInputElement | null>(null);
+
+	const tagSuggestions = $derived(
+		newTagInput.length > 0
+			? allTags
+					.map((t) => t.name)
+					.filter(
+						(n) =>
+							!entry?.tags.includes(n) && n.toLowerCase().includes(newTagInput.toLowerCase())
+					)
+					.slice(0, 6)
+			: []
+	);
+
+	$effect(() => {
+		if (!tagsOpen) return;
+		function onPointerDown(e: PointerEvent) {
+			if (tagsContainerEl && !tagsContainerEl.contains(e.target as Node)) {
+				tagsOpen = false;
+			}
+		}
+		document.addEventListener('pointerdown', onPointerDown, true);
+		return () => document.removeEventListener('pointerdown', onPointerDown, true);
+	});
+
+	$effect(() => {
+		if (tagsOpen && tagAddInputEl) tagAddInputEl.focus();
+	});
 
 	onMount(async () => {
 		try {
@@ -112,6 +148,32 @@
 		readingFontSize = Math.max(12, Math.min(24, readingFontSize + delta));
 		document.documentElement.style.setProperty('--font-text-size', `${readingFontSize}px`);
 		configApi.update({ reading_font_size: readingFontSize }).catch(() => {});
+	}
+
+	async function fetchAllTags() {
+		try {
+			allTags = await tagsApi.list();
+		} catch {
+			// sidecar may not be ready
+		}
+	}
+
+	async function addTag(name: string) {
+		if (!entry || !name.trim()) return;
+		const trimmed = name.trim();
+		if (entry.tags.includes(trimmed)) {
+			newTagInput = '';
+			return;
+		}
+		newTagInput = '';
+		entry = await entriesApi.patch(entry.id, { tags: [...entry.tags, trimmed] });
+		entryChangedTick.update((n) => n + 1);
+	}
+
+	async function removeTag(name: string) {
+		if (!entry) return;
+		entry = await entriesApi.patch(entry.id, { tags: entry.tags.filter((t) => t !== name) });
+		entryChangedTick.update((n) => n + 1);
 	}
 
 	async function runScan() {
@@ -182,7 +244,7 @@
 
 		<span class="spacer"></span>
 
-		<!-- Right: status toggles -->
+		<!-- Right: status toggles + tags -->
 		{#if entry}
 			<div class="status-controls">
 				<button
@@ -209,6 +271,50 @@
 					onclick={() => toggleFlag('gem')}
 					title="Gem"
 				><Gem size={16} /></button>
+			</div>
+
+			<div class="tags-container" bind:this={tagsContainerEl}>
+				<button
+					class="btn-icon"
+					class:active={tagsOpen}
+					onclick={() => { tagsOpen = !tagsOpen; if (tagsOpen) fetchAllTags(); }}
+					title="Tags"
+				>
+					<BrainCircuit size={16} />
+				</button>
+
+				{#if tagsOpen}
+					<div class="tags-panel">
+						{#if entry.tags.length > 0}
+							<div class="tag-chips">
+								{#each entry.tags as tag (tag)}
+									<span class="chip">
+										<span class="chip-label">{tag}</span>
+										<button class="chip-remove" onclick={() => removeTag(tag)} title="Remove">×</button>
+									</span>
+								{/each}
+							</div>
+						{/if}
+						<input
+							class="tag-add-input"
+							type="text"
+							placeholder="Add tag…"
+							bind:value={newTagInput}
+							bind:this={tagAddInputEl}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') { e.preventDefault(); addTag(newTagInput); }
+								else if (e.key === 'Escape') tagsOpen = false;
+							}}
+						/>
+						{#if tagSuggestions.length > 0}
+							<div class="tag-suggestions">
+								{#each tagSuggestions as s (s)}
+									<button class="suggestion-item" onclick={() => addTag(s)}>{s}</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -358,5 +464,108 @@
 		color: var(--red);
 		margin: 0 0 1.5rem;
 		line-height: 1.3;
+	}
+
+	.tags-container {
+		position: relative;
+	}
+
+	.tags-panel {
+		position: absolute;
+		right: 0;
+		top: calc(100% + 4px);
+		width: 220px;
+		background: var(--bg-dark);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 6px;
+		z-index: 100;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.tag-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+
+	.chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		padding: 2px 4px 2px 6px;
+		background: var(--bg-alt);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		font-size: 0.72rem;
+		color: var(--fg);
+	}
+
+	.chip-remove {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 14px;
+		height: 14px;
+		padding: 0;
+		background: none;
+		border: none;
+		border-radius: 2px;
+		color: var(--fg-muted);
+		cursor: pointer;
+		font-size: 0.9rem;
+		line-height: 1;
+		transition: color 0.12s;
+	}
+
+	.chip-remove:hover {
+		color: var(--accent);
+	}
+
+	.tag-add-input {
+		width: 100%;
+		padding: 4px 6px;
+		background: var(--bg-highlight);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		color: var(--fg);
+		font-family: inherit;
+		font-size: 0.8rem;
+		outline: none;
+		box-sizing: border-box;
+	}
+
+	.tag-add-input:focus {
+		border-color: var(--accent-dark);
+	}
+
+	.tag-suggestions {
+		display: flex;
+		flex-direction: column;
+		max-height: 120px;
+		overflow-y: auto;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		background: var(--bg);
+	}
+
+	.suggestion-item {
+		padding: 3px 6px;
+		background: none;
+		border: none;
+		color: var(--fg-muted);
+		font-family: inherit;
+		font-size: 0.78rem;
+		cursor: pointer;
+		text-align: left;
+		transition: color 0.12s, background 0.12s;
+	}
+
+	.suggestion-item:hover {
+		color: var(--fg);
+		background: var(--bg-highlight);
 	}
 </style>
