@@ -24,6 +24,8 @@ class ConfigOut(BaseModel):
         custom_font_path: Path to user-supplied ``.ttf`` when variant is ``custom``.
         update_channel: Release channel (``stable`` or ``dev``).
         virustotal_enabled: Whether VirusTotal scanning is enabled.
+        theme: UI colour theme (``dark`` or ``light``).
+        accent_color: Active accent colour name.
     """
 
     vault_path: str
@@ -33,6 +35,8 @@ class ConfigOut(BaseModel):
     custom_font_path: str | None
     update_channel: str
     virustotal_enabled: bool
+    theme: str
+    accent_color: str
 
 
 class ConfigIn(BaseModel):
@@ -46,6 +50,8 @@ class ConfigIn(BaseModel):
         custom_font_path: New custom font path; ``None`` clears it.
         update_channel: New update channel, if provided.
         virustotal_enabled: New VT toggle value, if provided.
+        theme: New UI colour theme, if provided.
+        accent_color: New accent colour name, if provided.
     """
 
     vault_path: str | None = None
@@ -55,6 +61,8 @@ class ConfigIn(BaseModel):
     custom_font_path: str | None = None
     update_channel: Literal["stable", "dev"] | None = None
     virustotal_enabled: bool | None = None
+    theme: Literal["dark", "light"] | None = None
+    accent_color: Literal["red", "yellow", "green", "cyan"] | None = None
 
 
 def _config_out(cfg: AppConfig) -> ConfigOut:
@@ -66,6 +74,8 @@ def _config_out(cfg: AppConfig) -> ConfigOut:
         custom_font_path=cfg.custom_font_path,
         update_channel=cfg.update_channel,
         virustotal_enabled=cfg.virustotal_enabled,
+        theme=cfg.theme,
+        accent_color=cfg.accent_color,
     )
 
 
@@ -123,6 +133,10 @@ async def update_config(
         virustotal_enabled=body.virustotal_enabled
         if body.virustotal_enabled is not None
         else config.virustotal_enabled,
+        theme=body.theme if body.theme is not None else config.theme,
+        accent_color=body.accent_color
+        if body.accent_color is not None
+        else config.accent_color,
     )
     await asyncio.to_thread(save_config, updated)
     request.app.state.config = updated

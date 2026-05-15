@@ -1,6 +1,15 @@
 import { get } from 'svelte/store';
 import { port } from '$lib/stores/sidecar';
 
+type AccentKey = 'red' | 'yellow' | 'green' | 'cyan';
+
+const ACCENT_MAP: Record<AccentKey, { dark: [string, string]; light: [string, string] }> = {
+	red:    { dark: ['#ff757f', '#db4b4b'], light: ['#c52f65', '#9e1e52'] },
+	yellow: { dark: ['#e0af68', '#c99a4b'], light: ['#a07025', '#7d5512'] },
+	green:  { dark: ['#9ece6a', '#73a85a'], light: ['#587539', '#3d5427'] },
+	cyan:   { dark: ['#7dcfff', '#5aafc5'], light: ['#0f4b6e', '#08364f'] },
+};
+
 async function loadCustomFont(fontPath: string): Promise<string | null> {
 	const p = get(port);
 	if (p === null) return null;
@@ -22,20 +31,30 @@ async function loadCustomFont(fontPath: string): Promise<string | null> {
 export async function applyFont(
 	variant: 'regular' | 'nerd' | 'custom',
 	customPath: string | null,
-	uiFontSize: number = 14.0,
-	readingFontSize: number = 17.0
+	uiFontSize: number = 16.0,
+	readingFontSize: number = 17.0,
+	theme: 'dark' | 'light' = 'dark',
+	accentColor: AccentKey = 'yellow'
 ): Promise<void> {
-	document.documentElement.style.setProperty('--font-ui-size', `${uiFontSize}px`);
-	document.documentElement.style.setProperty('--font-text-size', `${readingFontSize}px`);
+	const root = document.documentElement;
+
+	root.classList.toggle('theme-light', theme === 'light');
+
+	root.style.setProperty('--font-ui-size', `${uiFontSize}px`);
+	root.style.setProperty('--font-text-size', `${readingFontSize}px`);
+
+	const [accent, accentDark] = ACCENT_MAP[accentColor][theme];
+	root.style.setProperty('--accent', accent);
+	root.style.setProperty('--accent-dark', accentDark);
 
 	if (variant === 'custom' && customPath) {
 		const family = await loadCustomFont(customPath);
 		if (family) {
-			document.documentElement.style.setProperty('--font-family', family);
+			root.style.setProperty('--font-family', family);
 			return;
 		}
 	}
 	const family =
 		variant === 'nerd' ? "'JetBrains Mono NF', monospace" : "'JetBrains Mono', monospace";
-	document.documentElement.style.setProperty('--font-family', family);
+	root.style.setProperty('--font-family', family);
 }
