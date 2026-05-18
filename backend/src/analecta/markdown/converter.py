@@ -2,6 +2,7 @@
 
 import re
 from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
 
 import markdownify as markdownify_lib
 from bs4 import BeautifulSoup, Tag
@@ -61,6 +62,15 @@ def _get_lang(code: Tag, pre: Tag) -> str:
     return _lang_from_pre(pre)
 
 
+def _resolve_img_src(src: str) -> str:
+    """Unwrap Next.js /_next/image/ proxy URLs to the underlying CDN URL."""
+    if not src.startswith("/_next/image/"):
+        return src
+    qs = parse_qs(urlparse(src).query)
+    urls = qs.get("url", [])
+    return unquote(urls[0]) if urls else src
+
+
 def _normalize_html(soup: BeautifulSoup) -> None:
     """Normalize structural quirks common in extractor HTML output.
 
@@ -70,7 +80,14 @@ def _normalize_html(soup: BeautifulSoup) -> None:
     - ``<p>lang</p><pre>…</pre>``: bare language-label paragraph preceding a code
       block — promote the label into a ``language-*`` class on ``<pre>`` and remove
       the paragraph, so ``_lang_from_pre`` can recover the annotation later
+    - ``<graphic>`` (trafilatura TEI image element) → ``<img>`` so markdownify
+      renders it as Markdown image syntax
     """
+    for graphic in list(soup.find_all("graphic")):
+        src = _resolve_img_src(str(graphic.get("src", "")))
+        img = soup.new_tag("img", src=src, alt=graphic.get("alt", ""))
+        graphic.replace_with(img)
+
     for p in soup.find_all("p"):
         for pre in list(p.find_all("pre", recursive=False)):
             pre.name = "code"
