@@ -112,6 +112,7 @@ def entry_out(record: EntryRecord) -> EntryOut:
 async def list_entries(
     status: str | None = None,
     flag: str | None = None,
+    exclude_flag: str | None = None,
     tag: str | None = None,
     q: str | None = None,
     sort_by: str = "created_at",
@@ -126,7 +127,9 @@ async def list_entries(
 
     Args:
         status: Optional status filter (unread / read).
-        flag: Optional flag filter (bookmark / gem).
+        flag: Optional flag filter (bookmark / gem / archive).
+        exclude_flag: Optional flag exclusion — omits entries containing this flag
+            (e.g. ``archive`` to hide archived entries from the library view).
         tag: Optional tag name filter.
         q: Optional FTS5 query string.
         sort_by: Column to sort by — ``title`` or ``created_at`` (default).
@@ -142,6 +145,10 @@ async def list_entries(
             records = [r for r in records if r.status == status]
         if flag:
             records = [r for r in records if flag in json.loads(r.flags_json)]
+        if exclude_flag:
+            records = [
+                r for r in records if exclude_flag not in json.loads(r.flags_json)
+            ]
         if tag:
             tag_ids = set(await asyncio.to_thread(index.get_entry_ids_by_tag, tag))
             records = [r for r in records if r.id in tag_ids]
@@ -156,6 +163,10 @@ async def list_entries(
                 continue
             if flag is not None and flag not in json.loads(entry.flags_json):
                 continue
+            if exclude_flag is not None and exclude_flag in json.loads(
+                entry.flags_json
+            ):
+                continue
             records.append(entry)
         reverse = sort_dir.lower() == "desc"
         if sort_by == "title":
@@ -167,10 +178,23 @@ async def list_entries(
             index.list_entries,
             status=status,
             flag=flag,
+            exclude_flag=exclude_flag,
             sort_by=sort_by,
             sort_dir=sort_dir,
         )
     return [entry_out(r) for r in records]
+
+
+@router.get("/entries/counts", response_model=dict[str, int])
+async def get_entry_counts(
+    index: VaultIndex = Depends(get_index),
+) -> dict[str, int]:
+    """Return entry counts for all dashboard sections in one aggregated query.
+
+    Returns:
+        Dict with keys library, unread, read, bookmark, gem, archive.
+    """
+    return await asyncio.to_thread(index.get_counts)
 
 
 @router.get("/entries/{entry_id}", response_model=EntryOut)

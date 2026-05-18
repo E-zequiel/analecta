@@ -165,6 +165,7 @@ class VaultIndex:
         self,
         status: str | None = None,
         flag: str | None = None,
+        exclude_flag: str | None = None,
         sort_by: str = "created_at",
         sort_dir: str = "desc",
     ) -> list[EntryRecord]:
@@ -172,8 +173,10 @@ class VaultIndex:
 
         Args:
             status: Optional status filter.
-            flag: Optional flag filter (bookmark / gem); matches entries whose
-                flags_json array contains this value.
+            flag: Optional flag filter (bookmark / gem / archive); matches entries
+                whose flags_json array contains this value.
+            exclude_flag: Optional flag exclusion; omits entries whose flags_json
+                array contains this value (e.g. ``"archive"`` for library view).
             sort_by: Column to sort by — ``title`` or ``created_at``.
                 Defaults to ``created_at``.
             sort_dir: Sort direction — ``asc`` or ``desc``. Defaults to ``desc``.
@@ -195,12 +198,61 @@ class VaultIndex:
                 "EXISTS (SELECT 1 FROM json_each(flags_json) WHERE value = ?)"
             )
             params.append(flag)
+        if exclude_flag is not None:
+            conditions.append(
+                "NOT EXISTS (SELECT 1 FROM json_each(flags_json) WHERE value = ?)"
+            )
+            params.append(exclude_flag)
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         rows = self._conn.execute(
             f"SELECT * FROM entries {where} ORDER BY {sort_by} {sort_dir.upper()}",
             params,
         ).fetchall()
         return [_row_to_entry(r) for r in rows]
+
+    def get_counts(self) -> dict[str, int]:
+        """Return entry counts for all dashboard sections in one aggregated query.
+
+        Returns:
+            Dict with keys ``library``, ``unread``, ``read``, ``bookmark``,
+            ``gem``, ``archive`` mapping to their current entry counts.
+        """
+        row = self._conn.execute(
+            """
+            SELECT
+                SUM(CASE WHEN NOT EXISTS (
+                    SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
+                ) THEN 1 ELSE 0 END) AS library,
+                SUM(CASE WHEN status = 'unread' AND NOT EXISTS (
+                    SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
+                ) THEN 1 ELSE 0 END) AS unread,
+                SUM(CASE WHEN status = 'read' AND NOT EXISTS (
+                    SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
+                ) THEN 1 ELSE 0 END) AS read_count,
+                SUM(CASE WHEN EXISTS (
+                    SELECT 1 FROM json_each(flags_json) WHERE value = 'bookmark'
+                ) AND NOT EXISTS (
+                    SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
+                ) THEN 1 ELSE 0 END) AS bookmark,
+                SUM(CASE WHEN EXISTS (
+                    SELECT 1 FROM json_each(flags_json) WHERE value = 'gem'
+                ) AND NOT EXISTS (
+                    SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
+                ) THEN 1 ELSE 0 END) AS gem,
+                SUM(CASE WHEN EXISTS (
+                    SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
+                ) THEN 1 ELSE 0 END) AS archive
+            FROM entries
+            """
+        ).fetchone()
+        return {
+            "library": row["library"] or 0,
+            "unread": row["unread"] or 0,
+            "read": row["read_count"] or 0,
+            "bookmark": row["bookmark"] or 0,
+            "gem": row["gem"] or 0,
+            "archive": row["archive"] or 0,
+        }
 
     def update_status(self, entry_id: int, status: str) -> None:
         """Update an entry's status field.

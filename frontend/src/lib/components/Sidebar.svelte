@@ -21,7 +21,8 @@
 		BookOpenText,
 		Plus,
 		Pencil,
-		Trash2
+		Trash2,
+		Archive
 	} from 'lucide-svelte';
 	import { readText } from '@tauri-apps/plugin-clipboard-manager';
 	import { entries as entriesApi, tags as tagsApi, extract as extractApi, type Entry, type Tag } from '$lib/api/client';
@@ -34,7 +35,7 @@
 		searchOpen,
 		lastViewedId
 	} from '$lib/stores/ui';
-	import { navigateInTab, openEntryTab, openSectionTab } from '$lib/stores/tabs';
+	import { navigateInTab, openEntryTab, openSectionTab, navigateInSectionTab } from '$lib/stores/tabs';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
 
@@ -43,15 +44,17 @@
 		{ id: 'unread',   label: 'UNREAD',   icon: EyeClosed },
 		{ id: 'read',     label: 'READ',     icon: Eye       },
 		{ id: 'bookmark', label: 'BOOKMARK', icon: Bookmark  },
-		{ id: 'gem',      label: 'GEM',      icon: Gem       }
+		{ id: 'gem',      label: 'GEM',      icon: Gem       },
+		{ id: 'archive',  label: 'ARCHIVE',  icon: Archive   }
 	] as const;
 
 	type SectionId = (typeof SECTIONS)[number]['id'];
 
 	function sectionParams(id: string): Parameters<typeof entriesApi.list>[0] {
-		if (id === 'library') return {};
-		if (id === 'bookmark' || id === 'gem') return { flag: id };
-		return { status: id };
+		if (id === 'archive') return { flag: 'archive' };
+		if (id === 'bookmark' || id === 'gem') return { flag: id, exclude_flag: 'archive' };
+		if (id === 'library') return { exclude_flag: 'archive' };
+		return { status: id, exclude_flag: 'archive' };
 	}
 
 	let counts = $state<Record<string, number>>({});
@@ -74,18 +77,11 @@
 	});
 
 	async function fetchCounts() {
-		const results = await Promise.allSettled(
-			SECTIONS.map((s) =>
-				entriesApi
-					.list(sectionParams(s.id))
-					.then((r) => [s.id, r.length] as [string, number])
-			)
-		);
-		const next: Record<string, number> = {};
-		for (const r of results) {
-			if (r.status === 'fulfilled') next[r.value[0]] = r.value[1];
+		try {
+			counts = await entriesApi.getCounts();
+		} catch {
+			// sidecar may not be ready
 		}
-		counts = next;
 	}
 
 	async function fetchSection(id: string) {
@@ -239,21 +235,12 @@
 	function selectSection(id: SectionId) {
 		selectedTag.set(null);
 		toggleSection(id);
-		if ($page.url.pathname.startsWith('/viewer')) {
-			openSectionTab(id);
-		} else {
-			activeSection.set(id);
-			if ($page.url.pathname !== '/') goto('/');
-		}
+		navigateInSectionTab(id);
 	}
 
 	function selectTag(name: string) {
-		selectedTag.update((current) => (current === name ? null : name));
-		if ($page.url.pathname.startsWith('/viewer')) {
-			openSectionTab('library');
-		} else if ($page.url.pathname !== '/') {
-			goto('/');
-		}
+		selectedTag.set(name);
+		navigateInSectionTab('tags');
 	}
 
 	function openEntry(id: number, title: string) {
@@ -354,7 +341,7 @@
 						<ChevronRight size={13} />
 					{/if}
 				</button>
-				<button class="section-label" onclick={toggleTags}>
+				<button class="section-label" class:active={$activeSection === 'tags'} onclick={() => { navigateInSectionTab('tags'); toggleTags(); }}>
 					<BrainCircuit size={18} />
 					<span class="label-text">TAGS</span>
 					{#if tagList.length > 0}
