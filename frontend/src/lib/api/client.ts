@@ -120,7 +120,7 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 // ---------------------------------------------------------------------------
 
 export const entries = {
-	list(params?: { status?: string; flag?: string; tag?: string; q?: string; sort_by?: 'title' | 'created_at'; sort_dir?: 'asc' | 'desc' }): Promise<Entry[]> {
+	list(params?: { status?: string; flag?: string; exclude_flag?: string; tag?: string; q?: string; sort_by?: 'title' | 'created_at'; sort_dir?: 'asc' | 'desc' }): Promise<Entry[]> {
 		const filtered = Object.entries(params ?? {}).filter(
 			(pair): pair is [string, string] => pair[1] !== undefined
 		);
@@ -130,6 +130,10 @@ export const entries = {
 
 	get(id: number): Promise<Entry> {
 		return apiFetch<Entry>(`/entries/${id}`);
+	},
+
+	getCounts(): Promise<Record<string, number>> {
+		return apiFetch<Record<string, number>>('/entries/counts');
 	},
 
 	patch(id: number, body: EntryPatch): Promise<Entry> {

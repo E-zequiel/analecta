@@ -4,7 +4,7 @@
 	import { entries as entriesApi } from '$lib/api/client';
 	import { contextMenu, hideContextMenu } from '$lib/stores/contextMenu';
 	import { closeTab } from '$lib/stores/tabs';
-	import { entryChangedTick } from '$lib/stores/sse';
+	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
 
 	let menuEl = $state<HTMLElement | null>(null);
 
@@ -31,6 +31,18 @@
 		hideContextMenu();
 	}
 
+	async function archiveEntry() {
+		const entry = $contextMenu.entry;
+		hideContextMenu();
+		if (!entry) return;
+		const current = entry.flags ?? [];
+		// Archiving strips all other flags (bookmark, gem); unarchiving restores empty flags
+		const newFlags = current.includes('archive') ? [] : ['archive'];
+		const updated = await entriesApi.patch(entry.id, { flags: newFlags });
+		lastChangedEntry.set(updated);
+		entryChangedTick.update((n) => n + 1);
+	}
+
 	async function deleteEntry() {
 		const entry = $contextMenu.entry;
 		hideContextMenu();
@@ -52,6 +64,10 @@
 	>
 		<button class="menu-item" onclick={revealFile} role="menuitem">
 			Show in system explorer
+		</button>
+		<div class="separator"></div>
+		<button class="menu-item" onclick={archiveEntry} role="menuitem">
+			{$contextMenu.entry?.flags?.includes('archive') ? 'Unarchive' : 'Archive'}
 		</button>
 		<div class="separator"></div>
 		<button class="menu-item danger" onclick={deleteEntry} role="menuitem">
