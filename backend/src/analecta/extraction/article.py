@@ -69,15 +69,28 @@ class ArticleExtractor(SourceExtractor):
         readability_html = doc.summary() or ""
         traf_html = (
             trafilatura.extract(
-                clean, output_format="html", include_comments=False, include_tables=True
+                clean,
+                output_format="html",
+                include_comments=False,
+                include_tables=True,
+                include_images=True,
             )
             or ""
         )
 
         # Prefer readability: it preserves <code>/<pre> structure correctly.
-        # Fall back to trafilatura when it extracts substantially more content
-        # (e.g. short API reference pages that readability prunes too aggressively).
-        if len(traf_html) > len(readability_html) * 1.5:
+        # Fall back to trafilatura when:
+        # - it extracts substantially more content (>1.5x), OR
+        # - readability found no images but trafilatura did, and trafilatura
+        #   is at least half as long (avoids switching to a very thin result).
+        rdbl_has_imgs = "<img" in readability_html
+        traf_has_imgs = "<graphic" in traf_html
+        use_traf = len(traf_html) > len(readability_html) * 1.5 or (
+            traf_has_imgs
+            and not rdbl_has_imgs
+            and len(traf_html) >= len(readability_html) * 0.5
+        )
+        if use_traf:
             content, extractor = traf_html, "trafilatura"
         else:
             content, extractor = readability_html, "readability"
