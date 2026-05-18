@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { slide } from 'svelte/transition';
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
 	import {
 		ChevronsRightLeft,
 		ChevronsDownUp,
@@ -425,7 +424,7 @@
 
 	<!-- Bottom bar -->
 	<div class="bottom-bar">
-		<button class="icon-btn" onclick={() => goto('/')} title="Collectio">
+		<button class="icon-btn" onclick={() => navigateInSectionTab('collectio')} title="Collectio">
 			<Origami size={18} />
 		</button>
 		<button class="icon-btn" onclick={goLast} title="Last viewed" disabled={$lastViewedId === null}>
@@ -450,7 +449,7 @@
 
 <style>
 	.sidebar {
-		width: 260px;
+		width: 200px;
 		flex-shrink: 0;
 		background: var(--bg-dark);
 		border-right: 1px solid var(--border);

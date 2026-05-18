@@ -197,6 +197,18 @@ async def get_entry_counts(
     return await asyncio.to_thread(index.get_counts)
 
 
+@router.get("/entries/metrics", response_model=dict[str, int])
+async def get_entry_metrics(
+    index: VaultIndex = Depends(get_index),
+) -> dict[str, int]:
+    """Return read-activity metrics for the Collectio dashboard.
+
+    Returns:
+        Dict with keys reads_week, reads_month, reads_year.
+    """
+    return await asyncio.to_thread(index.get_metrics)
+
+
 @router.get("/entries/{entry_id}", response_model=EntryOut)
 async def get_entry(
     entry_id: int,
