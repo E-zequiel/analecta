@@ -254,17 +254,60 @@ class VaultIndex:
             "archive": row["archive"] or 0,
         }
 
+    def get_metrics(self) -> dict[str, int]:
+        """Return read-activity metrics used by the Collectio dashboard.
+
+        Counts entries whose ``read_at`` timestamp falls within the current
+        calendar week (Mon-Sun), month, and year respectively.
+
+        Returns:
+            Dict with keys ``reads_week``, ``reads_month``, ``reads_year``.
+        """
+        from datetime import timedelta
+
+        now = datetime.now(tz=UTC)
+        week_start = (now - timedelta(days=now.weekday())).date().isoformat()
+        month_start = now.strftime("%Y-%m-01")
+        year_start = now.strftime("%Y-01-01")
+        row = self._conn.execute(
+            """
+            SELECT
+                SUM(CASE WHEN read_at >= ? THEN 1 ELSE 0 END),
+                SUM(CASE WHEN read_at >= ? THEN 1 ELSE 0 END),
+                SUM(CASE WHEN read_at >= ? THEN 1 ELSE 0 END)
+            FROM entries
+            WHERE read_at IS NOT NULL
+            """,
+            (week_start, month_start, year_start),
+        ).fetchone()
+        return {
+            "reads_week": row[0] or 0,
+            "reads_month": row[1] or 0,
+            "reads_year": row[2] or 0,
+        }
+
     def update_status(self, entry_id: int, status: str) -> None:
         """Update an entry's status field.
+
+        Sets ``read_at`` to the current timestamp when *status* is ``'read'``
+        so that Collectio read-activity metrics remain accurate.
 
         Args:
             entry_id: Target row id.
             status: New status value.
         """
-        self._conn.execute(
-            "UPDATE entries SET status = ?, updated_at = ? WHERE id = ?",
-            (status, _now(), entry_id),
-        )
+        if status == "read":
+            now = _now()
+            self._conn.execute(
+                "UPDATE entries SET status = ?, updated_at = ?, read_at = ?"
+                " WHERE id = ?",
+                (status, now, now, entry_id),
+            )
+        else:
+            self._conn.execute(
+                "UPDATE entries SET status = ?, updated_at = ? WHERE id = ?",
+                (status, _now(), entry_id),
+            )
         self._conn.commit()
 
     def update_flags(self, entry_id: int, flags: list[str]) -> None:

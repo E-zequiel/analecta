@@ -37,6 +37,8 @@ class AppConfig(BaseModel):
     virustotal_enabled: bool = False
     theme: Literal["dark", "light"] = "dark"
     accent_color: Literal["red", "yellow", "green", "cyan"] = "yellow"
+    open_tab_ids: list[str] = ["section-library"]
+    active_tab_id: str = "section-library"
 
     @field_validator("vault_path", mode="before")
     @classmethod
@@ -79,6 +81,8 @@ def save_config(config: AppConfig, config_path: Path = CONFIG_PATH) -> None:
         "virustotal_enabled": config.virustotal_enabled,
         "theme": config.theme,
         "accent_color": config.accent_color,
+        "open_tab_ids": list(config.open_tab_ids),
+        "active_tab_id": config.active_tab_id,
     }
     if config.custom_font_path is not None:
         data["custom_font_path"] = config.custom_font_path

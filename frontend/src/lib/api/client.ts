@@ -59,6 +59,8 @@ export interface AppConfig {
 	virustotal_enabled: boolean;
 	theme: 'dark' | 'light';
 	accent_color: 'red' | 'yellow' | 'green' | 'cyan';
+	open_tab_ids: string[];
+	active_tab_id: string;
 }
 
 export interface AppConfigUpdate {
@@ -71,6 +73,8 @@ export interface AppConfigUpdate {
 	virustotal_enabled?: boolean;
 	theme?: 'dark' | 'light';
 	accent_color?: 'red' | 'yellow' | 'green' | 'cyan';
+	open_tab_ids?: string[];
+	active_tab_id?: string;
 }
 
 export interface ScanResult {
@@ -134,6 +138,12 @@ export const entries = {
 
 	getCounts(): Promise<Record<string, number>> {
 		return apiFetch<Record<string, number>>('/entries/counts');
+	},
+
+	getMetrics(): Promise<{ reads_week: number; reads_month: number; reads_year: number }> {
+		return apiFetch<{ reads_week: number; reads_month: number; reads_year: number }>(
+			'/entries/metrics'
+		);
 	},
 
 	patch(id: number, body: EntryPatch): Promise<Entry> {

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '../app.css';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
@@ -9,7 +9,14 @@
 	import { port } from '$lib/stores/sidecar';
 	import { entryAddedTick } from '$lib/stores/sse';
 	import { sidebarCollapsed, sidebarWidth, searchOpen } from '$lib/stores/ui';
-	import { openEntryTab, syncActiveTabFromPath } from '$lib/stores/tabs';
+	import {
+		tabs,
+		activeTabId,
+		openEntryTab,
+		syncActiveTabFromPath,
+		restoreTabsFromConfig,
+		saveTabs
+	} from '$lib/stores/tabs';
 	import { pkm, config as configApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 	import SidecarLoadingScreen from '$lib/components/SidecarLoadingScreen.svelte';
@@ -130,10 +137,22 @@
 		if ($port === null) return;
 		configApi
 			.get()
-			.then((cfg) => {
+			.then(async (cfg) => {
 				applyFont(cfg.font_variant, cfg.custom_font_path, cfg.ui_font_size, cfg.reading_font_size, cfg.theme, cfg.accent_color);
+				await restoreTabsFromConfig(cfg.open_tab_ids, cfg.active_tab_id);
 			})
 			.catch(() => {});
+	});
+
+	let _saveTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		void $tabs;
+		void $activeTabId;
+		if (_saveTimer) clearTimeout(_saveTimer);
+		_saveTimer = setTimeout(() => untrack(() => saveTabs()), 800);
+		return () => {
+			if (_saveTimer) clearTimeout(_saveTimer);
+		};
 	});
 
 	$effect(() => {
