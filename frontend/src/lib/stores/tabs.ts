@@ -18,7 +18,9 @@ const SECTION_LABELS: Record<string, string> = {
 	unread: 'UNREAD',
 	read: 'READ',
 	bookmark: 'BOOKMARK',
-	gem: 'GEM'
+	gem: 'GEM',
+	archive: 'ARCHIVE',
+	tags: 'TAGS'
 };
 
 function makeSectionTab(sectionId: string): AppTab {
@@ -44,6 +46,34 @@ export function openEntryTab(entryId: number, title: string, background = false)
 		activeTabId.set(tabId);
 		goto(`/viewer/${entryId}`);
 	}
+}
+
+export function navigateInSectionTab(sectionId: string): void {
+	const tabId = `section-${sectionId}`;
+	const label = SECTION_LABELS[sectionId] ?? sectionId.toUpperCase();
+	const $activeId = get(activeTabId);
+	const $tabs = get(tabs);
+	const existing = $tabs.find((t) => t.id === tabId);
+	if (existing) {
+		activeTabId.set(tabId);
+	} else {
+		const current = $tabs.find((t) => t.id === $activeId);
+		if (current && current.kind === 'section') {
+			tabs.update((ts) =>
+				ts.map((t) =>
+					t.id === $activeId
+						? { id: tabId, kind: 'section' as TabKind, title: label, path: '/', sectionId }
+						: t
+				)
+			);
+			activeTabId.set(tabId);
+		} else {
+			tabs.update((ts) => [...ts, makeSectionTab(sectionId)]);
+			activeTabId.set(tabId);
+		}
+	}
+	activeSection.set(sectionId);
+	goto('/');
 }
 
 export function openSectionTab(sectionId: string): void {

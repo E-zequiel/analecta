@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { openUrl } from '@tauri-apps/plugin-opener';
@@ -9,6 +9,7 @@
 		CornerUpLeft,
 		PenLine,
 		Link,
+		Archive,
 		Shredder,
 		ShieldCheck,
 		AArrowDown,
@@ -32,7 +33,7 @@
 	import '$lib/markdown/tokyo-night.css';
 	import { lastViewedId } from '$lib/stores/ui';
 	import { ensureEntryTab, closeTab } from '$lib/stores/tabs';
-	import { entryChangedTick } from '$lib/stores/sse';
+	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
 
 	const entryId = $derived(parseInt($page.params['id'] as string));
 
@@ -100,6 +101,14 @@
 		if (tagsOpen && tagAddInputEl) tagAddInputEl.focus();
 	});
 
+	// Sync entry state when an external patch (e.g. context menu) updates this entry.
+	$effect(() => {
+		const changed = $lastChangedEntry;
+		if (changed && changed.id === untrack(() => entryId)) {
+			entry = changed;
+		}
+	});
+
 	// Config is stable across entries — fetch once on mount.
 	onMount(() => {
 		configApi.get().then((cfg) => {
@@ -150,17 +159,27 @@
 		if (!entry) return;
 		const newStatus = entry.status === status ? 'unread' : status;
 		if (newStatus === entry.status) return;
-		entry = await entriesApi.patch(entry.id, { status: newStatus });
+		const updated = await entriesApi.patch(entry.id, { status: newStatus });
+		entry = updated;
+		lastChangedEntry.set(updated);
 		entryChangedTick.update((n) => n + 1);
 	}
 
 	async function toggleFlag(flag: string) {
 		if (!entry) return;
 		const current = entry.flags ?? [];
-		const newFlags = current.includes(flag)
-			? current.filter((f) => f !== flag)
-			: [...current, flag];
-		entry = await entriesApi.patch(entry.id, { flags: newFlags });
+		let newFlags: string[];
+		if (flag === 'archive') {
+			// Archiving strips all other flags (bookmark, gem)
+			newFlags = current.includes('archive') ? [] : ['archive'];
+		} else {
+			newFlags = current.includes(flag)
+				? current.filter((f) => f !== flag)
+				: [...current.filter((f) => f !== 'archive'), flag];
+		}
+		const updated = await entriesApi.patch(entry.id, { flags: newFlags });
+		entry = updated;
+		lastChangedEntry.set(updated);
 		entryChangedTick.update((n) => n + 1);
 	}
 
@@ -200,13 +219,17 @@
 			return;
 		}
 		newTagInput = '';
-		entry = await entriesApi.patch(entry.id, { tags: [...entry.tags, trimmed] });
+		const addedEntry = await entriesApi.patch(entry.id, { tags: [...entry.tags, trimmed] });
+		entry = addedEntry;
+		lastChangedEntry.set(addedEntry);
 		entryChangedTick.update((n) => n + 1);
 	}
 
 	async function removeTag(name: string) {
 		if (!entry) return;
-		entry = await entriesApi.patch(entry.id, { tags: entry.tags.filter((t) => t !== name) });
+		const removedEntry = await entriesApi.patch(entry.id, { tags: entry.tags.filter((t) => t !== name) });
+		entry = removedEntry;
+		lastChangedEntry.set(removedEntry);
 		entryChangedTick.update((n) => n + 1);
 	}
 
@@ -247,6 +270,9 @@
 			</button>
 			<button class="btn-icon" onclick={copyUrl} title="Copy URL">
 				<Link size={18} />
+			</button>
+			<button class="btn-icon" class:active={entry.flags?.includes('archive')} onclick={() => toggleFlag('archive')} title="Archive">
+				<Archive size={18} />
 			</button>
 			<button class="btn-icon" onclick={deleteEntry} title="Delete">
 				<Shredder size={18} />

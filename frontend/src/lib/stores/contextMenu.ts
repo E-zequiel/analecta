@@ -4,6 +4,7 @@ export interface ContextMenuEntry {
 	id: number;
 	title: string;
 	file_path: string;
+	flags: string[];
 }
 
 export interface ContextMenuState {
