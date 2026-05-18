@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { X } from 'lucide-svelte';
-	import { tabs, activeTabId, activateTab, closeTab } from '$lib/stores/tabs';
+	import { tabs, activeTabId, activateTab, closeTab, reorderTabs, saveTabs } from '$lib/stores/tabs';
+
+	let draggedId = $state<string | null>(null);
+	let dragOverId = $state<string | null>(null);
 </script>
 
 <div class="tab-bar" role="tablist">
@@ -9,8 +12,10 @@
 		<div
 			class="tab"
 			class:active={$activeTabId === tab.id}
+			class:drag-over={dragOverId === tab.id && draggedId !== tab.id}
 			role="tab"
 			aria-selected={$activeTabId === tab.id}
+			draggable={true}
 			onclick={() => activateTab(tab.id)}
 			onmousedown={(e) => {
 				if (e.button === 1) {
@@ -20,6 +25,25 @@
 			}}
 			onkeydown={(e) => {
 				if (e.key === 'Enter') activateTab(tab.id);
+			}}
+			ondragstart={() => {
+				draggedId = tab.id;
+			}}
+			ondragover={(e) => {
+				e.preventDefault();
+				dragOverId = tab.id;
+			}}
+			ondrop={() => {
+				if (draggedId && dragOverId && draggedId !== dragOverId) {
+					reorderTabs(draggedId, dragOverId);
+					saveTabs();
+				}
+				draggedId = null;
+				dragOverId = null;
+			}}
+			ondragend={() => {
+				draggedId = null;
+				dragOverId = null;
 			}}
 		>
 			<span class="tab-title">{tab.title}</span>
@@ -43,12 +67,14 @@
 <style>
 	.tab-bar {
 		display: flex;
-		align-items: stretch;
+		align-items: flex-end;
 		overflow-x: auto;
 		background: var(--bg-dark);
 		border-bottom: 1px solid var(--border);
 		flex-shrink: 0;
-		min-height: 32px;
+		min-height: 40px;
+		padding: 4px 4px 0;
+		gap: 2px;
 		scrollbar-width: none;
 	}
 
@@ -61,27 +87,37 @@
 		align-items: center;
 		gap: 2px;
 		padding: 0 6px 0 12px;
-		border-right: 1px solid var(--border);
+		border: 1px solid var(--border);
+		border-bottom: none;
+		border-radius: 6px 6px 0 0;
+		margin-bottom: -1px;
+		background: var(--bg-alt);
 		cursor: pointer;
 		color: var(--fg-muted);
 		font-size: 0.75rem;
 		white-space: nowrap;
 		min-width: 80px;
 		max-width: 200px;
+		height: 33px;
 		position: relative;
 		transition: background 0.12s, color 0.12s;
 		user-select: none;
 	}
 
-	.tab:hover {
+	.tab:hover:not(.active) {
 		background: var(--bg-highlight);
 		color: var(--fg);
 	}
 
 	.tab.active {
 		background: var(--bg);
+		border-bottom-color: var(--bg);
 		color: var(--fg);
-		border-bottom: 2px solid var(--accent);
+		height: 36px;
+	}
+
+	.tab.drag-over {
+		border-left: 2px solid var(--accent);
 	}
 
 	.tab-title {

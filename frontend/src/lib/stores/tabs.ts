@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { activeSection } from './ui';
+import { entries, config } from '$lib/api/client';
 
 export type TabKind = 'section' | 'viewer';
 
@@ -20,7 +21,8 @@ const SECTION_LABELS: Record<string, string> = {
 	bookmark: 'BOOKMARK',
 	gem: 'GEM',
 	archive: 'ARCHIVE',
-	tags: 'TAGS'
+	tags: 'TAGS',
+	collectio: 'COLLECTIO'
 };
 
 function makeSectionTab(sectionId: string): AppTab {
@@ -51,27 +53,35 @@ export function openEntryTab(entryId: number, title: string, background = false)
 export function navigateInSectionTab(sectionId: string): void {
 	const tabId = `section-${sectionId}`;
 	const label = SECTION_LABELS[sectionId] ?? sectionId.toUpperCase();
-	const $activeId = get(activeTabId);
 	const $tabs = get(tabs);
-	const existing = $tabs.find((t) => t.id === tabId);
-	if (existing) {
+
+	// 1. Exact section tab already exists → activate it
+	if ($tabs.find((t) => t.id === tabId)) {
 		activeTabId.set(tabId);
-	} else {
-		const current = $tabs.find((t) => t.id === $activeId);
-		if (current && current.kind === 'section') {
-			tabs.update((ts) =>
-				ts.map((t) =>
-					t.id === $activeId
-						? { id: tabId, kind: 'section' as TabKind, title: label, path: '/', sectionId }
-						: t
-				)
-			);
-			activeTabId.set(tabId);
-		} else {
-			tabs.update((ts) => [...ts, makeSectionTab(sectionId)]);
-			activeTabId.set(tabId);
-		}
+		activeSection.set(sectionId);
+		goto('/');
+		return;
 	}
+
+	// 2. Any other section tab exists → replace it in-place (preserves tab bar order)
+	const anySection = $tabs.find((t) => t.kind === 'section');
+	if (anySection) {
+		tabs.update((ts) =>
+			ts.map((t) =>
+				t.id === anySection.id
+					? { id: tabId, kind: 'section' as TabKind, title: label, path: '/', sectionId }
+					: t
+			)
+		);
+		activeTabId.set(tabId);
+		activeSection.set(sectionId);
+		goto('/');
+		return;
+	}
+
+	// 3. No section tabs at all → create a new one
+	tabs.update((ts) => [...ts, makeSectionTab(sectionId)]);
+	activeTabId.set(tabId);
 	activeSection.set(sectionId);
 	goto('/');
 }
@@ -100,7 +110,6 @@ export function closeTab(tabId: string): void {
 	if (idx === -1) return;
 
 	if ($tabs.length <= 1) {
-		// Last tab — if it's a viewer, replace with the default library tab
 		const only = $tabs[0];
 		if (only && only.kind === 'viewer') {
 			const lib = makeSectionTab('library');
@@ -127,14 +136,12 @@ export function navigateInTab(entryId: number, title: string): void {
 	const $tabs = get(tabs);
 	const $activeId = get(activeTabId);
 
-	// If this entry already has its own tab open, just activate it
 	const existing = $tabs.find((t) => t.id === tabId);
 	if (existing) {
 		activateTab(tabId);
 		return;
 	}
 
-	// Replace the current tab in-place with the new entry
 	tabs.update((ts) =>
 		ts.map((t) =>
 			t.id === $activeId
@@ -167,4 +174,56 @@ export function syncActiveTabFromPath(pathname: string): void {
 		const tabId = `section-${secId}`;
 		if ($tabs.find((t) => t.id === tabId)) activeTabId.set(tabId);
 	}
+}
+
+export function reorderTabs(fromId: string, toId: string): void {
+	tabs.update((ts) => {
+		const from = ts.findIndex((t) => t.id === fromId);
+		const to = ts.findIndex((t) => t.id === toId);
+		if (from === -1 || to === -1 || from === to) return ts;
+		const result = [...ts];
+		const [moved] = result.splice(from, 1);
+		result.splice(to, 0, moved);
+		return result;
+	});
+}
+
+export function saveTabs(): void {
+	config.update({
+		open_tab_ids: get(tabs).map((t) => t.id),
+		active_tab_id: get(activeTabId)
+	});
+}
+
+export async function restoreTabsFromConfig(
+	tabIds: string[],
+	activeId: string
+): Promise<void> {
+	const restored: AppTab[] = [];
+	for (const id of tabIds) {
+		if (id.startsWith('section-')) {
+			restored.push(makeSectionTab(id.slice('section-'.length)));
+		} else if (id.startsWith('viewer-')) {
+			const entryId = parseInt(id.slice('viewer-'.length), 10);
+			if (!isNaN(entryId)) {
+				try {
+					const entry = await entries.get(entryId);
+					restored.push({
+						id,
+						kind: 'viewer',
+						title: entry.title,
+						path: `/viewer/${entryId}`,
+						entryId
+					});
+				} catch {
+					// entry was deleted — skip silently
+				}
+			}
+		}
+	}
+	if (restored.length === 0) restored.push(makeSectionTab('library'));
+	tabs.set(restored);
+	const valid = restored.find((t) => t.id === activeId) ?? restored[0];
+	activeTabId.set(valid.id);
+	if (valid.kind === 'section' && valid.sectionId) activeSection.set(valid.sectionId);
 }

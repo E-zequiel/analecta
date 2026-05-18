@@ -51,14 +51,15 @@
 		align-items: center;
 		gap: 2px;
 		padding: 0.3rem 1rem 0;
+		min-height: 40px;
 	}
 
 	.sort-btn {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 26px;
-		height: 26px;
+		width: 32px;
+		height: 32px;
 		border: none;
 		border-radius: 4px;
 		background: transparent;

@@ -37,6 +37,8 @@ class ConfigOut(BaseModel):
     virustotal_enabled: bool
     theme: str
     accent_color: str
+    open_tab_ids: list[str]
+    active_tab_id: str
 
 
 class ConfigIn(BaseModel):
@@ -52,6 +54,8 @@ class ConfigIn(BaseModel):
         virustotal_enabled: New VT toggle value, if provided.
         theme: New UI colour theme, if provided.
         accent_color: New accent colour name, if provided.
+        open_tab_ids: Ordered list of open tab IDs for persistence, if provided.
+        active_tab_id: Currently active tab ID for persistence, if provided.
     """
 
     vault_path: str | None = None
@@ -63,6 +67,8 @@ class ConfigIn(BaseModel):
     virustotal_enabled: bool | None = None
     theme: Literal["dark", "light"] | None = None
     accent_color: Literal["red", "yellow", "green", "cyan"] | None = None
+    open_tab_ids: list[str] | None = None
+    active_tab_id: str | None = None
 
 
 def _config_out(cfg: AppConfig) -> ConfigOut:
@@ -76,6 +82,8 @@ def _config_out(cfg: AppConfig) -> ConfigOut:
         virustotal_enabled=cfg.virustotal_enabled,
         theme=cfg.theme,
         accent_color=cfg.accent_color,
+        open_tab_ids=list(cfg.open_tab_ids),
+        active_tab_id=cfg.active_tab_id,
     )
 
 
@@ -137,6 +145,12 @@ async def update_config(
         accent_color=body.accent_color
         if body.accent_color is not None
         else config.accent_color,
+        open_tab_ids=body.open_tab_ids
+        if body.open_tab_ids is not None
+        else config.open_tab_ids,
+        active_tab_id=body.active_tab_id
+        if body.active_tab_id is not None
+        else config.active_tab_id,
     )
     await asyncio.to_thread(save_config, updated)
     request.app.state.config = updated
