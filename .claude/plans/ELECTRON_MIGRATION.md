@@ -4,7 +4,7 @@
 
 Analecta runs on a three-layer architecture: Electron shell (TypeScript) + Python FastAPI
 sidecar + SvelteKit frontend. This document covers the migration of the shell layer from
-Tauri 2.x (`src-tauri/`) to Electron 38.x (`electron/`).
+Tauri 2.x (`src-tauri/`) to Electron 42.x (`electron/`).
 
 The Python sidecar and SvelteKit frontend are **unchanged in logic**. Only the shell layer
 is replaced. The full rationale and trade-off analysis are in `docs/electron-migration.md`.
@@ -19,7 +19,7 @@ The security model is in `docs/electron-shell-security.md`.
 
 | Axis | Decision |
 |------|----------|
-| Shell | Electron 38.x (`electron/`) |
+| Shell | Electron 42.x (`electron/`) |
 | Frontend | SvelteKit + TypeScript + Vite — unchanged |
 | Sidecar | Python FastAPI + PyInstaller — unchanged |
 | IPC | contextBridge + `ipcMain.handle()` — replicates Tauri capabilities |
@@ -138,7 +138,7 @@ root `package.json`.
 
 **Changes:**
 - Create `electron/package.json`: name `analecta-electron`, private, main
-  `dist/main/index.js`. Dev deps: `electron@^38.0.0`, `electron-builder`, `typescript`,
+  `dist/main/index.js`. Dev deps: `electron@^42.0.0`, `electron-builder`, `typescript`,
   `@types/node`. Deps: `electron-updater`, `@electron-toolkit/preload`,
   `@electron-toolkit/utils`.
 - Create `electron/tsconfig.json`: `target: ES2022`, `module: CommonJS`,
@@ -178,6 +178,10 @@ workspace with no conflicts.
   load frontend URL (dev: `VITE_DEV_SERVER_URL`, prod: `app://index.html`).
 - `app.on('window-all-closed')`: `app.quit()` on non-macOS; kill sidecar.
 - `app.on('before-quit')`: kill sidecar child process.
+- **Wayland native mode**: Analecta runs Wayland-native by default (no `--ozone-platform=x11`).
+  Export `const isWaylandNative = process.env.XDG_SESSION_TYPE === 'wayland'` for use in `ipc.ts`.
+  Window focus is best-effort: always call `mainWindow.show()` before `mainWindow.focus()`.
+  `focus()` may flash the taskbar instead of raising on Wayland — this is acceptable.
 
 **`sidecar.ts`:**
 - `spawnSidecar()`: determine binary path — dev: `src-tauri/binaries/analecta-sidecar/analecta-sidecar`
@@ -201,6 +205,10 @@ workspace with no conflicts.
 Every string argument from the renderer is validated before use. Filesystem paths go
 through `assertVaultPath` or `assertExistsPath`. `open-url` rejects non-http(s) schemes.
 See `docs/electron-shell-security.md` Layer 3 for the full validation rules.
+- **`open-dialog` handler**: wrap `dialog.showOpenDialog()` in an 8 s `Promise.race` timeout.
+  On timeout or rejection, throw `new Error('dialog-unavailable')` — the renderer catches
+  this and falls back to a manual text-input field. This mitigation covers the FileChooser
+  portal SIGSEGV on COSMIC Wayland (cosmic-epoch#3467).
 
 **`protocols.ts`:**
 - `app://` — registered with `{ standard: true, secure: true, supportFetchAPI: true }`.
@@ -469,8 +477,9 @@ working installers (sidecar now comes from `binaries/`).
 
 | Risk | Mitigation |
 |------|-----------|
-| Wayland: `win.focus()` may flash taskbar instead of raising | Deep-link navigation still works; window focus is best-effort on Wayland |
+| `dialog.showOpenDialog()` on Wayland/COSMIC: FileChooser portal SIGSEGV after first use (cosmic-epoch#3467) | 8 s timeout wrapper in `ipc.ts` `open-dialog` handler; renderer shows manual text-input fallback on timeout/rejection. Implemented in E2. |
+| `win.focus()` on deep-link or tray click is best-effort on Wayland | Always call `show()` first; `focus()` may flash taskbar. Window is visible; focus is best-effort. Acceptable UX, no workaround. |
+| Multi-monitor window positioning (electron#48749, Wayland-only, closed "not planned") | Wayland compositor controls window placement. Analecta does not use programmatic coordinates — not applicable. |
 | Tray icon on COSMIC requires AppIndicator support | Document as known limitation; verify in E9 |
-| Multi-monitor window position bug in Electron ≥ 38.4 (#48749) | Workaround: launch with `--ozone-platform=x11` if reproduced |
 | Renderer compromise via markdown-it XSS | Six-layer security model (E2/E3) replicates Tauri capability boundaries |
 | New IPC handlers added without validation | Security checklist in `docs/electron-shell-security.md` — required review gate |
