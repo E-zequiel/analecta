@@ -194,6 +194,10 @@ Modules with intentionally low coverage:
 
 ## Rust (cargo fmt + clippy + test)
 
+> **Pending (post-E8):** `src-tauri/` will be deleted in block E8 of the Electron
+> migration. At that point, steps 5–7 of `check.sh` (cargo fmt, clippy, test) and
+> this entire section must be removed from the quality gate.
+
 ### Formatting
 
 `cargo fmt --check` enforces the default `rustfmt` style. No custom `rustfmt.toml`
@@ -209,8 +213,8 @@ where a Clippy lint is demonstrably wrong for this codebase.
 
 `tauri-build` validates at compile time that the glob declared in `bundle.resources`
 (`tauri.conf.json`) matches at least one file. The sidecar onedir
-(`src-tauri/binaries/analecta-sidecar/`) is produced by F1/F2 (PyInstaller
-+ `scripts/build_sidecar.py`) and is gitignored.
+(`src-tauri/binaries/analecta-sidecar/`) is produced by PyInstaller +
+`scripts/build_sidecar.py` and is gitignored.
 
 `check.sh` creates a minimal placeholder directory if the real onedir is absent:
 
@@ -221,13 +225,8 @@ src-tauri/binaries/analecta-sidecar/
 ```
 
 This satisfies the `binaries/analecta-sidecar/**/*` glob that `tauri-build` checks.
-No target triple is needed in the directory name — the glob covers the entire tree.
-
-- **Before F1**: the stub allows `cargo clippy` and `cargo test` to run.
-- **After F1**: `build_sidecar.py` produces the real onedir; `check.sh` skips creation.
-- **Repeated `check.sh` runs after F1**: the `if [[ ! -d ... ]]` guard is a no-op.
 
 ### Tests
 
-`cargo test` runs with 0 Rust unit tests until the sidecar lifecycle logic (C4)
-is implemented. The gate still passes — `cargo test` exits 0 with an empty suite.
+`cargo test` currently runs with 0 Rust unit tests. The gate still passes — `cargo test`
+exits 0 with an empty suite.

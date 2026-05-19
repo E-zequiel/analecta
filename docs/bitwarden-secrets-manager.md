@@ -78,6 +78,11 @@ The machine account used for `BWS_ACCESS_TOKEN` must have **read** access to the
 
 ### CI secrets (BSM → GitHub Actions via sm-action)
 
+> **Pending (post-E6):** `TAURI_SIGNING_PRIVATE_KEY` and its password will be
+> superseded by electron-builder's signing key in block E6 of the Electron migration.
+> The BSM key name and env var name may change. Update this table and the rotation
+> procedure in `docs/github-actions-security.md` after E6 is complete.
+
 | BSM Key | GitHub env var | Used by | Purpose |
 |---------|---------------|---------|---------|
 | `TAURI_SIGNING_PRIVATE_KEY` | `TAURI_SIGNING_PRIVATE_KEY` | `tauri-action` | Signs release bundles for the auto-updater |
