@@ -19,7 +19,7 @@
 		Bookmark,
 		Gem,
 		BrainCircuit
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import {
 		entries as entriesApi,
 		tags as tagsApi,

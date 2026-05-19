@@ -4,7 +4,7 @@
 		ArrowDownZA,
 		ArrowDownWideNarrow,
 		ArrowDownNarrowWide
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	interface Props {
 		sortBy: 'title' | 'created_at';
