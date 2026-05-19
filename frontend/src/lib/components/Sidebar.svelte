@@ -22,7 +22,7 @@
 		Pencil,
 		Trash2,
 		Archive
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { readText } from '@tauri-apps/plugin-clipboard-manager';
 	import { entries as entriesApi, tags as tagsApi, extract as extractApi, type Entry, type Tag } from '$lib/api/client';
 	import {

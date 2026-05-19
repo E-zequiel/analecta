@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { X } from 'lucide-svelte';
+	import { X } from '@lucide/svelte';
 	import { tabs, activeTabId, activateTab, closeTab, reorderTabs, saveTabs } from '$lib/stores/tabs';
 
 	let draggedId = $state<string | null>(null);
