@@ -31,6 +31,12 @@ uses: actions/checkout@v4
 
 ### Current action inventory
 
+> **Pending (post-E7):** `tauri-apps/tauri-action` will be replaced by
+> `electron/forge-action` or equivalent in block E7 of the Electron migration.
+> The signing key references (`TAURI_SIGNING_PRIVATE_KEY`) will also change — see
+> `docs/bitwarden-secrets-manager.md`. Update this table and the secrets sections
+> of this document after E7 is complete.
+
 | Action | Tag | SHA | Last verified |
 |--------|-----|-----|---------------|
 | `actions/checkout` | `v6.0.2` | `de0fac2e4500dabe0009e67214ff5f5447ce83dd` | 2026-05-08 |
