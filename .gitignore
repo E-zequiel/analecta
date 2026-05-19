@@ -59,7 +59,14 @@ coverage.xml
 node_modules/
 
 # ========================
-# Rust / Tauri
+# Electron
+# ========================
+electron/dist/
+dist-electron/
+binaries/
+
+# ========================
+# Rust / Tauri (removed in E8)
 # ========================
 src-tauri/target/
 src-tauri/binaries/
