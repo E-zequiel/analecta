@@ -1,6 +1,12 @@
 {
   "name": "analecta-electron",
   "version": "0.1.0",
+  "description": "Local PKM desktop app — URL extraction to Markdown vault",
+  "author": {
+    "name": "Ezequiel Lazzari",
+    "email": "dev@ezequiel.analecta.app"
+  },
+  "homepage": "https://github.com/E-zequiel/analecta",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {

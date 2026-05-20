@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build analecta-sidecar with PyInstaller and stage it for Tauri.
+"""Build analecta-sidecar with PyInstaller and stage it for Electron.
 
 Usage:
     python scripts/build_sidecar.py
@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BACKEND = ROOT / "backend"
-BINARIES = ROOT / "src-tauri" / "binaries"
+BINARIES = ROOT / "src-tauri" / "binaries"  # moved to binaries/ in E8
 CACHE_FILE = ROOT / ".build" / "sidecar_hash"
 
 
@@ -28,21 +28,13 @@ def _compute_hash() -> str:
     return h.hexdigest()
 
 
-def _get_triple() -> str:
-    return subprocess.check_output(
-        ["mise", "exec", "--", "rustc", "--print", "host-tuple"],
-        text=True,
-    ).strip()
-
-
 def main() -> None:
     current = _compute_hash()
     if CACHE_FILE.exists() and CACHE_FILE.read_text().strip() == current:
         print("sidecar: cached, skipping build")
         return
 
-    triple = _get_triple()
-    print(f"sidecar: building for {triple} …")
+    print("sidecar: building …")
 
     out_dir = BINARIES / "analecta-sidecar"
     if out_dir.exists():
@@ -63,17 +55,9 @@ def main() -> None:
     if not inner.exists():
         sys.exit(f"error: expected binary not found at {inner}")
 
-    inner_triple = out_dir / f"analecta-sidecar-{triple}"
-    inner.rename(inner_triple)
-
-    # Clean up any leftover wrapper script from earlier build strategy.
-    old_wrapper = BINARIES / f"analecta-sidecar-{triple}"
-    if old_wrapper.exists() and not old_wrapper.is_dir():
-        old_wrapper.unlink()
-
     CACHE_FILE.parent.mkdir(exist_ok=True)
     CACHE_FILE.write_text(current)
-    print(f"sidecar: built → {inner_triple}")
+    print(f"sidecar: built → {inner}")
 
 
 if __name__ == "__main__":
