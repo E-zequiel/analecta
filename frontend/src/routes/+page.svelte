@@ -525,7 +525,7 @@
 
 	.tag-entry-header {
 		font-size: 13px;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--accent);
 		padding: 0.25rem 0;
 		border-bottom: 1px solid var(--border);
@@ -554,7 +554,7 @@
 
 	.tag-entry-title {
 		font-size: 13px;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--fg);
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -571,7 +571,7 @@
 		font-size: 10px;
 		padding: 1px 6px;
 		border-radius: 10px;
-		font-weight: 600;
+		font-weight: 700;
 	}
 
 	.badge-archive  { background: var(--bg-highlight); color: var(--fg-muted); }
@@ -615,7 +615,7 @@
 
 	.metric-label {
 		font-size: 11px;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--fg-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
@@ -687,14 +687,14 @@
 
 	.collectio-card-label {
 		font-size: 12px;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--fg);
 		letter-spacing: 0.05em;
 	}
 
 	.collectio-card-count {
 		font-size: 16px;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--accent);
 	}
 
@@ -718,7 +718,7 @@
 
 	.collectio-expanded-title {
 		font-size: 12px;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--accent);
 		letter-spacing: 0.05em;
 	}
@@ -747,7 +747,7 @@
 
 	.collectio-tag-header {
 		font-size: 12px;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--accent);
 		padding: 0.2rem 0;
 		border-bottom: 1px solid var(--border);

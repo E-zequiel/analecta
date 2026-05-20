@@ -1,63 +1,63 @@
 @font-face {
 	font-family: 'JetBrains Mono';
-	src: url('/fonts/JetBrainsMono-Light.ttf') format('truetype');
-	font-weight: 300;
+	src: url('/fonts/JetBrainsMono-Regular.ttf') format('truetype');
+	font-weight: 400;
 	font-style: normal;
 	font-display: swap;
 }
 
 @font-face {
 	font-family: 'JetBrains Mono';
-	src: url('/fonts/JetBrainsMono-LightItalic.ttf') format('truetype');
-	font-weight: 300;
+	src: url('/fonts/JetBrainsMono-Italic.ttf') format('truetype');
+	font-weight: 400;
 	font-style: italic;
 	font-display: swap;
 }
 
 @font-face {
 	font-family: 'JetBrains Mono';
-	src: url('/fonts/JetBrainsMono-SemiBold.ttf') format('truetype');
-	font-weight: 600;
+	src: url('/fonts/JetBrainsMono-Bold.ttf') format('truetype');
+	font-weight: 700;
 	font-style: normal;
 	font-display: swap;
 }
 
 @font-face {
 	font-family: 'JetBrains Mono';
-	src: url('/fonts/JetBrainsMono-SemiBoldItalic.ttf') format('truetype');
-	font-weight: 600;
+	src: url('/fonts/JetBrainsMono-BoldItalic.ttf') format('truetype');
+	font-weight: 700;
 	font-style: italic;
 	font-display: swap;
 }
 
 @font-face {
 	font-family: 'JetBrains Mono NF';
-	src: url('/fonts/JetBrainsMonoNerdFont-Light.ttf') format('truetype');
-	font-weight: 300;
+	src: url('/fonts/JetBrainsMonoNerdFont-Regular.ttf') format('truetype');
+	font-weight: 400;
 	font-style: normal;
 	font-display: swap;
 }
 
 @font-face {
 	font-family: 'JetBrains Mono NF';
-	src: url('/fonts/JetBrainsMonoNerdFont-LightItalic.ttf') format('truetype');
-	font-weight: 300;
+	src: url('/fonts/JetBrainsMonoNerdFont-Italic.ttf') format('truetype');
+	font-weight: 400;
 	font-style: italic;
 	font-display: swap;
 }
 
 @font-face {
 	font-family: 'JetBrains Mono NF';
-	src: url('/fonts/JetBrainsMonoNerdFont-SemiBold.ttf') format('truetype');
-	font-weight: 600;
+	src: url('/fonts/JetBrainsMonoNerdFont-Bold.ttf') format('truetype');
+	font-weight: 700;
 	font-style: normal;
 	font-display: swap;
 }
 
 @font-face {
 	font-family: 'JetBrains Mono NF';
-	src: url('/fonts/JetBrainsMonoNerdFont-SemiBoldItalic.ttf') format('truetype');
-	font-weight: 600;
+	src: url('/fonts/JetBrainsMonoNerdFont-BoldItalic.ttf') format('truetype');
+	font-weight: 700;
 	font-style: italic;
 	font-display: swap;
 }
@@ -128,7 +128,7 @@ body {
 	color: var(--fg);
 	font-family: var(--font-family);
 	font-size: var(--font-ui-size, 16px);
-	font-weight: 300;
+	font-weight: 400;
 	text-rendering: geometricPrecision;
 }
 

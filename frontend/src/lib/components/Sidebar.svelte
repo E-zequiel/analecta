@@ -577,7 +577,7 @@
 		color: var(--fg-dark);
 		font-family: inherit;
 		font-size: 0.78rem;
-		font-weight: 600;
+		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		cursor: pointer;
