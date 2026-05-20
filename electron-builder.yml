@@ -1,0 +1,38 @@
+appId: io.analecta.desktop
+productName: Analecta
+
+directories:
+  buildResources: build-resources
+  output: ../dist-electron
+
+# Paths relative to electron/ (the electron-builder project dir).
+files:
+  - dist/**/*
+  - "!dist/**/*.map"
+  - build-resources/tray-icon.png
+
+extraResources:
+  # Python sidecar (PyInstaller --onedir). Moved to binaries/ in E8.
+  - from: ../src-tauri/binaries/analecta-sidecar
+    to: analecta-sidecar
+    filter: ["**/*"]
+  # SvelteKit static build served via app:// protocol.
+  - from: ../frontend/build
+    to: frontend-build
+
+linux:
+  target:
+    - deb
+    - rpm
+    - AppImage
+  icon: build-resources/icons
+  category: Utility
+  desktop:
+    entry:
+      MimeType: x-scheme-handler/analecta
+
+publish:
+  provider: github
+  owner: E-zequiel
+  repo: analecta
+  releaseType: draft
