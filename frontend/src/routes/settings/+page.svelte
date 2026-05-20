@@ -506,13 +506,13 @@
 	h1 {
 		margin: 0 0 1.5rem;
 		font-size: 1.2rem;
-		font-weight: 600;
+		font-weight: 700;
 	}
 
 	h2 {
 		margin: 0 0 0.75rem;
 		font-size: 0.85rem;
-		font-weight: 600;
+		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		color: var(--fg-muted);
