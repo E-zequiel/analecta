@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { invoke } from '@tauri-apps/api/core';
-	import { open as openDialog } from '@tauri-apps/plugin-dialog';
+	import { openDialog, updateVaultScope } from '$lib/platform';
 	import { config as configApi, security } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 
@@ -115,7 +114,7 @@
 		try {
 			await configApi.update({ vault_path: form.vault_path });
 			if (form.vault_path !== initialVaultPath) {
-				await invoke('update_vault_scope', { vaultPath: form.vault_path });
+				await updateVaultScope(form.vault_path);
 				initialVaultPath = form.vault_path;
 			}
 			flash((v) => (vaultSaved = v));
@@ -125,7 +124,7 @@
 	}
 
 	async function browseVault() {
-		const selected = await openDialog({ directory: true, multiple: false });
+		const selected = await openDialog({ properties: ['openDirectory'] });
 		if (typeof selected === 'string') {
 			form.vault_path = selected;
 			await autoSaveVaultPath();
@@ -144,7 +143,6 @@
 
 	async function browseFont() {
 		const selected = await openDialog({
-			multiple: false,
 			filters: [{ name: 'TrueType Font', extensions: ['ttf'] }]
 		});
 		if (typeof selected === 'string') {

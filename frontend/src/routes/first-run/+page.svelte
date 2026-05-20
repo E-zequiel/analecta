@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { invoke } from '@tauri-apps/api/core';
-	import { open as openDialog } from '@tauri-apps/plugin-dialog';
+	import { openDialog, updateVaultScope } from '$lib/platform';
 	import { config as configApi } from '$lib/api/client';
 
 	let vaultPath = $state('');
@@ -9,7 +8,7 @@
 	let error = $state('');
 
 	async function browseVault() {
-		const selected = await openDialog({ directory: true, multiple: false });
+		const selected = await openDialog({ properties: ['openDirectory'] });
 		if (typeof selected === 'string') vaultPath = selected;
 	}
 
@@ -19,7 +18,7 @@
 		error = '';
 		try {
 			await configApi.update({ vault_path: vaultPath });
-			await invoke('update_vault_scope', { vaultPath });
+			await updateVaultScope(vaultPath);
 			goto('/');
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);

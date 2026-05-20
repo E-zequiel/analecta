@@ -2,9 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { openUrl } from '@tauri-apps/plugin-opener';
-	import { confirm } from '@tauri-apps/plugin-dialog';
-	import { readTextFile } from '@tauri-apps/plugin-fs';
+	import { openUrl, confirm, readTextFile } from '$lib/platform';
 	import {
 		CornerUpLeft,
 		PenLine,
@@ -190,7 +188,7 @@
 
 	async function deleteEntry() {
 		if (!entry) return;
-		const ok = await confirm(`Delete "${entry.title}"?`, { title: 'Confirm Delete', kind: 'warning' });
+		const ok = await confirm(`Delete "${entry.title}"?`, 'Confirm Delete');
 		if (!ok) return;
 		await entriesApi.delete(entry.id);
 		entryChangedTick.update((n) => n + 1);

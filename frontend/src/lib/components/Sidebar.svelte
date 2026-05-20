@@ -23,7 +23,7 @@
 		Trash2,
 		Archive
 	} from '@lucide/svelte';
-	import { readText } from '@tauri-apps/plugin-clipboard-manager';
+	import { clipboardReadText } from '$lib/platform';
 	import { entries as entriesApi, tags as tagsApi, extract as extractApi, type Entry, type Tag } from '$lib/api/client';
 	import {
 		sidebarCollapsed,
@@ -148,7 +148,7 @@
 	async function pasteUrl() {
 		let url: string;
 		try {
-			url = (await readText()).trim();
+			url = (await clipboardReadText()).trim();
 		} catch {
 			pasteStatus = 'error';
 			pasteMessage = 'Could not read clipboard.';

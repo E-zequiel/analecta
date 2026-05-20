@@ -1,7 +1,7 @@
 import MarkdownIt from 'markdown-it';
 import footnote from 'markdown-it-footnote';
 import taskLists from 'markdown-it-task-lists';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { convertFileSrc } from '$lib/platform';
 
 function resolveImagePath(markdownFilePath: string, relativeSrc: string): string {
 	const dir = markdownFilePath.substring(0, markdownFilePath.lastIndexOf('/'));
