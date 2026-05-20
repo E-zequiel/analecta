@@ -400,18 +400,62 @@ dashboard loads.
 **`ci.yml` changes:**
 - Remove the `cargo check` job (src-tauri still present but Rust is no longer part of
   the product). Or keep it until E8 — either is acceptable.
+- Add `socket` job — dependency security gate:
+  ```yaml
+  socket:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: actions/checkout@<SHA>
+      - uses: bitwarden/sm-action@<SHA>
+        with:
+          secrets: |
+            <SOCKET_SECURITY_API_TOKEN_secret_id> > SOCKET_SECURITY_API_TOKEN
+      - run: pnpm dlx socket ci
+        env:
+          SOCKET_SECURITY_API_TOKEN: ${{ env.SOCKET_SECURITY_API_TOKEN }}
+  ```
+  Trigger: `paths: ['pnpm-lock.yaml', 'backend/uv.lock']` — runs only when
+  dependency lockfiles change, preserving the 500 API calls/hour quota.
+
+**`release.yml` Socket step:** Add before the build step:
+```yaml
+- uses: bitwarden/sm-action@<SHA>
+  with:
+    secrets: |
+      <SOCKET_SECURITY_API_TOKEN_secret_id> > SOCKET_SECURITY_API_TOKEN
+- run: pnpm dlx socket scan create . --json
+  env:
+    SOCKET_SECURITY_API_TOKEN: ${{ env.SOCKET_SECURITY_API_TOKEN }}
+```
+Runs unconditionally on every release — no path filter.
+
+**`scripts/socket-audit.sh`** (new file, local manual scan):
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+bws run -- pnpm dlx socket scan create . --json
+```
+Usage: `./scripts/socket-audit.sh` — injects `SOCKET_SECURITY_API_TOKEN` from BSM
+at runtime without storing the key on disk.
+
+**BSM secret:** `SOCKET_SECURITY_API_TOKEN` — already created (2026-05-20).
+Quota: 500 API calls/hour (Socket free tier). Path-filtered CI job stays well within
+this limit even on busy dependency-update days.
 
 **`dependabot.yml` changes:**
 - Remove the `cargo` ecosystem block.
 
 **`docs/github-actions-security.md`:** Remove the pending marker from Control 1 and
 update the action inventory with the real SHA of the new action (resolve via `curl`).
+Add Socket CI job to the inventory.
 
 **`docs/bitwarden-secrets-manager.md`:** Remove the pending marker and update the
-secrets inventory for the new signing key name.
+secrets inventory for the new signing key name. Add `SOCKET_SECURITY_API_TOKEN` entry.
 
 **Verification:** Push a test tag `v0.3.0-alpha.1`; workflow runs green and produces a
-GitHub Release draft with `.deb`/`.AppImage`/`.rpm` assets.
+GitHub Release draft with `.deb`/`.AppImage`/`.rpm` assets. Socket scan step exits 0.
 
 ---
 

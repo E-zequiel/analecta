@@ -3,11 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "tauri": "tauri",
-    "dev": "tauri dev",
-    "build": "tauri build"
-  },
-  "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "electron:dev": "pnpm --filter electron run dev",
+    "electron:build": "pnpm --filter electron run build",
+    "dist": "pnpm --filter frontend build && python scripts/build_sidecar.py && pnpm --filter electron run dist"
   }
 }
