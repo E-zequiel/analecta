@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { revealItemInDir } from '@tauri-apps/plugin-opener';
-	import { confirm } from '@tauri-apps/plugin-dialog';
+	import { revealInDir, confirm } from '$lib/platform';
 	import { entries as entriesApi } from '$lib/api/client';
 	import { contextMenu, hideContextMenu } from '$lib/stores/contextMenu';
 	import { closeTab } from '$lib/stores/tabs';
@@ -26,7 +25,7 @@
 
 	async function revealFile() {
 		if ($contextMenu.entry) {
-			await revealItemInDir($contextMenu.entry.file_path).catch(() => {});
+			await revealInDir($contextMenu.entry.file_path).catch(() => {});
 		}
 		hideContextMenu();
 	}
@@ -47,7 +46,7 @@
 		const entry = $contextMenu.entry;
 		hideContextMenu();
 		if (!entry) return;
-		const ok = await confirm(`Delete "${entry.title}"?`, { title: 'Confirm Delete', kind: 'warning' });
+		const ok = await confirm(`Delete "${entry.title}"?`, 'Confirm Delete');
 		if (!ok) return;
 		await entriesApi.delete(entry.id);
 		entryChangedTick.update((n) => n + 1);

@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { exists } from '@tauri-apps/plugin-fs';
+	import { fileExists } from '$lib/platform';
 	import {
 		entries as entriesApi,
 		tags as tagsApi,
@@ -195,7 +195,7 @@
 	onMount(async () => {
 		try {
 			const cfg = await configApi.get();
-			const vaultExists = await exists(cfg.vault_path);
+			const vaultExists = await fileExists(cfg.vault_path);
 			if (!vaultExists) {
 				goto('/first-run');
 				return;

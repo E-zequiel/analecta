@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+	import { readTextFile, writeTextFile } from '$lib/platform';
 	import { entries as entriesApi, type Entry } from '$lib/api/client';
 	import { createRenderer } from '$lib/markdown/renderer';
 	import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';

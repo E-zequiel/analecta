@@ -2,10 +2,7 @@
 	import '../app.css';
 	import { onMount, untrack } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
-	import { invoke } from '@tauri-apps/api/core';
-	import { listen } from '@tauri-apps/api/event';
-	import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
-	import type { Update } from '@tauri-apps/plugin-updater';
+	import { getSidecarPort, onSidecarReady, onDeepLink, getInitialDeepLink, checkUpdate, onUpdateAvailable, notify } from '$lib/platform';
 	import { port } from '$lib/stores/sidecar';
 	import { entryAddedTick } from '$lib/stores/sse';
 	import { sidebarCollapsed, sidebarWidth, searchOpen } from '$lib/stores/ui';
@@ -29,7 +26,7 @@
 	let { children } = $props();
 	let timedOut = $state(false);
 	let pendingDeepLink = $state<string | null>(null);
-	let pendingUpdate = $state<Update | null>(null);
+	let pendingUpdateVersion = $state<string | null>(null);
 	let isResizing = $state(false);
 
 	function startResize(e: PointerEvent) {
@@ -61,28 +58,24 @@
 			timedOut = true;
 		}, 10_000);
 
-		invoke<number | null>('get_sidecar_port').then((existingPort) => {
-			if (existingPort !== null) {
-				clearTimeout(timeout);
-				port.set(existingPort);
-			}
-		});
+		getSidecarPort()
+			.then((p) => { clearTimeout(timeout); port.set(p); })
+			.catch(() => {});
 
-		const unlistenSidecar = listen<{ port: number }>('sidecar-ready', (event) => {
+		const unlistenSidecar = onSidecarReady((p) => {
 			clearTimeout(timeout);
-			port.set(event.payload.port);
+			port.set(p);
 		});
 
-		getCurrent().then((urls) => {
-			if (urls && urls.length > 0) handleDeepLink(urls[0]);
-		});
+		getInitialDeepLink().then((url) => {
+			if (url) handleDeepLink(url);
+		}).catch(() => {});
 
-		const unlistenDeepLink = onOpenUrl((urls) => {
-			if (urls.length > 0) handleDeepLink(urls[0]);
-		});
+		const unlistenDeepLink = onDeepLink(handleDeepLink);
 
-		const unlistenRelay = listen<string>('deep-link', (event) => {
-			handleDeepLink(event.payload);
+		const unlistenUpdate = onUpdateAvailable((info) => {
+			const i = info as { version: string };
+			pendingUpdateVersion = i.version;
 		});
 
 		function handleKey(e: KeyboardEvent) {
@@ -99,9 +92,9 @@
 
 		return () => {
 			clearTimeout(timeout);
-			unlistenSidecar.then((u) => u());
-			unlistenDeepLink.then((u) => u());
-			unlistenRelay.then((u) => u());
+			unlistenSidecar();
+			unlistenDeepLink();
+			unlistenUpdate();
 			window.removeEventListener('keydown', handleKey);
 		};
 	});
@@ -125,12 +118,7 @@
 
 	$effect(() => {
 		if ($port === null) return;
-		import('@tauri-apps/plugin-updater')
-			.then(({ check }) => check())
-			.then((update) => {
-				if (update?.available) pendingUpdate = update;
-			})
-			.catch(() => {});
+		checkUpdate().catch(() => {});
 	});
 
 	$effect(() => {
@@ -165,7 +153,7 @@
 				const data = JSON.parse(ev.data) as { type: string };
 				if (data.type === 'entry_added') {
 					entryAddedTick.update((n) => n + 1);
-					await invoke('notify_success', { title: 'Analecta', body: 'New entry saved.' });
+					await notify('Analecta', 'New entry saved.');
 				}
 			} catch {
 				// ignore malformed events
@@ -179,8 +167,8 @@
 {#if $port === null}
 	<SidecarLoadingScreen {timedOut} />
 {:else}
-	{#if pendingUpdate}
-		<UpdateBanner update={pendingUpdate} />
+	{#if pendingUpdateVersion}
+		<UpdateBanner version={pendingUpdateVersion} />
 	{/if}
 	<div class="shell" class:resizing={isResizing}>
 		<Sidebar />
