@@ -61,6 +61,7 @@ export interface AppConfig {
 	accent_color: 'red' | 'yellow' | 'green' | 'cyan';
 	open_tab_ids: string[];
 	active_tab_id: string;
+	first_run: boolean;
 }
 
 export interface AppConfigUpdate {

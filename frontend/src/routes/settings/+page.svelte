@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { openDialog, updateVaultScope } from '$lib/platform';
+	import { openDialog, updateVaultScope, relaunch } from '$lib/platform';
 	import { config as configApi, security } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 
@@ -41,6 +41,7 @@
 	let vtSaving = $state(false);
 	let vtSaved = $state(false);
 	let vtError = $state('');
+	let browsing = $state(false);
 
 	let uiFontTimer: ReturnType<typeof setTimeout> | null = null;
 	let readingFontTimer: ReturnType<typeof setTimeout> | null = null;
@@ -115,7 +116,9 @@
 			await configApi.update({ vault_path: form.vault_path });
 			if (form.vault_path !== initialVaultPath) {
 				await updateVaultScope(form.vault_path);
-				initialVaultPath = form.vault_path;
+				// Sidecar VaultIndex is not hot-reloadable; restart to apply new vault.
+				await relaunch();
+				return;
 			}
 			flash((v) => (vaultSaved = v));
 		} catch (err) {
@@ -124,10 +127,18 @@
 	}
 
 	async function browseVault() {
-		const selected = await openDialog({ properties: ['openDirectory'] });
-		if (typeof selected === 'string') {
-			form.vault_path = selected;
-			await autoSaveVaultPath();
+		browsing = true;
+		error = '';
+		try {
+			const selected = await openDialog({ properties: ['openDirectory'] });
+			if (typeof selected === 'string') {
+				form.vault_path = selected;
+				await autoSaveVaultPath();
+			}
+		} catch {
+			error = 'File picker unavailable — type the path directly in the field below.';
+		} finally {
+			browsing = false;
 		}
 	}
 
@@ -269,7 +280,7 @@
 					bind:value={form.vault_path}
 					onblur={autoSaveVaultPath}
 				/>
-				<button onclick={browseVault}>Browse…</button>
+				<button onclick={browseVault} disabled={browsing}>{browsing ? 'Opening…' : 'Browse…'}</button>
 			</div>
 		</div>
 		<div class="field">

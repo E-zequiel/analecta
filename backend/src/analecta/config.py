@@ -29,6 +29,7 @@ class AppConfig(BaseModel):
     """
 
     vault_path: Path = Path.home() / "Documents" / "Analecta"
+    first_run: bool = False
     font_variant: Literal["regular", "nerd", "custom"] = "regular"
     ui_font_size: float = 16.0
     reading_font_size: float = 17.0
@@ -56,7 +57,7 @@ def load_config(config_path: Path = CONFIG_PATH) -> AppConfig:
         Validated AppConfig instance.
     """
     if not config_path.exists():
-        return AppConfig()
+        return AppConfig(first_run=True)
     with config_path.open("rb") as fh:
         data = tomllib.load(fh)
     return AppConfig.model_validate(data)

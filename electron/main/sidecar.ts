@@ -5,10 +5,12 @@ import { setVaultPath } from './vault-state.js';
 
 let sidecarProcess: ChildProcess | null = null;
 let cachedPort: number | null = null;
+let sidecarReady = false;
 const portResolvers: Array<(port: number) => void> = [];
 
+/** Resolves only after SIDECAR_READY — guarantees HTTP is accepting connections. */
 export function getSidecarPort(): Promise<number> {
-  if (cachedPort !== null) return Promise.resolve(cachedPort);
+  if (sidecarReady && cachedPort !== null) return Promise.resolve(cachedPort);
   return new Promise(resolve => portResolvers.push(resolve));
 }
 
@@ -30,11 +32,13 @@ export function spawnSidecar(): void {
       const trimmed = line.trim();
       if (trimmed.startsWith('LISTENING_ON_PORT:')) {
         cachedPort = parseInt(trimmed.slice('LISTENING_ON_PORT:'.length), 10);
-        for (const resolve of portResolvers) resolve(cachedPort);
-        portResolvers.length = 0;
+        // Port is cached but resolvers wait until SIDECAR_READY.
       } else if (trimmed.startsWith('VAULT_PATH:')) {
         setVaultPath(trimmed.slice('VAULT_PATH:'.length));
       } else if (trimmed === 'SIDECAR_READY') {
+        sidecarReady = true;
+        for (const resolve of portResolvers) resolve(cachedPort!);
+        portResolvers.length = 0;
         for (const win of BrowserWindow.getAllWindows()) {
           win.webContents.send('sidecar-ready', cachedPort);
         }
