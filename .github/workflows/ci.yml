@@ -51,23 +51,23 @@ jobs:
       - name: Svelte type check
         run: mise exec -- pnpm --filter frontend check
 
-  check-rust:
+  socket:
+    if: github.repository == 'E-zequiel/analecta' && github.event_name == 'pull_request'
     runs-on: ubuntu-22.04
-    if: github.repository == 'E-zequiel/analecta'
-    permissions:
-      contents: read
+    permissions: {}
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
-      - name: Install system dependencies
-        run: bash scripts/system_deps.sh
-
-      - name: Create sidecar placeholder for cargo check
-        run: mkdir -p src-tauri/binaries/analecta-sidecar/_internal && touch src-tauri/binaries/analecta-sidecar/_internal/placeholder
-
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151  # v4.0.1
 
-      - name: Cargo check
-        run: mise exec -- cargo check
-        working-directory: src-tauri
+      - uses: bitwarden/sm-action@27c0c9dcab679d7250dbab91227c85b49ffa5e0f  # v3.0.0
+        with:
+          access_token: ${{ secrets.BWS_ACCESS_TOKEN }}
+          secrets: |
+            70b60912-8193-4bb0-8ec8-b45000cda95a > SOCKET_SECURITY_API_TOKEN
+
+      - name: Socket dependency scan
+        run: pnpm dlx socket ci
+        env:
+          SOCKET_SECURITY_API_TOKEN: ${{ env.SOCKET_SECURITY_API_TOKEN }}

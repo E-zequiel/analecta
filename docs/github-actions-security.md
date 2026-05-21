@@ -31,17 +31,10 @@ uses: actions/checkout@v4
 
 ### Current action inventory
 
-> **Pending (post-E7):** `tauri-apps/tauri-action` will be replaced by
-> `electron/forge-action` or equivalent in block E7 of the Electron migration.
-> The signing key references (`TAURI_SIGNING_PRIVATE_KEY`) will also change — see
-> `docs/bitwarden-secrets-manager.md`. Update this table and the secrets sections
-> of this document after E7 is complete.
-
 | Action | Tag | SHA | Last verified |
 |--------|-----|-----|---------------|
 | `actions/checkout` | `v6.0.2` | `de0fac2e4500dabe0009e67214ff5f5447ce83dd` | 2026-05-08 |
 | `jdx/mise-action` | `v4.0.1` | `1648a7812b9aeae629881980618f079932869151` | 2026-05-08 |
-| `tauri-apps/tauri-action` | `action-v0.6.2` | `84b9d35b5fc46c1e45415bdb6144030364f7ebc5` | 2026-05-08 |
 | `bitwarden/sm-action` | `v3.0.0` | `27c0c9dcab679d7250dbab91227c85b49ffa5e0f` | 2026-05-08 |
 
 ### How to resolve a SHA for a new action or version
@@ -78,7 +71,7 @@ jobs:
       contents: write  # Minimum needed to create a GitHub Release
 ```
 
-`contents: write` is required because `tauri-apps/tauri-action` calls the GitHub Releases API to create the release and upload `.deb`, `.AppImage`, and `.rpm` assets.
+`contents: write` is required because the release job uses `gh release create` to create the release and upload `.deb`, `.AppImage`, and `.rpm` assets via the GitHub Releases API.
 
 `pull-requests: write` is required in `deps-update.yml` so that `gh pr create` (run with `github.token`) can open a PR for the weekly dependency update branch. This permission is declared at the job level only for that job; the release job does not hold it.
 
@@ -100,29 +93,15 @@ Both expressions resolve to the same auto-generated job token, but `${{ github.t
 
 | Secret | Source | Used by | Purpose |
 |--------|--------|---------|---------|
-| `github.token` | Auto (runner) | `tauri-action` | Create GitHub Release, upload assets |
+| `github.token` | Auto (runner) | `gh release create` | Create GitHub Release, upload assets |
 | `BWS_ACCESS_TOKEN` | GitHub secret | `sm-action` | Read-only BSM machine account token |
-| `TAURI_SIGNING_PRIVATE_KEY` | BSM via `sm-action` | `tauri-action` | Sign release bundles (Tauri updater) |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | BSM via `sm-action` | `tauri-action` | Decrypt the signing key if passphrase-protected |
+| `SOCKET_SECURITY_API_TOKEN` | BSM via `sm-action` | `pnpm dlx socket` | Socket.dev dependency security scan |
 
-`TAURI_SIGNING_PRIVATE_KEY` is **not** stored as a GitHub secret. It lives in Bitwarden Secrets Manager and is injected at runtime by `bitwarden/sm-action`. See `docs/bitwarden-secrets-manager.md` for the full secret management architecture.
+`SOCKET_SECURITY_API_TOKEN` is **not** stored as a GitHub secret. It lives in Bitwarden Secrets Manager and is injected at runtime by `bitwarden/sm-action`. See `docs/bitwarden-secrets-manager.md` for the full secret management architecture and blast radius ranking.
 
-`github.token` auto-expires when the job ends. `BWS_ACCESS_TOKEN` is low-blast-radius (read-only BSM access). `TAURI_SIGNING_PRIVATE_KEY` has no expiry — see rotation procedure below.
+`github.token` auto-expires when the job ends. `BWS_ACCESS_TOKEN` is low-blast-radius (read-only BSM access).
 
-### Why `TAURI_SIGNING_PRIVATE_KEY` is the highest-risk secret
-
-- It signs every release bundle. A leaked key allows an attacker to publish malicious updates that the auto-updater will accept and install silently on users' machines.
-- Rotation requires re-generating the keypair and publishing a new `pubkey` in `tauri.conf.json` — existing installations cannot auto-update until users manually reinstall.
-- **If this key is ever suspected compromised: rotate immediately and publish a forced manual update.**
-- Storing it in BSM (not as a GitHub secret) reduces the attack surface: GitHub credential leaks do not expose it.
-
-### Rotation procedure for `TAURI_SIGNING_PRIVATE_KEY`
-
-1. Generate a new keypair without writing to disk: `mise exec -- cargo tauri signer generate` (no `-w` flag — keys printed to stdout only).
-2. Update the secret value in the **BSM Web App** (Web App only — local machine account is read-only).
-3. Update `plugins.updater.pubkey` in `src-tauri/tauri.conf.json` with the new public key.
-4. Tag and release a new version — signed with the new key.
-5. Users must manually install this version; the old auto-updater cannot verify the new signature.
+**Linux electron-builder does not require code signing.** `electron-updater` verifies release downloads via SHA-512 checksums embedded in `latest-linux.yml` — no private key needed.
 
 ---
 
@@ -187,10 +166,12 @@ These settings are configured in GitHub → Settings → Actions → General and
 - **Mode:** "Allow E-zequiel, and select non-E-zequiel, actions"
 - Allow actions created by GitHub: ✅ (covers `actions/*`)
 - Allow actions by Marketplace verified creators: ❌ (too broad)
-- **Explicit allowlist:** `jdx/mise-action@*`, `bitwarden/sm-action@*`, `tauri-apps/tauri-action@*`
+- **Explicit allowlist:** `jdx/mise-action@*`, `bitwarden/sm-action@*`
 - Require actions to be pinned to a full-length commit SHA: ✅ (enforced as a repo-level backstop)
 
 Any action not in this list — even if added to a workflow file — cannot run. Update the allowlist when adding a new external action, then add it to the inventory table in Control 1.
+
+> **Action required (E7):** Remove `tauri-apps/tauri-action@*` from the allowlist in GitHub → Settings → Actions → General. It is no longer referenced by any workflow.
 
 ### Workflow permissions (configured 2026-05-11)
 
@@ -212,7 +193,7 @@ When the repository is made public, the **"Fork pull request workflows"** sectio
 1. **Verify the new tag**: check the action's release notes for breaking changes or security advisories.
 2. **Check the SHA independently**: compare the PR's new SHA against `https://api.github.com/repos/{owner}/{repo}/git/ref/tags/{new-tag}`.
 3. **Review the diff**: Dependabot shows only the SHA change in the workflow file — also read the action's own diff for that version range.
-4. **Merge only if clean**: do not auto-merge action updates that touch steps with access to `TAURI_SIGNING_PRIVATE_KEY`.
+4. **Merge only if clean**: do not auto-merge action updates that touch steps with access to `SOCKET_SECURITY_API_TOKEN`.
 5. **Update the inventory table** in Control 1 with the new SHA and verification date.
 
 ### When adding a new external action
