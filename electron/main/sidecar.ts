@@ -18,7 +18,7 @@ function getSidecarBinary(): string {
   }
   // In dev, __dirname is electron/dist/main/ — repo root is three levels up.
   const repoRoot = path.join(__dirname, '..', '..', '..');
-  return path.join(repoRoot, 'src-tauri', 'binaries', 'analecta-sidecar', 'analecta-sidecar');
+  return path.join(repoRoot, 'binaries', 'analecta-sidecar', 'analecta-sidecar');
 }
 
 export function spawnSidecar(): void {

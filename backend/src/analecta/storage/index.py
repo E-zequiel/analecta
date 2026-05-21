@@ -61,7 +61,7 @@ class VaultIndex:
         """Close the underlying database connection."""
         self._conn.close()
 
-    def __enter__(self) -> "VaultIndex":
+    def __enter__(self) -> VaultIndex:
         return self
 
     def __exit__(self, *_: Any) -> None:

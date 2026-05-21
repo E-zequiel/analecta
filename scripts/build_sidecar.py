@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BACKEND = ROOT / "backend"
-BINARIES = ROOT / "src-tauri" / "binaries"  # moved to binaries/ in E8
+BINARIES = ROOT / "binaries"
 CACHE_FILE = ROOT / ".build" / "sidecar_hash"
 
 
