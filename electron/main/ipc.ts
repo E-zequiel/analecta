@@ -24,7 +24,7 @@ function withDialogTimeout<T>(promise: Promise<T>): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error('dialog-unavailable')), 8000)
+      setTimeout(() => reject(new Error('dialog-unavailable')), 30000)
     ),
   ]);
 }
@@ -63,7 +63,7 @@ export function registerIpcHandlers(): void {
     try { await fs.access(rawPath); return true; } catch { return false; }
   });
 
-  // Opens a native file-picker dialog. 8 s timeout mitigates FileChooser portal SIGSEGV on COSMIC.
+  // Opens a native file-picker dialog. 30 s timeout covers the slow XDG FileChooser portal on GNOME/Wayland.
   ipcMain.handle('open-dialog', async (_event, opts: unknown) => {
     if (!isObject(opts)) throw new Error('invalid opts');
     const result = await withDialogTimeout(

@@ -138,7 +138,7 @@ connect-src  'self' http://localhost:* app:;
 img-src      'self' app: analecta-file: data: blob: https:;
 style-src    'self' 'unsafe-inline' app:;
 font-src     'self' app:;
-script-src   'self' app:;
+script-src   'self' 'sha256-<computed at startup>' app:;
 object-src   'none';
 base-uri     'self';
 ```
@@ -148,7 +148,8 @@ Key decisions:
 - `img-src` allows `analecta-file:` (vault images) and `https:` (remote article images). Remote images were a deliberate decision for the article reader; they are not blocked.
 - `object-src 'none'` blocks Flash and other plugin content.
 - `base-uri 'self'` prevents `<base>` tag injection from changing the document base URL.
-- `'unsafe-inline'` in `style-src` is required by SvelteKit's generated styles. Scoped styles cannot be hashed at build time without additional tooling.
+- `script-src` does **not** use `'unsafe-inline'`. SvelteKit injects one inline script per build (`__sveltekit_xyz = { base: "" }`). `protocols.ts` reads `index.html` at app startup, computes the SHA-256 hash of that script, and includes it in `script-src`. The hash is recomputed on every launch so it stays correct across builds without a separate build step.
+- `'unsafe-inline'` in `style-src` is required because: (a) `app.html` contains a static `style="display: contents"` wrapper, (b) Svelte components use dynamic `style=` bindings (sidebar resize width, context menu position, font-size previews, source color badges). Replacing these with JS-driven `element.style.setProperty()` calls would eliminate the requirement, but `adapter-static` pre-renders initial store values as baked-in inline styles, requiring a coordinated frontend refactor. Tracked as a post-v0.3.0 backlog item. The risk is lower than `script-src 'unsafe-inline'`: CSS cannot call `window.electronAPI` or execute code; CSS-based data exfiltration (e.g., via `background-image`) is blocked by `connect-src` restricting outbound requests to `localhost`.
 
 ---
 

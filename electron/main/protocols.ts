@@ -1,19 +1,32 @@
 import { protocol, session, net, app } from 'electron';
 import path from 'path';
+import { readFileSync } from 'fs';
+import { createHash } from 'crypto';
 import { assertVaultPath } from './vault-state.js';
 
 const ALLOWED_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.avif']);
 
-const CSP = [
-  "default-src 'self' app:",
-  "connect-src 'self' http://localhost:* app:",
-  "img-src 'self' app: analecta-file: data: blob: https:",
-  "style-src 'self' 'unsafe-inline' app:",
-  "font-src 'self' app:",
-  "script-src 'self' app:",
-  "object-src 'none'",
-  "base-uri 'self'",
-].join('; ');
+/**
+ * Computes SHA-256 hashes for every attribute-less inline <script> in index.html.
+ * SvelteKit injects one such script per build (base URL init); the name changes each
+ * build so we compute the hash at runtime rather than hardcoding it.
+ */
+function inlineScriptHashes(indexHtmlPath: string): string[] {
+  try {
+    const html = readFileSync(indexHtmlPath, 'utf8');
+    const hashes: string[] = [];
+    const re = /<script>([\s\S]*?)<\/script>/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) !== null) {
+      const digest = createHash('sha256').update(m[1]).digest('base64');
+      hashes.push(`'sha256-${digest}'`);
+    }
+    return hashes;
+  } catch (err) {
+    console.warn('[protocols] could not compute inline script hashes:', err);
+    return [];
+  }
+}
 
 /** Called before app.ready — registers custom schemes as privileged. */
 export function registerProtocols(): void {
@@ -29,6 +42,19 @@ export function setupProtocolHandlers(): void {
     ? path.join(process.resourcesPath, 'frontend-build')
     : path.join(__dirname, '..', '..', '..', 'frontend', 'build');
 
+  const scriptHashes = inlineScriptHashes(path.join(frontendBuildPath, 'index.html'));
+
+  const csp = [
+    "default-src 'self' app:",
+    "connect-src 'self' http://localhost:* app:",
+    "img-src 'self' app: analecta-file: data: blob: https:",
+    "style-src 'self' 'unsafe-inline' app:",
+    "font-src 'self' app:",
+    `script-src 'self' ${scriptHashes.join(' ')} app:`,
+    "object-src 'none'",
+    "base-uri 'self'",
+  ].join('; ');
+
   // app:// — serves the SvelteKit static build
   session.defaultSession.protocol.handle('app', async (request) => {
     const url = new URL(request.url);
@@ -40,7 +66,12 @@ export function setupProtocolHandlers(): void {
     if (!resolved.startsWith(path.resolve(frontendBuildPath))) {
       return new Response('Not found', { status: 404 });
     }
-    return net.fetch(`file://${resolved}`);
+    try {
+      return await net.fetch(`file://${resolved}`);
+    } catch (err) {
+      console.error(`[protocols] app:// fetch error for ${resolved}:`, err);
+      return new Response('Internal error', { status: 500 });
+    }
   });
 
   // analecta-file:// — serves vault images; enforces vault scope + extension allowlist
@@ -65,7 +96,7 @@ export function setupProtocolHandlers(): void {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [CSP],
+        'Content-Security-Policy': [csp],
       },
     });
   });

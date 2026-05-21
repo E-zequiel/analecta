@@ -3,6 +3,7 @@ import logging
 import socket
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
@@ -40,7 +41,10 @@ def _find_free_port() -> int:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """FastAPI lifespan — initialises singletons and signals sidecar readiness."""
     config = load_config()
-    index = VaultIndex(config.vault_path / "analecta.db")
+    # On first run (no config.toml yet) use an in-memory DB so the sidecar
+    # doesn't create the default vault directory before the user chooses one.
+    db_path = Path(":memory:") if config.first_run else config.vault_path / "analecta.db"
+    index = VaultIndex(db_path)
     app.state.config = config
     app.state.index = index
     app.state.event_bus = EventBus()
@@ -56,7 +60,7 @@ app = FastAPI(title="Analecta", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://tauri.localhost", "tauri://localhost"],
+    allow_origins=["app://index.html"],
     allow_origin_regex=r"http://localhost(:\d+)?",
     allow_methods=["*"],
     allow_headers=["*"],
@@ -74,7 +78,7 @@ app.include_router(tags.router, prefix="/api/v1")
 
 
 def main() -> None:
-    """Find a free port, signal Tauri, and start the uvicorn server."""
+    """Find a free port, signal Electron, and start the uvicorn server."""
     setup_logging()
     port = _find_free_port()
     app.state.port = port

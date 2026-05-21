@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { onMount, untrack } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
-	import { getSidecarPort, onSidecarReady, onDeepLink, getInitialDeepLink, checkUpdate, onUpdateAvailable, notify } from '$lib/platform';
+	import { getSidecarPort, onSidecarReady, onDeepLink, getInitialDeepLink, checkUpdate, onUpdateAvailable, notify, updateVaultScope } from '$lib/platform';
 	import { port } from '$lib/stores/sidecar';
 	import { entryAddedTick } from '$lib/stores/sse';
 	import { sidebarCollapsed, sidebarWidth, searchOpen } from '$lib/stores/ui';
@@ -25,6 +25,7 @@
 
 	let { children } = $props();
 	let timedOut = $state(false);
+	let isFirstRun = $state(true);
 	let pendingDeepLink = $state<string | null>(null);
 	let pendingUpdateVersion = $state<string | null>(null);
 	let isResizing = $state(false);
@@ -126,8 +127,12 @@
 		configApi
 			.get()
 			.then(async (cfg) => {
-				applyFont(cfg.font_variant, cfg.custom_font_path, cfg.ui_font_size, cfg.reading_font_size, cfg.theme, cfg.accent_color);
-				await restoreTabsFromConfig(cfg.open_tab_ids, cfg.active_tab_id);
+				isFirstRun = cfg.first_run;
+				if (!cfg.first_run) {
+					updateVaultScope(cfg.vault_path).catch(() => {});
+					applyFont(cfg.font_variant, cfg.custom_font_path, cfg.ui_font_size, cfg.reading_font_size, cfg.theme, cfg.accent_color);
+					await restoreTabsFromConfig(cfg.open_tab_ids, cfg.active_tab_id);
+				}
 			})
 			.catch(() => {});
 	});
@@ -136,6 +141,7 @@
 	$effect(() => {
 		void $tabs;
 		void $activeTabId;
+		if (isFirstRun) return;
 		if (_saveTimer) clearTimeout(_saveTimer);
 		_saveTimer = setTimeout(() => untrack(() => saveTabs()), 800);
 		return () => {

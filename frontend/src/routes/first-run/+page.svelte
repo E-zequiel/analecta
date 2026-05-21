@@ -1,15 +1,23 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { openDialog, updateVaultScope } from '$lib/platform';
+	import { openDialog, updateVaultScope, relaunch } from '$lib/platform';
 	import { config as configApi } from '$lib/api/client';
 
 	let vaultPath = $state('');
 	let submitting = $state(false);
+	let browsing = $state(false);
 	let error = $state('');
 
 	async function browseVault() {
-		const selected = await openDialog({ properties: ['openDirectory'] });
-		if (typeof selected === 'string') vaultPath = selected;
+		browsing = true;
+		error = '';
+		try {
+			const selected = await openDialog({ properties: ['openDirectory'] });
+			if (typeof selected === 'string') vaultPath = selected;
+		} catch {
+			error = 'File picker unavailable — type the path directly in the field below.';
+		} finally {
+			browsing = false;
+		}
 	}
 
 	async function submit() {
@@ -19,7 +27,7 @@
 		try {
 			await configApi.update({ vault_path: vaultPath });
 			await updateVaultScope(vaultPath);
-			goto('/');
+			await relaunch();
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 			submitting = false;
@@ -41,7 +49,9 @@
 					placeholder="/home/user/vault"
 					bind:value={vaultPath}
 				/>
-				<button onclick={browseVault}>Browse…</button>
+				<button onclick={browseVault} disabled={browsing}>
+					{browsing ? 'Opening…' : 'Browse…'}
+				</button>
 			</div>
 		</div>
 

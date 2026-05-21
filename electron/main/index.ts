@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
 import path from 'path';
 import { registerProtocols, setupProtocolHandlers } from './protocols.js';
 import { spawnSidecar, killSidecar, getSidecarPort } from './sidecar.js';
@@ -8,6 +8,10 @@ import { initUpdater } from './updater.js';
 
 /** True when running under Wayland. focus() is best-effort; always call show() first. */
 export const isWaylandNative = process.env.XDG_SESSION_TYPE === 'wayland';
+
+// Must be set before app.ready: display name and XDG-compliant userData path.
+app.setName('Analecta');
+app.setPath('userData', path.join(app.getPath('home'), '.config', 'analecta'));
 
 // Register custom schemes before app.ready (Electron requirement).
 registerProtocols();
@@ -51,6 +55,7 @@ app.on('second-instance', (_event, argv) => {
 app.setAsDefaultProtocolClient('analecta');
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
   setupProtocolHandlers();
 
   mainWindow = createWindow();
@@ -58,6 +63,11 @@ app.whenReady().then(() => {
   registerIpcHandlers();
   spawnSidecar();
   initUpdater(mainWindow);
+
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    console.error(`[main] did-fail-load: ${url} — ${code} ${desc}`);
+    mainWindow?.webContents.openDevTools();
+  });
 
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) {

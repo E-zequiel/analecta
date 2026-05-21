@@ -39,6 +39,7 @@ class ConfigOut(BaseModel):
     accent_color: str
     open_tab_ids: list[str]
     active_tab_id: str
+    first_run: bool
 
 
 class ConfigIn(BaseModel):
@@ -84,6 +85,7 @@ def _config_out(cfg: AppConfig) -> ConfigOut:
         accent_color=cfg.accent_color,
         open_tab_ids=list(cfg.open_tab_ids),
         active_tab_id=cfg.active_tab_id,
+        first_run=cfg.first_run,
     )
 
 
