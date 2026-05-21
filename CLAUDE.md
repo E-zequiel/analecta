@@ -62,6 +62,7 @@ analecta/
 │   │   ├── lib/stores/             # sidecar, sse, ui (selectedTag, sidebarCollapsed, libraryOpen,
 │   │   │                           #   expandedSections, activeSection, searchOpen)
 │   │   ├── lib/markdown/           # markdown-it config
+│   │   ├── lib/platform/           # platform shim (window.electronAPI wrappers)
 │   │   ├── lib/components/
 │   │   │   ├── Sidebar.svelte      # Obsidian-style navigator (collapsible rail, expandable sections)
 │   │   │   ├── SearchDialog.svelte # modal search (Ctrl+K)
@@ -73,19 +74,24 @@ analecta/
 │   │   └── routes/                 # +page.svelte, viewer/[id], editor/[id], settings, first-run
 │   ├── static/fonts/               # JetBrainsMono bundled
 │   └── package.json
-├── src-tauri/                      # Rust shell
-│   ├── src/                        # lib.rs, main.rs, sidecar.rs, commands.rs
-│   ├── capabilities/default.json
-│   └── tauri.conf.json
+├── electron/                       # Electron shell
+│   ├── main/                       # index.ts, sidecar.ts, vault-state.ts, ipc.ts, protocols.ts, tray.ts, updater.ts
+│   ├── preload/                    # index.ts — contextBridge, ALLOWED_CHANNELS whitelist
+│   ├── build-resources/            # icons/ (7 sizes + tray)
+│   ├── package.json
+│   └── tsconfig.json
+├── binaries/                       # sidecar output — gitignored (PyInstaller --onedir)
 ├── scripts/
-│   ├── build_sidecar.py            # PyInstaller + target-triple rename
-│   ├── dev.py                      # sidecar standalone (without Tauri)
+│   ├── build_sidecar.py            # PyInstaller build → binaries/
+│   ├── dev.py                      # sidecar standalone
+│   ├── socket-audit.sh             # local Socket dependency scan via BSM
 │   └── system_deps.sh
 ├── docs/
 ├── .github/workflows/              # ci.yml, release.yml
-├── .mise.toml                      # Python 3.14 · Node LTS · Rust stable · pnpm latest
+├── electron-builder.yml            # packaging: deb, rpm, AppImage
+├── .mise.toml                      # Python 3.14 · Node LTS · pnpm latest
 ├── pnpm-workspace.yaml
-├── package.json                    # root: tauri dev / tauri build
+├── package.json                    # root: electron:dev / electron:build / dist
 └── CLAUDE.md
 ```
 
@@ -97,7 +103,7 @@ analecta/
 
 - Python business logic lives exclusively under `backend/src/analecta/`.
 - Frontend lives under `frontend/`. No Python imports, no direct file I/O — use Electron IPC (`window.electronAPI`).
-- Electron shell in `electron/` manages the window and sidecar lifecycle only. (`src-tauri/` is being removed — see migration plan E8.)
+- Electron shell in `electron/` manages the window and sidecar lifecycle only.
 
 ### IPC channels
 
@@ -119,7 +125,7 @@ analecta/
 
 - **PyInstaller `--onedir`** (not `--onefile` — PID/lifecycle issue documented in `docs/python-tauri.md` §6).
 - Built by `scripts/build_sidecar.py`.
-- Output path: `src-tauri/binaries/` until E8, then `binaries/` (repo root).
+- Output path: `binaries/` (repo root).
 
 ### Frontend rules
 

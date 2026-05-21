@@ -12,8 +12,7 @@ files:
   - build-resources/tray-icon.png
 
 extraResources:
-  # Python sidecar (PyInstaller --onedir). Moved to binaries/ in E8.
-  - from: ../src-tauri/binaries/analecta-sidecar
+  - from: ../binaries/analecta-sidecar
     to: analecta-sidecar
     filter: ["**/*"]
   # SvelteKit static build served via app:// protocol.

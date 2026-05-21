@@ -12,7 +12,7 @@ class EventBus:
     @asynccontextmanager
     async def subscribe(
         self,
-    ) -> AsyncGenerator["asyncio.Queue[dict[str, object]]"]:
+    ) -> AsyncGenerator[asyncio.Queue[dict[str, object]]]:
         """Yield a dedicated per-subscriber queue, removed automatically on exit.
 
         Yields:
