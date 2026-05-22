@@ -95,7 +95,7 @@ Both expressions resolve to the same auto-generated job token, but `${{ github.t
 |--------|--------|---------|---------|
 | `github.token` | Auto (runner) | `gh release create` | Create GitHub Release, upload assets |
 | `BWS_ACCESS_TOKEN` | GitHub secret | `sm-action` | Read-only BSM machine account token |
-| `SOCKET_SECURITY_API_TOKEN` | BSM via `sm-action` | `pnpm dlx socket` | Socket.dev dependency security scan |
+| `SOCKET_SECURITY_API_TOKEN` | BSM via `sm-action` | `pnpm exec socket` | Socket.dev dependency security scan |
 
 `SOCKET_SECURITY_API_TOKEN` is **not** stored as a GitHub secret. It lives in Bitwarden Secrets Manager and is injected at runtime by `bitwarden/sm-action`. See `docs/bitwarden-secrets-manager.md` for the full secret management architecture and blast radius ranking.
 
@@ -135,7 +135,6 @@ concurrency:
 |-------|-----------|
 | Python | `uv sync --frozen` — fails if `uv.lock` is out of date; no network resolution |
 | Node.js | `pnpm install --frozen-lockfile` — fails if `pnpm-lock.yaml` is out of date |
-| Rust | `Cargo.lock` is checked into the repository and used by `cargo build` automatically |
 
 The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python environment established by `uv sync --frozen`. PyInstaller and all its dependencies are resolved deterministically.
 
@@ -157,6 +156,46 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 
 ---
 
+## Control 8: Lockfile-Pinned CLI Tools
+
+Tools executed via `pnpm dlx`, `npx`, `yarn dlx`, or `npm exec` are downloaded from the npm registry at the moment the step runs — no hash is verified against any lockfile. If a step that calls one of these commands also has secrets in its `env:` block, a compromised package version can read the process environment and exfiltrate those secrets.
+
+This attack surface was demonstrated by the **Mini Shai-Hulud campaign (2026-05-19)**, in which 323 packages in the @antv npm ecosystem were compromised in an automated burst. The Socket CLI — a dependency security scanner — was the ironically named example in this repository: `pnpm dlx socket ci` ran with `SOCKET_SECURITY_API_TOKEN` in the environment. A compromised `socket` package release would have been the exfiltration vector.
+
+### Fix: install as a lockfile-managed devDependency
+
+```bash
+# 1. Add the tool at the version matching its last verified GitHub tag
+pnpm add -D -w <tool>@<version>
+
+# 2. Verify the lockfile hash against the npm tarball directly
+curl -sL https://registry.npmjs.org/<tool>/-/<tool>-<version>.tgz \
+  | openssl dgst -sha512 -binary | base64
+# Output must match the integrity field in pnpm-lock.yaml
+```
+
+Once pinned:
+- Replace `pnpm dlx <tool>` with `pnpm exec <tool>` in workflow files.
+- If the job does not already run `pnpm install --frozen-lockfile`, add that step before the tool invocation.
+
+Every subsequent `pnpm install --frozen-lockfile` in CI will verify the SHA-512 hash of the downloaded tarball against the lockfile before execution.
+
+### Version selection policy
+
+Only pin to a version that has a **verified tag** in the tool's GitHub repository. npm versions that exist on the registry without a corresponding GitHub tag cannot be traced to audited source code — use the last verified release instead.
+
+### Never install globally in CI
+
+`pnpm add -g <tool>` bypasses the lockfile and reintroduces the unverified download pattern. Always use workspace `devDependencies`.
+
+### Current CLI tool inventory
+
+| Tool | Version | Verified GitHub tag | SHA-512 verified |
+|------|---------|--------------------|--------------------|
+| `socket` | `1.1.99` | [`v1.1.99`](https://github.com/SocketDev/socket-cli/releases/tag/v1.1.99) | Yes — matches `pnpm-lock.yaml` integrity field |
+
+---
+
 ## Repository-Level Settings
 
 These settings are configured in GitHub → Settings → Actions → General and complement the workflow-level controls. They are not visible in workflow files but are part of the security posture.
@@ -170,8 +209,6 @@ These settings are configured in GitHub → Settings → Actions → General and
 - Require actions to be pinned to a full-length commit SHA: ✅ (enforced as a repo-level backstop)
 
 Any action not in this list — even if added to a workflow file — cannot run. Update the allowlist when adding a new external action, then add it to the inventory table in Control 1.
-
-> **Action required (E7):** Remove `tauri-apps/tauri-action@*` from the allowlist in GitHub → Settings → Actions → General. It is no longer referenced by any workflow.
 
 ### Workflow permissions (configured 2026-05-11)
 
