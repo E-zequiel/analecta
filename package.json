@@ -6,5 +6,8 @@
     "electron:dev": "pnpm --filter analecta-electron run dev",
     "electron:build": "pnpm --filter analecta-electron run build",
     "dist": "pnpm --filter frontend build && python scripts/build_sidecar.py && pnpm --filter analecta-electron run dist"
+  },
+  "devDependencies": {
+    "socket": "1.1.99"
   }
 }

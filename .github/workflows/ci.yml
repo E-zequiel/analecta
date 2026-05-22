@@ -61,6 +61,9 @@ jobs:
 
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151  # v4.0.1
 
+      - name: Install dependencies
+        run: mise exec -- pnpm install --frozen-lockfile
+
       - uses: bitwarden/sm-action@27c0c9dcab679d7250dbab91227c85b49ffa5e0f  # v3.0.0
         with:
           access_token: ${{ secrets.BWS_ACCESS_TOKEN }}
@@ -68,6 +71,6 @@ jobs:
             70b60912-8193-4bb0-8ec8-b45000cda95a > SOCKET_SECURITY_API_TOKEN
 
       - name: Socket dependency scan
-        run: pnpm dlx socket ci
+        run: mise exec -- pnpm exec socket ci
         env:
           SOCKET_SECURITY_API_TOKEN: ${{ env.SOCKET_SECURITY_API_TOKEN }}
