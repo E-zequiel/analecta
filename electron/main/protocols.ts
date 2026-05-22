@@ -92,13 +92,15 @@ export function setupProtocolHandlers(): void {
     return net.fetch(`file://${filePath}`);
   });
 
-  // Inject CSP into every response
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [csp],
-      },
+  // Inject CSP only in packaged builds; dev uses Vite's own headers.
+  if (app.isPackaged) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [csp],
+        },
+      });
     });
-  });
+  }
 }
