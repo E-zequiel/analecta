@@ -52,7 +52,10 @@ jobs:
         run: mise exec -- pnpm --filter frontend check
 
   socket:
-    if: github.repository == 'E-zequiel/analecta' && github.event_name == 'pull_request'
+    if: >-
+      github.repository == 'E-zequiel/analecta' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-22.04
     permissions: {}
 
