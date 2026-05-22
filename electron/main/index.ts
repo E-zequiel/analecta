@@ -54,6 +54,11 @@ app.on('second-instance', (_event, argv) => {
 
 app.setAsDefaultProtocolClient('analecta');
 
+// On Linux, xdg-open passes the deep-link URL as a CLI argument to the first instance.
+// macOS uses the open-url event instead; second-instance covers subsequent launches on both.
+const deepLinkArg = process.argv.find(arg => arg.startsWith('analecta://'));
+if (deepLinkArg) setInitialDeepLink(deepLinkArg);
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   setupProtocolHandlers();
