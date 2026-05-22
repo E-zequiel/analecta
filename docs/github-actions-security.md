@@ -107,13 +107,28 @@ Both expressions resolve to the same auto-generated job token, but `${{ github.t
 
 ## Control 4: Repository Guard
 
-The release job includes a repository check:
+All jobs include a base repository check:
 
 ```yaml
 if: github.repository == 'E-zequiel/analecta'
 ```
 
-This prevents forked repositories from triggering the release job. In a fork, `TAURI_SIGNING_PRIVATE_KEY` does not exist and the job would fail with a confusing error. The guard makes it an explicit, clean skip instead, and eliminates the surface area for confused-deputy attacks where a fork PR could manipulate the release workflow.
+This prevents forked repositories from triggering jobs on their own pushes where secrets would be absent and produce confusing failures.
+
+### Fork PR behaviour with `on: pull_request`
+
+When an external contributor opens a PR from a fork, GitHub runs `on: pull_request` workflows in the context of the **base repository** — so `github.repository` evaluates to `'E-zequiel/analecta'` and the base guard alone does **not** skip fork PR runs. GitHub's own protection for this trigger is that secrets are stripped entirely: `BWS_ACCESS_TOKEN` arrives as an empty string, and any step that requires it fails.
+
+For jobs that should only run on internal PRs (branches in this repo, not forks), the base guard is extended with:
+
+```yaml
+if: >-
+  github.repository == 'E-zequiel/analecta' &&
+  github.event_name == 'pull_request' &&
+  github.event.pull_request.head.repo.full_name == github.repository
+```
+
+`head.repo.full_name == github.repository` is false for every fork PR, so the job is skipped with a clean neutral result rather than failing with an authentication error. The `socket` job in `ci.yml` uses this extended condition because it requires `BWS_ACCESS_TOKEN` to retrieve `SOCKET_SECURITY_API_TOKEN` from BSM.
 
 ---
 
@@ -142,17 +157,17 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 
 ## Control 7: Age-Gated Dependency Updates
 
-`.github/workflows/deps-update.yml` runs on a weekly schedule (Mondays 06:00 UTC) and via `workflow_dispatch` (repo write-access users only). It updates Python, Node, and Rust lock files, but applies a **cooldown gate** before touching any package:
+`.github/workflows/deps-update.yml` runs on a weekly schedule (Mondays 06:00 UTC) and via `workflow_dispatch` (repo write-access users only). It updates Python and Node lock files, but applies a **cooldown gate** before touching any package:
 
-1. Detect outdated packages via `uv`, `pnpm outdated`, and `cargo update --dry-run`.
-2. Query the upstream registry for the new version's release date (PyPI JSON API, npm registry `time` map, crates.io API).
+1. Detect outdated packages via `uv` and `pnpm outdated`.
+2. Query the upstream registry for the new version's release date (PyPI JSON API, npm registry `time` map).
 3. **Skip** any package released fewer than 3 days ago — this prevents "day-zero supply chain" attacks where a malicious release is injected before the community has time to detect and report it.
-4. Apply updates selectively via `uv lock --upgrade-package`, `pnpm update --filter`, and `cargo update --precise`.
+4. Apply updates selectively via `uv lock --upgrade-package` and `pnpm update --filter`.
 5. Open a pull request summarising what was updated and what was held back (with eligibility dates).
 
 **Bypass via `workflow_dispatch`:** The `cooldown` input (default `3`) can be set to `0` to bypass the gate. `workflow_dispatch` requires repository write access, so this bypass is not available to external contributors.
 
-**Provenance note:** Lock file hashes provide **integrity** (package content matches the recorded hash). Full **SLSA provenance attestation** (where/how the package was built) is not yet implemented — ecosystem-wide support for Python, Node, and Rust remains immature. This is a known gap, not an oversight.
+**Provenance note:** Lock file hashes provide **integrity** (package content matches the recorded hash). Full **SLSA provenance attestation** (where/how the package was built) is not yet implemented — ecosystem-wide support for Python and Node remains immature. This is a known gap, not an oversight.
 
 ---
 
