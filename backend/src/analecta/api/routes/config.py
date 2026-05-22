@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from analecta.api.deps import get_config as _dep_get_config
@@ -72,6 +72,28 @@ class ConfigIn(BaseModel):
     active_tab_id: str | None = None
 
 
+_BLOCKED_VAULT_PREFIXES = {
+    Path("/"),
+    Path("/etc"),
+    Path("/proc"),
+    Path("/sys"),
+    Path("/dev"),
+    Path("/boot"),
+}
+
+
+def _validate_vault_path(raw: str) -> Path:
+    p = Path(raw).expanduser().resolve()
+    if p in _BLOCKED_VAULT_PREFIXES or any(
+        p == blocked or str(p).startswith(str(blocked) + "/")
+        for blocked in _BLOCKED_VAULT_PREFIXES - {Path("/")}
+    ):
+        raise HTTPException(
+            status_code=422, detail="vault_path points to a system directory"
+        )
+    return p
+
+
 def _config_out(cfg: AppConfig) -> ConfigOut:
     return ConfigOut(
         vault_path=str(cfg.vault_path),
@@ -122,7 +144,7 @@ async def update_config(
         The updated configuration.
     """
     updated = AppConfig(
-        vault_path=Path(body.vault_path)
+        vault_path=_validate_vault_path(body.vault_path)
         if body.vault_path is not None
         else config.vault_path,
         font_variant=body.font_variant

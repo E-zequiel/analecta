@@ -43,7 +43,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     config = load_config()
     # On first run (no config.toml yet) use an in-memory DB so the sidecar
     # doesn't create the default vault directory before the user chooses one.
-    db_path = Path(":memory:") if config.first_run else config.vault_path / "analecta.db"
+    db_path = (
+        Path(":memory:") if config.first_run else config.vault_path / "analecta.db"
+    )
     index = VaultIndex(db_path)
     app.state.config = config
     app.state.index = index
