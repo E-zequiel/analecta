@@ -133,14 +133,15 @@ Both protocols are registered with `protocol.registerSchemesAsPrivileged()` befo
 A CSP is applied to all responses via `session.defaultSession.webRequest.onHeadersReceived`. This provides defense in depth: even if the renderer executes injected script, the CSP restricts what it can load or connect to.
 
 ```
-default-src  'self' app:;
-connect-src  'self' http://localhost:* app:;
-img-src      'self' app: analecta-file: data: blob: https:;
-style-src    'self' 'unsafe-inline' app:;
-font-src     'self' app:;
-script-src   'self' 'sha256-<computed at startup>' app:;
-object-src   'none';
-base-uri     'self';
+default-src    'self' app:;
+connect-src    'self' http://localhost:* app:;
+img-src        'self' app: analecta-file: data: blob: https:;
+style-src-elem 'self' app:;
+style-src-attr 'none';
+font-src       'self' app:;
+script-src     'self' 'sha256-<computed at startup>' app:;
+object-src     'none';
+base-uri       'self';
 ```
 
 Key decisions:
@@ -149,7 +150,7 @@ Key decisions:
 - `object-src 'none'` blocks Flash and other plugin content.
 - `base-uri 'self'` prevents `<base>` tag injection from changing the document base URL.
 - `script-src` does **not** use `'unsafe-inline'`. SvelteKit injects one inline script per build (`__sveltekit_xyz = { base: "" }`). `protocols.ts` reads `index.html` at app startup, computes the SHA-256 hash of that script, and includes it in `script-src`. The hash is recomputed on every launch so it stays correct across builds without a separate build step.
-- `'unsafe-inline'` in `style-src` is required because: (a) `app.html` contains a static `style="display: contents"` wrapper, (b) Svelte components use dynamic `style=` bindings (sidebar resize width, context menu position, font-size previews, source color badges). Replacing these with JS-driven `element.style.setProperty()` calls would eliminate the requirement, but `adapter-static` pre-renders initial store values as baked-in inline styles, requiring a coordinated frontend refactor. Tracked as a post-v0.3.0 backlog item. The risk is lower than `script-src 'unsafe-inline'`: CSS cannot call `window.electronAPI` or execute code; CSS-based data exfiltration (e.g., via `background-image`) is blocked by `connect-src` restricting outbound requests to `localhost`.
+- `style-src` is split into sub-directives per CSP Level 3: `style-src-elem` governs `<style>` tags and `<link>` stylesheets; `style-src-attr` governs `style=""` attributes on elements. `'unsafe-inline'` is absent from both. The built HTML has no inline `<style>` tags (`ssr = false` → external CSS only), so no hashes are needed for `style-src-elem`. `style-src-attr 'none'` is safe because all dynamic style bindings have been migrated from `style="template"` to Svelte's `style:property` directive, which compiles to `element.style.setProperty()` — a CSSStyleDeclaration API call not governed by `style-src-attr` per spec. Svelte 5's built-in transitions (`transition:slide`) use WAAPI (`element.animate()`), not `<style>` injection.
 
 ---
 

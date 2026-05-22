@@ -317,7 +317,7 @@
 						min="10"
 						max="20"
 						step="0.5"
-						style="font-size: {form.ui_font_size}px"
+						style:font-size="{form.ui_font_size}px"
 						bind:value={form.ui_font_size}
 						onblur={commitUiFont}
 						onkeydown={(e) => { if (e.key === 'Enter') commitUiFont(); else if (e.key === 'Escape') cancelUiFont(); }}
@@ -325,7 +325,7 @@
 				{:else}
 					<button
 						class="range-value"
-						style="font-size: {form.ui_font_size}px"
+						style:font-size="{form.ui_font_size}px"
 						onclick={startEditUiFont}
 						title="Click to edit"
 					>{form.ui_font_size}px</button>
@@ -356,7 +356,7 @@
 						min="12"
 						max="24"
 						step="0.5"
-						style="font-size: {form.reading_font_size}px"
+						style:font-size="{form.reading_font_size}px"
 						bind:value={form.reading_font_size}
 						onblur={commitReadingFont}
 						onkeydown={(e) => { if (e.key === 'Enter') commitReadingFont(); else if (e.key === 'Escape') cancelReadingFont(); }}
@@ -364,7 +364,7 @@
 				{:else}
 					<button
 						class="range-value"
-						style="font-size: {form.reading_font_size}px"
+						style:font-size="{form.reading_font_size}px"
 						onclick={startEditReadingFont}
 						title="Click to edit"
 					>{form.reading_font_size}px</button>
