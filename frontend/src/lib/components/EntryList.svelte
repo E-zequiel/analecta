@@ -41,7 +41,7 @@
 			>
 				<div class="entry-header">
 					<span class="title">{entry.title}</span>
-					<span class="source" style="color: {sourceColors[entry.source_type] ?? 'var(--fg-muted)'}">
+					<span class="source" style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}>
 						{entry.source_type}
 					</span>
 				</div>

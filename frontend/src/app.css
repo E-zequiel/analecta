@@ -149,3 +149,7 @@ body {
 ::-webkit-scrollbar-thumb:hover {
 	background: var(--fg-muted);
 }
+
+.app-root {
+	display: contents;
+}

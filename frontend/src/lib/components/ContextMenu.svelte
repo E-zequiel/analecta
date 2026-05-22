@@ -57,7 +57,7 @@
 {#if $contextMenu.visible && $contextMenu.entry}
 	<div
 		class="context-menu"
-		style="left: {$contextMenu.x}px; top: {$contextMenu.y}px"
+		style:left="{$contextMenu.x}px" style:top="{$contextMenu.y}px"
 		bind:this={menuEl}
 		role="menu"
 	>
