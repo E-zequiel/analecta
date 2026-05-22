@@ -116,7 +116,11 @@ def _build_full_app(cfg: AppConfig) -> FastAPI:
 
 @pytest.fixture
 async def client(app_config: AppConfig) -> AsyncGenerator[httpx.AsyncClient]:
-    """Async httpx client backed by a full in-process FastAPI app (all routes)."""
+    """Async httpx client backed by a full in-process FastAPI app (all routes).
+
+    Uses httpx.ASGITransport — no real TCP sockets are opened.
+    Do NOT use starlette.testclient.TestClient; it cannot handle streaming SSE responses.
+    """
     app = _build_full_app(app_config)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
