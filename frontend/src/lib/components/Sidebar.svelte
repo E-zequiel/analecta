@@ -168,11 +168,12 @@
 			await extractApi.url(url);
 			pasteStatus = 'ok';
 			pasteMessage = 'Saved.';
+			setTimeout(() => (pasteStatus = 'idle'), 3000);
 		} catch (e) {
 			pasteStatus = 'error';
 			pasteMessage = e instanceof Error ? e.message : 'Extraction failed.';
+			setTimeout(() => (pasteStatus = 'idle'), 9_000);
 		}
-		setTimeout(() => (pasteStatus = 'idle'), 3000);
 	}
 
 	async function createTag() {

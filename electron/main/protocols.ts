@@ -78,7 +78,13 @@ export function setupProtocolHandlers(): void {
   // analecta-file:// — serves vault images; enforces vault scope + extension allowlist
   session.defaultSession.protocol.handle('analecta-file', async (request) => {
     const url = new URL(request.url);
-    const filePath = decodeURIComponent(url.pathname);
+    // Chromium normalises analecta-file:///mnt/... → analecta-file://mnt/...
+    // (first path component becomes the hostname) for standard schemes.
+    // Reconstruct the absolute path by prepending the hostname when it is not
+    // empty and not the conventional 'localhost' placeholder.
+    const host = url.hostname;
+    const pathPart = decodeURIComponent(url.pathname);
+    const filePath = host && host !== 'localhost' ? `/${host}${pathPart}` : pathPart;
     const ext = path.extname(filePath).toLowerCase();
 
     if (!ALLOWED_IMAGE_EXTS.has(ext)) {
