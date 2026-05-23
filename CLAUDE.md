@@ -110,16 +110,18 @@ analecta/
 | Channel | Purpose |
 |---------|---------|
 | **stdin/stdout** | Sidecar lifecycle signals only: `LISTENING_ON_PORT:<n>`, `SIDECAR_READY` |
-| **HTTP loopback** | All data: frontend ↔ `GET/POST/PATCH/DELETE /api/v1/...` |
+| **HTTP loopback (api)** | All data: frontend ↔ `GET/POST/PATCH/DELETE /api/v1/...` |
+| **HTTP loopback (render)** | Tier 2 extraction: sidecar → `POST http://127.0.0.1:{ANALECTA_RENDER_PORT}/render` → Electron main (`scraper.ts`). Token auth via `X-Render-Token`. Returns Defuddle result or `outer_html` fallback. |
 | **SSE** | Backend → frontend push via `GET /api/v1/system/events` |
 
 ### Sidecar lifecycle
 
-1. Electron spawns `binaries/analecta-sidecar` on app start (`child_process.spawn`).
-2. Sidecar binds a dynamic port (`socket.bind(("", 0))`), prints `LISTENING_ON_PORT:<n>` to stdout.
-3. Electron parses stdout, caches the port, and emits `sidecar-ready` IPC event to the renderer.
-4. Frontend renders a loading screen until `sidecar-ready` is received (timeout: 10 s → error state).
-5. On window close, Electron kills the sidecar child process (`SIGTERM`, 3 s SIGKILL fallback).
+1. Electron calls `startRenderServer()` → binds a random loopback port, generates `ANALECTA_RENDER_TOKEN`.
+2. Electron spawns `binaries/analecta-sidecar` with `ANALECTA_RENDER_PORT` and `ANALECTA_RENDER_TOKEN` in env.
+3. Sidecar binds a dynamic port (`socket.bind(("", 0))`), prints `LISTENING_ON_PORT:<n>` to stdout.
+4. Electron parses stdout, caches the port, and emits `sidecar-ready` IPC event to the renderer.
+5. Frontend renders a loading screen until `sidecar-ready` is received (timeout: 10 s → error state).
+6. On window close, Electron kills the sidecar child process (`SIGTERM`, 3 s SIGKILL fallback) and closes the render server.
 
 ### Sidecar packaging
 

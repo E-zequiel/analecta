@@ -61,7 +61,7 @@ Python sidecar ◄──HTTP◄─────── RenderResult (JSON, 10-50 K
 
 ---
 
-## Phase A: Extraction Engine Tier 2
+## Phase A: Extraction Engine Tier 2 ✅ COMPLETE
 
 ### A1 — `electron/main/scraper.ts` (NEW)
 
@@ -308,7 +308,7 @@ in frontmatter.
 
 ---
 
-## Phase B: Bug Fixes
+## Phase B: Bug Fixes ✅ COMPLETE
 
 ### B1 — Asset cleanup on delete (`api/routes/entries.py`)
 
