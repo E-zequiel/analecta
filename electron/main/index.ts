@@ -78,6 +78,11 @@ app.whenReady().then(() => {
   if (devUrl) {
     mainWindow.loadURL(devUrl);
     mainWindow.webContents.openDevTools();
+    mainWindow.webContents.on('before-input-event', (_e, input) => {
+      if (input.type === 'keyDown' && input.key === 'F12') {
+        mainWindow?.webContents.toggleDevTools();
+      }
+    });
   } else {
     mainWindow.loadURL('app://index.html');
   }

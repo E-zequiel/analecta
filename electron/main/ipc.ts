@@ -109,8 +109,9 @@ export function registerIpcHandlers(): void {
     new Notification({ title, body }).show();
   });
 
-  ipcMain.handle('check-update', () => checkForUpdates());
+  ipcMain.handle('check-update', () => app.isPackaged ? checkForUpdates() : Promise.resolve());
   ipcMain.handle('download-and-install-update', async () => {
+    if (!app.isPackaged) return;
     await downloadUpdate();
     quitAndInstall();
   });
