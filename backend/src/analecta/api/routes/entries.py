@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -287,5 +288,9 @@ async def delete_entry(
     if record is None:
         raise HTTPException(status_code=404, detail="Entry not found")
     file_path = Path(record.file_path)
+    slug = file_path.stem
+    assets_dir = file_path.parent / "assets" / slug
     await asyncio.to_thread(index.hard_delete, entry_id)
     await asyncio.to_thread(_unlink_if_exists, file_path)
+    if assets_dir.is_dir():
+        await asyncio.to_thread(shutil.rmtree, assets_dir)
