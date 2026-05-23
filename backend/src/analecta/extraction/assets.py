@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+from bs4 import BeautifulSoup
 
 _HEADERS = {"User-Agent": "analecta/0.1.0 (+https://github.com/E-zequiel/analecta)"}
 _TIMEOUT = 30.0
@@ -72,6 +73,23 @@ def _original_name(url: str) -> str:
     return name or "image"
 
 
+def _normalize_graphics(html: str) -> str:
+    """Convert trafilatura ``<graphic>`` elements to ``<img>`` tags.
+
+    trafilatura outputs images as ``<graphic src="..." alt="..."/>`` (TEI-XML
+    dialect). The asset downloader must see ``<img>`` tags so ``_discover_images``
+    can find them before download.  The converter's ``_normalize_html`` also does
+    this conversion, but it runs *after* this module — too late.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for graphic in list(soup.find_all("graphic")):
+        src = str(graphic.get("src", ""))
+        alt = str(graphic.get("alt", ""))
+        img = soup.new_tag("img", src=src, alt=alt)
+        graphic.replace_with(img)
+    return str(soup)
+
+
 class AssetDownloader:
     """Downloads images referenced in extracted HTML and rewrites src paths.
 
@@ -92,6 +110,7 @@ class AssetDownloader:
             HTML with ``../assets/{slug}/...`` paths replacing remote src URLs
             for successfully downloaded images.
         """
+        html = _normalize_graphics(html)
         urls = self._discover_images(html)
         if not urls:
             return html

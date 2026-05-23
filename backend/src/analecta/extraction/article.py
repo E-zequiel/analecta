@@ -74,22 +74,19 @@ class ArticleExtractor(SourceExtractor):
                 include_comments=False,
                 include_tables=True,
                 include_images=True,
+                favor_precision=True,
             )
             or ""
         )
 
-        # Prefer readability: it preserves <code>/<pre> structure correctly.
-        # Fall back to trafilatura when:
-        # - it extracts substantially more content (>1.5x), OR
-        # - readability found no images but trafilatura did, and trafilatura
-        #   is at least half as long (avoids switching to a very thin result).
-        rdbl_has_imgs = "<img" in readability_html
-        traf_has_imgs = "<graphic" in traf_html
-        use_traf = len(traf_html) > len(readability_html) * 1.5 or (
-            traf_has_imgs
-            and not rdbl_has_imgs
-            and len(traf_html) >= len(readability_html) * 0.5
-        )
+        # Prefer readability: it preserves <code>/<pre> structure and list
+        # semantics correctly. trafilatura is used only when it extracts
+        # substantially more content (>1.5x) — a sign it has found depth
+        # that readability missed (long technical posts, multi-section articles).
+        # The previous image-presence heuristic is removed: for JS-heavy sites
+        # (Next.js / Sanity), the only images in SSR HTML are footer thumbnails
+        # of related articles, causing trafilatura to win on a wrong image.
+        use_traf = len(traf_html) > len(readability_html) * 1.5
         if use_traf:
             content, extractor = traf_html, "trafilatura"
         else:
