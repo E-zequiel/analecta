@@ -17,6 +17,7 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
     "@electron-toolkit/utils": "^3.0.0",
+    "defuddle": "0.18.1",
     "electron-updater": "^6.0.0"
   },
   "devDependencies": {

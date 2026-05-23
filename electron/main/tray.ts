@@ -20,6 +20,8 @@ export function createTray(win: BrowserWindow, getSidecarPort: () => Promise<num
       {
         label: 'Add URL from clipboard',
         click: async () => {
+          win.show();
+          win.focus();
           const url = clipboard.readText().trim();
           if (!url) return;
           const port = await getSidecarPort();

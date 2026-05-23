@@ -23,9 +23,16 @@ function getSidecarBinary(): string {
   return path.join(repoRoot, 'binaries', 'analecta-sidecar', 'analecta-sidecar');
 }
 
-export function spawnSidecar(): void {
+export function spawnSidecar(renderPort: number, renderToken: string): void {
   const bin = getSidecarBinary();
-  sidecarProcess = spawn(bin, [], { stdio: 'pipe' });
+  sidecarProcess = spawn(bin, [], {
+    stdio: 'pipe',
+    env: {
+      ...process.env,
+      ANALECTA_RENDER_PORT: String(renderPort),
+      ANALECTA_RENDER_TOKEN: renderToken,
+    },
+  });
 
   sidecarProcess.stdout?.on('data', (chunk: Buffer) => {
     for (const line of chunk.toString().split('\n')) {

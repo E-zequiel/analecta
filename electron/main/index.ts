@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu } from 'electron';
 import path from 'path';
 import { registerProtocols, setupProtocolHandlers } from './protocols.js';
 import { spawnSidecar, killSidecar, getSidecarPort } from './sidecar.js';
+import { startRenderServer, stopRenderServer } from './scraper.js';
 import { registerIpcHandlers, setInitialDeepLink, setMainWindowRef } from './ipc.js';
 import { createTray, destroyTray } from './tray.js';
 import { initUpdater } from './updater.js';
@@ -59,14 +60,17 @@ app.setAsDefaultProtocolClient('analecta');
 const deepLinkArg = process.argv.find(arg => arg.startsWith('analecta://'));
 if (deepLinkArg) setInitialDeepLink(deepLinkArg);
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   setupProtocolHandlers();
 
   mainWindow = createWindow();
   setMainWindowRef(mainWindow);
   registerIpcHandlers();
-  spawnSidecar();
+
+  const { port: renderPort, token: renderToken } = await startRenderServer();
+  spawnSidecar(renderPort, renderToken);
+
   initUpdater(mainWindow);
 
   mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
@@ -101,6 +105,7 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   isQuitting = true;
   killSidecar();
+  stopRenderServer();
   destroyTray();
 });
 
