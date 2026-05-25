@@ -30,6 +30,8 @@ function createWindow(): BrowserWindow {
   return new BrowserWindow({
     width: 1280,
     height: 800,
+    minWidth: 700,
+    minHeight: 500,
     frame: false,
     webPreferences: {
       contextIsolation: true,
