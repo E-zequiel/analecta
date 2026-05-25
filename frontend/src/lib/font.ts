@@ -55,6 +55,6 @@ export async function applyFont(
 		}
 	}
 	const family =
-		variant === 'nerd' ? "'JetBrains Mono NF', monospace" : "'JetBrains Mono', monospace";
+		variant === 'nerd' ? "'Inconsolata NF', 'JetBrains Mono', monospace" : "'JetBrains Mono', monospace";
 	root.style.setProperty('--font-family', family);
 }
