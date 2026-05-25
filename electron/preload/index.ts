@@ -27,7 +27,7 @@ const ALLOWED_CHANNELS = new Set([
   'window-is-maximized',
 ]);
 
-const ALLOWED_PUSH_CHANNELS = new Set(['sidecar-ready', 'deep-link', 'update-available', 'window-maximized']);
+const ALLOWED_PUSH_CHANNELS = new Set(['sidecar-ready', 'deep-link', 'update-available', 'window-maximized', 'tray-paste-url']);
 
 const api = {
   invoke(channel: string, ...args: unknown[]): Promise<unknown> {

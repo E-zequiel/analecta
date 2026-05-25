@@ -1,11 +1,11 @@
-import { app, Menu, Tray, clipboard, nativeImage } from 'electron';
+import { app, Menu, Tray, nativeImage } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import type { BrowserWindow } from 'electron';
 
 let tray: Tray | null = null;
 
-export function createTray(win: BrowserWindow, getSidecarPort: () => Promise<number>): void {
+export function createTray(win: BrowserWindow): void {
   const iconPath = path.join(__dirname, '..', '..', 'build-resources', 'tray-icon.png');
   // Fall back to an empty image in dev if the icon file is not yet present.
   const icon = fs.existsSync(iconPath)
@@ -19,17 +19,10 @@ export function createTray(win: BrowserWindow, getSidecarPort: () => Promise<num
     Menu.buildFromTemplate([
       {
         label: 'Add URL from clipboard',
-        click: async () => {
+        click: () => {
           win.show();
           win.focus();
-          const url = clipboard.readText().trim();
-          if (!url) return;
-          const port = await getSidecarPort();
-          fetch(`http://localhost:${port}/api/v1/extract`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url }),
-          }).catch(err => console.error('[tray] extract failed:', err));
+          win.webContents.send('tray-paste-url');
         },
       },
       {

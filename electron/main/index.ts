@@ -97,7 +97,7 @@ app.whenReady().then(async () => {
     mainWindow.loadURL('app://index.html');
   }
 
-  createTray(mainWindow, getSidecarPort);
+  createTray(mainWindow);
 
   mainWindow.on('close', event => {
     if (!isQuitting && getCloseToTray()) {

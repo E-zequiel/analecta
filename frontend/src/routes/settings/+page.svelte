@@ -307,7 +307,7 @@
 			</label>
 			<select id="font-variant" bind:value={form.font_variant} onchange={autoSaveFontVariant}>
 				<option value="regular">JetBrains Mono</option>
-				<option value="nerd">JetBrains Mono Nerd Font</option>
+				<option value="nerd">Inconsolata Nerd Font</option>
 				<option value="custom">Custom…</option>
 			</select>
 		</div>
