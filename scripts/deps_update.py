@@ -60,10 +60,8 @@ def _age_ok(release_dt: datetime, cooldown: int) -> bool:
 
 
 def _parse_iso(s: str) -> datetime:
-    s = s.rstrip("Z")
-    if "+" not in s and len(s) == 19:
-        s += "+00:00"
-    return datetime.fromisoformat(s).replace(tzinfo=UTC) if s.endswith("+00:00") else datetime.fromisoformat(s)
+    dt = datetime.fromisoformat(s.rstrip("Z"))
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------
