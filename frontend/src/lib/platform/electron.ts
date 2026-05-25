@@ -90,6 +90,10 @@ export async function setLoginItem(value: boolean): Promise<void> {
   await invoke('set-login-item', value);
 }
 
+export async function setCloseToTray(value: boolean): Promise<void> {
+  await invoke('set-close-to-tray', value);
+}
+
 export function convertFileSrc(path: string): string {
   return `analecta-file://${path}`;
 }

@@ -17,6 +17,7 @@ const ALLOWED_CHANNELS = new Set([
   'relaunch',
   'get-login-item',
   'set-login-item',
+  'set-close-to-tray',
   'get-initial-deep-link',
   'window-minimize',
   'window-maximize',

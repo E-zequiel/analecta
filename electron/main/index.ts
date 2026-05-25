@@ -3,7 +3,7 @@ import path from 'path';
 import { registerProtocols, setupProtocolHandlers } from './protocols.js';
 import { spawnSidecar, killSidecar, getSidecarPort } from './sidecar.js';
 import { startRenderServer, stopRenderServer } from './scraper.js';
-import { registerIpcHandlers, setInitialDeepLink, setMainWindowRef } from './ipc.js';
+import { registerIpcHandlers, setInitialDeepLink, setMainWindowRef, getCloseToTray } from './ipc.js';
 import { createTray, destroyTray } from './tray.js';
 import { initUpdater } from './updater.js';
 
@@ -99,9 +99,8 @@ app.whenReady().then(async () => {
 
   createTray(mainWindow, getSidecarPort);
 
-  // Closing the window hides to tray; only app.quit() (from tray menu) actually exits.
   mainWindow.on('close', event => {
-    if (!isQuitting) {
+    if (!isQuitting && getCloseToTray()) {
       event.preventDefault();
       mainWindow?.hide();
     }

@@ -62,6 +62,7 @@ export interface AppConfig {
 	open_tab_ids: string[];
 	active_tab_id: string;
 	first_run: boolean;
+	close_to_tray: boolean;
 }
 
 export interface AppConfigUpdate {
@@ -76,6 +77,7 @@ export interface AppConfigUpdate {
 	accent_color?: 'red' | 'yellow' | 'green' | 'cyan';
 	open_tab_ids?: string[];
 	active_tab_id?: string;
+	close_to_tray?: boolean;
 }
 
 export interface ScanResult {

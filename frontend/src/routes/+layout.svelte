@@ -3,7 +3,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import { afterNavigate } from '$app/navigation';
-	import { getSidecarPort, onSidecarReady, onDeepLink, getInitialDeepLink, checkUpdate, onUpdateAvailable, notify, updateVaultScope, onWindowMaximized, windowIsMaximized } from '$lib/platform';
+	import { getSidecarPort, onSidecarReady, onDeepLink, getInitialDeepLink, checkUpdate, onUpdateAvailable, notify, updateVaultScope, setCloseToTray, onWindowMaximized, windowIsMaximized } from '$lib/platform';
 	import { port } from '$lib/stores/sidecar';
 	import { entryAddedTick } from '$lib/stores/sse';
 	import { sidebarCollapsed, sidebarWidth, searchOpen } from '$lib/stores/ui';
@@ -146,6 +146,7 @@
 			.get()
 			.then(async (cfg) => {
 				isFirstRun = cfg.first_run;
+				setCloseToTray(cfg.close_to_tray).catch(() => {});
 				if (!cfg.first_run) {
 					updateVaultScope(cfg.vault_path).catch(() => {});
 					applyFont(cfg.font_variant, cfg.custom_font_path, cfg.ui_font_size, cfg.reading_font_size, cfg.theme, cfg.accent_color);

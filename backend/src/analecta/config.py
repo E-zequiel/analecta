@@ -40,6 +40,7 @@ class AppConfig(BaseModel):
     accent_color: Literal["red", "yellow", "green", "cyan"] = "yellow"
     open_tab_ids: list[str] = ["section-library"]
     active_tab_id: str = "section-library"
+    close_to_tray: bool = True
 
     @field_validator("vault_path", mode="before")
     @classmethod
@@ -84,6 +85,7 @@ def save_config(config: AppConfig, config_path: Path = CONFIG_PATH) -> None:
         "accent_color": config.accent_color,
         "open_tab_ids": list(config.open_tab_ids),
         "active_tab_id": config.active_tab_id,
+        "close_to_tray": config.close_to_tray,
     }
     if config.custom_font_path is not None:
         data["custom_font_path"] = config.custom_font_path

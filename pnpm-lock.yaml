@@ -85,6 +85,9 @@ importers:
       '@types/markdown-it':
         specifier: ^14
         version: 14.1.2
+      '@types/node':
+        specifier: ^24.12.4
+        version: 24.12.4
       svelte:
         specifier: ^5.55.8
         version: 5.55.8
