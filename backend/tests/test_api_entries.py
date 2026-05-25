@@ -202,6 +202,38 @@ def test_delete_entry_404(client: TestClient) -> None:
     assert r.status_code == 404
 
 
+def test_delete_entry_removes_assets_dir(tmp_path: Path) -> None:
+    pages_dir = tmp_path / "vault" / "pages"
+    pages_dir.mkdir(parents=True)
+    md_file = pages_dir / "2024-01-01-my-article.md"
+    md_file.write_text("# My Article\n")
+    assets_dir = pages_dir / "assets" / md_file.stem
+    assets_dir.mkdir(parents=True)
+    (assets_dir / "image.jpg").write_bytes(b"fake")
+
+    app = _make_app(tmp_path)
+    config = AppConfig(vault_path=tmp_path / "vault")
+    with VaultIndex(config.vault_path / "analecta.db") as index:
+        entry_id = index.add_entry(
+            EntryRecord(
+                title="My Article",
+                url="https://example.com/my-article",
+                file_path=str(md_file),
+                source_type="article",
+                created_at="2024-01-01T00:00:00+00:00",
+                updated_at="2024-01-01T00:00:00+00:00",
+                status="unread",
+            )
+        )
+
+    with TestClient(app) as c:
+        r = c.delete(f"/api/v1/entries/{entry_id}")
+
+    assert r.status_code == 204
+    assert not assets_dir.exists()
+    assert not md_file.exists()
+
+
 # ---------------------------------------------------------------------------
 # GET /tags
 # ---------------------------------------------------------------------------
