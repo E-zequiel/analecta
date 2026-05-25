@@ -1,11 +1,8 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { page } from '$app/stores';
 	import {
-		ChevronsRightLeft,
-		ChevronsDownUp,
-		ChevronsUpDown,
-		ScanSearch,
 		ClipboardPaste,
 		ChevronRight,
 		ChevronDown,
@@ -23,7 +20,7 @@
 		Trash2,
 		Archive
 	} from '@lucide/svelte';
-	import { clipboardReadText } from '$lib/platform';
+	import { clipboardReadText, onTrayPasteUrl } from '$lib/platform';
 	import { entries as entriesApi, tags as tagsApi, extract as extractApi, type Entry, type Tag } from '$lib/api/client';
 	import {
 		sidebarCollapsed,
@@ -32,7 +29,9 @@
 		activeSection,
 		selectedTag,
 		searchOpen,
-		lastViewedId
+		lastViewedId,
+		tagsExpanded,
+		expandAllSignal
 	} from '$lib/stores/ui';
 	import { navigateInTab, openEntryTab, openSectionTab, navigateInSectionTab } from '$lib/stores/tabs';
 	import { showContextMenu } from '$lib/stores/contextMenu';
@@ -59,7 +58,6 @@
 	let counts = $state<Record<string, number>>({});
 	let sectionEntries = $state<Map<string, Entry[]>>(new Map());
 	let tagList = $state<Tag[]>([]);
-	let tagsExpanded = $state(false);
 
 	type PasteStatus = 'idle' | 'loading' | 'ok' | 'error';
 	let pasteStatus = $state<PasteStatus>('idle');
@@ -125,25 +123,25 @@
 		refreshAll();
 	});
 
-	function toggleCollapsed() {
-		sidebarCollapsed.update((v) => !v);
-	}
-
 	function collapseAll() {
 		expandedSections.set(new Set());
-		tagsExpanded = false;
+		tagsExpanded.set(false);
 	}
 
 	function expandAll() {
 		expandedSections.set(new Set(SECTIONS.map((s) => s.id)));
-		tagsExpanded = true;
+		tagsExpanded.set(true);
 		for (const s of SECTIONS) fetchSection(s.id);
 		fetchTags();
 	}
 
-	function openSearch() {
-		searchOpen.set(true);
-	}
+	let prevExpandSignal = 0;
+	$effect(() => {
+		const n = $expandAllSignal;
+		if (n > prevExpandSignal) { prevExpandSignal = n; expandAll(); }
+	});
+
+	onMount(() => onTrayPasteUrl(() => pasteUrl()));
 
 	async function pasteUrl() {
 		let url: string;
@@ -228,8 +226,8 @@
 	}
 
 	function toggleTags() {
-		tagsExpanded = !tagsExpanded;
-		if (tagsExpanded) fetchTags();
+		tagsExpanded.update((v) => !v);
+		if ($tagsExpanded) fetchTags();
 	}
 
 	function selectSection(id: SectionId) {
@@ -259,24 +257,6 @@
 	class:collapsed={$sidebarCollapsed}
 	style={$sidebarCollapsed ? '' : `width: ${$sidebarWidth}px`}
 >
-	<!-- Top toolbar -->
-	<div class="toolbar">
-		<button class="icon-btn" onclick={toggleCollapsed} title="Toggle sidebar">
-			<ChevronsRightLeft size={18} />
-		</button>
-		{#if !$sidebarCollapsed}
-			<button class="icon-btn" onclick={collapseAll} title="Collapse all sections">
-				<ChevronsDownUp size={18} />
-			</button>
-			<button class="icon-btn" onclick={expandAll} title="Expand all sections">
-				<ChevronsUpDown size={18} />
-			</button>
-			<button class="icon-btn search-btn" onclick={openSearch} title="Search (Ctrl+K)">
-				<ScanSearch size={18} />
-			</button>
-		{/if}
-	</div>
-
 	{#if pasteStatus !== 'idle' && !$sidebarCollapsed}
 		<div class="paste-feedback" class:is-ok={pasteStatus === 'ok'} class:is-err={pasteStatus === 'error'}>
 			{pasteStatus === 'loading' ? 'Saving…' : pasteMessage}
@@ -334,8 +314,8 @@
 
 			<!-- Tags section -->
 			<div class="section-row">
-				<button class="chevron-btn" onclick={toggleTags} title={tagsExpanded ? 'Collapse' : 'Expand'}>
-					{#if tagsExpanded}
+				<button class="chevron-btn" onclick={toggleTags} title={$tagsExpanded ? 'Collapse' : 'Expand'}>
+					{#if $tagsExpanded}
 						<ChevronDown size={13} />
 					{:else}
 						<ChevronRight size={13} />
@@ -374,7 +354,7 @@
 				</div>
 			{/if}
 
-			{#if tagsExpanded}
+			{#if $tagsExpanded}
 				<div class="section-entries" transition:slide={{ duration: 140 }}>
 					{#each tagList as tag (tag.name)}
 						{#if editingTag === tag.name}
@@ -463,20 +443,6 @@
 	.sidebar.collapsed {
 		width: 44px;
 		transition: none;
-	}
-
-	.toolbar {
-		display: flex;
-		align-items: center;
-		gap: 2px;
-		padding: 6px 6px 4px;
-		border-bottom: 1px solid var(--border);
-		flex-shrink: 0;
-		min-height: 40px;
-	}
-
-	.search-btn {
-		margin-left: auto;
 	}
 
 	.icon-btn {

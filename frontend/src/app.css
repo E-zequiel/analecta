@@ -133,8 +133,8 @@ body {
 }
 
 ::-webkit-scrollbar {
-	width: 4px;
-	height: 4px;
+	width: 12px;
+	height: 12px;
 }
 
 ::-webkit-scrollbar-track {
@@ -142,8 +142,8 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-	background: var(--terminal);
-	border-radius: 2px;
+	background: var(--border);
+	border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
