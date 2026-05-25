@@ -147,11 +147,13 @@ export function registerIpcHandlers(): void {
     else mainWindow?.maximize();
   });
   ipcMain.handle('window-close',        () => mainWindow?.close());
-  ipcMain.handle('window-start-move',   () => mainWindow?.startMoving());
+  // startMoving/startResizing exist in Electron 28+/30+ runtime but are absent from the
+  // electron@42.1.0 type definitions — cast through any until types are updated upstream.
+  ipcMain.handle('window-start-move',   () => (mainWindow as any)?.startMoving());
   ipcMain.handle('window-start-resize', (_e, edge: unknown) => {
     const VALID = new Set(['top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right']);
     if (typeof edge === 'string' && VALID.has(edge))
-      mainWindow?.startResizing(edge as Parameters<BrowserWindow['startResizing']>[0]);
+      (mainWindow as any)?.startResizing(edge);
   });
   ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false);
 }
