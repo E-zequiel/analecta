@@ -3,6 +3,7 @@ import { writable } from 'svelte/store';
 export interface ContextMenuEntry {
 	id: number;
 	title: string;
+	url: string;
 	file_path: string;
 	flags: string[];
 }
