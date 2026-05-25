@@ -11,7 +11,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "build": "tsc",
-    "dev": "VITE_DEV_SERVER_URL=http://localhost:5173 electron dist/main/index.js",
+    "dev": "tsc && VITE_DEV_SERVER_URL=http://localhost:5173 electron dist/main/index.js",
     "dist": "tsc && electron-builder --config ../electron-builder.yml"
   },
   "dependencies": {
