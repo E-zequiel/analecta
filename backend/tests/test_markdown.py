@@ -70,6 +70,30 @@ def test_frontmatter_source_type_youtube():
     assert "source_type: youtube" in fm
 
 
+def test_frontmatter_includes_metadata_fields():
+    content = _content(
+        metadata={
+            "author": "Alice",
+            "description": "A summary",
+            "published": "2024-06-01",
+        }
+    )
+    fm = build_frontmatter(content, _CREATED_AT)
+    inner = fm.split("---\n", 2)[1]
+    data = yaml.safe_load(inner)
+    assert data["author"] == "Alice"
+    assert data["description"] == "A summary"
+    assert data["published"] == "2024-06-01"
+
+
+def test_frontmatter_omits_absent_metadata_fields():
+    content = _content(metadata={"extractor": "readability"})
+    fm = build_frontmatter(content, _CREATED_AT)
+    assert "author:" not in fm
+    assert "description:" not in fm
+    assert "published:" not in fm
+
+
 # ---------------------------------------------------------------------------
 # build_template_block
 # ---------------------------------------------------------------------------

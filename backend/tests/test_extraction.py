@@ -1,7 +1,16 @@
+import json
+from types import SimpleNamespace
+
 import pytest
 from youtube_transcript_api._transcripts import FetchedTranscriptSnippet
 
-from analecta.extraction.article import ArticleExtractor
+from analecta.extraction.article import (
+    ArticleExtractor,
+    _build_from_defuddle,
+    _is_low_confidence,
+    _populate_metadata,
+    _try_nextjs_hydration,
+)
 from analecta.extraction.core import (
     ExtractedContent,
     ExtractionError,
@@ -9,6 +18,7 @@ from analecta.extraction.core import (
     extract,
 )
 from analecta.extraction.social import SubstackExtractor, XExtractor
+from analecta.extraction.tier2 import Tier2Result
 from analecta.extraction.youtube import YouTubeExtractor, _extract_video_id
 
 # ---------------------------------------------------------------------------
@@ -222,3 +232,159 @@ async def test_extract_dispatches_article(mocker):
 async def test_extract_dispatches_x_raises():
     with pytest.raises(NotImplementedError):
         await extract("https://x.com/user/status/123")
+
+
+# ---------------------------------------------------------------------------
+# _is_low_confidence
+# ---------------------------------------------------------------------------
+
+_200_WORDS = "<article>" + " ".join(["word"] * 200) + "</article>"
+# 5 scripts + short article body: density > 0.4, < 200 words, ≥ MIN_CONTENT_LEN.
+_SCRIPT_HEAVY = (
+    "<html><body>"
+    + "<script>x=1;</script>" * 5
+    + "<article><p>"
+    + ("word " * 30)
+    + "</p></article>"
+    + "</body></html>"
+)
+
+
+def test_is_low_confidence_short_extracted():
+    assert (
+        _is_low_confidence("<html><body><p>short</p></body></html>", "<p>short</p>")
+        is True
+    )
+
+
+def test_is_low_confidence_script_heavy_raw():
+    assert _is_low_confidence(_SCRIPT_HEAVY, _200_WORDS) is True
+
+
+def test_is_low_confidence_normal_content():
+    raw = "<html><body>" + _200_WORDS + "</body></html>"
+    assert _is_low_confidence(raw, _200_WORDS) is False
+
+
+# ---------------------------------------------------------------------------
+# _try_nextjs_hydration
+# ---------------------------------------------------------------------------
+
+_NEXT_DATA_ENOUGH = json.dumps({"props": {"pageProps": {"body": "word " * 210}}})
+_NEXTJS_HTML_ENOUGH = (
+    f'<html><body><script id="__NEXT_DATA__" type="application/json">'
+    f"{_NEXT_DATA_ENOUGH}</script></body></html>"
+)
+
+_NEXT_DATA_FEW = json.dumps({"props": {"pageProps": {"body": "tiny"}}})
+_NEXTJS_HTML_FEW = (
+    f'<html><body><script id="__NEXT_DATA__" type="application/json">'
+    f"{_NEXT_DATA_FEW}</script></body></html>"
+)
+
+
+def test_try_nextjs_hydration_plain_html_returns_none():
+    assert _try_nextjs_hydration("<html><body><p>plain</p></body></html>") is None
+
+
+def test_try_nextjs_hydration_next_data_enough_words():
+    result = _try_nextjs_hydration(_NEXTJS_HTML_ENOUGH)
+    assert result is not None
+    assert "word" in result
+
+
+def test_try_nextjs_hydration_next_data_too_few_words():
+    assert _try_nextjs_hydration(_NEXTJS_HTML_FEW) is None
+
+
+# ---------------------------------------------------------------------------
+# _populate_metadata
+# ---------------------------------------------------------------------------
+
+
+def test_populate_metadata_fills_all_fields():
+    meta = SimpleNamespace(author="Alice", description="A post", date="2024-01-01")
+    metadata: dict = {}
+    _populate_metadata(metadata, meta)
+    assert metadata == {
+        "author": "Alice",
+        "description": "A post",
+        "published": "2024-01-01",
+    }
+
+
+def test_populate_metadata_skips_missing_fields():
+    meta = SimpleNamespace(author="Bob", description=None, date=None)
+    metadata: dict = {}
+    _populate_metadata(metadata, meta)
+    assert metadata == {"author": "Bob"}
+    assert "description" not in metadata
+    assert "published" not in metadata
+
+
+# ---------------------------------------------------------------------------
+# _build_from_defuddle
+# ---------------------------------------------------------------------------
+
+
+def test_build_from_defuddle_constructs_content():
+    t = Tier2Result(
+        ok=True,
+        content="<p>Extracted</p>",
+        title="The Title",
+        author="Eve",
+        description="Short desc",
+        published="2024-06-01",
+    )
+    result = _build_from_defuddle("https://example.com", t)
+    assert result.title == "The Title"
+    assert result.html == "<p>Extracted</p>"
+    assert result.url == "https://example.com"
+    assert result.source_type == "article"
+    assert result.metadata["extractor"] == "defuddle"
+    assert result.metadata["author"] == "Eve"
+    assert result.metadata["published"] == "2024-06-01"
+
+
+# ---------------------------------------------------------------------------
+# ArticleExtractor.extract — Tier 2 paths
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_extract_uses_defuddle_on_low_confidence(mocker):
+    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_SCRIPT_HEAVY)
+    mocker.patch(
+        "analecta.extraction.tier2.render_url",
+        new=mocker.AsyncMock(
+            return_value=Tier2Result(ok=True, content="<p>Defuddle</p>", title="D")
+        ),
+    )
+    result = await ArticleExtractor().extract("https://example.com/spa")
+    assert result.metadata["extractor"] == "defuddle"
+    assert "Defuddle" in result.html
+
+
+@pytest.mark.asyncio
+async def test_extract_uses_outer_html_when_defuddle_fails(mocker):
+    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_SCRIPT_HEAVY)
+    mocker.patch(
+        "analecta.extraction.tier2.render_url",
+        new=mocker.AsyncMock(
+            return_value=Tier2Result(ok=False, outer_html=_ARTICLE_HTML)
+        ),
+    )
+    result = await ArticleExtractor().extract("https://example.com/spa")
+    assert result.source_type == "article"
+    assert result.metadata.get("extractor") != "defuddle"
+
+
+@pytest.mark.asyncio
+async def test_extract_falls_back_to_tier1_when_render_raises(mocker):
+    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_ARTICLE_HTML)
+    mocker.patch(
+        "analecta.extraction.tier2.render_url",
+        new=mocker.AsyncMock(side_effect=ExtractionError("no server")),
+    )
+    result = await ArticleExtractor().extract("https://example.com/article")
+    assert result.source_type == "article"
