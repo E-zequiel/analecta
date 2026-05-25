@@ -344,10 +344,10 @@
 				<button class="section-label" class:active={$activeSection === 'tags'} onclick={() => { navigateInSectionTab('tags'); toggleTags(); }}>
 					<BrainCircuit size={18} />
 					<span class="label-text">TAGS</span>
-					{#if tagList.length > 0}
-						<span class="count">{tagList.length}</span>
-					{/if}
 				</button>
+				{#if tagList.length > 0}
+					<span class="count">{tagList.length}</span>
+				{/if}
 				<button
 					class="icon-btn create-tag-btn"
 					onclick={(e) => { e.stopPropagation(); newTagExpanded = !newTagExpanded; if (newTagExpanded) newTagName = ''; }}
@@ -544,6 +544,7 @@
 	.section-row {
 		display: flex;
 		align-items: center;
+		gap: 4px;
 		padding: 0 4px;
 	}
 
