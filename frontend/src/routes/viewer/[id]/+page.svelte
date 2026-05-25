@@ -32,6 +32,7 @@
 	import { lastViewedId } from '$lib/stores/ui';
 	import { ensureEntryTab, closeTab } from '$lib/stores/tabs';
 	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
+	import { showContextMenu } from '$lib/stores/contextMenu';
 
 	const entryId = $derived(parseInt($page.params['id'] as string));
 
@@ -245,6 +246,11 @@
 		}
 	}
 
+	function handleRightClick(e: MouseEvent) {
+		if (!entry) return;
+		showContextMenu(e, { id: entry.id, title: entry.title, url: entry.url, file_path: entry.file_path, flags: entry.flags });
+	}
+
 	async function handleContentClick(e: MouseEvent) {
 		const link = (e.target as HTMLElement).closest('a');
 		if (!link) return;
@@ -392,7 +398,8 @@
 	{#if error}
 		<div class="error-banner">{error}</div>
 	{:else if entry && html}
-		<div class="content" bind:this={contentEl}>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="content" bind:this={contentEl} oncontextmenu={handleRightClick}>
 			<div class="content-inner">
 				<h1 class="entry-title">{entry.title}</h1>
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->

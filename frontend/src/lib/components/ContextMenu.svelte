@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { revealInDir, confirm } from '$lib/platform';
+	import { revealInDir, openUrl, confirm } from '$lib/platform';
 	import { entries as entriesApi } from '$lib/api/client';
 	import { contextMenu, hideContextMenu } from '$lib/stores/contextMenu';
 	import { closeTab } from '$lib/stores/tabs';
@@ -22,6 +22,20 @@
 			document.removeEventListener('keydown', onKeyDown);
 		};
 	});
+
+	async function copyUrl() {
+		if ($contextMenu.entry) {
+			await navigator.clipboard.writeText($contextMenu.entry.url).catch(() => {});
+		}
+		hideContextMenu();
+	}
+
+	async function openInBrowser() {
+		if ($contextMenu.entry) {
+			await openUrl($contextMenu.entry.url).catch(() => {});
+		}
+		hideContextMenu();
+	}
 
 	async function revealFile() {
 		if ($contextMenu.entry) {
@@ -61,6 +75,13 @@
 		bind:this={menuEl}
 		role="menu"
 	>
+		<button class="menu-item" onclick={copyUrl} role="menuitem">
+			Copy article URL
+		</button>
+		<button class="menu-item" onclick={openInBrowser} role="menuitem">
+			Open in browser
+		</button>
+		<div class="separator"></div>
 		<button class="menu-item" onclick={revealFile} role="menuitem">
 			Show in system explorer
 		</button>
