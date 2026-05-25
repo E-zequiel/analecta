@@ -255,7 +255,7 @@ class VaultIndex:
         }
 
     def get_metrics(self) -> dict[str, int]:
-        """Return read-activity metrics used by the Collectio dashboard.
+        """Return read-activity metrics used by the Collecta dashboard.
 
         Counts entries whose ``read_at`` timestamp falls within the current
         calendar week (Mon-Sun), month, and year respectively.
@@ -290,7 +290,7 @@ class VaultIndex:
         """Update an entry's status field.
 
         Sets ``read_at`` to the current timestamp when *status* is ``'read'``
-        so that Collectio read-activity metrics remain accurate.
+        so that Collecta read-activity metrics remain accurate.
 
         Args:
             entry_id: Target row id.

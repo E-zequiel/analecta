@@ -12,6 +12,7 @@
 	} from '$lib/platform';
 	import {
 		sidebarCollapsed,
+		sidebarWidth,
 		searchOpen,
 		expandedSections,
 		tagsExpanded,
@@ -58,7 +59,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="titlebar" onmousedown={onTitlebarMouseDown}>
-	<div class="sidebar-controls">
+	<div class="sidebar-controls" style:width={$sidebarCollapsed ? '44px' : `${$sidebarWidth}px`}>
 		<button class="sc-btn" onclick={toggleSidebar} title="Toggle sidebar">
 			<ChevronsRightLeft size={16} />
 		</button>
@@ -108,9 +109,9 @@
 		align-items: center;
 		gap: 2px;
 		padding: 0 4px;
-		border-bottom: 1px solid var(--border);
 		border-right: 1px solid var(--border);
 		flex-shrink: 0;
+		overflow: hidden;
 	}
 
 	.sc-btn {

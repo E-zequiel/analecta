@@ -40,7 +40,6 @@ export async function applyFont(
 
 	root.classList.toggle('theme-light', theme === 'light');
 
-	root.style.setProperty('--font-ui-size', `${uiFontSize}px`);
 	root.style.setProperty('--font-text-size', `${readingFontSize}px`);
 
 	const [accent, accentDark] = ACCENT_MAP[accentColor][theme];
