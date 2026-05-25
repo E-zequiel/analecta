@@ -80,6 +80,7 @@
 		border-radius: 10px;
 		padding: 2.5rem;
 		width: 420px;
+		max-width: calc(100% - 2rem);
 	}
 
 	h1 {

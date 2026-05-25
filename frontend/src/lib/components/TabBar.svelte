@@ -74,7 +74,6 @@
 		flex-shrink: 0;
 		min-height: 40px;
 		padding: 4px 4px 0;
-		gap: 2px;
 		scrollbar-width: none;
 	}
 
