@@ -130,4 +130,18 @@ export function registerIpcHandlers(): void {
     initialDeepLink = null;
     return link;
   });
+
+  ipcMain.handle('window-minimize',     () => mainWindow?.minimize());
+  ipcMain.handle('window-maximize',     () => {
+    if (mainWindow?.isMaximized()) mainWindow.unmaximize();
+    else mainWindow?.maximize();
+  });
+  ipcMain.handle('window-close',        () => mainWindow?.close());
+  ipcMain.handle('window-start-move',   () => mainWindow?.startMoving());
+  ipcMain.handle('window-start-resize', (_e, edge: unknown) => {
+    const VALID = new Set(['top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right']);
+    if (typeof edge === 'string' && VALID.has(edge))
+      mainWindow?.startResizing(edge as Parameters<BrowserWindow['startResizing']>[0]);
+  });
+  ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false);
 }

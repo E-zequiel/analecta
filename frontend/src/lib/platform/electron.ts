@@ -109,3 +109,31 @@ export function onDeepLink(cb: (url: string) => void): () => void {
 export function onUpdateAvailable(cb: (info: unknown) => void): () => void {
   return window.electronAPI.on('update-available', (...args: unknown[]) => cb(args[0]));
 }
+
+export async function windowMinimize(): Promise<void> {
+  await invoke('window-minimize');
+}
+
+export async function windowMaximize(): Promise<void> {
+  await invoke('window-maximize');
+}
+
+export async function windowClose(): Promise<void> {
+  await invoke('window-close');
+}
+
+export async function windowStartMove(): Promise<void> {
+  await invoke('window-start-move');
+}
+
+export async function windowStartResize(edge: string): Promise<void> {
+  await invoke('window-start-resize', edge);
+}
+
+export async function windowIsMaximized(): Promise<boolean> {
+  return invoke('window-is-maximized') as Promise<boolean>;
+}
+
+export function onWindowMaximized(cb: (maximized: boolean) => void): () => void {
+  return window.electronAPI.on('window-maximized', (...args: unknown[]) => cb(args[0] as boolean));
+}
