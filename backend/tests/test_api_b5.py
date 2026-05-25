@@ -113,6 +113,14 @@ def test_put_config_200(tmp_path: Path, mocker: MockerFixture) -> None:
     assert r.json()["virustotal_enabled"] is True
 
 
+def test_put_config_close_to_tray(tmp_path: Path, mocker: MockerFixture) -> None:
+    mocker.patch("analecta.api.routes.config.save_config")
+    with TestClient(_make_app(tmp_path)) as c:
+        r = c.put("/api/v1/config", json={"close_to_tray": False})
+    assert r.status_code == 200
+    assert r.json()["close_to_tray"] is False
+
+
 def test_put_config_invalid_font_422(client: TestClient) -> None:
     r = client.put("/api/v1/config", json={"font_variant": "not-a-variant"})
     assert r.status_code == 422

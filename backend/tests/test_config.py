@@ -74,3 +74,14 @@ def test_load_config_invalid_field_raises(tmp_path: Path):
     cfg_file.write_text('font_variant = "comic_sans"\n')
     with pytest.raises(ValidationError):
         load_config(cfg_file)
+
+
+def test_appconfig_close_to_tray_default():
+    assert AppConfig().close_to_tray is True
+
+
+def test_load_config_reads_close_to_tray(tmp_path: Path):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text("close_to_tray = false\n")
+    config = load_config(cfg_file)
+    assert config.close_to_tray is False

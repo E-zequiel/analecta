@@ -7,6 +7,11 @@ import { checkForUpdates, downloadUpdate, quitAndInstall } from './updater.js';
 
 let initialDeepLink: string | null = null;
 let mainWindow: BrowserWindow | null = null;
+let closeToTray = true;
+
+export function getCloseToTray(): boolean {
+  return closeToTray;
+}
 
 export function setInitialDeepLink(url: string): void {
   initialDeepLink = url;
@@ -122,6 +127,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('set-login-item', (_event, value: unknown) => {
     if (typeof value !== 'boolean') throw new Error('invalid value');
     app.setLoginItemSettings({ openAtLogin: value });
+  });
+
+  ipcMain.handle('set-close-to-tray', (_event, value: unknown) => {
+    if (typeof value !== 'boolean') throw new Error('invalid value');
+    closeToTray = value;
   });
 
   // Returns the URL from the first analecta:// deep-link received before the renderer was ready.

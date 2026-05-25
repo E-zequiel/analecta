@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { openDialog, updateVaultScope, relaunch } from '$lib/platform';
+	import { openDialog, updateVaultScope, relaunch, setCloseToTray } from '$lib/platform';
 	import { config as configApi, security } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 
@@ -20,6 +20,7 @@
 		virustotal_enabled: false,
 		theme: 'dark' as 'dark' | 'light',
 		accent_color: 'yellow' as 'red' | 'yellow' | 'green' | 'cyan',
+		close_to_tray: true,
 	});
 	let initialVaultPath = $state('');
 	let customFontPath = $state('');
@@ -36,6 +37,7 @@
 	let channelSaved = $state(false);
 	let themeSaved = $state(false);
 	let accentSaved = $state(false);
+	let closeToTraySaved = $state(false);
 
 	// VT section
 	let vtSaving = $state(false);
@@ -97,6 +99,7 @@
 				virustotal_enabled: cfg.virustotal_enabled,
 				theme: cfg.theme,
 				accent_color: cfg.accent_color,
+				close_to_tray: cfg.close_to_tray,
 			};
 			initialVaultPath = cfg.vault_path;
 			customFontPath = cfg.custom_font_path ?? '';
@@ -225,6 +228,21 @@
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		}
+	}
+
+	async function autoSaveCloseToTray() {
+		try {
+			await configApi.update({ close_to_tray: form.close_to_tray });
+			await setCloseToTray(form.close_to_tray).catch(() => {});
+			flash((v) => (closeToTraySaved = v));
+		} catch (err) {
+			error = err instanceof Error ? err.message : String(err);
+		}
+	}
+
+	function toggleCloseToTray() {
+		form.close_to_tray = !form.close_to_tray;
+		autoSaveCloseToTray();
 	}
 
 	function handleVtToggle() {
@@ -430,6 +448,25 @@
 				<option value="stable">Stable</option>
 				<option value="dev">Dev</option>
 			</select>
+		</div>
+	</section>
+
+	<section>
+		<h2>Window</h2>
+		<div class="field toggle-field">
+			<label for="close-to-tray-toggle">
+				Close to tray {#if closeToTraySaved}<span class="saved-tag">✓</span>{/if}
+			</label>
+			<button
+				id="close-to-tray-toggle"
+				role="switch"
+				aria-checked={form.close_to_tray}
+				class="toggle"
+				class:on={form.close_to_tray}
+				onclick={toggleCloseToTray}
+			>
+				{form.close_to_tray ? 'On' : 'Off'}
+			</button>
 		</div>
 	</section>
 

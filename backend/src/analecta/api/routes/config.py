@@ -40,6 +40,7 @@ class ConfigOut(BaseModel):
     open_tab_ids: list[str]
     active_tab_id: str
     first_run: bool
+    close_to_tray: bool
 
 
 class ConfigIn(BaseModel):
@@ -70,6 +71,7 @@ class ConfigIn(BaseModel):
     accent_color: Literal["red", "yellow", "green", "cyan"] | None = None
     open_tab_ids: list[str] | None = None
     active_tab_id: str | None = None
+    close_to_tray: bool | None = None
 
 
 _BLOCKED_VAULT_PREFIXES = {
@@ -108,6 +110,7 @@ def _config_out(cfg: AppConfig) -> ConfigOut:
         open_tab_ids=list(cfg.open_tab_ids),
         active_tab_id=cfg.active_tab_id,
         first_run=cfg.first_run,
+        close_to_tray=cfg.close_to_tray,
     )
 
 
@@ -175,6 +178,9 @@ async def update_config(
         active_tab_id=body.active_tab_id
         if body.active_tab_id is not None
         else config.active_tab_id,
+        close_to_tray=body.close_to_tray
+        if body.close_to_tray is not None
+        else config.close_to_tray,
     )
     await asyncio.to_thread(save_config, updated)
     request.app.state.config = updated
