@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount, untrack } from 'svelte';
+	import { get } from 'svelte/store';
 	import { afterNavigate } from '$app/navigation';
 	import { getSidecarPort, onSidecarReady, onDeepLink, getInitialDeepLink, checkUpdate, onUpdateAvailable, notify, updateVaultScope, onWindowMaximized, windowIsMaximized } from '$lib/platform';
 	import { port } from '$lib/stores/sidecar';
@@ -9,6 +10,7 @@
 	import {
 		tabs,
 		activeTabId,
+		activateTab,
 		openEntryTab,
 		syncActiveTabFromPath,
 		restoreTabsFromConfig,
@@ -89,6 +91,16 @@
 			if (e.ctrlKey && e.key === 'k') {
 				searchOpen.set(true);
 				e.preventDefault();
+			}
+			if (e.ctrlKey && e.key === 'Tab') {
+				e.preventDefault();
+				const allTabs = get(tabs);
+				if (allTabs.length < 2) return;
+				const idx = allTabs.findIndex((t) => t.id === get(activeTabId));
+				const next = e.shiftKey
+					? (allTabs.length + idx - 1) % allTabs.length
+					: (idx + 1) % allTabs.length;
+				activateTab(allTabs[next].id);
 			}
 		}
 		window.addEventListener('keydown', handleKey);
