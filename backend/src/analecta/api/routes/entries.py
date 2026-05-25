@@ -202,7 +202,7 @@ async def get_entry_counts(
 async def get_entry_metrics(
     index: VaultIndex = Depends(get_index),
 ) -> dict[str, int]:
-    """Return read-activity metrics for the Collectio dashboard.
+    """Return read-activity metrics for the Collecta dashboard.
 
     Returns:
         Dict with keys reads_week, reads_month, reads_year.

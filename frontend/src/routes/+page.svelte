@@ -27,24 +27,24 @@
 	let tagEntries = $state<Entry[]>([]);
 	let tagEntriesLoading = $state(false);
 
-	// Collectio dashboard state
-	let collectioMetrics = $state<{
+	// Collecta dashboard state
+	let collectaMetrics = $state<{
 		reads_week: number;
 		reads_month: number;
 		reads_year: number;
 	} | null>(null);
-	let collectioCounts = $state<Record<string, number>>({});
-	let collectioTagGrid = $state<Tag[]>([]);
+	let collectaCounts = $state<Record<string, number>>({});
+	let collectaTagGrid = $state<Tag[]>([]);
 	let lastOpenedEntry = $state<Entry | null>(null);
-	let collectioExpanded = $state<string | null>(null);
-	let collectioEntries = $state<Entry[]>([]);
-	let collectioLoading = $state(false);
-	let collectioTagExpanded = $state<string | null>(null);
-	let collectioTagEntries = $state<Entry[]>([]);
+	let collectaExpanded = $state<string | null>(null);
+	let collectaEntries = $state<Entry[]>([]);
+	let collectaLoading = $state(false);
+	let collectaTagExpanded = $state<string | null>(null);
+	let collectaTagEntries = $state<Entry[]>([]);
 
 	const FLAG_SECTIONS = new Set(['bookmark', 'gem', 'archive']);
 
-	const COLLECTIO_GRID: Array<{ id: string; label: string }> = [
+	const COLLECTA_GRID: Array<{ id: string; label: string }> = [
 		{ id: 'unread', label: 'UNREAD' },
 		{ id: 'read', label: 'READ' },
 		{ id: 'bookmark', label: 'BOOKMARK' },
@@ -67,10 +67,10 @@
 		return { status: section, exclude_flag: 'archive', tag, ...sort };
 	}
 
-	// Main list — active for all sections except tags and collectio
+	// Main list — active for all sections except tags and collecta
 	$effect(() => {
 		const section = $activeSection;
-		if (section === 'tags' || section === 'collectio') return;
+		if (section === 'tags' || section === 'collecta') return;
 		const tag = $selectedTag ?? undefined;
 		const params = sectionListParams(section, tag, sortBy, sortDir);
 
@@ -112,13 +112,13 @@
 		untrack(() => openTagEntries(tag));
 	});
 
-	// Collectio dashboard — parallel fetches when active
+	// Collecta dashboard — parallel fetches when active
 	$effect(() => {
-		if ($activeSection !== 'collectio') return;
+		if ($activeSection !== 'collecta') return;
 		const vid = $lastViewedId;
-		entriesApi.getMetrics().then((m) => { collectioMetrics = m; }).catch(() => {});
-		entriesApi.getCounts().then((c) => { collectioCounts = c; }).catch(() => {});
-		tagsApi.list().then((t) => { collectioTagGrid = t; }).catch(() => {});
+		entriesApi.getMetrics().then((m) => { collectaMetrics = m; }).catch(() => {});
+		entriesApi.getCounts().then((c) => { collectaCounts = c; }).catch(() => {});
+		tagsApi.list().then((t) => { collectaTagGrid = t; }).catch(() => {});
 		if (vid !== null) {
 			entriesApi.get(vid).then((e) => { lastOpenedEntry = e; }).catch(() => {});
 		}
@@ -146,39 +146,39 @@
 		await openTagEntries(name);
 	}
 
-	async function expandCollectioSection(id: string) {
-		if (collectioExpanded === id) {
-			collectioExpanded = null;
-			collectioEntries = [];
-			collectioTagExpanded = null;
-			collectioTagEntries = [];
+	async function expandCollectaSection(id: string) {
+		if (collectaExpanded === id) {
+			collectaExpanded = null;
+			collectaEntries = [];
+			collectaTagExpanded = null;
+			collectaTagEntries = [];
 			return;
 		}
-		collectioExpanded = id;
-		collectioTagExpanded = null;
-		collectioTagEntries = [];
-		if (id === 'tags') return; // tag grid already in collectioTagGrid
-		collectioLoading = true;
+		collectaExpanded = id;
+		collectaTagExpanded = null;
+		collectaTagEntries = [];
+		if (id === 'tags') return; // tag grid already in collectaTagGrid
+		collectaLoading = true;
 		try {
-			collectioEntries = await entriesApi.list(sectionListParams(id, undefined, sortBy, sortDir));
+			collectaEntries = await entriesApi.list(sectionListParams(id, undefined, sortBy, sortDir));
 		} catch {
-			collectioEntries = [];
+			collectaEntries = [];
 		} finally {
-			collectioLoading = false;
+			collectaLoading = false;
 		}
 	}
 
-	async function expandCollectioTag(name: string) {
-		if (collectioTagExpanded === name) {
-			collectioTagExpanded = null;
-			collectioTagEntries = [];
+	async function expandCollectaTag(name: string) {
+		if (collectaTagExpanded === name) {
+			collectaTagExpanded = null;
+			collectaTagEntries = [];
 			return;
 		}
-		collectioTagExpanded = name;
+		collectaTagExpanded = name;
 		try {
-			collectioTagEntries = await entriesApi.list({ tag: name });
+			collectaTagEntries = await entriesApi.list({ tag: name });
 		} catch {
-			collectioTagEntries = [];
+			collectaTagEntries = [];
 		}
 	}
 
@@ -220,14 +220,14 @@
 			}
 			return;
 		}
-		if (section === 'collectio') {
-			entriesApi.getCounts().then((c) => { collectioCounts = c; }).catch(() => {});
-			tagsApi.list().then((t) => { collectioTagGrid = t; }).catch(() => {});
-			const expanded = untrack(() => collectioExpanded);
+		if (section === 'collecta') {
+			entriesApi.getCounts().then((c) => { collectaCounts = c; }).catch(() => {});
+			tagsApi.list().then((t) => { collectaTagGrid = t; }).catch(() => {});
+			const expanded = untrack(() => collectaExpanded);
 			if (expanded && expanded !== 'tags') {
 				entriesApi
 					.list(sectionListParams(expanded, undefined, untrack(() => sortBy), untrack(() => sortDir)))
-					.then((d) => { collectioEntries = d; })
+					.then((d) => { collectaEntries = d; })
 					.catch(() => {});
 			}
 			return;
@@ -257,14 +257,14 @@
 			}
 			return;
 		}
-		if (section === 'collectio') {
-			entriesApi.getCounts().then((c) => { collectioCounts = c; }).catch(() => {});
-			tagsApi.list().then((t) => { collectioTagGrid = t; }).catch(() => {});
-			const expanded = untrack(() => collectioExpanded);
+		if (section === 'collecta') {
+			entriesApi.getCounts().then((c) => { collectaCounts = c; }).catch(() => {});
+			tagsApi.list().then((t) => { collectaTagGrid = t; }).catch(() => {});
+			const expanded = untrack(() => collectaExpanded);
 			if (expanded && expanded !== 'tags') {
 				entriesApi
 					.list(sectionListParams(expanded, undefined, untrack(() => sortBy), untrack(() => sortDir)))
-					.then((d) => { collectioEntries = d; })
+					.then((d) => { collectaEntries = d; })
 					.catch(() => {});
 			}
 			return;
@@ -280,10 +280,10 @@
 </script>
 
 {#if !checking}
-	{#if $activeSection === 'collectio'}
-		<div class="collectio-dashboard">
+	{#if $activeSection === 'collecta'}
+		<div class="collecta-dashboard">
 			<!-- Metrics bar -->
-			<div class="collectio-metrics">
+			<div class="collecta-metrics">
 				<div class="metric-item">
 					<span class="metric-label">Last opened</span>
 					{#if lastOpenedEntry}
@@ -301,27 +301,27 @@
 				<div class="metric-item">
 					<span class="metric-label">Reads</span>
 					<span class="metric-value">
-						{collectioMetrics?.reads_week ?? '—'} this week ·
-						{collectioMetrics?.reads_month ?? '—'} this month ·
-						{collectioMetrics?.reads_year ?? '—'} this year
+						{collectaMetrics?.reads_week ?? '—'} this week ·
+						{collectaMetrics?.reads_month ?? '—'} this month ·
+						{collectaMetrics?.reads_year ?? '—'} this year
 					</span>
 				</div>
 			</div>
 
 			<!-- Subdashboard grid -->
-			<div class="collectio-grid">
-				{#each COLLECTIO_GRID as card}
+			<div class="collecta-grid">
+				{#each COLLECTA_GRID as card}
 					<button
-						class="collectio-card"
-						class:active={collectioExpanded === card.id}
-						onclick={() => expandCollectioSection(card.id)}
+						class="collecta-card"
+						class:active={collectaExpanded === card.id}
+						onclick={() => expandCollectaSection(card.id)}
 					>
-						<span class="collectio-card-label">{card.label}</span>
-						<span class="collectio-card-count">
+						<span class="collecta-card-label">{card.label}</span>
+						<span class="collecta-card-count">
 							{#if card.id === 'tags'}
-								{collectioTagGrid.length}
+								{collectaTagGrid.length}
 							{:else}
-								{collectioCounts[card.id] ?? 0}
+								{collectaCounts[card.id] ?? 0}
 							{/if}
 						</span>
 					</button>
@@ -329,32 +329,32 @@
 			</div>
 
 			<!-- Expanded section content -->
-			{#if collectioExpanded}
-				<div class="collectio-expanded">
-					<div class="collectio-expanded-header">
-						<span class="collectio-expanded-title">
-							{COLLECTIO_GRID.find((c) => c.id === collectioExpanded)?.label}
+			{#if collectaExpanded}
+				<div class="collecta-expanded">
+					<div class="collecta-expanded-header">
+						<span class="collecta-expanded-title">
+							{COLLECTA_GRID.find((c) => c.id === collectaExpanded)?.label}
 						</span>
 						<button
-							class="collectio-nav-btn"
-							onclick={() => navigateInSectionTab(collectioExpanded!)}
+							class="collecta-nav-btn"
+							onclick={() => navigateInSectionTab(collectaExpanded!)}
 							title="Open as tab"
 						>
 							Open ↗
 						</button>
 					</div>
 
-					{#if collectioExpanded === 'tags'}
+					{#if collectaExpanded === 'tags'}
 						<!-- Tag chip grid -->
 						<div class="tag-grid">
-							{#if collectioTagGrid.length === 0}
+							{#if collectaTagGrid.length === 0}
 								<p class="hint">No tags yet.</p>
 							{:else}
-								{#each collectioTagGrid as tag (tag.name)}
+								{#each collectaTagGrid as tag (tag.name)}
 									<button
 										class="tag-chip"
-										class:active={collectioTagExpanded === tag.name}
-										onclick={() => expandCollectioTag(tag.name)}
+										class:active={collectaTagExpanded === tag.name}
+										onclick={() => expandCollectaTag(tag.name)}
 									>
 										<span class="tag-chip-name">#{tag.name}</span>
 										<span class="tag-chip-count">{tag.count}</span>
@@ -362,10 +362,10 @@
 								{/each}
 							{/if}
 						</div>
-						{#if collectioTagExpanded}
-							<div class="collectio-tag-entries">
-								<p class="collectio-tag-header">#{collectioTagExpanded}</p>
-								{#each collectioTagEntries as entry (entry.id)}
+						{#if collectaTagExpanded}
+							<div class="collecta-tag-entries">
+								<p class="collecta-tag-header">#{collectaTagExpanded}</p>
+								{#each collectaTagEntries as entry (entry.id)}
 									<button
 										class="tag-entry-card"
 										onclick={() => navigateInTab(entry.id, entry.title)}
@@ -381,7 +381,7 @@
 							</div>
 						{/if}
 					{:else}
-						<EntryList entries={collectioEntries} loading={collectioLoading} />
+						<EntryList entries={collectaEntries} loading={collectaLoading} />
 					{/if}
 				</div>
 			{/if}
@@ -583,8 +583,8 @@
 		font-size: 13px;
 	}
 
-	/* Collectio dashboard */
-	.collectio-dashboard {
+	/* Collecta dashboard */
+	.collecta-dashboard {
 		display: flex;
 		flex-direction: column;
 		height: 100%;
@@ -593,7 +593,7 @@
 		gap: 1rem;
 	}
 
-	.collectio-metrics {
+	.collecta-metrics {
 		display: flex;
 		align-items: center;
 		gap: 1rem;
@@ -653,13 +653,13 @@
 		flex-shrink: 0;
 	}
 
-	.collectio-grid {
+	.collecta-grid {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
 		gap: 0.5rem;
 	}
 
-	.collectio-card {
+	.collecta-card {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
@@ -673,30 +673,30 @@
 		transition: border-color 0.15s, background 0.15s;
 	}
 
-	.collectio-card:hover {
+	.collecta-card:hover {
 		border-color: var(--accent-dark);
 		background: var(--bg-highlight);
 	}
 
-	.collectio-card.active {
+	.collecta-card.active {
 		border-color: var(--accent);
 		background: var(--bg-alt);
 	}
 
-	.collectio-card-label {
+	.collecta-card-label {
 		font-size: 12px;
 		font-weight: 700;
 		color: var(--fg);
 		letter-spacing: 0.05em;
 	}
 
-	.collectio-card-count {
+	.collecta-card-count {
 		font-size: 16px;
 		font-weight: 700;
 		color: var(--accent);
 	}
 
-	.collectio-expanded {
+	.collecta-expanded {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
@@ -706,7 +706,7 @@
 		padding: 1rem;
 	}
 
-	.collectio-expanded-header {
+	.collecta-expanded-header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
@@ -714,14 +714,14 @@
 		padding-bottom: 0.5rem;
 	}
 
-	.collectio-expanded-title {
+	.collecta-expanded-title {
 		font-size: 12px;
 		font-weight: 700;
 		color: var(--accent);
 		letter-spacing: 0.05em;
 	}
 
-	.collectio-nav-btn {
+	.collecta-nav-btn {
 		font-size: 11px;
 		color: var(--fg-muted);
 		background: none;
@@ -732,18 +732,18 @@
 		transition: color 0.12s;
 	}
 
-	.collectio-nav-btn:hover {
+	.collecta-nav-btn:hover {
 		color: var(--accent);
 	}
 
-	.collectio-tag-entries {
+	.collecta-tag-entries {
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
 		margin-top: 0.5rem;
 	}
 
-	.collectio-tag-header {
+	.collecta-tag-header {
 		font-size: 12px;
 		font-weight: 700;
 		color: var(--accent);

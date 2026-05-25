@@ -91,6 +91,7 @@
 	--terminal: #414868;
 	/* Typography */
 	--font-family: 'JetBrains Mono', monospace;
+	--font-ui-family: 'Inconsolata NF', monospace;
 }
 
 /* Tokyo Night Light palette */
@@ -126,8 +127,8 @@ body {
 	height: 100%;
 	background-color: var(--bg);
 	color: var(--fg);
-	font-family: var(--font-family);
-	font-size: var(--font-ui-size, 16px);
+	font-family: var(--font-ui-family);
+	font-size: 17px;
 	font-weight: 400;
 	text-rendering: geometricPrecision;
 }

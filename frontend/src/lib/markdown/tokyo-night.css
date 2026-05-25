@@ -3,6 +3,7 @@
 .markdown-body {
 	color: var(--fg);
 	line-height: 1.7;
+	font-family: var(--font-family);
 	font-size: var(--font-text-size, 17px);
 	word-break: break-word;
 }

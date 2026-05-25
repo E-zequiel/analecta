@@ -405,7 +405,7 @@
 
 	<!-- Bottom bar -->
 	<div class="bottom-bar">
-		<button class="icon-btn" onclick={() => navigateInSectionTab('collectio')} title="Collectio">
+		<button class="icon-btn" onclick={() => navigateInSectionTab('collecta')} title="Collecta">
 			<Origami size={18} />
 		</button>
 		<button class="icon-btn" onclick={goLast} title="Last viewed" disabled={$lastViewedId === null}>
@@ -430,7 +430,7 @@
 
 <style>
 	.sidebar {
-		width: 200px;
+		width: 160px;
 		flex-shrink: 0;
 		background: var(--bg-dark);
 		border-right: 1px solid var(--border);

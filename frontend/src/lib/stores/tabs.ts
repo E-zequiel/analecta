@@ -22,7 +22,7 @@ const SECTION_LABELS: Record<string, string> = {
 	gem: 'GEM',
 	archive: 'ARCHIVE',
 	tags: 'TAGS',
-	collectio: 'COLLECTIO'
+	collecta: 'COLLECTA'
 };
 
 function makeSectionTab(sectionId: string): AppTab {
@@ -112,10 +112,10 @@ export function closeTab(tabId: string): void {
 	if ($tabs.length <= 1) {
 		const only = $tabs[0];
 		if (only && only.kind === 'viewer') {
-			const fallback = makeSectionTab('collectio');
+			const fallback = makeSectionTab('collecta');
 			tabs.set([fallback]);
 			activeTabId.set(fallback.id);
-			activeSection.set('collectio');
+			activeSection.set('collecta');
 			goto('/');
 		}
 		return;
@@ -221,7 +221,7 @@ export async function restoreTabsFromConfig(
 			}
 		}
 	}
-	if (restored.length === 0) restored.push(makeSectionTab('collectio'));
+	if (restored.length === 0) restored.push(makeSectionTab('collecta'));
 	tabs.set(restored);
 	const valid = restored.find((t) => t.id === activeId) ?? restored[0];
 	activeTabId.set(valid.id);
