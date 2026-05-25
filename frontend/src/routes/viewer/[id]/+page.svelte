@@ -16,7 +16,9 @@
 		EyeClosed,
 		Bookmark,
 		Gem,
-		BrainCircuit
+		BrainCircuit,
+		ChevronDown,
+		ChevronRight
 	} from '@lucide/svelte';
 	import {
 		entries as entriesApi,
@@ -42,6 +44,36 @@
 
 	let entry = $state<Entry | null>(null);
 	let html = $state('');
+	let source = $state('');
+	let propertiesOpen = $state(false);
+
+	function parseFrontmatter(src: string): [string, string][] {
+		const match = src.match(/^---\n([\s\S]*?)\n---/);
+		if (!match) return [];
+		const fields: [string, string][] = [];
+		const LABELS: Record<string, string> = {
+			title: 'Title', url: 'Source', author: 'Author', published: 'Published',
+			created_at: 'Created', description: 'Description', tags: 'Tags',
+			status: 'Status', source_type: 'Type'
+		};
+		for (const line of match[1].split('\n')) {
+			const m = line.match(/^(\w+):\s*(.*)/);
+			if (!m) continue;
+			const [, key, raw] = m;
+			if (!(key in LABELS)) continue;
+			let val: string;
+			if (raw.startsWith('[') && raw.endsWith(']')) {
+				const inner = raw.slice(1, -1).trim();
+				val = inner ? inner.split(',').map((s) => s.trim()).join(', ') : '';
+			} else {
+				val = raw.replace(/^["']|["']$/g, '').trim();
+			}
+			if (val) fields.push([LABELS[key], val]);
+		}
+		return fields;
+	}
+
+	const propertyFields = $derived(parseFrontmatter(source));
 	let vtEnabled = $state(false);
 	let contentEl = $state<HTMLElement | null>(null);
 	let readingFontSize = $state(17);
@@ -139,9 +171,10 @@
 				ensureEntryTab(id, e.title);
 				return readTextFile(e.file_path);
 			})
-			.then((source) => {
+			.then((src) => {
 				if (cancelled) return;
-				html = createRenderer(entry!.file_path)(source);
+				source = src;
+				html = createRenderer(entry!.file_path)(src);
 			})
 			.catch((err) => {
 				if (!cancelled && err !== 'cancelled') {
@@ -402,6 +435,30 @@
 		<div class="content" bind:this={contentEl} oncontextmenu={handleRightClick}>
 			<div class="content-inner">
 				<h1 class="entry-title">{entry.title}</h1>
+
+				{#if propertyFields.length > 0}
+					<div class="properties-panel">
+						<button class="properties-header" onclick={() => propertiesOpen = !propertiesOpen}>
+							{#if propertiesOpen}
+								<ChevronDown size={12} />
+							{:else}
+								<ChevronRight size={12} />
+							{/if}
+							<span>Properties</span>
+						</button>
+						{#if propertiesOpen}
+							<div class="properties-body">
+								{#each propertyFields as [label, val]}
+									<div class="property-row">
+										<span class="property-key">{label}</span>
+										<span class="property-val">{val}</span>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 				<div class="markdown-body" onclick={handleContentClick}>
 					{@html html}
@@ -527,8 +584,69 @@
 		font-size: 1.4rem;
 		font-weight: 700;
 		color: var(--red);
-		margin: 0 0 1.5rem;
+		margin: 0 0 1rem;
 		line-height: 1.3;
+	}
+
+	.properties-panel {
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		margin-bottom: 1.5rem;
+		overflow: hidden;
+	}
+
+	.properties-header {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		width: 100%;
+		padding: 5px 10px;
+		background: var(--bg-alt);
+		border: none;
+		color: var(--fg-muted);
+		font-family: inherit;
+		font-size: 0.75rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		cursor: pointer;
+		text-align: left;
+		transition: color 0.12s, background 0.12s;
+	}
+
+	.properties-header:hover {
+		color: var(--fg);
+		background: var(--bg-highlight);
+	}
+
+	.properties-body {
+		padding: 4px 0;
+	}
+
+	.property-row {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		padding: 3px 10px;
+	}
+
+	.property-row:hover {
+		background: var(--bg-highlight);
+	}
+
+	.property-key {
+		flex-shrink: 0;
+		width: 80px;
+		color: var(--fg-muted);
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+
+	.property-val {
+		color: var(--fg);
+		font-size: 0.82rem;
+		word-break: break-word;
+		min-width: 0;
 	}
 
 	.tags-container {
