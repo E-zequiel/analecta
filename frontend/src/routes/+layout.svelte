@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { onMount, untrack } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
-	import { getSidecarPort, onSidecarReady, onDeepLink, getInitialDeepLink, checkUpdate, onUpdateAvailable, notify, updateVaultScope } from '$lib/platform';
+	import { getSidecarPort, onSidecarReady, onDeepLink, getInitialDeepLink, checkUpdate, onUpdateAvailable, notify, updateVaultScope, onWindowMaximized, windowIsMaximized } from '$lib/platform';
 	import { port } from '$lib/stores/sidecar';
 	import { entryAddedTick } from '$lib/stores/sse';
 	import { sidebarCollapsed, sidebarWidth, searchOpen } from '$lib/stores/ui';
@@ -18,7 +18,8 @@
 	import { applyFont } from '$lib/font';
 	import SidecarLoadingScreen from '$lib/components/SidecarLoadingScreen.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
-	import TabBar from '$lib/components/TabBar.svelte';
+	import TitleBar from '$lib/components/TitleBar.svelte';
+	import ResizeHandles from '$lib/components/ResizeHandles.svelte';
 	import SearchDialog from '$lib/components/SearchDialog.svelte';
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
@@ -29,6 +30,7 @@
 	let pendingDeepLink = $state<string | null>(null);
 	let pendingUpdateVersion = $state<string | null>(null);
 	let isResizing = $state(false);
+	let maximized = $state(false);
 
 	function startResize(e: PointerEvent) {
 		if ($sidebarCollapsed) return;
@@ -91,11 +93,15 @@
 		}
 		window.addEventListener('keydown', handleKey);
 
+		windowIsMaximized().then((v) => { maximized = v; }).catch(() => {});
+		const unlistenMaximized = onWindowMaximized((v) => { maximized = v; });
+
 		return () => {
 			clearTimeout(timeout);
 			unlistenSidecar();
 			unlistenDeepLink();
 			unlistenUpdate();
+			unlistenMaximized();
 			window.removeEventListener('keydown', handleKey);
 		};
 	});
@@ -177,21 +183,24 @@
 		<UpdateBanner version={pendingUpdateVersion} />
 	{/if}
 	<div class="shell" class:resizing={isResizing}>
-		<Sidebar />
-		{#if !$sidebarCollapsed}
-			<div
-				class="resize-handle"
-				role="separator"
-				aria-orientation="vertical"
-				aria-label="Resize sidebar"
-				onpointerdown={startResize}
-			></div>
-		{/if}
-		<main>
-			<TabBar />
-			{@render children()}
-		</main>
+		<TitleBar />
+		<div class="workspace">
+			<Sidebar />
+			{#if !$sidebarCollapsed}
+				<div
+					class="resize-handle"
+					role="separator"
+					aria-orientation="vertical"
+					aria-label="Resize sidebar"
+					onpointerdown={startResize}
+				></div>
+			{/if}
+			<main>
+				{@render children()}
+			</main>
+		</div>
 	</div>
+	<ResizeHandles {maximized} />
 	<SearchDialog />
 	<ContextMenu />
 {/if}
@@ -199,6 +208,7 @@
 <style>
 	.shell {
 		display: flex;
+		flex-direction: column;
 		height: 100vh;
 		overflow: hidden;
 	}
@@ -206,6 +216,12 @@
 	.shell.resizing {
 		cursor: col-resize;
 		user-select: none;
+	}
+
+	.workspace {
+		display: flex;
+		flex: 1;
+		overflow: hidden;
 	}
 
 	.resize-handle {

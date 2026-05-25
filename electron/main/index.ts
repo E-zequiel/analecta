@@ -30,6 +30,7 @@ function createWindow(): BrowserWindow {
   return new BrowserWindow({
     width: 1280,
     height: 800,
+    frame: false,
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
@@ -67,6 +68,9 @@ app.whenReady().then(async () => {
   mainWindow = createWindow();
   setMainWindowRef(mainWindow);
   registerIpcHandlers();
+
+  mainWindow.on('maximize',   () => mainWindow!.webContents.send('window-maximized', true));
+  mainWindow.on('unmaximize', () => mainWindow!.webContents.send('window-maximized', false));
 
   const { port: renderPort, token: renderToken } = await startRenderServer();
   spawnSidecar(renderPort, renderToken);

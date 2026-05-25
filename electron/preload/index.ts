@@ -18,9 +18,15 @@ const ALLOWED_CHANNELS = new Set([
   'get-login-item',
   'set-login-item',
   'get-initial-deep-link',
+  'window-minimize',
+  'window-maximize',
+  'window-close',
+  'window-start-move',
+  'window-start-resize',
+  'window-is-maximized',
 ]);
 
-const ALLOWED_PUSH_CHANNELS = new Set(['sidecar-ready', 'deep-link', 'update-available']);
+const ALLOWED_PUSH_CHANNELS = new Set(['sidecar-ready', 'deep-link', 'update-available', 'window-maximized']);
 
 const api = {
   invoke(channel: string, ...args: unknown[]): Promise<unknown> {
