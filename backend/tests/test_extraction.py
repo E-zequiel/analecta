@@ -11,6 +11,7 @@ from analecta.extraction.article import (
     _populate_metadata,
     _rescue_linked_lists,
     _simplify_figure_images,
+    _strip_loading_placeholders,
     _try_nextjs_hydration,
 )
 from analecta.extraction.core import (
@@ -533,3 +534,55 @@ def test_rescue_linked_lists_preserves_anchor_in_converted_p():
     anchor = soup.find("a", href="https://example.com")
     assert anchor is not None
     assert anchor.parent.name == "p"
+
+
+# _rescue_linked_lists — threshold at 0.2
+def test_rescue_linked_lists_density_just_above_threshold():
+    # link="ABCDE" (5 chars), rest=" xy" (3 chars) → density=5/8=0.625 > 0.2 → rescued
+    html = '<div><ul><li><a href="/x">ABCDE</a> xy</li></ul></div>'
+    result = _rescue_linked_lists(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("ul") is None, "High-density list must be dissolved"
+    assert soup.find("p") is not None
+
+
+def test_rescue_linked_lists_density_just_below_threshold():
+    # All text is plain (no links) → density = 0 → list kept intact
+    html = "<div><ul><li>Plain item one</li><li>Plain item two</li></ul></div>"
+    result = _rescue_linked_lists(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("ul") is not None, "Low-density list must be preserved"
+
+
+# _strip_loading_placeholders
+def test_strip_loading_placeholders_removes_loading_p():
+    html = "<div><p>Loading...</p><p>Real content here.</p></div>"
+    result = _strip_loading_placeholders(html)
+    soup = _BS(result, "html.parser")
+    paragraphs = soup.find_all("p")
+    texts = [p.get_text() for p in paragraphs]
+    assert "Loading..." not in texts
+    assert "Real content here." in texts
+
+
+def test_strip_loading_placeholders_removes_loading_with_ellipsis():
+    html = "<div><p>Loading affected packages…</p></div>"
+    result = _strip_loading_placeholders(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("p") is None
+
+
+def test_strip_loading_placeholders_keeps_element_with_extra_content():
+    # Full sentence starting with "Loading" must NOT be removed
+    html = "<div><p>Loading is an important topic in engineering.</p></div>"
+    result = _strip_loading_placeholders(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("p") is not None
+
+
+def test_strip_loading_placeholders_removes_span():
+    html = "<div><span>Loading</span><p>Article text.</p></div>"
+    result = _strip_loading_placeholders(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("span") is None
+    assert soup.find("p") is not None
