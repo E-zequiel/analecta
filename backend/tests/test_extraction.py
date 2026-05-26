@@ -22,7 +22,11 @@ from analecta.extraction.core import (
 )
 from analecta.extraction.social import SubstackExtractor, XExtractor
 from analecta.extraction.tier2 import Tier2Result
-from analecta.extraction.youtube import YouTubeExtractor, _extract_video_id
+from analecta.extraction.youtube import (
+    YouTubeExtractor,
+    _extract_video_id,
+    _fetch_video_title,
+)
 
 # ---------------------------------------------------------------------------
 # Sample HTML that trafilatura can extract from
@@ -145,13 +149,19 @@ _TRANSCRIPT = [
 
 @pytest.mark.asyncio
 async def test_youtube_extractor_returns_content(mocker):
+    mocker.patch(
+        "analecta.extraction.youtube._fetch_video_title",
+        return_value=("Rick Astley - Never Gonna Give You Up", "Rick Astley"),
+    )
     mocker.patch.object(
         YouTubeExtractor, "_fetch_transcript", return_value=(_TRANSCRIPT, "en")
     )
     result = await YouTubeExtractor().extract("https://youtube.com/watch?v=dQw4w9WgXcQ")
+    assert result.title == "Rick Astley - Never Gonna Give You Up"
     assert result.source_type == "youtube"
     assert result.metadata["video_id"] == "dQw4w9WgXcQ"
     assert result.metadata["language"] == "en"
+    assert result.metadata["author"] == "Rick Astley"
     assert "Hello world" in result.html
 
 
@@ -163,6 +173,10 @@ async def test_youtube_extractor_invalid_url_raises():
 
 @pytest.mark.asyncio
 async def test_youtube_extractor_propagates_extraction_error(mocker):
+    mocker.patch(
+        "analecta.extraction.youtube._fetch_video_title",
+        return_value=("Some Title", None),
+    )
     mocker.patch.object(
         YouTubeExtractor,
         "_fetch_transcript",
@@ -175,6 +189,10 @@ async def test_youtube_extractor_propagates_extraction_error(mocker):
 @pytest.mark.asyncio
 async def test_youtube_extractor_falls_back_to_any_language(mocker):
     """When en/es are unavailable, the first available transcript is used."""
+    mocker.patch(
+        "analecta.extraction.youtube._fetch_video_title",
+        return_value=("Some Title", None),
+    )
     transcript_fr = [
         FetchedTranscriptSnippet(text="Bonjour le monde", start=0.0, duration=1.0),
     ]
@@ -184,6 +202,59 @@ async def test_youtube_extractor_falls_back_to_any_language(mocker):
     result = await YouTubeExtractor().extract("https://youtube.com/watch?v=abc123")
     assert result.metadata["language"] == "fr"
     assert "Bonjour" in result.html
+
+
+@pytest.mark.asyncio
+async def test_fetch_video_title_returns_title_and_author(mocker):
+    mock_resp = mocker.MagicMock()
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = {
+        "title": "Never Gonna Give You Up",
+        "author_name": "Rick Astley",
+    }
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.get = mocker.AsyncMock(return_value=mock_resp)
+    mocker.patch(
+        "analecta.extraction.youtube.httpx.AsyncClient", return_value=mock_client
+    )
+    title, author = await _fetch_video_title("dQw4w9WgXcQ")
+    assert title == "Never Gonna Give You Up"
+    assert author == "Rick Astley"
+
+
+@pytest.mark.asyncio
+async def test_fetch_video_title_falls_back_on_http_error(mocker):
+    import httpx
+
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.get = mocker.AsyncMock(
+        side_effect=httpx.HTTPError("timeout")
+    )
+    mocker.patch(
+        "analecta.extraction.youtube.httpx.AsyncClient", return_value=mock_client
+    )
+    title, author = await _fetch_video_title("dQw4w9WgXcQ")
+    assert title == "YouTube: dQw4w9WgXcQ"
+    assert author is None
+
+
+def test_extract_video_id_strips_timestamp_param():
+    url = "https://www.youtube.com/watch?v=zYRkMzgXHgo&t=2s"
+    assert _extract_video_id(url) == "zYRkMzgXHgo"
+
+
+@pytest.mark.asyncio
+async def test_youtube_extractor_no_author_when_oembed_missing(mocker):
+    mocker.patch(
+        "analecta.extraction.youtube._fetch_video_title",
+        return_value=("Clean Title", None),
+    )
+    mocker.patch.object(
+        YouTubeExtractor, "_fetch_transcript", return_value=(_TRANSCRIPT, "en")
+    )
+    result = await YouTubeExtractor().extract("https://youtube.com/watch?v=dQw4w9WgXcQ")
+    assert result.title == "Clean Title"
+    assert "author" not in result.metadata
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +288,10 @@ async def test_x_extractor_raises_not_implemented():
 
 @pytest.mark.asyncio
 async def test_extract_dispatches_youtube(mocker):
+    mocker.patch(
+        "analecta.extraction.youtube._fetch_video_title",
+        return_value=("Some Title", None),
+    )
     mocker.patch.object(
         YouTubeExtractor, "_fetch_transcript", return_value=(_TRANSCRIPT, "en")
     )
