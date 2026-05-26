@@ -229,24 +229,9 @@ class ArticleExtractor(SourceExtractor):
     def _parse(self, html: str, url: str) -> ExtractedContent:
         meta = trafilatura.extract_metadata(html, default_url=url)
         clean = _strip_hidden_elements(html)
-
-        # Try Next.js hydration before readability/trafilatura — handles SPAs that
-        # embed the full article in the initial JS payload.
-        nextjs_html = _try_nextjs_hydration(html)
-        if nextjs_html:
-            title = (meta.title if meta else None) or ""
-            metadata: dict[str, Any] = {"extractor": "nextjs-hydration"}
-            _populate_metadata(metadata, meta)
-            return ExtractedContent(
-                title=title,
-                html=nextjs_html,
-                url=url,
-                source_type="article",
-                metadata=metadata,
-            )
-
         clean = _simplify_figure_images(clean)
         clean = _rescue_linked_lists(clean)
+
         doc = Document(clean)
         readability_html = doc.summary() or ""
         traf_html = (
@@ -270,6 +255,26 @@ class ArticleExtractor(SourceExtractor):
             content, extractor = traf_html, "trafilatura"
         else:
             content, extractor = readability_html, "readability"
+
+        # Fall back to Next.js Pages Router hydration only when both DOM
+        # extractors come up short — i.e. pure SPAs with no server-rendered
+        # HTML body.  SSR sites (Sanity CMS, etc.) have full HTML and should
+        # never reach this path: their __NEXT_DATA__ blob contains the full
+        # page state including navigation, API docs, and UI strings, which
+        # _collect_text_from_obj would pull in indiscriminately.
+        if len(content.split()) < 200:
+            nextjs_html = _try_nextjs_hydration(html)
+            if nextjs_html:
+                title = (meta.title if meta else None) or ""
+                metadata: dict[str, Any] = {"extractor": "nextjs-hydration"}
+                _populate_metadata(metadata, meta)
+                return ExtractedContent(
+                    title=title,
+                    html=nextjs_html,
+                    url=url,
+                    source_type="article",
+                    metadata=metadata,
+                )
 
         if not content or len(content) < _MIN_CONTENT_LEN:
             raise ExtractionError(f"Could not extract content from {url}")
