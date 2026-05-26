@@ -151,6 +151,28 @@ def test_convert_preserves_img_src():
     assert "../assets/slug/abc.jpg" in md
 
 
+def test_convert_img_inside_heading_renders_as_image_syntax():
+    # Images inside headings must produce ![alt](src), not just the alt text.
+    content = _content(
+        html=(
+            '<h2><img src="https://cdn.example.com/img.png"'
+            ' alt="cover-photo"/>Title</h2>'
+        )
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "![cover-photo](https://cdn.example.com/img.png)" in md
+
+
+def test_convert_resolves_nextjs_image_proxy():
+    encoded = "https%3A%2F%2Fcdn.example.com%2Fphoto.jpg"
+    content = _content(
+        html=f'<img src="/_next/image?url={encoded}&w=1080&q=75" alt="photo">'
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "https://cdn.example.com/photo.jpg" in md
+    assert "/_next/image" not in md
+
+
 # ---------------------------------------------------------------------------
 # normalize_tag
 # ---------------------------------------------------------------------------
