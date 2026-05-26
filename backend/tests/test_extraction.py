@@ -11,6 +11,7 @@ from analecta.extraction.article import (
     _populate_metadata,
     _rescue_linked_lists,
     _simplify_figure_images,
+    _strip_heading_classes,
     _strip_loading_placeholders,
     _try_nextjs_hydration,
 )
@@ -724,3 +725,65 @@ def test_strip_loading_placeholders_removes_span():
     soup = _BS(result, "html.parser")
     assert soup.find("span") is None
     assert soup.find("p") is not None
+
+
+# ---------------------------------------------------------------------------
+# _strip_heading_classes
+# ---------------------------------------------------------------------------
+
+
+def test_strip_heading_classes_removes_class_from_headings():
+    html = '<h2 class="header-anchor-post">Title</h2>'
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    h2 = soup.find("h2")
+    assert h2 is not None
+    assert not h2.get("class")
+    assert h2.get_text(strip=True) == "Title"
+
+
+def test_strip_heading_classes_removes_empty_inner_div():
+    # Substack injects an anchor-button div inside each heading.
+    html = (
+        '<h2 class="header-anchor-post">'
+        "Section Title"
+        '<div class="header-anchor-parent"><a href="#section"><button></button></a></div>'
+        "</h2>"
+    )
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    h2 = soup.find("h2")
+    assert h2 is not None
+    assert h2.find("div") is None
+    assert h2.get_text(strip=True) == "Section Title"
+
+
+def test_strip_heading_classes_preserves_text_bearing_inner_elements():
+    # An inner <a> with real text (e.g. a linked heading) must not be removed.
+    html = '<h3 class="some-class"><a href="/slug">Linked Heading</a></h3>'
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    h3 = soup.find("h3")
+    assert h3 is not None
+    assert h3.find("a") is not None
+    assert h3.get_text(strip=True) == "Linked Heading"
+
+
+def test_strip_heading_classes_noop_on_non_heading_elements():
+    # Classes on <p>, <div>, etc. must remain untouched.
+    html = '<div class="header-anchor-post"><p class="lead">Text</p></div>'
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("div", class_="header-anchor-post") is not None
+    assert soup.find("p", class_="lead") is not None
+
+
+def test_strip_heading_classes_all_heading_levels_stripped():
+    tags = ["h1", "h2", "h3", "h4", "h5", "h6"]
+    html = "".join(f'<{t} class="utility-class">Text</{t}>' for t in tags)
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    for tag in tags:
+        el = soup.find(tag)
+        assert el is not None
+        assert not el.get("class"), f"{tag} still has class attribute"
