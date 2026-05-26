@@ -56,6 +56,41 @@ def _simplify_figure_images(html: str) -> str:
     return str(soup)
 
 
+_NAV_TAGS = frozenset({"nav", "header", "footer", "aside"})
+
+
+def _rescue_linked_lists(html: str) -> str:
+    """Inline high-link-density list items as sibling <p> tags before readability.
+
+    readability-lxml drops ``<ul>``/``<ol>`` when link density > 0.33, and
+    also drops wrapper ``<div>`` blocks with the same property (weight < 25,
+    link density > 0.2).  The only safe approach is to dissolve the list
+    entirely and insert each ``<li>``'s contents as a ``<p>`` element directly
+    into the parent — those ``<p>`` siblings are never individually targeted by
+    readability's cleanup pass.
+
+    Lists inside ``<nav>``, ``<header>``, ``<footer>``, or ``<aside>`` are
+    left untouched so readability can still prune navigation menus.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for ul in soup.find_all(["ul", "ol"]):
+        if any(p.name in _NAV_TAGS for p in ul.parents if p.name):
+            continue
+        total = ul.get_text()
+        if not total.strip():
+            continue
+        link_chars = sum(len(a.get_text()) for a in ul.find_all("a"))
+        if link_chars / len(total) <= 0.33:
+            continue
+        for li in ul.find_all("li", recursive=False):
+            p = soup.new_tag("p")
+            for child in list(li.contents):
+                p.append(child.extract())
+            ul.insert_before(p)
+        ul.decompose()
+    return str(soup)
+
+
 def _collect_text_from_obj(obj: Any, depth: int = 0) -> str:
     """Recursively collect text from a parsed JSON object into an HTML string."""
     if depth > 6:
@@ -211,6 +246,7 @@ class ArticleExtractor(SourceExtractor):
             )
 
         clean = _simplify_figure_images(clean)
+        clean = _rescue_linked_lists(clean)
         doc = Document(clean)
         readability_html = doc.summary() or ""
         traf_html = (
