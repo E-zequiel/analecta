@@ -9,6 +9,7 @@ from analecta.extraction.article import (
     _build_from_defuddle,
     _is_low_confidence,
     _populate_metadata,
+    _simplify_figure_images,
     _try_nextjs_hydration,
 )
 from analecta.extraction.core import (
@@ -404,3 +405,54 @@ async def test_extract_falls_back_to_tier1_when_render_raises(mocker):
     )
     result = await ArticleExtractor().extract("https://example.com/article")
     assert result.source_type == "article"
+
+
+# ---------------------------------------------------------------------------
+# _simplify_figure_images
+# ---------------------------------------------------------------------------
+
+
+def test_simplify_figure_images_hoists_img_to_figure():
+    html = (
+        "<figure>"
+        '<div class="text-center">'
+        '<a href="https://example.com">'
+        '<img src="https://cdn.example.com/img.jpg" alt="photo"/>'
+        "</a>"
+        "</div>"
+        "</figure>"
+    )
+    result = _simplify_figure_images(html)
+    soup = __import__("bs4").BeautifulSoup(result, "html.parser")
+    fig = soup.find("figure")
+    assert fig is not None
+    # img must be a direct child of figure
+    assert fig.find("img", recursive=False) is not None
+    assert fig.find("img")["src"] == "https://cdn.example.com/img.jpg"
+
+
+def test_simplify_figure_images_preserves_figcaption():
+    html = (
+        "<figure>"
+        '<div><img src="https://cdn.example.com/img.jpg" alt="photo"/></div>'
+        "<figcaption>A caption</figcaption>"
+        "</figure>"
+    )
+    result = _simplify_figure_images(html)
+    soup = __import__("bs4").BeautifulSoup(result, "html.parser")
+    fig = soup.find("figure")
+    assert fig.find("figcaption") is not None
+    assert fig.find("figcaption").get_text() == "A caption"
+
+
+def test_simplify_figure_images_noop_when_no_figures():
+    html = "<p>No figures here.</p>"
+    result = _simplify_figure_images(html)
+    assert "No figures here." in result
+
+
+def test_simplify_figure_images_noop_when_img_already_direct():
+    html = '<figure><img src="https://cdn.example.com/img.jpg" alt="x"/></figure>'
+    result = _simplify_figure_images(html)
+    soup = __import__("bs4").BeautifulSoup(result, "html.parser")
+    assert soup.find("img") is not None
