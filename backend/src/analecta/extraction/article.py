@@ -98,6 +98,30 @@ def _rescue_linked_lists(html: str) -> str:
     return str(soup)
 
 
+_HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
+
+
+def _strip_heading_classes(html: str) -> str:
+    """Remove class attributes from heading elements before readability runs.
+
+    readability-lxml penalises elements whose class names match negative
+    patterns such as ``header``, ``footer``, ``nav``.  Substack (and other
+    platforms) attach utility classes like ``header-anchor-post`` to ``<h2>``
+    elements, causing readability to score the headings as low-weight and drop
+    them entirely.  Heading classes never improve content extraction, so
+    stripping them is always safe.  Inner ``<div>`` and ``<a>`` anchor-button
+    elements (a UI pattern used by many blog platforms) are also removed since
+    they add no readable text and inflate link-density scoring.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup.find_all(_HEADING_TAGS):
+        tag.attrs.pop("class", None)
+        for child in tag.find_all(["div", "a"]):
+            if not child.get_text(strip=True):
+                child.decompose()
+    return str(soup)
+
+
 def _strip_loading_placeholders(html: str) -> str:
     """Remove client-side 'Loading…' placeholder elements from extracted HTML.
 
@@ -254,6 +278,7 @@ class ArticleExtractor(SourceExtractor):
         meta = trafilatura.extract_metadata(html, default_url=url)
         clean = _strip_hidden_elements(html)
         clean = _simplify_figure_images(clean)
+        clean = _strip_heading_classes(clean)
         clean = _rescue_linked_lists(clean)
 
         doc = Document(clean)
