@@ -20,7 +20,6 @@ _MIN_CONTENT_LEN = 100
 
 # Matches elements hidden via CSS utility class (e.g. MDN live-sample base styles).
 _HIDDEN_CLASS_RE = re.compile(r"\bhidden\b")
-_RSC_CHUNK_RE = re.compile(r"self\.__next_f\.push\(\[1,(.*?)\]\)", re.DOTALL)
 
 
 def _strip_hidden_elements(html: str) -> str:
@@ -51,15 +50,20 @@ def _collect_text_from_obj(obj: Any, depth: int = 0) -> str:
 
 
 def _try_nextjs_hydration(html: str) -> str | None:
-    """Extract content from Next.js hydration data embedded in the page HTML.
+    """Extract content from Next.js Pages Router hydration data embedded in the page.
 
-    Handles Pages Router (``__NEXT_DATA__`` JSON blob) and App Router (RSC
-    payload chunks).  Returns an HTML string when > 200 words of content is
-    found, ``None`` otherwise — caller falls through to readability/trafilatura.
+    Handles only the ``__NEXT_DATA__`` JSON blob (Pages Router).  App Router RSC
+    payload is intentionally excluded — RSC wire-format strings are protocol
+    markers and component references, not readable text, so extracting them
+    produces garbage.  App Router sites are handled by readability/trafilatura
+    (Tier 1) or by Defuddle via the Chromium render path (Tier 2).
+
+    Returns an HTML string when > 200 words of content is found in
+    ``pageProps``, ``None`` otherwise — caller falls through to
+    readability/trafilatura.
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    # Branch B: Pages Router — __NEXT_DATA__ JSON blob
     tag = soup.find("script", {"id": "__NEXT_DATA__"})
     if isinstance(tag, Tag) and tag.string:
         try:
@@ -70,30 +74,6 @@ def _try_nextjs_hydration(html: str) -> str | None:
                 return f"<article>{extracted}</article>"
         except json.JSONDecodeError, TypeError:
             pass
-
-    # Branch C: App Router — RSC payload (best-effort plain-text extraction)
-    rsc_chunks: list[str] = []
-    for script in soup.find_all("script"):
-        if not (
-            isinstance(script, Tag) and script.string and "__next_f" in script.string
-        ):
-            continue
-        for m in _RSC_CHUNK_RE.finditer(script.string):
-            try:
-                chunk = json.loads(m.group(1))
-                if isinstance(chunk, str):
-                    rsc_chunks.append(chunk)
-            except json.JSONDecodeError, ValueError:
-                pass
-
-    if rsc_chunks:
-        combined = " ".join(rsc_chunks)
-        inner_soup = BeautifulSoup(combined, "html.parser")
-        plain = inner_soup.get_text(" ", strip=True)
-        # Strip RSC protocol markers (digit(s) + colon at line boundaries)
-        plain = re.sub(r"(?m)^\d+:", "", plain).strip()
-        if len(plain.split()) >= 200:
-            return f"<article><p>{plain}</p></article>"
 
     return None
 
@@ -145,7 +125,7 @@ class ArticleExtractor(SourceExtractor):
 
     Tier 1 (fast, no browser):
         1. Fetch HTML via ``httpx``.
-        2. Try Next.js hydration data (``__NEXT_DATA__`` / RSC chunks).
+        2. Try Next.js Pages Router hydration data (``__NEXT_DATA__`` JSON blob).
         3. Try ``readability-lxml`` and ``trafilatura``; prefer readability unless
            trafilatura yields > 1.5x more content.
 

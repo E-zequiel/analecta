@@ -7,7 +7,9 @@ from analecta.extraction.assets import (
     AssetDownloader,
     _ext_from_content_type,
     _ext_from_url,
+    _normalize_graphics,
     _original_name,
+    _resolve_nextjs_image,
 )
 
 _HTML_WITH_IMAGES = (
@@ -79,6 +81,60 @@ def test_ext_from_url(url, expected):
 )
 def test_original_name(url, expected):
     assert _original_name(url) == expected
+
+
+# ---------------------------------------------------------------------------
+# _resolve_nextjs_image
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_nextjs_image_query_param():
+    src = "/_next/image?url=https%3A%2F%2Fcdn.example.com%2Fphoto.jpg&w=1080&q=75"
+    assert _resolve_nextjs_image(src) == "https://cdn.example.com/photo.jpg"
+
+
+def test_resolve_nextjs_image_passthrough():
+    src = "https://cdn.example.com/photo.jpg"
+    assert _resolve_nextjs_image(src) == src
+
+
+def test_resolve_nextjs_image_no_url_param():
+    src = "/_next/image?w=1080"
+    assert _resolve_nextjs_image(src) == src
+
+
+# ---------------------------------------------------------------------------
+# _normalize_graphics
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_graphics_promotes_data_src():
+    html = (
+        '<img src="data:image/gif;base64,R0lGOD"'
+        ' data-src="https://cdn.example.com/real.jpg" alt="photo">'
+    )
+    result = _normalize_graphics(html)
+    assert 'src="https://cdn.example.com/real.jpg"' in result
+
+
+def test_normalize_graphics_skips_real_src():
+    html = '<img src="https://cdn.example.com/photo.jpg" data-src="https://cdn.example.com/other.jpg">'
+    result = _normalize_graphics(html)
+    assert 'src="https://cdn.example.com/photo.jpg"' in result
+
+
+def test_normalize_graphics_resolves_nextjs_proxy():
+    encoded = "https%3A%2F%2Fcdn.example.com%2Fphoto.jpg"
+    html = f'<img src="/_next/image?url={encoded}&w=1080&q=75" alt="photo">'
+    result = _normalize_graphics(html)
+    assert 'src="https://cdn.example.com/photo.jpg"' in result
+
+
+def test_normalize_graphics_converts_graphic_elements():
+    html = '<graphic src="https://cdn.example.com/img.png" alt="caption"/>'
+    result = _normalize_graphics(html)
+    assert "<img" in result
+    assert 'src="https://cdn.example.com/img.png"' in result
 
 
 # ---------------------------------------------------------------------------

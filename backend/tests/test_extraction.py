@@ -297,6 +297,22 @@ def test_try_nextjs_hydration_next_data_too_few_words():
     assert _try_nextjs_hydration(_NEXTJS_HTML_FEW) is None
 
 
+# App Router RSC payload chunks must never be used as article content.
+# The __next_f scripts contain wire-format protocol markers, not readable text.
+_RSC_PAYLOAD_HTML = (
+    "<html><body>"
+    '<script>self.__next_f.push([1,"$Sreact.fragment"])</script>'
+    '<script>self.__next_f.push([1,"I[237420,[\\"chunk.js\\"],\\"GoogleTagManager\\"]"])</script>'
+    + ('<script>self.__next_f.push([1,"word "])</script>' * 210)
+    + "</body></html>"
+)
+
+
+def test_try_nextjs_hydration_rsc_app_router_returns_none():
+    """RSC App Router pages must not short-circuit to RSC wire-format content."""
+    assert _try_nextjs_hydration(_RSC_PAYLOAD_HTML) is None
+
+
 # ---------------------------------------------------------------------------
 # _populate_metadata
 # ---------------------------------------------------------------------------
