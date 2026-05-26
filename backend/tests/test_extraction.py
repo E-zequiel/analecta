@@ -9,6 +9,7 @@ from analecta.extraction.article import (
     _build_from_defuddle,
     _is_low_confidence,
     _populate_metadata,
+    _rescue_linked_lists,
     _simplify_figure_images,
     _try_nextjs_hydration,
 )
@@ -456,3 +457,79 @@ def test_simplify_figure_images_noop_when_img_already_direct():
     result = _simplify_figure_images(html)
     soup = __import__("bs4").BeautifulSoup(result, "html.parser")
     assert soup.find("img") is not None
+
+
+# ---------------------------------------------------------------------------
+# _rescue_linked_lists
+# ---------------------------------------------------------------------------
+
+_BS = __import__("bs4").BeautifulSoup
+
+
+def test_rescue_linked_lists_inlines_high_density_list():
+    # link density ≈ 0.43 → should be converted to sibling <p> elements
+    html = (
+        "<div>"
+        "<p>Intro.</p>"
+        "<ul>"
+        "<li>✍️ Item one.</li>"
+        '<li>🎙️ <a href="https://example.com">'
+        "Item two with a long link text here</a>.</li>"
+        "<li>🍪 Item three.</li>"
+        "</ul>"
+        "<p>After.</p>"
+        "</div>"
+    )
+    result = _rescue_linked_lists(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("ul") is None, "high-density <ul> should be dissolved"
+    texts = [p.get_text() for p in soup.find_all("p")]
+    assert any("Item one" in t for t in texts)
+    assert any("Item two" in t for t in texts)
+    assert any("Item three" in t for t in texts)
+
+
+def test_rescue_linked_lists_keeps_low_density_list():
+    # no links → density = 0 → <ul> should be preserved
+    html = (
+        "<ul>"
+        "<li>Network usage is at all-time highs.</li>"
+        "<li>Fees are near all-time lows.</li>"
+        "</ul>"
+    )
+    result = _rescue_linked_lists(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("ul") is not None
+
+
+def test_rescue_linked_lists_skips_nav_context():
+    html = (
+        "<nav>"
+        "<ul>"
+        "<li><a href='/a'>Link A</a></li>"
+        "<li><a href='/b'>Link B</a></li>"
+        "</ul>"
+        "</nav>"
+    )
+    result = _rescue_linked_lists(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("ul") is not None, "<ul> inside <nav> must not be touched"
+
+
+def test_rescue_linked_lists_preserves_anchor_in_converted_p():
+    html = (
+        "<div>"
+        "<ul>"
+        '<li><a href="https://example.com">Linked item</a> text.</li>'
+        "<li>Plain item.</li>"
+        "</ul>"
+        "</div>"
+    )
+    # Craft density > 0.33: link text is "Linked item" (11 chars),
+    # total text is "Linked item text.Plain item." (28 chars), density ≈ 0.39
+    result = _rescue_linked_lists(html)
+    soup = _BS(result, "html.parser")
+    # <a> must still be present inside a <p>
+    anchor = soup.find("a", href="https://example.com")
+    assert anchor is not None
+    assert anchor.parent.name == "p"
