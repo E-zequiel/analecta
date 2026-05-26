@@ -57,20 +57,27 @@ def _simplify_figure_images(html: str) -> str:
 
 
 _NAV_TAGS = frozenset({"nav", "header", "footer", "aside"})
+# readability-lxml removes <ul>/<ol> when weight<25 AND link_density>0.2.
+# Rescue threshold matches that rule so no content list slips through.
+_LIST_RESCUE_DENSITY = 0.2
+
+# Matches sole-content loading placeholders left by client-side React components.
+# Allows "Loading", "Loading...", "Loading affected packages…" (≤3 words after
+# "Loading") but NOT full sentences — requires trailing "..." / "…" or bare word.
+_LOADING_RE = re.compile(r"^Loading(\s+\w+){0,3}\s*(\.\.\.|…)?$", re.IGNORECASE)
 
 
 def _rescue_linked_lists(html: str) -> str:
     """Inline high-link-density list items as sibling <p> tags before readability.
 
-    readability-lxml drops ``<ul>``/``<ol>`` when link density > 0.33, and
-    also drops wrapper ``<div>`` blocks with the same property (weight < 25,
-    link density > 0.2).  The only safe approach is to dissolve the list
-    entirely and insert each ``<li>``'s contents as a ``<p>`` element directly
-    into the parent — those ``<p>`` siblings are never individually targeted by
-    readability's cleanup pass.
+    readability-lxml removes ``<ul>``/``<ol>`` when ``weight < 25`` AND
+    ``link_density > 0.2`` (its internal "too many links" rule).  The threshold
+    here matches that rule exactly so every content list readability would drop
+    is rescued instead.  Converting to sibling ``<p>`` elements is the only safe
+    approach — readability never targets ``<p>`` individually.
 
-    Lists inside ``<nav>``, ``<header>``, ``<footer>``, or ``<aside>`` are
-    left untouched so readability can still prune navigation menus.
+    Lists inside ``<nav>``, ``<header>``, ``<footer>``, or ``<aside>`` are left
+    untouched so readability can still prune navigation menus.
     """
     soup = BeautifulSoup(html, "html.parser")
     for ul in soup.find_all(["ul", "ol"]):
@@ -80,7 +87,7 @@ def _rescue_linked_lists(html: str) -> str:
         if not total.strip():
             continue
         link_chars = sum(len(a.get_text()) for a in ul.find_all("a"))
-        if link_chars / len(total) <= 0.33:
+        if link_chars / len(total) <= _LIST_RESCUE_DENSITY:
             continue
         for li in ul.find_all("li", recursive=False):
             p = soup.new_tag("p")
@@ -88,6 +95,23 @@ def _rescue_linked_lists(html: str) -> str:
                 p.append(child.extract())
             ul.insert_before(p)
         ul.decompose()
+    return str(soup)
+
+
+def _strip_loading_placeholders(html: str) -> str:
+    """Remove client-side 'Loading…' placeholder elements from extracted HTML.
+
+    React/SPA pages render skeleton text such as 'Loading...' or
+    'Loading affected packages…' for components that hydrate after page load.
+    These strings pass through readability unchanged but add no value to the
+    saved Markdown.  Only elements whose *entire* visible text matches the
+    pattern are removed; elements with surrounding real content are left alone.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for el in soup.find_all(["p", "span", "div"]):
+        text = el.string
+        if text and _LOADING_RE.match(text.strip()):
+            el.decompose()
     return str(soup)
 
 
@@ -255,6 +279,8 @@ class ArticleExtractor(SourceExtractor):
             content, extractor = traf_html, "trafilatura"
         else:
             content, extractor = readability_html, "readability"
+
+        content = _strip_loading_placeholders(content)
 
         # Fall back to Next.js Pages Router hydration only when both DOM
         # extractors come up short — i.e. pure SPAs with no server-rendered
