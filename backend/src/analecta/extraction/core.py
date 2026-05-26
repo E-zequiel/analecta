@@ -65,7 +65,7 @@ def detect_source_type(url: str) -> SourceType:
     if host in {"twitter.com", "www.twitter.com", "x.com", "www.x.com"}:
         return "x"
 
-    if host.endswith(".substack.com"):
+    if host.endswith(".substack.com") or host in {"substack.com", "www.substack.com"}:
         return "substack"
 
     return "article"

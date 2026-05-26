@@ -65,6 +65,9 @@ _SPARSE_HTML = "<html><body><div>" + "<p>word</p>" * 30 + "</div></body></html>"
         ("https://twitter.com/user/status/1", "x"),
         ("https://www.x.com/user/status/1", "x"),
         ("https://example.substack.com/p/post", "substack"),
+        ("https://substack.com/inbox/post/123", "substack"),
+        ("https://substack.com/p/some-post", "substack"),
+        ("https://www.substack.com/p/some-post", "substack"),
         ("https://example.com/article", "article"),
         ("https://blog.example.org/post", "article"),
     ],
@@ -268,6 +271,66 @@ async def test_substack_extractor_returns_substack_type(mocker):
     result = await SubstackExtractor().extract("https://example.substack.com/p/test")
     assert result.source_type == "substack"
     assert result.metadata["platform"] == "substack"
+
+
+@pytest.mark.asyncio
+async def test_substack_extractor_resolves_inbox_url(mocker):
+    """Inbox URL is resolved via HEAD redirect before extraction."""
+    canonical = "https://example.substack.com/p/my-post"
+    mock_resp = mocker.MagicMock()
+    mock_resp.status_code = 302
+    mock_resp.headers = {"location": canonical}
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.head = mocker.AsyncMock(return_value=mock_resp)
+    mocker.patch(
+        "analecta.extraction.social.httpx.AsyncClient", return_value=mock_client
+    )
+    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_ARTICLE_HTML)
+
+    result = await SubstackExtractor().extract("https://substack.com/inbox/post/12345")
+    assert result.source_type == "substack"
+    assert result.url == canonical
+
+
+@pytest.mark.asyncio
+async def test_substack_extractor_canonical_url_skips_head_request(mocker):
+    """Canonical *.substack.com URLs bypass the HEAD redirect step."""
+    mock_client_class = mocker.patch("analecta.extraction.social.httpx.AsyncClient")
+    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_ARTICLE_HTML)
+
+    await SubstackExtractor().extract("https://example.substack.com/p/test")
+    mock_client_class.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_substack_extractor_inbox_head_failure_raises(mocker):
+    """Network failure on inbox HEAD request raises ExtractionError."""
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.head = mocker.AsyncMock(
+        side_effect=Exception("network error")
+    )
+    mocker.patch(
+        "analecta.extraction.social.httpx.AsyncClient", return_value=mock_client
+    )
+
+    with pytest.raises(ExtractionError, match="Could not resolve"):
+        await SubstackExtractor().extract("https://substack.com/inbox/post/99")
+
+
+@pytest.mark.asyncio
+async def test_substack_extractor_inbox_no_redirect_raises(mocker):
+    """A non-3xx response for an inbox URL raises ExtractionError."""
+    mock_resp = mocker.MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.headers = {}
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.head = mocker.AsyncMock(return_value=mock_resp)
+    mocker.patch(
+        "analecta.extraction.social.httpx.AsyncClient", return_value=mock_client
+    )
+
+    with pytest.raises(ExtractionError, match="did not redirect"):
+        await SubstackExtractor().extract("https://substack.com/inbox/post/99")
 
 
 # ---------------------------------------------------------------------------
