@@ -36,6 +36,26 @@ def _strip_hidden_elements(html: str) -> str:
     return str(soup)
 
 
+def _simplify_figure_images(html: str) -> str:
+    """Hoist <img> tags to direct <figure> children before readability runs.
+
+    Sites such as milkroad.com wrap article images in
+    ``<figure><div><a><img/></a></div></figure>``.  readability-lxml scores
+    the inner ``<div>``/``<a>`` as low-text-density containers and strips them,
+    leaving empty ``<figure>`` shells in the output.  Moving ``<img>`` directly
+    into ``<figure>`` prevents that stripping without touching ``<figcaption>``.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for fig in soup.find_all("figure"):
+        for img in fig.find_all("img"):
+            img.extract()
+            fig.insert(0, img)
+        for el in fig.find_all(["div", "a"]):
+            if not el.get_text(strip=True) and not el.find("img"):
+                el.decompose()
+    return str(soup)
+
+
 def _collect_text_from_obj(obj: Any, depth: int = 0) -> str:
     """Recursively collect text from a parsed JSON object into an HTML string."""
     if depth > 6:
@@ -190,6 +210,7 @@ class ArticleExtractor(SourceExtractor):
                 metadata=metadata,
             )
 
+        clean = _simplify_figure_images(clean)
         doc = Document(clean)
         readability_html = doc.summary() or ""
         traf_html = (
