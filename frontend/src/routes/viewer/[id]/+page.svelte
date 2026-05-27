@@ -148,9 +148,6 @@
 		entry = null;
 		html = '';
 		error = '';
-		scanning = false;
-		scanResult = null;
-		scanError = '';
 		tagsOpen = false;
 
 		let cancelled = false;

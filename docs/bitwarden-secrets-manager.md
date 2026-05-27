@@ -4,14 +4,9 @@ This document describes the secret management architecture for Analecta: which s
 
 ---
 
-## Two-Layer Model
+## Secret Model
 
-| Layer | Tool | Purpose | Who controls it |
-|-------|------|---------|-----------------|
-| **Developer / CI** | Bitwarden Secrets Manager (BSM) | Single source of truth for all project secrets | Developer (Web App) |
-| **Runtime (user)** | System keyring (`keyring` library) | Stores user-supplied secrets on their machine at runtime | End user via app UI |
-
-These layers are independent. BSM never reaches into a user's machine. The keyring is never read by CI.
+All project secrets live in Bitwarden Secrets Manager (BSM) — single source of truth for developer and CI use. BSM is never accessed from the user's machine at runtime.
 
 ---
 
@@ -110,7 +105,4 @@ The machine account used for `BWS_ACCESS_TOKEN` must have **read** access to the
     Action : 1. Open Bitwarden Secrets Manager Web App.
              2. Create a new secret with Key: "<BSM_KEY>" in the analecta Project.
              3. Note the UUID — add it to the relevant workflow's sm-action secrets block.
-             4. (Local dev) inject into keyring if needed:
-                import keyring; keyring.set_password("analecta", "<BSM_KEY>", "<VALUE>")
-    Runtime: <how the app reads it>
 ```

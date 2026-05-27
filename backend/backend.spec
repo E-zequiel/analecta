@@ -23,8 +23,6 @@ a = Analysis(
         'markdownify',
         'markdown_it',
         'youtube_transcript_api',
-        'keyring.backends',
-        'keyring.backends.SecretService',
         'httpx',
         'sse_starlette',
         # uvicorn lazy-loads its protocol/loop implementations at startup
