@@ -37,15 +37,26 @@ def _strip_hidden_elements(html: str) -> str:
 
 
 def _simplify_figure_images(html: str) -> str:
-    """Hoist <img> tags to direct <figure> children before readability runs.
+    """Hoist <img> tags to direct <figure> children and unwrap bare figure wrappers.
 
-    Sites such as milkroad.com wrap article images in
-    ``<figure><div><a><img/></a></div></figure>``.  readability-lxml scores
-    the inner ``<div>``/``<a>`` as low-text-density containers and strips them,
-    leaving empty ``<figure>`` shells in the output.  Moving ``<img>`` directly
-    into ``<figure>`` prevents that stripping without touching ``<figcaption>``.
+    Two readability failure modes are addressed:
+
+    1. **Inner wrappers** (e.g. milkroad.com):
+       ``<figure><div><a><img/></a></div></figure>``.
+       readability-lxml scores inner ``<div>``/``<a>`` as low-text-density and strips
+       them, leaving empty ``<figure>`` shells.  The ``<img>`` is hoisted to a direct
+       child of ``<figure>``.
+
+    2. **Outer wrappers** (e.g. Substack):
+       ``<div class="captioned-image-container"><figure>…</figure></div>``.
+       readability scores the zero-text ``<div>`` at zero and discards the whole subtree
+       including the ``<figure>``.  Any ``<div>`` whose sole meaningful content is a
+       single ``<figure>`` is unwrapped so the figure becomes a direct sibling of the
+       surrounding prose.
     """
     soup = BeautifulSoup(html, "html.parser")
+
+    # Pass 1: hoist <img> inside each figure to a direct child.
     for fig in soup.find_all("figure"):
         for img in fig.find_all("img"):
             img.extract()
@@ -53,6 +64,20 @@ def _simplify_figure_images(html: str) -> str:
         for el in fig.find_all(["div", "a"]):
             if not el.get_text(strip=True) and not el.find("img"):
                 el.decompose()
+
+    # Pass 2: unwrap <div> elements that contain only a single <figure>.
+    for fig in soup.find_all("figure"):
+        parent = fig.parent
+        if parent is None or parent.name != "div":
+            continue
+        meaningful = [
+            c
+            for c in parent.children
+            if getattr(c, "name", None) or (isinstance(c, str) and c.strip())
+        ]
+        if len(meaningful) == 1:
+            parent.unwrap()
+
     return str(soup)
 
 

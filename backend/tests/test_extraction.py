@@ -599,6 +599,42 @@ def test_simplify_figure_images_noop_when_img_already_direct():
     assert soup.find("img") is not None
 
 
+def test_simplify_figure_images_unwraps_sole_figure_div():
+    # Substack wraps each figure in <div class="captioned-image-container">.
+    # That zero-text div gets scored 0 by readability and the figure is dropped.
+    # The div must be unwrapped so the figure becomes a direct sibling of prose.
+    html = (
+        '<div class="body markup">'
+        "<p>Intro text.</p>"
+        '<div class="captioned-image-container">'
+        '<figure><img src="https://cdn.example.com/chart.jpg" alt="chart"/></figure>'
+        "</div>"
+        "<p>Outro text.</p>"
+        "</div>"
+    )
+    result = _simplify_figure_images(html)
+    soup = _BS(result, "html.parser")
+    # The wrapper div must be gone; figure is now a sibling of the <p> tags.
+    assert soup.find("div", class_="captioned-image-container") is None
+    assert soup.find("figure") is not None
+    assert soup.find("img") is not None
+
+
+def test_simplify_figure_images_keeps_div_with_multiple_children():
+    # A div that contains a figure AND other content must not be unwrapped.
+    html = (
+        "<div>"
+        '<figure><img src="https://cdn.example.com/img.jpg" alt="x"/></figure>'
+        "<p>Caption text alongside the figure.</p>"
+        "</div>"
+    )
+    result = _simplify_figure_images(html)
+    soup = _BS(result, "html.parser")
+    # Div must remain since it has more than just the figure.
+    assert soup.find("div") is not None
+    assert soup.find("figure") is not None
+
+
 # ---------------------------------------------------------------------------
 # _rescue_linked_lists
 # ---------------------------------------------------------------------------
@@ -747,7 +783,8 @@ def test_strip_heading_classes_removes_empty_inner_div():
     html = (
         '<h2 class="header-anchor-post">'
         "Section Title"
-        '<div class="header-anchor-parent"><a href="#section"><button></button></a></div>'
+        '<div class="header-anchor-parent">'
+        '<a href="#section"><button></button></a></div>'
         "</h2>"
     )
     result = _strip_heading_classes(html)
