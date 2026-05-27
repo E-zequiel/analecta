@@ -58,9 +58,6 @@ Never make real network calls from unmarked tests.
 | `index` | `VaultIndex` | SQLite VaultIndex in `tmp_vault`; closed after test |
 | `vault` | `VaultManager` | `VaultManager` pointed at `tmp_vault` |
 | `client` | `httpx.AsyncClient` | Full FastAPI app via ASGI transport (all routers) |
-| `_memory_keyring` | — | **autouse**: replaces system keyring with in-memory store for every test |
-
-The `_memory_keyring` fixture runs automatically on every test. Any test touching `keyring.get_password` / `keyring.set_password` is already isolated — no mocking needed.
 
 ## HTTP client pattern
 
