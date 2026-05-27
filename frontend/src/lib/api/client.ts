@@ -56,7 +56,6 @@ export interface AppConfig {
 	reading_font_size: number;
 	custom_font_path: string | null;
 	update_channel: 'stable' | 'dev';
-	virustotal_enabled: boolean;
 	theme: 'dark' | 'light';
 	accent_color: 'red' | 'yellow' | 'green' | 'cyan';
 	open_tab_ids: string[];
@@ -72,22 +71,11 @@ export interface AppConfigUpdate {
 	reading_font_size?: number;
 	custom_font_path?: string | null;
 	update_channel?: 'stable' | 'dev';
-	virustotal_enabled?: boolean;
 	theme?: 'dark' | 'light';
 	accent_color?: 'red' | 'yellow' | 'green' | 'cyan';
 	open_tab_ids?: string[];
 	active_tab_id?: string;
 	close_to_tray?: boolean;
-}
-
-export interface ScanResult {
-	entry_id: number;
-	verdict: string;
-	malicious: number;
-	suspicious: number;
-	undetected: number;
-	harmless: number;
-	total: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,26 +191,6 @@ export const config = {
 		return apiFetch<AppConfig>('/config', {
 			method: 'PUT',
 			body: JSON.stringify(body)
-		});
-	}
-};
-
-export const security = {
-	keyExists(): Promise<{ exists: boolean }> {
-		return apiFetch<{ exists: boolean }>('/security/virustotal/key/exists');
-	},
-
-	setKey(value: string): Promise<void> {
-		return apiFetch<void>('/security/virustotal/key', {
-			method: 'PUT',
-			body: JSON.stringify({ value })
-		});
-	},
-
-	scan(entry_id: number): Promise<ScanResult> {
-		return apiFetch<ScanResult>('/security/virustotal/scan', {
-			method: 'POST',
-			body: JSON.stringify({ entry_id })
 		});
 	}
 };

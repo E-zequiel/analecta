@@ -95,14 +95,6 @@ The machine account used for `BWS_ACCESS_TOKEN` must have **read** access to the
 |---------------|---------|
 | `BWS_ACCESS_TOKEN` | Machine account token — grants CI read access to BSM |
 
-### Runtime secrets (BSM → developer keyring → app)
-
-These are secrets the app reads at runtime from the system keyring. The developer stores them in BSM for reference and injects them into the local keyring during development.
-
-| BSM Key | Keyring call | Purpose |
-|---------|-------------|---------|
-| `VIRUSTOTAL_API_KEY` | `keyring.get_password("analecta", "VIRUSTOTAL_API_KEY")` | VirusTotal URL scanning |
-
 ---
 
 ## Claude Code Policy

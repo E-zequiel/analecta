@@ -217,15 +217,10 @@ Schema changes go in a new `backend/src/analecta/migrations/NNN_description.sql`
 
 ## Security Constraints
 
-- VirusTotal API key: stored in system keyring via `keyring` library exclusively. Never in `config.toml`, never in env vars, never logged.
-- VirusTotal Public API rate limits: **4 requests/min · 500 requests/day** (per ToS). The polling loop in `security/virustotal.py` must enforce a minimum of **15 s between consecutive API calls**. Exceeding limits causes permanent account ban.
-- VirusTotal privacy: every URL submitted to VT is indexed in their public database. The Settings UI **must display a one-time opt-in disclaimer** before the first scan. Never submit URLs silently.
-- VirusTotal ToS: Public API is non-commercial only. The app must remain free and open-source. Any monetisation path requires a Premium API licence.
 - `analecta://` URL scheme handler: validate and sanitize the `id` parameter before any DB query. Treat it as untrusted input.
 - Asset downloader: validate `Content-Type` header before writing. Reject non-image MIME types.
 - playwright: headless only, no persistent profile, sandbox flag enabled.
 - No `.env` files anywhere in the project tree. Configuration is TOML only.
-- Frontend never accesses the keyring directly. API key management goes through `PUT /api/v1/security/virustotal/key`.
 
 ---
 
@@ -252,9 +247,7 @@ Single distribution channel: **Electron bundle** (`.deb` / `.rpm` / `.AppImage`)
 
 ## Secret Management
 
-Two-layer model:
-- **BSM** (Web App / `bws`): Developer-level single source of truth.
-- **System keyring** (`keyring` library): Runtime user-level. The app reads secrets from here at runtime.
+Single source of truth: **BSM** (Web App / `bws`).
 
 ### Policy for Claude Code
 
@@ -268,16 +261,7 @@ Two-layer model:
     Purpose: <what it's used for>
     Action : 1. Open Bitwarden Secrets Manager Web App.
              2. Create a new secret with Key: "<secret_name>" in the active Project.
-             3. (Optional) If testing locally without BSM injection, add to local keyring via Python:
-                `import keyring; keyring.set_password("analecta", "<secret_name>", "<VALUE>")`
-    Runtime: App reads via `keyring.get_password("analecta", "<secret_name>")`
 ```
-
-### Known secrets
-
-| Secret | BSM Key | Runtime storage |
-|--------|---------|-----------------|
-| VirusTotal API key | `VIRUSTOTAL_API_KEY` | `keyring.get_password("analecta", "VIRUSTOTAL_API_KEY")` |
 
 ---
 

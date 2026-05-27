@@ -492,7 +492,7 @@ working installers (sidecar now comes from `binaries/`).
 1. `./scripts/check.sh` passes clean.
 2. Fresh `.deb` install on Pop!_OS 24.04 from a clean user account.
 3. First-run dialog → set vault path → dashboard loads empty.
-4. Add 5 entries: 2 articles, 1 YouTube, 1 Substack, 1 that triggers VirusTotal.
+4. Add 5 entries: 2 articles, 1 YouTube, 1 Substack, 1 with an image.
 5. All entries appear in dashboard via SSE without manual reload.
 6. Open viewer: Markdown renders, local images load via `analecta-file://`.
 7. Viewer toolbar: Open (browser), Open in file manager, Copy `analecta://` URL.

@@ -143,7 +143,6 @@ ignored. All fixed:
 | `extraction/article.py` | `reportUnnecessaryComparison` — `meta is not None` always true per stubs | Simplified to `meta.title or ""` |
 | `extraction/assets.py` | `reportMissingTypeArgument` — `re.Match` without type arg | Changed to `re.Match[str]` |
 | `extraction/youtube.py` | `reportMissingTypeArgument` — `list` without type arg (×2) | Changed to `list[Any]` |
-| `security/virustotal.py` | `reportMissingTypeArgument` — `dict` without type arg | Changed to `dict[str, Any]` |
 
 ---
 

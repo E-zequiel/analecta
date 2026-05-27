@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { openDialog, updateVaultScope, relaunch, setCloseToTray } from '$lib/platform';
-	import { config as configApi, security } from '$lib/api/client';
+	import { config as configApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 
 	const ACCENT_OPTIONS = [
@@ -17,16 +17,12 @@
 		ui_font_size: 16.0,
 		reading_font_size: 17.0,
 		update_channel: 'stable' as 'stable' | 'dev',
-		virustotal_enabled: false,
 		theme: 'dark' as 'dark' | 'light',
 		accent_color: 'yellow' as 'red' | 'yellow' | 'green' | 'cyan',
 		close_to_tray: true,
 	});
 	let initialVaultPath = $state('');
 	let customFontPath = $state('');
-	let vtApiKey = $state('');
-	let vtKeyExists = $state(false);
-	let showDisclaimer = $state(false);
 	let error = $state('');
 
 	// Per-field saved indicators
@@ -39,10 +35,6 @@
 	let accentSaved = $state(false);
 	let closeToTraySaved = $state(false);
 
-	// VT section
-	let vtSaving = $state(false);
-	let vtSaved = $state(false);
-	let vtError = $state('');
 	let browsing = $state(false);
 
 	let uiFontTimer: ReturnType<typeof setTimeout> | null = null;
@@ -89,21 +81,19 @@
 
 	onMount(async () => {
 		try {
-			const [cfg, keyStatus] = await Promise.all([configApi.get(), security.keyExists()]);
+			const cfg = await configApi.get();
 			form = {
 				vault_path: cfg.vault_path,
 				font_variant: cfg.font_variant,
 				ui_font_size: cfg.ui_font_size,
 				reading_font_size: cfg.reading_font_size,
 				update_channel: cfg.update_channel,
-				virustotal_enabled: cfg.virustotal_enabled,
 				theme: cfg.theme,
 				accent_color: cfg.accent_color,
 				close_to_tray: cfg.close_to_tray,
 			};
 			initialVaultPath = cfg.vault_path;
 			customFontPath = cfg.custom_font_path ?? '';
-			vtKeyExists = keyStatus.exists;
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		}
@@ -245,37 +235,6 @@
 		autoSaveCloseToTray();
 	}
 
-	function handleVtToggle() {
-		if (!form.virustotal_enabled) {
-			showDisclaimer = true;
-		} else {
-			form.virustotal_enabled = false;
-		}
-	}
-
-	function acceptDisclaimer() {
-		form.virustotal_enabled = true;
-		showDisclaimer = false;
-	}
-
-	async function saveVt() {
-		if (vtSaving) return;
-		vtSaving = true;
-		vtError = '';
-		try {
-			await configApi.update({ virustotal_enabled: form.virustotal_enabled });
-			if (vtApiKey) {
-				await security.setKey(vtApiKey);
-				vtApiKey = '';
-				vtKeyExists = true;
-			}
-			flash((v) => (vtSaved = v));
-		} catch (err) {
-			vtError = err instanceof Error ? err.message : String(err);
-		} finally {
-			vtSaving = false;
-		}
-	}
 </script>
 
 <div class="settings-page">
@@ -470,77 +429,7 @@
 		</div>
 	</section>
 
-	<section class="section-vt">
-		<h2>VirusTotal</h2>
-		{#if vtError}
-			<p class="error">{vtError}</p>
-		{/if}
-		<div class="field toggle-field">
-			<label for="vt-toggle">Enable scanning</label>
-			<button
-				id="vt-toggle"
-				role="switch"
-				aria-checked={form.virustotal_enabled}
-				class="toggle"
-				class:on={form.virustotal_enabled}
-				onclick={handleVtToggle}
-			>
-				{form.virustotal_enabled ? 'On' : 'Off'}
-			</button>
-		</div>
-		{#if form.virustotal_enabled}
-			<div class="field">
-				<label for="vt-key">
-					API Key {vtKeyExists ? '(stored — enter to replace)' : '(not set)'}
-				</label>
-				<input
-					id="vt-key"
-					type="password"
-					placeholder={vtKeyExists ? '••••••••' : 'Paste API key…'}
-					bind:value={vtApiKey}
-					autocomplete="off"
-				/>
-			</div>
-		{/if}
-		<div class="vt-actions">
-			<button class="btn-save" onclick={saveVt} disabled={vtSaving}>
-				{vtSaving ? 'Saving…' : vtSaved ? 'Saved ✓' : 'Save'}
-			</button>
-		</div>
-	</section>
 </div>
-
-<!-- VirusTotal disclaimer modal -->
-{#if showDisclaimer}
-	<div
-		class="modal-backdrop"
-		role="presentation"
-		onclick={() => (showDisclaimer = false)}
-		onkeydown={(e) => { if (e.key === 'Escape') showDisclaimer = false; }}
-	>
-		<div
-			class="modal"
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby="vt-disclaimer-title"
-			tabindex="-1"
-			onclick={(e) => e.stopPropagation()}
-			onkeydown={(e) => e.stopPropagation()}
-		>
-			<h3 id="vt-disclaimer-title">VirusTotal — Privacy Notice</h3>
-			<ul>
-				<li>Every URL you scan is <strong>submitted to VirusTotal and indexed publicly</strong> in their database.</li>
-				<li>The Public API is <strong>non-commercial only</strong>. Analecta must remain free and open-source.</li>
-				<li>Rate limits: <strong>4 requests/min · 500 requests/day</strong>. Exceeding them risks a permanent account ban.</li>
-			</ul>
-			<p class="modal-note">You will need a free VirusTotal account to obtain an API key.</p>
-			<div class="modal-actions">
-				<button onclick={() => (showDisclaimer = false)}>Cancel</button>
-				<button class="btn-accept" onclick={acceptDisclaimer}>I understand — Enable</button>
-			</div>
-		</div>
-	</div>
-{/if}
 
 <style>
 	.settings-page {
@@ -567,14 +456,6 @@
 	section {
 		margin-bottom: 2rem;
 		padding-bottom: 1.5rem;
-		border-bottom: 1px solid var(--border);
-	}
-
-	.section-vt {
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		padding: 1.25rem;
-		background: var(--bg-dark);
 		border-bottom: 1px solid var(--border);
 	}
 
@@ -688,9 +569,7 @@
 		line-height: 1;
 	}
 
-	.path-row button,
-	.vt-actions button,
-	.modal-actions button {
+	.path-row button {
 		padding: 0.4rem 0.75rem;
 		background: var(--bg-highlight);
 		border: 1px solid var(--border);
@@ -701,9 +580,7 @@
 		cursor: pointer;
 	}
 
-	.path-row button:hover,
-	.vt-actions button:hover:not(:disabled),
-	.modal-actions button:hover {
+	.path-row button:hover {
 		border-color: var(--accent-dark);
 		color: var(--accent);
 	}
@@ -767,79 +644,10 @@
 		border-color: var(--fg-muted);
 	}
 
-	.vt-actions {
-		margin-top: 0.75rem;
-		display: flex;
-		justify-content: flex-end;
-	}
-
-	.btn-save {
-		min-width: 80px;
-	}
-
-	.btn-save:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
 	.error {
 		color: var(--red);
 		font-size: 13px;
 		margin-bottom: 1rem;
 	}
 
-	/* Modal */
-	.modal-backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.6);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 100;
-	}
-
-	.modal {
-		background: var(--bg-alt);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		padding: 1.5rem;
-		max-width: 420px;
-		width: 90%;
-	}
-
-	.modal h3 {
-		margin: 0 0 1rem;
-		font-size: 1rem;
-		color: var(--yellow);
-	}
-
-	.modal ul {
-		padding-left: 1.25rem;
-		margin: 0 0 1rem;
-		font-size: 13px;
-		line-height: 1.6;
-		color: var(--fg-dark);
-	}
-
-	.modal li {
-		margin-bottom: 0.5rem;
-	}
-
-	.modal-note {
-		font-size: 12px;
-		color: var(--fg-muted);
-		margin: 0 0 1.25rem;
-	}
-
-	.modal-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: 0.5rem;
-	}
-
-	.btn-accept {
-		border-color: var(--accent-dark) !important;
-		color: var(--accent) !important;
-	}
 </style>

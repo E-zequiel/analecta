@@ -9,7 +9,6 @@
 		Link,
 		Archive,
 		Shredder,
-		ShieldCheck,
 		AArrowDown,
 		AArrowUp,
 		Eye,
@@ -24,10 +23,8 @@
 		entries as entriesApi,
 		tags as tagsApi,
 		config as configApi,
-		security,
 		type Entry,
 		type Tag,
-		type ScanResult
 	} from '$lib/api/client';
 	import { createRenderer } from '$lib/markdown/renderer';
 	import '$lib/markdown/tokyo-night.css';
@@ -74,7 +71,6 @@
 	}
 
 	const propertyFields = $derived(parseFrontmatter(source));
-	let vtEnabled = $state(false);
 	let contentEl = $state<HTMLElement | null>(null);
 	let readingFontSize = $state(17);
 
@@ -94,9 +90,6 @@
 		return () => window.removeEventListener('keydown', handleKeydown);
 	});
 
-	let scanning = $state(false);
-	let scanResult = $state<ScanResult | null>(null);
-	let scanError = $state('');
 	let error = $state('');
 
 	let tagsOpen = $state(false);
@@ -143,7 +136,6 @@
 	// Config is stable across entries — fetch once on mount.
 	onMount(() => {
 		configApi.get().then((cfg) => {
-			vtEnabled = cfg.virustotal_enabled;
 			readingFontSize = cfg.reading_font_size;
 		}).catch(() => {});
 	});
@@ -265,20 +257,6 @@
 		entryChangedTick.update((n) => n + 1);
 	}
 
-	async function runScan() {
-		if (!entry || scanning) return;
-		scanning = true;
-		scanResult = null;
-		scanError = '';
-		try {
-			scanResult = await security.scan(entry.id);
-		} catch (err) {
-			scanError = err instanceof Error ? err.message : String(err);
-		} finally {
-			scanning = false;
-		}
-	}
-
 	function handleRightClick(e: MouseEvent) {
 		if (!entry) return;
 		showContextMenu(e, { id: entry.id, title: entry.title, url: entry.url, file_path: entry.file_path, flags: entry.flags });
@@ -314,16 +292,6 @@
 			<button class="btn-icon" onclick={deleteEntry} title="Delete">
 				<Shredder size={18} />
 			</button>
-			{#if vtEnabled}
-				<button
-					class="btn-icon"
-					onclick={runScan}
-					disabled={scanning}
-					title={scanning ? 'Scanning…' : 'VirusTotal'}
-				>
-					<ShieldCheck size={18} />
-				</button>
-			{/if}
 		{/if}
 
 		<span class="spacer"></span>
@@ -415,18 +383,6 @@
 			</div>
 		{/if}
 	</div>
-
-	{#if scanResult}
-		<div class="scan-result" class:danger={scanResult.malicious > 0}>
-			VirusTotal: <strong>{scanResult.verdict}</strong> —
-			{scanResult.malicious} malicious · {scanResult.suspicious} suspicious ·
-			{scanResult.undetected} undetected / {scanResult.total} engines
-		</div>
-	{/if}
-
-	{#if scanError}
-		<div class="scan-result danger">{scanError}</div>
-	{/if}
 
 	{#if error}
 		<div class="error-banner">{error}</div>
@@ -543,18 +499,6 @@
 		color: var(--accent);
 		border-color: var(--accent-dark);
 		background: var(--bg-highlight);
-	}
-
-	.scan-result {
-		padding: 0.4rem 1rem;
-		font-size: 12px;
-		background: var(--bg-alt);
-		border-bottom: 1px solid var(--border);
-		color: var(--green);
-	}
-
-	.scan-result.danger {
-		color: var(--red);
 	}
 
 	.error-banner {

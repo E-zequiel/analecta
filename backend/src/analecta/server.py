@@ -16,7 +16,6 @@ from analecta.api.routes import (
     extract,
     pkm,
     search,
-    security,
     system,
     tags,
 )
@@ -74,7 +73,6 @@ app.include_router(entries.router, prefix="/api/v1")
 app.include_router(extract.router, prefix="/api/v1")
 app.include_router(pkm.router, prefix="/api/v1")
 app.include_router(search.router, prefix="/api/v1")
-app.include_router(security.router, prefix="/api/v1")
 app.include_router(system.router, prefix="/api/v1")
 app.include_router(tags.router, prefix="/api/v1")
 
