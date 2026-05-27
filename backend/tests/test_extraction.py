@@ -824,3 +824,56 @@ def test_strip_heading_classes_all_heading_levels_stripped():
         el = soup.find(tag)
         assert el is not None
         assert not el.get("class"), f"{tag} still has class attribute"
+
+
+def test_strip_heading_classes_unwraps_div_with_link_only_sibling():
+    # Wikipedia Vector 2022: each heading lives in a <div class="mw-heading">
+    # alongside a <span class="mw-editsection">[edit]</span>.
+    # The edit link inflates the div's link density; readability drops the div.
+    html = (
+        '<div class="mw-heading mw-heading2">'
+        '<h2 id="Biography">Biography</h2>'
+        '<span class="mw-editsection">'
+        '<span>[</span><a href="/w/index.php?action=edit">edit</a><span>]</span>'
+        "</span>"
+        "</div>"
+    )
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    # Wrapper div must be gone; h2 survives as a direct element.
+    assert soup.find("div", class_="mw-heading") is None
+    h2 = soup.find("h2")
+    assert h2 is not None
+    assert h2.get_text(strip=True) == "Biography"
+    # Edit span must also be gone.
+    assert soup.find("span", class_="mw-editsection") is None
+
+
+def test_strip_heading_classes_keeps_div_with_prose_sibling():
+    # A div whose sibling has real prose must NOT be unwrapped.
+    html = (
+        "<div>"
+        "<h2>Title</h2>"
+        "<p>A subtitle or introductory sentence below the heading.</p>"
+        "</div>"
+    )
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("div") is not None
+    assert soup.find("h2") is not None
+    assert soup.find("p") is not None
+
+
+def test_strip_heading_classes_preserves_figure_sibling():
+    # A figure sitting next to a heading in the same div must not be removed.
+    # (Regression guard for the Substack captioned-image-container pattern.)
+    html = (
+        "<div>"
+        '<h2 class="section-title">Chart Section</h2>'
+        '<figure><img src="https://cdn.example.com/chart.png" alt="chart"/></figure>'
+        "</div>"
+    )
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("figure") is not None
+    assert soup.find("img") is not None
