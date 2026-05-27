@@ -478,7 +478,6 @@
 	}
 
 	input[type='text'],
-	input[type='password'],
 	select {
 		padding: 0.4rem 0.6rem;
 		background: var(--bg-alt);
@@ -502,7 +501,6 @@
 	}
 
 	input[type='text']:focus,
-	input[type='password']:focus,
 	select:focus {
 		border-color: var(--accent-dark);
 	}
