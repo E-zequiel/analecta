@@ -127,23 +127,60 @@ _HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 
 
 def _strip_heading_classes(html: str) -> str:
-    """Remove class attributes from heading elements before readability runs.
+    """Remove class attributes and noise wrappers from heading elements.
 
-    readability-lxml penalises elements whose class names match negative
-    patterns such as ``header``, ``footer``, ``nav``.  Substack (and other
-    platforms) attach utility classes like ``header-anchor-post`` to ``<h2>``
-    elements, causing readability to score the headings as low-weight and drop
-    them entirely.  Heading classes never improve content extraction, so
-    stripping them is always safe.  Inner ``<div>`` and ``<a>`` anchor-button
-    elements (a UI pattern used by many blog platforms) are also removed since
-    they add no readable text and inflate link-density scoring.
+    Three readability failure modes are addressed:
+
+    1. **Class-based penalty** (Substack, GitHub, many platforms): utility
+       classes like ``header-anchor-post`` on ``<h2>`` match readability's
+       negative-class patterns and cause the heading to be scored low and
+       dropped.  All ``class`` attributes are stripped from h1-h6.
+
+    2. **Empty inner elements** (anchor-button UX pattern): ``<div>`` and
+       ``<a>`` elements *inside* headings with no text content inflate
+       link-density scoring.  They are removed.
+
+    3. **Link-only div wrappers** (Wikipedia Vector 2022 skin and similar):
+       sites wrap each heading in a ``<div>`` alongside a sibling element
+       that contains only edit/anchor links
+       (e.g. ``<span class="mw-editsection">[edit]</span>``).  The link
+       inflates the wrapper's link density, causing readability to discard
+       the entire ``<div>`` — taking the heading with it.  Any sibling of
+       a heading inside a ``<div>`` that has no prose text beyond its link
+       text is removed; if the ``<div>`` then contains only the heading, it
+       is unwrapped.
     """
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup.find_all(_HEADING_TAGS):
         tag.attrs.pop("class", None)
+        # Remove empty or link-only children inside the heading itself.
         for child in tag.find_all(["div", "a"]):
             if not child.get_text(strip=True):
                 child.decompose()
+        # Unwrap parent <div> when siblings add no prose (only link noise).
+        parent = tag.parent
+        if parent is None or parent.name != "div":
+            continue
+        for sibling in list(parent.children):
+            if getattr(sibling, "name", None) is None or sibling is tag:
+                continue
+            # Only inline elements (<span>, <a>) can be pure edit-link noise.
+            # Never decompose block-level content, other headings, or media.
+            if sibling.name not in {"span", "a"}:
+                continue
+            if sibling.find(["img", "figure", "video", "picture"]):
+                continue
+            link_text = "".join(a.get_text() for a in sibling.find_all("a"))
+            prose = sibling.get_text().replace(link_text, "").strip("[]() \n\t")
+            if not prose:
+                sibling.decompose()
+        remaining = [
+            c
+            for c in parent.children
+            if getattr(c, "name", None) or (isinstance(c, str) and c.strip())
+        ]
+        if len(remaining) == 1:
+            parent.unwrap()
     return str(soup)
 
 
