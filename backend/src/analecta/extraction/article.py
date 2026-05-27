@@ -123,6 +123,27 @@ def _rescue_linked_lists(html: str) -> str:
     return str(soup)
 
 
+def _unwrap_sections(html: str) -> str:
+    """Unwrap <section> elements so their children are scored by readability as a unit.
+
+    Sites like Wikipedia (Parsoid HTML) nest ``<section data-mw-section-id>``
+    three or more levels deep.  readability-lxml scores each ``<section>`` as an
+    independent scoring unit; a deeply-nested section whose paragraphs have high
+    link density (common on Wikipedia — nearly every phrase is a wikilink) may
+    fall below the content threshold and be dropped entirely, taking its heading
+    and body text with it.  Flattening ``<section>`` elements into their parent
+    makes all descendant text participate in the parent's content score.
+
+    ``<section>`` carries no extraction-relevant semantics for readability, so
+    unwrapping is always safe — confirmed against milkroad.com, socket.dev, and
+    Substack (none of which are affected).
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for sec in soup.find_all("section"):
+        sec.unwrap()
+    return str(soup)
+
+
 _HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 
 
@@ -340,6 +361,7 @@ class ArticleExtractor(SourceExtractor):
         meta = trafilatura.extract_metadata(html, default_url=url)
         clean = _strip_hidden_elements(html)
         clean = _simplify_figure_images(clean)
+        clean = _unwrap_sections(clean)
         clean = _strip_heading_classes(clean)
         clean = _rescue_linked_lists(clean)
 
