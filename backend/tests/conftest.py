@@ -4,10 +4,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
-import keyring
 import pytest
 from fastapi import FastAPI
-from keyring.backend import KeyringBackend
 
 from analecta.api.events import EventBus
 from analecta.api.routes.config import router as config_router
@@ -15,7 +13,6 @@ from analecta.api.routes.entries import router as entries_router
 from analecta.api.routes.extract import router as extract_router
 from analecta.api.routes.pkm import router as pkm_router
 from analecta.api.routes.search import router as search_router
-from analecta.api.routes.security import router as security_router
 from analecta.api.routes.system import router as system_router
 from analecta.api.routes.tags import router as tags_router
 from analecta.config import AppConfig
@@ -24,30 +21,6 @@ from analecta.storage.vault import VaultManager
 
 # test_updater.py still uses qtbot (pending deletion in G3)
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-
-class _MemoryKeyring(KeyringBackend):
-    """In-memory keyring backend for tests — no system keyring calls."""
-
-    priority = 0
-
-    def __init__(self) -> None:
-        self._store: dict[tuple[str, str], str] = {}
-
-    def get_password(self, service: str, username: str) -> str | None:  # type: ignore[override]
-        return self._store.get((service, username))
-
-    def set_password(self, service: str, username: str, password: str) -> None:
-        self._store[(service, username)] = password
-
-    def delete_password(self, service: str, username: str) -> None:
-        self._store.pop((service, username), None)
-
-
-@pytest.fixture(autouse=True)
-def _memory_keyring() -> None:
-    """Replace the system keyring with an in-memory backend for every test."""
-    keyring.set_keyring(_MemoryKeyring())
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +79,6 @@ def _build_full_app(cfg: AppConfig) -> FastAPI:
         extract_router,
         pkm_router,
         search_router,
-        security_router,
         system_router,
         tags_router,
     ):
