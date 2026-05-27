@@ -289,7 +289,7 @@ async def delete_entry(
         raise HTTPException(status_code=404, detail="Entry not found")
     file_path = Path(record.file_path)
     slug = file_path.stem
-    assets_dir = file_path.parent / "assets" / slug
+    assets_dir = file_path.parent.parent / "assets" / slug
     await asyncio.to_thread(index.hard_delete, entry_id)
     await asyncio.to_thread(_unlink_if_exists, file_path)
     if assets_dir.is_dir():
