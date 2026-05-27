@@ -20,6 +20,7 @@
 		Trash2,
 		Archive
 	} from '@lucide/svelte';
+	import { writable } from 'svelte/store';
 	import { clipboardReadText, onTrayPasteUrl } from '$lib/platform';
 	import { entries as entriesApi, tags as tagsApi, extract as extractApi, type Entry, type Tag } from '$lib/api/client';
 	import {
@@ -62,6 +63,13 @@
 	type PasteStatus = 'idle' | 'loading' | 'ok' | 'error';
 	let pasteStatus = $state<PasteStatus>('idle');
 	let pasteMessage = $state('');
+
+	const urlInputActive = writable(false);
+	let urlInputValue = $state('');
+	let urlInputEl = $state<HTMLInputElement | null>(null);
+
+	$effect(() => { if ($urlInputActive && urlInputEl) urlInputEl.focus(); });
+	$effect(() => { if ($sidebarCollapsed) urlInputActive.set(false); });
 
 	let newTagExpanded = $state(false);
 	let newTagName = $state('');
@@ -141,7 +149,36 @@
 		if (n > prevExpandSignal) { prevExpandSignal = n; expandAll(); }
 	});
 
-	onMount(() => onTrayPasteUrl(() => pasteUrl()));
+	onMount(() => onTrayPasteUrl(() => openUrlInput()));
+
+	function openUrlInput() {
+		if ($sidebarCollapsed) sidebarCollapsed.set(false);
+		urlInputActive.set(true);
+		urlInputValue = '';
+	}
+
+	async function submitUrl() {
+		const url = urlInputValue.trim();
+		urlInputActive.set(false);
+		urlInputValue = '';
+		if (!url.startsWith('http://') && !url.startsWith('https://')) {
+			pasteStatus = 'error';
+			pasteMessage = 'Not a valid URL.';
+			setTimeout(() => (pasteStatus = 'idle'), 3000);
+			return;
+		}
+		pasteStatus = 'loading';
+		try {
+			await extractApi.url(url);
+			pasteStatus = 'ok';
+			pasteMessage = 'Saved.';
+			setTimeout(() => (pasteStatus = 'idle'), 3000);
+		} catch (e) {
+			pasteStatus = 'error';
+			pasteMessage = e instanceof Error ? e.message : 'Extraction failed.';
+			setTimeout(() => (pasteStatus = 'idle'), 9_000);
+		}
+	}
 
 	async function pasteUrl() {
 		let url: string;
@@ -405,26 +442,41 @@
 
 	<!-- Bottom bar -->
 	<div class="bottom-bar">
-		<button class="icon-btn" onclick={() => navigateInSectionTab('collecta')} title="Collecta">
-			<Origami size={18} />
-		</button>
-		<button class="icon-btn" onclick={goLast} title="Last viewed" disabled={$lastViewedId === null}>
-			<BookOpenText size={18} />
-		</button>
-		<button
-			class="icon-btn paste-btn"
-			class:paste-ok={pasteStatus === 'ok'}
-			class:paste-err={pasteStatus === 'error'}
-			class:paste-loading={pasteStatus === 'loading'}
-			onclick={pasteUrl}
-			title="Add URL from clipboard"
-			disabled={pasteStatus === 'loading'}
-		>
-			<ClipboardPaste size={18} />
-		</button>
-		<a href="/settings" class="icon-btn settings-btn" class:active={isSettingsActive} title="Settings">
-			<Settings size={18} />
-		</a>
+		{#if $urlInputActive}
+			<input
+				class="url-input"
+				type="text"
+				placeholder="Paste URL…"
+				bind:value={urlInputValue}
+				bind:this={urlInputEl}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') { e.preventDefault(); submitUrl(); }
+					else if (e.key === 'Escape') { urlInputActive.set(false); }
+				}}
+				onblur={() => { if (!urlInputValue.trim()) urlInputActive.set(false); }}
+			/>
+		{:else}
+			<button class="icon-btn" onclick={() => navigateInSectionTab('collecta')} title="Collecta">
+				<Origami size={18} />
+			</button>
+			<button class="icon-btn" onclick={goLast} title="Last viewed" disabled={$lastViewedId === null}>
+				<BookOpenText size={18} />
+			</button>
+			<button
+				class="icon-btn paste-btn"
+				class:paste-ok={pasteStatus === 'ok'}
+				class:paste-err={pasteStatus === 'error'}
+				class:paste-loading={pasteStatus === 'loading'}
+				onclick={pasteUrl}
+				title="Add URL from clipboard"
+				disabled={pasteStatus === 'loading'}
+			>
+				<ClipboardPaste size={18} />
+			</button>
+			<a href="/settings" class="icon-btn settings-btn" class:active={isSettingsActive} title="Settings">
+				<Settings size={18} />
+			</a>
+		{/if}
 	</div>
 </aside>
 
@@ -741,5 +793,23 @@
 
 	.tag-action-btn:hover {
 		color: var(--fg);
+	}
+
+	.url-input {
+		flex: 1;
+		min-width: 0;
+		padding: 3px 7px;
+		background: var(--bg-highlight);
+		border: 1px solid var(--accent-dark);
+		border-radius: 3px;
+		color: var(--fg);
+		font-family: inherit;
+		font-size: 0.78rem;
+		outline: none;
+		box-sizing: border-box;
+	}
+
+	.url-input:focus {
+		border-color: var(--accent);
 	}
 </style>
