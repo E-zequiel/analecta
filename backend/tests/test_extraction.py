@@ -14,6 +14,7 @@ from analecta.extraction.article import (
     _strip_heading_classes,
     _strip_loading_placeholders,
     _try_nextjs_hydration,
+    _unwrap_sections,
 )
 from analecta.extraction.core import (
     ExtractedContent,
@@ -761,6 +762,64 @@ def test_strip_loading_placeholders_removes_span():
     soup = _BS(result, "html.parser")
     assert soup.find("span") is None
     assert soup.find("p") is not None
+
+
+# ---------------------------------------------------------------------------
+# _unwrap_sections
+# ---------------------------------------------------------------------------
+
+
+def test_unwrap_sections_removes_section_tag():
+    html = "<section><h2>Title</h2><p>Content.</p></section>"
+    result = _unwrap_sections(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("section") is None
+    assert soup.find("h2") is not None
+    assert soup.find("p") is not None
+
+
+def test_unwrap_sections_flattens_nested_sections():
+    # Wikipedia nests sections 3 levels deep; all must be unwrapped.
+    html = (
+        "<section>"
+        "<section>"
+        "<section>"
+        "<h4>Deep Heading</h4>"
+        "<p>Deep content.</p>"
+        "</section>"
+        "</section>"
+        "</section>"
+    )
+    result = _unwrap_sections(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("section") is None
+    assert soup.find("h4") is not None
+    assert soup.find("p") is not None
+
+
+def test_unwrap_sections_noop_when_no_sections():
+    html = "<div><h2>Title</h2><p>Content.</p></div>"
+    result = _unwrap_sections(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("div") is not None
+    assert soup.find("h2") is not None
+
+
+def test_unwrap_sections_preserves_all_content():
+    html = (
+        '<section data-mw-section-id="1">'
+        "<h2>Top</h2><p>Para one.</p>"
+        '<section data-mw-section-id="2">'
+        "<h3>Sub</h3><p>Para two.</p>"
+        "</section>"
+        "</section>"
+    )
+    result = _unwrap_sections(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("section") is None
+    assert soup.find("h2") is not None
+    assert soup.find("h3") is not None
+    assert len(soup.find_all("p")) == 2
 
 
 # ---------------------------------------------------------------------------
