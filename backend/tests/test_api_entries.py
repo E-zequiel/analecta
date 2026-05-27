@@ -207,7 +207,7 @@ def test_delete_entry_removes_assets_dir(tmp_path: Path) -> None:
     pages_dir.mkdir(parents=True)
     md_file = pages_dir / "2024-01-01-my-article.md"
     md_file.write_text("# My Article\n")
-    assets_dir = pages_dir / "assets" / md_file.stem
+    assets_dir = tmp_path / "vault" / "assets" / md_file.stem
     assets_dir.mkdir(parents=True)
     (assets_dir / "image.jpg").write_bytes(b"fake")
 
