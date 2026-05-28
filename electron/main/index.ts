@@ -1,5 +1,7 @@
 import { app, BrowserWindow, Menu } from 'electron';
 import path from 'path';
+import { writeFileSync, mkdirSync } from 'fs';
+import { spawnSync } from 'child_process';
 import { registerProtocols, setupProtocolHandlers } from './protocols.js';
 import { spawnSidecar, killSidecar, getSidecarPort } from './sidecar.js';
 import { startRenderServer, stopRenderServer } from './scraper.js';
@@ -9,6 +11,40 @@ import { initUpdater } from './updater.js';
 
 /** True when running under Wayland. focus() is best-effort; always call show() first. */
 export const isWaylandNative = process.env.XDG_SESSION_TYPE === 'wayland';
+
+/**
+ * Writes a .desktop file for the dev build and associates it with the
+ * analecta:// scheme via xdg-mime.  Only runs when !app.isPackaged — the
+ * packaged .deb/.rpm/.AppImage ships a proper .desktop entry that the system
+ * installer registers automatically.
+ *
+ * Overrides any stale handler left over from earlier dev builds or prior
+ * packagers (e.g. the Tauri analecta-handler.desktop).
+ */
+function registerDevSchemeHandler(): void {
+  const desktopDir = path.join(app.getPath('home'), '.local', 'share', 'applications');
+  const desktopFile = path.join(desktopDir, 'analecta-dev.desktop');
+  const entry = [
+    '[Desktop Entry]',
+    'Type=Application',
+    'Name=Analecta (dev)',
+    `Exec=${process.execPath} ${app.getAppPath()} %u`,
+    'MimeType=x-scheme-handler/analecta',
+    'NoDisplay=true',
+    'StartupNotify=false',
+    '',
+  ].join('\n');
+  try {
+    mkdirSync(desktopDir, { recursive: true });
+    writeFileSync(desktopFile, entry, 'utf-8');
+    spawnSync('xdg-mime', ['default', 'analecta-dev.desktop', 'x-scheme-handler/analecta'], {
+      stdio: 'ignore',
+    });
+    spawnSync('update-desktop-database', [desktopDir], { stdio: 'ignore' });
+  } catch (err) {
+    console.warn('[main] failed to register dev scheme handler:', err);
+  }
+}
 
 // Must be set before app.ready: display name and XDG-compliant userData path.
 app.setName('Analecta');
@@ -66,6 +102,7 @@ if (deepLinkArg) setInitialDeepLink(deepLinkArg);
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   setupProtocolHandlers();
+  if (!app.isPackaged) registerDevSchemeHandler();
 
   mainWindow = createWindow();
   setMainWindowRef(mainWindow);
