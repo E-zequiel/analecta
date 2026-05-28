@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { readTextFile, writeTextFile } from '$lib/platform';
 	import { entries as entriesApi, type Entry } from '$lib/api/client';
+	import { entryChangedTick } from '$lib/stores/sse';
 	import { createRenderer } from '$lib/markdown/renderer';
 	import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
 	import '$lib/markdown/tokyo-night.css';
@@ -36,9 +37,10 @@
 	function extractHashtags(text: string): string[] {
 		const tags = new Set<string>();
 		for (const line of text.split('\n')) {
-			if (line.trimStart().startsWith('#')) continue;
-			for (const m of line.matchAll(/#([a-z][a-z0-9_]*)/g)) {
-				tags.add(m[1]);
+			// Skip markdown headings (# Heading) but not hashtag-only lines (#tag1 #tag2)
+			if (/^#{1,6}(?:\s|$)/.test(line.trimStart())) continue;
+			for (const m of line.matchAll(/#([a-zA-Z][a-zA-Z0-9_]*)/g)) {
+				tags.add(m[1].toLowerCase());
 			}
 		}
 		return [...tags];
@@ -66,6 +68,7 @@
 				fts: { title: entry.title, content }
 			});
 			originalContent = content;
+			entryChangedTick.update((n) => n + 1);
 			saved = true;
 			setTimeout(() => {
 				saved = false;
