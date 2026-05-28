@@ -109,9 +109,9 @@
 
 	function refreshAll() {
 		fetchCounts();
+		if ($tagsExpanded) fetchTags();
 		for (const id of $expandedSections) {
-			if (id === 'tags') fetchTags();
-			else fetchSection(id);
+			fetchSection(id);
 		}
 	}
 
