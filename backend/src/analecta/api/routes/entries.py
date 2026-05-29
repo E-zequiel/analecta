@@ -80,6 +80,46 @@ class EntryOut(BaseModel):
     flags: list[str]
 
 
+class BacklinkContextOut(BaseModel):
+    """Surrounding text context for a single backlink occurrence.
+
+    Attributes:
+        heading: Section heading above the reference, if any.
+        pre: Text immediately before the reference.
+        highlight: The matched link text as it appears in source.
+        post: Text immediately after the reference.
+    """
+
+    heading: str | None = None
+    pre: str
+    highlight: str
+    post: str
+
+
+class BacklinkOut(BaseModel):
+    """A single backlink entry.
+
+    Attributes:
+        id: Source entry id.
+        name: Source entry title.
+        context: Surrounding text context for this occurrence.
+    """
+
+    id: int
+    name: str
+    context: BacklinkContextOut
+
+
+class BacklinksResultOut(BaseModel):
+    """Response body for GET /entries/{id}/backlinks.
+
+    Attributes:
+        linked: All backlink occurrences pointing to the requested entry.
+    """
+
+    linked: list[BacklinkOut]
+
+
 def entry_out(record: EntryRecord) -> EntryOut:
     """Convert a storage EntryRecord to the API EntryOut model.
 
@@ -265,9 +305,47 @@ async def patch_entry(
         await asyncio.to_thread(
             index.update_fts_content, entry_id, fts.title, fts.content
         )
+        await asyncio.to_thread(index.index_backlinks, entry_id)
     updated = await asyncio.to_thread(index.get_entry, entry_id)
     assert updated is not None
     return entry_out(updated)
+
+
+@router.get("/entries/{entry_id}/backlinks", response_model=BacklinksResultOut)
+async def get_entry_backlinks(
+    entry_id: int,
+    index: VaultIndex = Depends(get_index),
+) -> BacklinksResultOut:
+    """Return all entries that link to *entry_id*.
+
+    Args:
+        entry_id: Target entry id.
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        BacklinksResultOut with a list of backlink occurrences.
+
+    Raises:
+        HTTPException: 404 if the entry does not exist.
+    """
+    if await asyncio.to_thread(index.get_entry, entry_id) is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    records = await asyncio.to_thread(index.get_backlinks, entry_id)
+    return BacklinksResultOut(
+        linked=[
+            BacklinkOut(
+                id=r.source_id,
+                name=r.source_title,
+                context=BacklinkContextOut(
+                    heading=r.heading,
+                    pre=r.pre,
+                    highlight=r.highlight,
+                    post=r.post,
+                ),
+            )
+            for r in records
+        ]
+    )
 
 
 @router.delete("/entries/{entry_id}", status_code=204)

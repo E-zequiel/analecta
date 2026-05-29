@@ -11,6 +11,27 @@ _ALLOWED_SORT_DIRS: frozenset[str] = frozenset({"asc", "desc"})
 
 
 @dataclass
+class BacklinkRecord:
+    """A resolved backlink reference pointing to an entry.
+
+    Args:
+        source_id: ID of the entry containing the reference.
+        source_title: Title of the source entry.
+        heading: Section heading above the reference, or ``None``.
+        pre: Text immediately before the reference (up to 60 chars).
+        highlight: The matched link text as it appears in source.
+        post: Text immediately after the reference (up to 60 chars).
+    """
+
+    source_id: int
+    source_title: str
+    heading: str | None
+    pre: str
+    highlight: str
+    post: str
+
+
+@dataclass
 class EntryRecord:
     """Mirrors the ``entries`` table row.
 
@@ -509,6 +530,102 @@ class VaultIndex:
         self._conn.execute("DELETE FROM entry_tags WHERE tag_id = ?", (tag_id,))
         self._conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
         self._conn.commit()
+
+    def index_backlinks(self, source_id: int) -> None:
+        """Re-index all outgoing backlink refs for *source_id*.
+
+        Reads the entry's Markdown file, parses ``[[wikilinks]]`` and
+        ``#hashtags``, clears any previously indexed refs for this source,
+        and inserts fresh rows into ``backlink_refs``.
+
+        Args:
+            source_id: ID of the entry whose file to re-parse.
+        """
+        from analecta.markdown.backlinks import parse_refs
+
+        entry = self.get_entry(source_id)
+        if entry is None:
+            return
+        file_path = Path(entry.file_path)
+        if not file_path.exists():
+            return
+
+        markdown = file_path.read_text(encoding="utf-8")
+        refs = parse_refs(markdown)
+
+        self._conn.execute(
+            "DELETE FROM backlink_refs WHERE source_id = ?", (source_id,)
+        )
+        for ref in refs:
+            self._conn.execute(
+                """
+                INSERT INTO backlink_refs
+                    (source_id, target_text, is_hashtag, heading, pre, highlight, post)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    source_id,
+                    ref.target_text,
+                    1 if ref.is_hashtag else 0,
+                    ref.heading,
+                    ref.pre,
+                    ref.highlight,
+                    ref.post,
+                ),
+            )
+        self._conn.commit()
+
+    def get_backlinks(self, target_id: int) -> list[BacklinkRecord]:
+        """Return all entries that link to *target_id*.
+
+        Resolves ``backlink_refs`` against the current ``entries`` table.
+        Wikilinks are matched by lowercased title; hashtags by normalized
+        (snake_case) title.
+
+        Args:
+            target_id: ID of the entry to query backlinks for.
+
+        Returns:
+            List of :class:`BacklinkRecord` objects ordered by source title
+            then document position.
+        """
+        from analecta.markdown.hashtags import normalize_tag
+
+        target_row = self._conn.execute(
+            "SELECT title FROM entries WHERE id = ?", (target_id,)
+        ).fetchone()
+        if target_row is None:
+            return []
+
+        title_lower = target_row["title"].lower()
+        title_slug = normalize_tag(target_row["title"])
+
+        rows = self._conn.execute(
+            """
+            SELECT br.source_id, e.title, br.heading, br.pre, br.highlight, br.post
+            FROM backlink_refs br
+            JOIN entries e ON e.id = br.source_id
+            WHERE e.id != ?
+              AND (
+                (br.is_hashtag = 0 AND br.target_text = ?)
+                OR (br.is_hashtag = 1 AND br.target_text = ?)
+              )
+            ORDER BY e.title ASC, br.source_id ASC, br.id ASC
+            """,
+            (target_id, title_lower, title_slug),
+        ).fetchall()
+
+        return [
+            BacklinkRecord(
+                source_id=row[0],
+                source_title=row[1],
+                heading=row[2],
+                pre=row[3],
+                highlight=row[4],
+                post=row[5],
+            )
+            for row in rows
+        ]
 
     def list_tags(self) -> list[tuple[str, int]]:
         """Return all tags sorted by entry count descending.
