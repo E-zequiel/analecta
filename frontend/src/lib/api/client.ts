@@ -49,6 +49,21 @@ export interface Tag {
 	count: number;
 }
 
+export interface Backlink {
+	id: number;
+	name: string;
+	context?: {
+		heading?: string;
+		pre: string;
+		highlight: string;
+		post: string;
+	};
+}
+
+export interface BacklinksResult {
+	linked: Backlink[];
+}
+
 export interface AppConfig {
 	vault_path: string;
 	font_variant: 'regular' | 'nerd' | 'custom';
@@ -154,6 +169,10 @@ export const entries = {
 
 	delete(id: number): Promise<void> {
 		return apiFetch<void>(`/entries/${id}`, { method: 'DELETE' });
+	},
+
+	getBacklinks(id: number): Promise<BacklinksResult> {
+		return apiFetch<BacklinksResult>(`/entries/${id}/backlinks`);
 	},
 };
 

@@ -7,6 +7,7 @@
 		CornerUpLeft,
 		PenLine,
 		Link,
+		Cable,
 		Archive,
 		Shredder,
 		AArrowDown,
@@ -25,11 +26,13 @@
 		config as configApi,
 		type Entry,
 		type Tag,
+		type BacklinksResult,
 	} from '$lib/api/client';
 	import { createRenderer } from '$lib/markdown/renderer';
 	import '$lib/markdown/tokyo-night.css';
-	import { lastViewedId } from '$lib/stores/ui';
-	import { ensureEntryTab, closeTab } from '$lib/stores/tabs';
+	import { lastViewedId, backlinksOpen, backlinksWidth } from '$lib/stores/ui';
+	import { ensureEntryTab, closeTab, openEntryTab } from '$lib/stores/tabs';
+	import BacklinksPanel from '$lib/components/BacklinksPanel.svelte';
 	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 
@@ -115,6 +118,25 @@
 	});
 
 	let error = $state('');
+	let backlinks = $state<BacklinksResult>({ linked: [] });
+
+	$effect(() => {
+		const id = entryId;
+		const open = $backlinksOpen;
+		backlinks = { linked: [] };
+		if (isNaN(id) || !open) return;
+
+		let cancelled = false;
+		entriesApi
+			.getBacklinks(id)
+			.then((result) => {
+				if (!cancelled) backlinks = result;
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	});
 
 	let tagsOpen = $state(false);
 	let newTagInput = $state('');
@@ -319,6 +341,14 @@
 			</button>
 			<button
 				class="btn-icon"
+				class:active={$backlinksOpen}
+				onclick={() => backlinksOpen.update((v) => !v)}
+				title="Backlinks"
+			>
+				<Cable size={18} />
+			</button>
+			<button
+				class="btn-icon"
 				class:active={entry.flags?.includes('archive')}
 				onclick={() => toggleFlag('archive')}
 				title="Archive"
@@ -427,47 +457,63 @@
 		{/if}
 	</div>
 
-	{#if error}
-		<div class="error-banner">{error}</div>
-	{:else if entry && html}
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="content" bind:this={contentEl} oncontextmenu={handleRightClick}>
-			<div class="content-inner">
-				<h1 class="entry-title">{entry.title}</h1>
+	<div class="reading-layout">
+		<div class="reading-main">
+			{#if error}
+				<div class="error-banner">{error}</div>
+			{:else if entry && html}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="content" bind:this={contentEl} oncontextmenu={handleRightClick}>
+					<div class="content-inner">
+						<h1 class="entry-title">{entry.title}</h1>
 
-				{#if propertyFields.length > 0}
-					<div class="properties-panel">
-						<button class="properties-header" onclick={() => (propertiesOpen = !propertiesOpen)}>
-							{#if propertiesOpen}
-								<ChevronDown size={12} />
-							{:else}
-								<ChevronRight size={12} />
-							{/if}
-							<span>Properties</span>
-						</button>
-						{#if propertiesOpen}
-							<div class="properties-body">
-								{#each propertyFields as [label, val] (label)}
-									<div class="property-row">
-										<span class="property-key">{label}</span>
-										<span class="property-val">{val}</span>
+						{#if propertyFields.length > 0}
+							<div class="properties-panel">
+								<button
+									class="properties-header"
+									onclick={() => (propertiesOpen = !propertiesOpen)}
+								>
+									{#if propertiesOpen}
+										<ChevronDown size={12} />
+									{:else}
+										<ChevronRight size={12} />
+									{/if}
+									<span>Properties</span>
+								</button>
+								{#if propertiesOpen}
+									<div class="properties-body">
+										{#each propertyFields as [label, val] (label)}
+											<div class="property-row">
+												<span class="property-key">{label}</span>
+												<span class="property-val">{val}</span>
+											</div>
+										{/each}
 									</div>
-								{/each}
+								{/if}
 							</div>
 						{/if}
-					</div>
-				{/if}
 
-				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-				<div class="markdown-body" onclick={handleContentClick}>
-					<!-- eslint-disable-next-line svelte/no-at-html-tags -- markdown-it output, not raw user/network HTML -->
-					{@html html}
+						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+						<div class="markdown-body" onclick={handleContentClick}>
+							<!-- eslint-disable-next-line svelte/no-at-html-tags -- markdown-it output, not raw user/network HTML -->
+							{@html html}
+						</div>
+					</div>
 				</div>
-			</div>
+			{:else if !error}
+				<p class="hint">Loading…</p>
+			{/if}
 		</div>
-	{:else if !error}
-		<p class="hint">Loading…</p>
-	{/if}
+
+		{#if $backlinksOpen}
+			<BacklinksPanel
+				linkedMentions={backlinks.linked}
+				width={$backlinksWidth}
+				onopen={(id, name) => openEntryTab(id, name)}
+				onwidthchange={(w) => backlinksWidth.set(w)}
+			/>
+		{/if}
+	</div>
 </div>
 
 <style>
@@ -475,6 +521,22 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
+	}
+
+	.reading-layout {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	.reading-main {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
 	}
 
 	.toolbar {
@@ -563,6 +625,7 @@
 	.content {
 		flex: 1;
 		overflow-y: auto;
+		min-width: 0;
 	}
 
 	.content-inner {
