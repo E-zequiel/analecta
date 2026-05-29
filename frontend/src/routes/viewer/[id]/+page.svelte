@@ -183,7 +183,7 @@
 			.then((e) => {
 				if (cancelled) return Promise.reject('cancelled');
 				entry = e;
-				ensureEntryTab(id, e.title);
+				ensureEntryTab(id, e.title, e.source_type);
 				return readTextFile(e.file_path);
 			})
 			.then((src) => {

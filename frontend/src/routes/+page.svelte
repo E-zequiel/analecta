@@ -365,7 +365,12 @@
 					{#if lastOpenedEntry}
 						<button
 							class="metric-link"
-							onclick={() => navigateInTab(lastOpenedEntry!.id, lastOpenedEntry!.title)}
+							onclick={() =>
+								navigateInTab(
+									lastOpenedEntry!.id,
+									lastOpenedEntry!.title,
+									lastOpenedEntry!.source_type
+								)}
 						>
 							{lastOpenedEntry.title}
 						</button>
@@ -444,7 +449,7 @@
 								{#each collectaTagEntries as entry (entry.id)}
 									<button
 										class="tag-entry-card"
-										onclick={() => navigateInTab(entry.id, entry.title)}
+										onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
 									>
 										<span class="tag-entry-title">{entry.title}</span>
 										<div class="tag-entry-badges">
@@ -490,7 +495,10 @@
 						<p class="hint">No entries.</p>
 					{:else}
 						{#each tagEntries as entry (entry.id)}
-							<button class="tag-entry-card" onclick={() => navigateInTab(entry.id, entry.title)}>
+							<button
+								class="tag-entry-card"
+								onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
+							>
 								<span class="tag-entry-title">{entry.title}</span>
 								<div class="tag-entry-badges">
 									{#each entryBadges(entry) as badge (badge.cls)}

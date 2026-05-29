@@ -44,7 +44,7 @@
 
 	function open(entry: Entry) {
 		close();
-		navigateInTab(entry.id, entry.title);
+		navigateInTab(entry.id, entry.title, entry.source_type);
 	}
 
 	function handleKey(e: KeyboardEvent) {

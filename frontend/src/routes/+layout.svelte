@@ -18,11 +18,18 @@
 	} from '$lib/platform';
 	import { port } from '$lib/stores/sidecar';
 	import { entryAddedTick } from '$lib/stores/sse';
-	import { sidebarCollapsed, sidebarWidth, searchOpen } from '$lib/stores/ui';
+	import {
+		sidebarCollapsed,
+		sidebarWidth,
+		searchOpen,
+		rightSidebarOpen,
+		rightSidebarWidth,
+	} from '$lib/stores/ui';
 	import {
 		tabs,
 		activeTabId,
 		activateTab,
+		closeTab,
 		openEntryTab,
 		syncActiveTabFromPath,
 		restoreTabsFromConfig,
@@ -33,12 +40,20 @@
 	import SidecarLoadingScreen from '$lib/components/SidecarLoadingScreen.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import TitleBar from '$lib/components/TitleBar.svelte';
+	import RightSidebar from '$lib/components/RightSidebar.svelte';
 	import ResizeHandles from '$lib/components/ResizeHandles.svelte';
 	import SearchDialog from '$lib/components/SearchDialog.svelte';
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 
 	const { children } = $props();
+
+	const viewerTabs = $derived(
+		$tabs
+			.filter((t) => t.kind === 'viewer')
+			.map((t) => ({ id: t.id, title: t.title, sourceType: t.sourceType }))
+	);
+
 	let timedOut = $state(false);
 	let isFirstRun = $state(true);
 	let pendingDeepLink = $state<string | null>(null);
@@ -240,6 +255,16 @@
 			<main>
 				{@render children()}
 			</main>
+			{#if $rightSidebarOpen}
+				<RightSidebar
+					entries={viewerTabs}
+					activeId={$activeTabId}
+					width={$rightSidebarWidth}
+					onselect={(id) => activateTab(id)}
+					onclose={(id) => closeTab(id)}
+					onwidthchange={(w) => rightSidebarWidth.set(w)}
+				/>
+			{/if}
 		</div>
 	</div>
 	<ResizeHandles {maximized} />
