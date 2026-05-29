@@ -47,6 +47,14 @@
 }
 
 @font-face {
+	font-family: 'Bricolage Grotesque';
+	font-weight: 200 800;
+	font-style: normal;
+	font-display: swap;
+	src: url('/fonts/BricolageGrotesque-VariableFont_opsz,wdth,wght.ttf') format('truetype');
+}
+
+@font-face {
 	font-family: 'Inconsolata NF';
 	src: url('/fonts/InconsolataNerdFont-Regular.ttf') format('truetype');
 	font-weight: 400;
@@ -91,7 +99,7 @@
 	--terminal: #414868;
 	/* Typography */
 	--font-family: 'JetBrains Mono', monospace;
-	--font-ui-family: 'Inconsolata NF', monospace;
+	--font-ui-family: 'Bricolage Grotesque', sans-serif;
 }
 
 /* Tokyo Night Light palette */
@@ -130,6 +138,7 @@ body {
 	font-family: var(--font-ui-family);
 	font-size: 17px;
 	font-weight: 400;
+	font-optical-sizing: auto;
 	text-rendering: geometricPrecision;
 }
 
