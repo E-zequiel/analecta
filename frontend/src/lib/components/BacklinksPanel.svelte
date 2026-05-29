@@ -86,7 +86,7 @@
 				{#if linkedMentions.length === 0}
 					<p class="empty-state">No backlinks found.</p>
 				{:else}
-					{#each linkedMentions as item (item.id)}
+					{#each linkedMentions as item, i (`${item.id}-${i}`)}
 						<button class="backlink-item" onclick={() => onopen?.(item.id, item.name)}>
 							<span class="backlink-name">{item.name}</span>
 							{#if item.context}

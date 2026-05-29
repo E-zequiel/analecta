@@ -1,0 +1,102 @@
+"""Backlink reference extraction from Markdown.
+
+Parses ``[[wikilinks]]`` and inline ``#hashtag`` references, capturing the
+nearest preceding heading and a ±60-character context snippet per occurrence.
+"""
+
+import re
+from dataclasses import dataclass
+
+_WIKILINK_RE = re.compile(r"\[\[([^\[\]|]+?)(?:\|[^\[\]]+?)?\]\]")
+_HASHTAG_RE = re.compile(r"(?<!\S)#([A-Za-z][A-Za-z0-9_]*)(?![A-Za-z0-9_])")
+_HEADING_RE = re.compile(r"^#{1,6}\s+(.+)")
+_FENCE_RE = re.compile(r"^```")
+_FRONTMATTER_RE = re.compile(r"^---\n[\s\S]*?\n---\n", re.MULTILINE)
+
+_CONTEXT_RADIUS = 60
+
+
+@dataclass
+class ParsedRef:
+    """A single wikilink or hashtag reference found in Markdown.
+
+    Attributes:
+        target_text: Lowercased wikilink title or normalized hashtag name.
+        is_hashtag: ``True`` when the reference is a ``#hashtag``.
+        heading: Nearest preceding heading text, or ``None``.
+        pre: Up to 60 chars immediately before the match (stripped).
+        highlight: The matched text as it appears in source (e.g. ``[[Title]]``).
+        post: Up to 60 chars immediately after the match (stripped).
+    """
+
+    target_text: str
+    is_hashtag: bool
+    heading: str | None
+    pre: str
+    highlight: str
+    post: str
+
+
+def parse_refs(markdown: str) -> list[ParsedRef]:
+    """Extract all wikilink and hashtag references from *markdown*.
+
+    Skips YAML frontmatter, code-fence blocks, and heading lines.
+
+    Args:
+        markdown: Raw Markdown text to parse.
+
+    Returns:
+        List of :class:`ParsedRef` objects in document order.
+    """
+    from analecta.markdown.hashtags import normalize_tag
+
+    # Strip YAML frontmatter
+    body = _FRONTMATTER_RE.sub("", markdown, count=1)
+
+    refs: list[ParsedRef] = []
+    current_heading: str | None = None
+    in_fence = False
+
+    for line in body.splitlines():
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+
+        heading_match = _HEADING_RE.match(line)
+        if heading_match:
+            current_heading = heading_match.group(1).strip()
+            continue
+
+        # Wikilinks: [[Title]] or [[Title|Alias]]
+        for m in _WIKILINK_RE.finditer(line):
+            start, end = m.start(), m.end()
+            target = m.group(1).strip()
+            refs.append(
+                ParsedRef(
+                    target_text=target.lower(),
+                    is_hashtag=False,
+                    heading=current_heading,
+                    pre=line[max(0, start - _CONTEXT_RADIUS) : start].strip(),
+                    highlight=m.group(0),
+                    post=line[end : end + _CONTEXT_RADIUS].strip(),
+                )
+            )
+
+        # Hashtags: #word (inline, not heading-style)
+        for m in _HASHTAG_RE.finditer(line):
+            start, end = m.start(), m.end()
+            tag_name = m.group(1)
+            refs.append(
+                ParsedRef(
+                    target_text=normalize_tag(tag_name),
+                    is_hashtag=True,
+                    heading=current_heading,
+                    pre=line[max(0, start - _CONTEXT_RADIUS) : start].strip(),
+                    highlight=f"#{tag_name}",
+                    post=line[end : end + _CONTEXT_RADIUS].strip(),
+                )
+            )
+
+    return refs
