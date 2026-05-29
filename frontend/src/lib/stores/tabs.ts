@@ -1,4 +1,4 @@
-import { writable, get } from 'svelte/store';
+import { writable, get, derived, type Readable } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { activeSection } from './ui';
 import { entries, config } from '$lib/api/client';
@@ -175,6 +175,11 @@ export function syncActiveTabFromPath(pathname: string): void {
 		if ($tabs.find((t) => t.id === tabId)) activeTabId.set(tabId);
 	}
 }
+
+export const activeEntryTitle: Readable<string | null> = derived(
+	[tabs, activeTabId],
+	([$tabs, $id]) => $tabs.find((t) => t.id === $id)?.title ?? null
+);
 
 export function reorderTabs(fromId: string, toId: string): void {
 	tabs.update((ts) => {
