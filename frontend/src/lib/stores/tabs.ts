@@ -12,6 +12,7 @@ export interface AppTab {
 	path: string;
 	sectionId?: string;
 	entryId?: number;
+	sourceType?: string;
 }
 
 const SECTION_LABELS: Record<string, string> = {
@@ -38,11 +39,19 @@ function makeSectionTab(sectionId: string): AppTab {
 export const tabs = writable<AppTab[]>([makeSectionTab('library')]);
 export const activeTabId = writable<string>('section-library');
 
-export function openEntryTab(entryId: number, title: string, background = false): void {
+export function openEntryTab(
+	entryId: number,
+	title: string,
+	background = false,
+	sourceType?: string
+): void {
 	const tabId = `viewer-${entryId}`;
 	tabs.update((ts) => {
 		if (ts.find((t) => t.id === tabId)) return ts;
-		return [...ts, { id: tabId, kind: 'viewer', title, path: `/viewer/${entryId}`, entryId }];
+		return [
+			...ts,
+			{ id: tabId, kind: 'viewer', title, path: `/viewer/${entryId}`, entryId, sourceType },
+		];
 	});
 	if (!background) {
 		activeTabId.set(tabId);
@@ -131,7 +140,7 @@ export function closeTab(tabId: string): void {
 	}
 }
 
-export function navigateInTab(entryId: number, title: string): void {
+export function navigateInTab(entryId: number, title: string, sourceType?: string): void {
 	const tabId = `viewer-${entryId}`;
 	const $tabs = get(tabs);
 	const $activeId = get(activeTabId);
@@ -145,7 +154,7 @@ export function navigateInTab(entryId: number, title: string): void {
 	tabs.update((ts) =>
 		ts.map((t) =>
 			t.id === $activeId
-				? { id: tabId, kind: 'viewer', title, path: `/viewer/${entryId}`, entryId }
+				? { id: tabId, kind: 'viewer', title, path: `/viewer/${entryId}`, entryId, sourceType }
 				: t
 		)
 	);
@@ -153,12 +162,18 @@ export function navigateInTab(entryId: number, title: string): void {
 	void goto(`/viewer/${entryId}`);
 }
 
-export function ensureEntryTab(entryId: number, title: string): void {
+export function ensureEntryTab(entryId: number, title: string, sourceType?: string): void {
 	const tabId = `viewer-${entryId}`;
 	tabs.update((ts) => {
 		const existing = ts.find((t) => t.id === tabId);
-		if (existing) return ts.map((t) => (t.id === tabId ? { ...t, title } : t));
-		return [...ts, { id: tabId, kind: 'viewer', title, path: `/viewer/${entryId}`, entryId }];
+		if (existing)
+			return ts.map((t) =>
+				t.id === tabId ? { ...t, title, sourceType: sourceType ?? t.sourceType } : t
+			);
+		return [
+			...ts,
+			{ id: tabId, kind: 'viewer', title, path: `/viewer/${entryId}`, entryId, sourceType },
+		];
 	});
 	activeTabId.set(tabId);
 }

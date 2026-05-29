@@ -30,11 +30,11 @@
 		{#each entries as entry (entry.id)}
 			<button
 				class="entry-card"
-				onclick={() => navigateInTab(entry.id, entry.title)}
+				onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
 				onmousedown={(e) => {
 					if (e.button === 1) {
 						e.preventDefault();
-						openEntryTab(entry.id, entry.title, true);
+						openEntryTab(entry.id, entry.title, true, entry.source_type);
 					}
 				}}
 				oncontextmenu={(e) => showContextMenu(e, entry)}
