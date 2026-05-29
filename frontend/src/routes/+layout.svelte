@@ -31,6 +31,7 @@
 		activateTab,
 		closeTab,
 		openEntryTab,
+		navigateInSectionTab,
 		syncActiveTabFromPath,
 		restoreTabsFromConfig,
 		saveTabs,
@@ -52,6 +53,13 @@
 		$tabs
 			.filter((t) => t.kind === 'viewer')
 			.map((t) => ({ id: t.id, title: t.title, sourceType: t.sourceType }))
+	);
+
+	const activeViewerEntryId = $derived(
+		(() => {
+			const tab = $tabs.find((t) => t.id === $activeTabId);
+			return tab?.kind === 'viewer' ? (tab.entryId ?? null) : null;
+		})()
 	);
 
 	let timedOut = $state(false);
@@ -263,6 +271,9 @@
 					onselect={(id) => activateTab(id)}
 					onclose={(id) => closeTab(id)}
 					onwidthchange={(w) => rightSidebarWidth.set(w)}
+					activeEntryId={activeViewerEntryId}
+					onbacklinksopen={(id, name) => openEntryTab(id, name)}
+					onbacklinksection={() => navigateInSectionTab('backlinks')}
 				/>
 			{/if}
 		</div>
