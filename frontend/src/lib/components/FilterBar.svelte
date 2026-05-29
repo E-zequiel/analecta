@@ -1,11 +1,11 @@
 <script lang="ts">
-	let { active, onChange }: { active: string; onChange: (status: string) => void } = $props();
+	const { active, onChange }: { active: string; onChange: (status: string) => void } = $props();
 
 	const filters = ['all', 'unread', 'read', 'favorite', 'recommend'];
 </script>
 
 <div class="filter-bar">
-	{#each filters as f}
+	{#each filters as f (f)}
 		<button class:active={active === f} onclick={() => onChange(f)}>
 			{f}
 		</button>
@@ -28,7 +28,10 @@
 		font-family: inherit;
 		font-size: 12px;
 		cursor: pointer;
-		transition: color 0.15s, background 0.15s, border-color 0.15s;
+		transition:
+			color 0.15s,
+			background 0.15s,
+			border-color 0.15s;
 	}
 
 	button:hover {

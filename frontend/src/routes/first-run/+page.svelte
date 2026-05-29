@@ -43,12 +43,7 @@
 		<div class="field">
 			<label for="vault-path">Vault location</label>
 			<div class="path-row">
-				<input
-					id="vault-path"
-					type="text"
-					placeholder="/home/user/vault"
-					bind:value={vaultPath}
-				/>
+				<input id="vault-path" type="text" placeholder="/home/user/vault" bind:value={vaultPath} />
 				<button onclick={browseVault} disabled={browsing}>
 					{browsing ? 'Opening…' : 'Browse…'}
 				</button>

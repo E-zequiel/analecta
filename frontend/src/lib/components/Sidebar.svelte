@@ -18,33 +18,39 @@
 		Plus,
 		Pencil,
 		Trash2,
-		Archive
+		Archive,
 	} from '@lucide/svelte';
 	import { writable } from 'svelte/store';
+	import { SvelteMap } from 'svelte/reactivity';
 	import { clipboardReadText, onTrayPasteUrl } from '$lib/platform';
-	import { entries as entriesApi, tags as tagsApi, extract as extractApi, type Entry, type Tag } from '$lib/api/client';
+	import {
+		entries as entriesApi,
+		tags as tagsApi,
+		extract as extractApi,
+		type Entry,
+		type Tag,
+	} from '$lib/api/client';
 	import {
 		sidebarCollapsed,
 		sidebarWidth,
 		expandedSections,
 		activeSection,
 		selectedTag,
-		searchOpen,
 		lastViewedId,
 		tagsExpanded,
-		expandAllSignal
+		expandAllSignal,
 	} from '$lib/stores/ui';
-	import { navigateInTab, openEntryTab, openSectionTab, navigateInSectionTab } from '$lib/stores/tabs';
+	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
 
 	const SECTIONS = [
-		{ id: 'library',  label: 'LIBRARY',  icon: Library   },
-		{ id: 'unread',   label: 'UNREAD',   icon: EyeClosed },
-		{ id: 'read',     label: 'READ',     icon: Eye       },
-		{ id: 'bookmark', label: 'BOOKMARK', icon: Bookmark  },
-		{ id: 'gem',      label: 'GEM',      icon: Gem       },
-		{ id: 'archive',  label: 'ARCHIVE',  icon: Archive   }
+		{ id: 'library', label: 'LIBRARY', icon: Library },
+		{ id: 'unread', label: 'UNREAD', icon: EyeClosed },
+		{ id: 'read', label: 'READ', icon: Eye },
+		{ id: 'bookmark', label: 'BOOKMARK', icon: Bookmark },
+		{ id: 'gem', label: 'GEM', icon: Gem },
+		{ id: 'archive', label: 'ARCHIVE', icon: Archive },
 	] as const;
 
 	type SectionId = (typeof SECTIONS)[number]['id'];
@@ -57,7 +63,7 @@
 	}
 
 	let counts = $state<Record<string, number>>({});
-	let sectionEntries = $state<Map<string, Entry[]>>(new Map());
+	const sectionEntries = new SvelteMap<string, Entry[]>();
 	let tagList = $state<Tag[]>([]);
 
 	type PasteStatus = 'idle' | 'loading' | 'ok' | 'error';
@@ -68,8 +74,12 @@
 	let urlInputValue = $state('');
 	let urlInputEl = $state<HTMLInputElement | null>(null);
 
-	$effect(() => { if ($urlInputActive && urlInputEl) urlInputEl.focus(); });
-	$effect(() => { if ($sidebarCollapsed) urlInputActive.set(false); });
+	$effect(() => {
+		if ($urlInputActive && urlInputEl) urlInputEl.focus();
+	});
+	$effect(() => {
+		if ($sidebarCollapsed) urlInputActive.set(false);
+	});
 
 	let newTagExpanded = $state(false);
 	let newTagName = $state('');
@@ -91,7 +101,7 @@
 
 	async function fetchSection(id: string) {
 		const data = await entriesApi.list(sectionParams(id));
-		sectionEntries = new Map(sectionEntries).set(id, data);
+		sectionEntries.set(id, data);
 	}
 
 	async function fetchTags() {
@@ -131,11 +141,6 @@
 		refreshAll();
 	});
 
-	function collapseAll() {
-		expandedSections.set(new Set());
-		tagsExpanded.set(false);
-	}
-
 	function expandAll() {
 		expandedSections.set(new Set(SECTIONS.map((s) => s.id)));
 		tagsExpanded.set(true);
@@ -146,7 +151,10 @@
 	let prevExpandSignal = 0;
 	$effect(() => {
 		const n = $expandAllSignal;
-		if (n > prevExpandSignal) { prevExpandSignal = n; expandAll(); }
+		if (n > prevExpandSignal) {
+			prevExpandSignal = n;
+			expandAll();
+		}
 	});
 
 	onMount(() => onTrayPasteUrl(() => openUrlInput()));
@@ -213,7 +221,10 @@
 
 	async function createTag() {
 		const name = newTagName.trim();
-		if (!name) { newTagExpanded = false; return; }
+		if (!name) {
+			newTagExpanded = false;
+			return;
+		}
 		try {
 			await tagsApi.create(name);
 			newTagName = '';
@@ -251,6 +262,7 @@
 
 	function toggleSection(id: string) {
 		expandedSections.update((set) => {
+			// eslint-disable-next-line svelte/prefer-svelte-reactivity -- immutable-update pattern inside store updater, not reactive state
 			const next = new Set(set);
 			if (next.has(id)) {
 				next.delete(id);
@@ -295,7 +307,11 @@
 	style={$sidebarCollapsed ? '' : `width: ${$sidebarWidth}px`}
 >
 	{#if pasteStatus !== 'idle' && !$sidebarCollapsed}
-		<div class="paste-feedback" class:is-ok={pasteStatus === 'ok'} class:is-err={pasteStatus === 'error'}>
+		<div
+			class="paste-feedback"
+			class:is-ok={pasteStatus === 'ok'}
+			class:is-err={pasteStatus === 'error'}
+		>
 			{pasteStatus === 'loading' ? 'Saving…' : pasteMessage}
 		</div>
 	{/if}
@@ -303,7 +319,7 @@
 	<!-- Navigator (hidden when collapsed) -->
 	{#if !$sidebarCollapsed}
 		<nav class="nav" transition:slide={{ duration: 180 }}>
-			{#each SECTIONS as section}
+			{#each SECTIONS as section (section.id)}
 				{@const SectionIcon = section.icon}
 				<div class="section-row">
 					<button
@@ -351,14 +367,25 @@
 
 			<!-- Tags section -->
 			<div class="section-row">
-				<button class="chevron-btn" onclick={toggleTags} title={$tagsExpanded ? 'Collapse' : 'Expand'}>
+				<button
+					class="chevron-btn"
+					onclick={toggleTags}
+					title={$tagsExpanded ? 'Collapse' : 'Expand'}
+				>
 					{#if $tagsExpanded}
 						<ChevronDown size={13} />
 					{:else}
 						<ChevronRight size={13} />
 					{/if}
 				</button>
-				<button class="section-label" class:active={$activeSection === 'tags'} onclick={() => { navigateInSectionTab('tags'); toggleTags(); }}>
+				<button
+					class="section-label"
+					class:active={$activeSection === 'tags'}
+					onclick={() => {
+						navigateInSectionTab('tags');
+						toggleTags();
+					}}
+				>
 					<BrainCircuit size={18} />
 					<span class="label-text">TAGS</span>
 				</button>
@@ -367,7 +394,11 @@
 				{/if}
 				<button
 					class="icon-btn create-tag-btn"
-					onclick={(e) => { e.stopPropagation(); newTagExpanded = !newTagExpanded; if (newTagExpanded) newTagName = ''; }}
+					onclick={(e) => {
+						e.stopPropagation();
+						newTagExpanded = !newTagExpanded;
+						if (newTagExpanded) newTagName = '';
+					}}
 					title="Create tag"
 				>
 					<Plus size={13} />
@@ -383,10 +414,14 @@
 						bind:value={newTagName}
 						bind:this={newTagInputEl}
 						onkeydown={(e) => {
-							if (e.key === 'Enter') { e.preventDefault(); createTag(); }
-							else if (e.key === 'Escape') newTagExpanded = false;
+							if (e.key === 'Enter') {
+								e.preventDefault();
+								createTag();
+							} else if (e.key === 'Escape') newTagExpanded = false;
 						}}
-						onblur={() => { if (!newTagName.trim()) newTagExpanded = false; }}
+						onblur={() => {
+							if (!newTagName.trim()) newTagExpanded = false;
+						}}
 					/>
 				</div>
 			{/if}
@@ -401,8 +436,10 @@
 									type="text"
 									bind:value={editTagValue}
 									onkeydown={(e) => {
-										if (e.key === 'Enter') { e.preventDefault(); renameTag(tag.name, editTagValue); }
-										else if (e.key === 'Escape') editingTag = null;
+										if (e.key === 'Enter') {
+											e.preventDefault();
+											renameTag(tag.name, editTagValue);
+										} else if (e.key === 'Escape') editingTag = null;
 									}}
 									onblur={() => renameTag(tag.name, editTagValue)}
 								/>
@@ -421,14 +458,17 @@
 								<div class="tag-actions">
 									<button
 										class="tag-action-btn"
-										onclick={() => { editingTag = tag.name; editTagValue = tag.name; }}
-										title="Rename tag"
-									><Pencil size={11} /></button>
+										onclick={() => {
+											editingTag = tag.name;
+											editTagValue = tag.name;
+										}}
+										title="Rename tag"><Pencil size={11} /></button
+									>
 									<button
 										class="tag-action-btn"
 										onclick={() => deleteTag(tag.name)}
-										title="Delete tag"
-									><Trash2 size={11} /></button>
+										title="Delete tag"><Trash2 size={11} /></button
+									>
 								</div>
 							</div>
 						{/if}
@@ -450,16 +490,27 @@
 				bind:value={urlInputValue}
 				bind:this={urlInputEl}
 				onkeydown={(e) => {
-					if (e.key === 'Enter') { e.preventDefault(); submitUrl(); }
-					else if (e.key === 'Escape') { urlInputActive.set(false); }
+					if (e.key === 'Enter') {
+						e.preventDefault();
+						submitUrl();
+					} else if (e.key === 'Escape') {
+						urlInputActive.set(false);
+					}
 				}}
-				onblur={() => { if (!urlInputValue.trim()) urlInputActive.set(false); }}
+				onblur={() => {
+					if (!urlInputValue.trim()) urlInputActive.set(false);
+				}}
 			/>
 		{:else}
 			<button class="icon-btn" onclick={() => navigateInSectionTab('collecta')} title="Collecta">
 				<Origami size={18} />
 			</button>
-			<button class="icon-btn" onclick={goLast} title="Last viewed" disabled={$lastViewedId === null}>
+			<button
+				class="icon-btn"
+				onclick={goLast}
+				title="Last viewed"
+				disabled={$lastViewedId === null}
+			>
 				<BookOpenText size={18} />
 			</button>
 			<button
@@ -473,7 +524,12 @@
 			>
 				<ClipboardPaste size={18} />
 			</button>
-			<a href="/settings" class="icon-btn settings-btn" class:active={isSettingsActive} title="Settings">
+			<a
+				href="/settings"
+				class="icon-btn settings-btn"
+				class:active={isSettingsActive}
+				title="Settings"
+			>
 				<Settings size={18} />
 			</a>
 		{/if}
@@ -509,7 +565,9 @@
 		border-radius: 4px;
 		color: var(--fg-muted);
 		cursor: pointer;
-		transition: color 0.15s, background 0.15s;
+		transition:
+			color 0.15s,
+			background 0.15s;
 		flex-shrink: 0;
 		text-decoration: none;
 	}
@@ -528,16 +586,25 @@
 		cursor: not-allowed;
 	}
 
-	.paste-btn.paste-ok { color: #9ece6a; }
-	.paste-btn.paste-err { color: var(--accent); }
+	.paste-btn.paste-ok {
+		color: #9ece6a;
+	}
+	.paste-btn.paste-err {
+		color: var(--accent);
+	}
 	.paste-btn.paste-loading {
 		color: var(--fg-muted);
 		animation: pulse 1s ease-in-out infinite;
 	}
 
 	@keyframes pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.4; }
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.4;
+		}
 	}
 
 	.paste-feedback {
@@ -550,8 +617,12 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
-	.paste-feedback.is-ok { color: #9ece6a; }
-	.paste-feedback.is-err { color: var(--accent); }
+	.paste-feedback.is-ok {
+		color: #9ece6a;
+	}
+	.paste-feedback.is-err {
+		color: var(--accent);
+	}
 
 	.nav {
 		flex: 1;
@@ -582,7 +653,9 @@
 		transition: color 0.12s;
 	}
 
-	.chevron-btn:hover { color: var(--fg); }
+	.chevron-btn:hover {
+		color: var(--fg);
+	}
 
 	.section-label {
 		display: flex;
@@ -602,7 +675,9 @@
 		letter-spacing: 0.05em;
 		cursor: pointer;
 		text-align: left;
-		transition: color 0.12s, background 0.12s;
+		transition:
+			color 0.12s,
+			background 0.12s;
 	}
 
 	.section-label:hover {
@@ -610,7 +685,9 @@
 		background: var(--bg-highlight);
 	}
 
-	.section-label.active { color: var(--accent); }
+	.section-label.active {
+		color: var(--accent);
+	}
 
 	.label-text {
 		overflow: hidden;
@@ -646,7 +723,9 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		transition: color 0.12s, background 0.12s;
+		transition:
+			color 0.12s,
+			background 0.12s;
 	}
 
 	.entry-item:hover {
@@ -750,7 +829,9 @@
 		cursor: pointer;
 		text-align: left;
 		overflow: hidden;
-		transition: color 0.12s, background 0.12s;
+		transition:
+			color 0.12s,
+			background 0.12s;
 	}
 
 	.tag-item-label:hover {

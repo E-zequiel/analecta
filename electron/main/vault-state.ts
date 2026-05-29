@@ -4,11 +4,11 @@ let vaultPath: string | null = null;
 const allowedFontPaths = new Set<string>();
 
 export function setVaultPath(p: string): void {
-  vaultPath = path.resolve(p);
+	vaultPath = path.resolve(p);
 }
 
 export function getVaultPath(): string | null {
-  return vaultPath;
+	return vaultPath;
 }
 
 /**
@@ -16,25 +16,25 @@ export function getVaultPath(): string | null {
  * Must be called for every read-file / write-file IPC handler argument.
  */
 export function assertVaultPath(filePath: string): void {
-  if (!vaultPath) throw new Error('vault path not set');
-  const resolved = path.resolve(filePath);
-  if (resolved !== vaultPath && !resolved.startsWith(vaultPath + path.sep)) {
-    throw new Error('path outside vault');
-  }
+	if (!vaultPath) throw new Error('vault path not set');
+	const resolved = path.resolve(filePath);
+	if (resolved !== vaultPath && !resolved.startsWith(vaultPath + path.sep)) {
+		throw new Error('path outside vault');
+	}
 }
 
 /** No vault restriction — only validates that the string is non-empty. Used for file-exists. */
 export function assertExistsPath(filePath: string): void {
-  if (typeof filePath !== 'string' || !filePath.trim()) {
-    throw new Error('invalid path');
-  }
+	if (typeof filePath !== 'string' || !filePath.trim()) {
+		throw new Error('invalid path');
+	}
 }
 
 /** Tracks font files the user explicitly selected via open-dialog (outside vault scope). */
 export function addAllowedFontPath(p: string): void {
-  allowedFontPaths.add(path.resolve(p));
+	allowedFontPaths.add(path.resolve(p));
 }
 
 export function isAllowedFontPath(p: string): boolean {
-  return allowedFontPaths.has(path.resolve(p));
+	return allowedFontPaths.has(path.resolve(p));
 }

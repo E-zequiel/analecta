@@ -71,16 +71,13 @@
 {#if $contextMenu.visible && $contextMenu.entry}
 	<div
 		class="context-menu"
-		style:left="{$contextMenu.x}px" style:top="{$contextMenu.y}px"
+		style:left="{$contextMenu.x}px"
+		style:top="{$contextMenu.y}px"
 		bind:this={menuEl}
 		role="menu"
 	>
-		<button class="menu-item" onclick={copyUrl} role="menuitem">
-			Copy article URL
-		</button>
-		<button class="menu-item" onclick={openInBrowser} role="menuitem">
-			Open in browser
-		</button>
+		<button class="menu-item" onclick={copyUrl} role="menuitem"> Copy article URL </button>
+		<button class="menu-item" onclick={openInBrowser} role="menuitem"> Open in browser </button>
 		<div class="separator"></div>
 		<button class="menu-item" onclick={revealFile} role="menuitem">
 			Show in system explorer
@@ -90,9 +87,7 @@
 			{$contextMenu.entry?.flags?.includes('archive') ? 'Unarchive' : 'Archive'}
 		</button>
 		<div class="separator"></div>
-		<button class="menu-item danger" onclick={deleteEntry} role="menuitem">
-			Delete
-		</button>
+		<button class="menu-item danger" onclick={deleteEntry} role="menuitem"> Delete </button>
 	</div>
 {/if}
 
@@ -120,7 +115,9 @@
 		font-size: 0.82rem;
 		text-align: left;
 		cursor: pointer;
-		transition: background 0.1s, color 0.1s;
+		transition:
+			background 0.1s,
+			color 0.1s;
 	}
 
 	.menu-item:hover {

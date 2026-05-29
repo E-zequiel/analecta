@@ -3,20 +3,20 @@
 	import { navigateInTab, openEntryTab } from '$lib/stores/tabs';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 
-	let { entries, loading = false }: { entries: Entry[]; loading?: boolean } = $props();
+	const { entries, loading = false }: { entries: Entry[]; loading?: boolean } = $props();
 
 	const sourceColors: Record<string, string> = {
 		article: 'var(--accent)',
 		youtube: 'var(--red)',
 		substack: 'var(--accent-warm)',
-		x: 'var(--fg-muted)'
+		x: 'var(--fg-muted)',
 	};
 
 	function formatDate(iso: string): string {
 		return new Date(iso).toLocaleDateString(undefined, {
 			year: 'numeric',
 			month: 'short',
-			day: 'numeric'
+			day: 'numeric',
 		});
 	}
 </script>
@@ -50,7 +50,7 @@
 					{#if entry.status !== 'unread'}
 						<span class="status">{entry.status}</span>
 					{/if}
-					{#each entry.tags as tag}
+					{#each entry.tags as tag (tag)}
 						<span class="tag">#{tag}</span>
 					{/each}
 				</div>
@@ -84,7 +84,9 @@
 		cursor: pointer;
 		text-align: left;
 		font-family: inherit;
-		transition: border-color 0.15s, background 0.15s;
+		transition:
+			border-color 0.15s,
+			background 0.15s;
 	}
 
 	.entry-card:hover {

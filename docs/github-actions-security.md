@@ -8,7 +8,7 @@ This document explains the security controls applied to all CI/CD workflows in t
 
 GitHub Actions workflows run arbitrary code with access to repository secrets. The primary threat vectors are:
 
-1. **Supply chain compromise of third-party actions** — a malicious actor pushes a new release to a dependency action (e.g., `tauri-apps/tauri-action`), which then exfiltrates secrets or tampers with build artifacts during the next workflow run.
+1. **Supply chain compromise of third-party actions** — a malicious actor pushes a new release to a dependency action (e.g., `actions/upload-artifact`), which then exfiltrates secrets or tampers with build artifacts during the next workflow run.
 2. **Secret exfiltration** — overly broad permissions or misplaced secrets allow a compromised step to read values it should not see.
 3. **Fork poisoning** — a fork triggers a workflow that references secrets not available in the fork context, producing misleading errors or enabling a confused-deputy attack.
 4. **Race conditions in release state** — concurrent release jobs produce incomplete GitHub Releases with partial artifact sets.

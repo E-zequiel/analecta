@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { X } from '@lucide/svelte';
-	import { tabs, activeTabId, activateTab, closeTab, reorderTabs, saveTabs } from '$lib/stores/tabs';
+	import {
+		tabs,
+		activeTabId,
+		activateTab,
+		closeTab,
+		reorderTabs,
+		saveTabs,
+	} from '$lib/stores/tabs';
 
 	let draggedId = $state<string | null>(null);
 	let dragOverId = $state<string | null>(null);
@@ -8,13 +15,13 @@
 
 <div class="tab-bar" role="tablist">
 	{#each $tabs as tab (tab.id)}
-		<!-- svelte-ignore a11y_interactive_supports_focus -->
 		<div
 			class="tab"
 			class:active={$activeTabId === tab.id}
 			class:drag-over={dragOverId === tab.id && draggedId !== tab.id}
 			role="tab"
 			aria-selected={$activeTabId === tab.id}
+			tabindex="0"
 			draggable={true}
 			onclick={() => activateTab(tab.id)}
 			onmousedown={(e) => {
@@ -99,7 +106,9 @@
 		max-width: 200px;
 		height: 33px;
 		position: relative;
-		transition: background 0.12s, color 0.12s;
+		transition:
+			background 0.12s,
+			color 0.12s;
 		user-select: none;
 	}
 
@@ -139,7 +148,9 @@
 		color: var(--fg-muted);
 		cursor: pointer;
 		flex-shrink: 0;
-		transition: color 0.12s, background 0.12s;
+		transition:
+			color 0.12s,
+			background 0.12s;
 	}
 
 	.tab:hover .tab-close {

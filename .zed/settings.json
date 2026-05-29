@@ -21,6 +21,26 @@
         "source.fixAll.ruff": true,
       },
     },
+    "TypeScript": {
+      "language_servers": ["vtsls", "eslint"],
+      "format_on_save": "on",
+      "formatter": {
+        "external": {
+          "command": "pnpm",
+          "arguments": ["exec", "prettier", "--stdin-filepath", "{buffer_path}"],
+        },
+      },
+    },
+    "Svelte": {
+      "language_servers": ["svelte-language-server", "eslint"],
+      "format_on_save": "on",
+      "formatter": {
+        "external": {
+          "command": "pnpm",
+          "arguments": ["exec", "prettier", "--stdin-filepath", "{buffer_path}"],
+        },
+      },
+    },
   },
   "lsp": {
     "basedpyright": {
@@ -38,17 +58,6 @@
         },
       },
     },
-    "rust-analyzer": {
-      "initialization_options": {
-        "inlayHints": {
-          "lifetimeElisionHints": {
-            "enable": "skip_trivial",
-            "useParameterNames": true,
-          },
-          "closureReturnTypeHints": { "enable": "always" },
-        },
-      },
-    },
     "vtsls": {
       "settings": {
         "typescript": {
@@ -60,6 +69,20 @@
         },
       },
     },
+    "svelte-language-server": {
+      "settings": {
+        "svelte": {
+          "plugin": {
+            "typescript": {
+              "inlayHints": {
+                "parameterNames": { "enabled": "all" },
+                "functionLikeReturnTypes": { "enabled": true },
+                "variableTypes": { "enabled": true },
+              },
+            },
+          },
+        },
+      },
+    },
   },
 }
-

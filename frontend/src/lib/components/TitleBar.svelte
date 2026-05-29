@@ -1,6 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Minus, Square, X, ChevronsRightLeft, ChevronsDownUp, ChevronsUpDown, ScanSearch } from '@lucide/svelte';
+	import {
+		Minus,
+		Square,
+		X,
+		ChevronsRightLeft,
+		ChevronsDownUp,
+		ChevronsUpDown,
+		ScanSearch,
+	} from '@lucide/svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import {
 		windowMinimize,
@@ -8,7 +16,7 @@
 		windowClose,
 		windowStartMove,
 		windowIsMaximized,
-		onWindowMaximized
+		onWindowMaximized,
 	} from '$lib/platform';
 	import {
 		sidebarCollapsed,
@@ -16,7 +24,7 @@
 		searchOpen,
 		expandedSections,
 		tagsExpanded,
-		expandAllSignal
+		expandAllSignal,
 	} from '$lib/stores/ui';
 
 	let maximized = $state(false);
@@ -125,7 +133,9 @@
 		border-radius: 4px;
 		color: var(--fg-muted);
 		cursor: pointer;
-		transition: background 0.12s, color 0.12s;
+		transition:
+			background 0.12s,
+			color 0.12s;
 		flex-shrink: 0;
 	}
 
@@ -161,7 +171,9 @@
 		border-radius: 4px;
 		color: var(--fg-muted);
 		cursor: pointer;
-		transition: background 0.12s, color 0.12s;
+		transition:
+			background 0.12s,
+			color 0.12s;
 		flex-shrink: 0;
 	}
 

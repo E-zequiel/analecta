@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { downloadAndInstallUpdate, relaunch } from '$lib/platform';
 
-	let { version }: { version: string } = $props();
+	const { version }: { version: string } = $props();
 	let installing = $state(false);
 
 	async function installUpdate() {

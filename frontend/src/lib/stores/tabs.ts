@@ -22,7 +22,7 @@ const SECTION_LABELS: Record<string, string> = {
 	gem: 'GEM',
 	archive: 'ARCHIVE',
 	tags: 'TAGS',
-	collecta: 'COLLECTA'
+	collecta: 'COLLECTA',
 };
 
 function makeSectionTab(sectionId: string): AppTab {
@@ -31,7 +31,7 @@ function makeSectionTab(sectionId: string): AppTab {
 		kind: 'section',
 		title: SECTION_LABELS[sectionId] ?? sectionId.toUpperCase(),
 		path: '/',
-		sectionId
+		sectionId,
 	};
 }
 
@@ -46,7 +46,7 @@ export function openEntryTab(entryId: number, title: string, background = false)
 	});
 	if (!background) {
 		activeTabId.set(tabId);
-		goto(`/viewer/${entryId}`);
+		void goto(`/viewer/${entryId}`);
 	}
 }
 
@@ -59,7 +59,7 @@ export function navigateInSectionTab(sectionId: string): void {
 	if ($tabs.find((t) => t.id === tabId)) {
 		activeTabId.set(tabId);
 		activeSection.set(sectionId);
-		goto('/');
+		void goto('/');
 		return;
 	}
 
@@ -69,13 +69,13 @@ export function navigateInSectionTab(sectionId: string): void {
 		tabs.update((ts) =>
 			ts.map((t) =>
 				t.id === anySection.id
-					? { id: tabId, kind: 'section' as TabKind, title: label, path: '/', sectionId }
+					? { id: tabId, kind: 'section', title: label, path: '/', sectionId }
 					: t
 			)
 		);
 		activeTabId.set(tabId);
 		activeSection.set(sectionId);
-		goto('/');
+		void goto('/');
 		return;
 	}
 
@@ -83,7 +83,7 @@ export function navigateInSectionTab(sectionId: string): void {
 	tabs.update((ts) => [...ts, makeSectionTab(sectionId)]);
 	activeTabId.set(tabId);
 	activeSection.set(sectionId);
-	goto('/');
+	void goto('/');
 }
 
 export function openSectionTab(sectionId: string): void {
@@ -93,7 +93,7 @@ export function openSectionTab(sectionId: string): void {
 	}
 	activeTabId.set(tabId);
 	activeSection.set(sectionId);
-	goto('/');
+	void goto('/');
 }
 
 export function activateTab(tabId: string): void {
@@ -101,7 +101,7 @@ export function activateTab(tabId: string): void {
 	if (!tab) return;
 	activeTabId.set(tabId);
 	if (tab.kind === 'section' && tab.sectionId) activeSection.set(tab.sectionId);
-	goto(tab.path);
+	void goto(tab.path);
 }
 
 export function closeTab(tabId: string): void {
@@ -116,7 +116,7 @@ export function closeTab(tabId: string): void {
 			tabs.set([fallback]);
 			activeTabId.set(fallback.id);
 			activeSection.set('collecta');
-			goto('/');
+			void goto('/');
 		}
 		return;
 	}
@@ -127,7 +127,7 @@ export function closeTab(tabId: string): void {
 		const next = newTabs[Math.min(idx, newTabs.length - 1)];
 		activeTabId.set(next.id);
 		if (next.kind === 'section' && next.sectionId) activeSection.set(next.sectionId);
-		goto(next.path);
+		void goto(next.path);
 	}
 }
 
@@ -145,12 +145,12 @@ export function navigateInTab(entryId: number, title: string): void {
 	tabs.update((ts) =>
 		ts.map((t) =>
 			t.id === $activeId
-				? { id: tabId, kind: 'viewer' as TabKind, title, path: `/viewer/${entryId}`, entryId }
+				? { id: tabId, kind: 'viewer', title, path: `/viewer/${entryId}`, entryId }
 				: t
 		)
 	);
 	activeTabId.set(tabId);
-	goto(`/viewer/${entryId}`);
+	void goto(`/viewer/${entryId}`);
 }
 
 export function ensureEntryTab(entryId: number, title: string): void {
@@ -189,16 +189,13 @@ export function reorderTabs(fromId: string, toId: string): void {
 }
 
 export function saveTabs(): void {
-	config.update({
+	void config.update({
 		open_tab_ids: get(tabs).map((t) => t.id),
-		active_tab_id: get(activeTabId)
+		active_tab_id: get(activeTabId),
 	});
 }
 
-export async function restoreTabsFromConfig(
-	tabIds: string[],
-	activeId: string
-): Promise<void> {
+export async function restoreTabsFromConfig(tabIds: string[], activeId: string): Promise<void> {
 	const restored: AppTab[] = [];
 	for (const id of tabIds) {
 		if (id.startsWith('section-')) {
@@ -213,7 +210,7 @@ export async function restoreTabsFromConfig(
 						kind: 'viewer',
 						title: entry.title,
 						path: `/viewer/${entryId}`,
-						entryId
+						entryId,
 					});
 				} catch {
 					// entry was deleted — skip silently

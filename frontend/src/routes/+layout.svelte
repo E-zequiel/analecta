@@ -3,7 +3,19 @@
 	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import { afterNavigate } from '$app/navigation';
-	import { getSidecarPort, onSidecarReady, onDeepLink, getInitialDeepLink, checkUpdate, onUpdateAvailable, notify, updateVaultScope, setCloseToTray, onWindowMaximized, windowIsMaximized } from '$lib/platform';
+	import {
+		getSidecarPort,
+		onSidecarReady,
+		onDeepLink,
+		getInitialDeepLink,
+		checkUpdate,
+		onUpdateAvailable,
+		notify,
+		updateVaultScope,
+		setCloseToTray,
+		onWindowMaximized,
+		windowIsMaximized,
+	} from '$lib/platform';
 	import { port } from '$lib/stores/sidecar';
 	import { entryAddedTick } from '$lib/stores/sse';
 	import { sidebarCollapsed, sidebarWidth, searchOpen } from '$lib/stores/ui';
@@ -14,7 +26,7 @@
 		openEntryTab,
 		syncActiveTabFromPath,
 		restoreTabsFromConfig,
-		saveTabs
+		saveTabs,
 	} from '$lib/stores/tabs';
 	import { pkm, config as configApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
@@ -26,7 +38,7 @@
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 
-	let { children } = $props();
+	const { children } = $props();
 	let timedOut = $state(false);
 	let isFirstRun = $state(true);
 	let pendingDeepLink = $state<string | null>(null);
@@ -53,7 +65,6 @@
 		window.addEventListener('pointerup', onUp);
 	}
 
-
 	async function handleDeepLink(rawUrl: string) {
 		pendingDeepLink = rawUrl;
 	}
@@ -64,7 +75,10 @@
 		}, 10_000);
 
 		getSidecarPort()
-			.then((p) => { clearTimeout(timeout); port.set(p); })
+			.then((p) => {
+				clearTimeout(timeout);
+				port.set(p);
+			})
 			.catch(() => {});
 
 		const unlistenSidecar = onSidecarReady((p) => {
@@ -72,9 +86,11 @@
 			port.set(p);
 		});
 
-		getInitialDeepLink().then((url) => {
-			if (url) handleDeepLink(url);
-		}).catch(() => {});
+		getInitialDeepLink()
+			.then((url) => {
+				if (url) handleDeepLink(url);
+			})
+			.catch(() => {});
 
 		const unlistenDeepLink = onDeepLink(handleDeepLink);
 
@@ -105,8 +121,14 @@
 		}
 		window.addEventListener('keydown', handleKey);
 
-		windowIsMaximized().then((v) => { maximized = v; }).catch(() => {});
-		const unlistenMaximized = onWindowMaximized((v) => { maximized = v; });
+		windowIsMaximized()
+			.then((v) => {
+				maximized = v;
+			})
+			.catch(() => {});
+		const unlistenMaximized = onWindowMaximized((v) => {
+			maximized = v;
+		});
 
 		return () => {
 			clearTimeout(timeout);
@@ -149,7 +171,14 @@
 				setCloseToTray(cfg.close_to_tray).catch(() => {});
 				if (!cfg.first_run) {
 					updateVaultScope(cfg.vault_path).catch(() => {});
-					applyFont(cfg.font_variant, cfg.custom_font_path, cfg.ui_font_size, cfg.reading_font_size, cfg.theme, cfg.accent_color);
+					applyFont(
+						cfg.font_variant,
+						cfg.custom_font_path,
+						cfg.ui_font_size,
+						cfg.reading_font_size,
+						cfg.theme,
+						cfg.accent_color
+					);
 					await restoreTabsFromConfig(cfg.open_tab_ids, cfg.active_tab_id);
 				}
 			})

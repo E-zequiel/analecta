@@ -35,6 +35,7 @@
 	});
 
 	function extractHashtags(text: string): string[] {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local algorithmic variable, not reactive state
 		const tags = new Set<string>();
 		for (const line of text.split('\n')) {
 			// Skip markdown headings (# Heading) but not hashtag-only lines (#tag1 #tag2)
@@ -65,7 +66,7 @@
 			await writeTextFile(entry.file_path, content);
 			await entriesApi.patch(entry.id, {
 				tags: extractHashtags(content),
-				fts: { title: entry.title, content }
+				fts: { title: entry.title, content },
 			});
 			originalContent = content;
 			entryChangedTick.update((n) => n + 1);
@@ -117,8 +118,8 @@
 			</div>
 			{#if showPreview}
 				<div class="pane preview-pane">
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div class="markdown-body preview-content">
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -- markdown-it output, not raw user/network HTML -->
 						{@html previewHtml}
 					</div>
 				</div>
@@ -165,7 +166,10 @@
 		font-size: 12px;
 		cursor: pointer;
 		white-space: nowrap;
-		transition: color 0.15s, background 0.15s, border-color 0.15s;
+		transition:
+			color 0.15s,
+			background 0.15s,
+			border-color 0.15s;
 	}
 
 	.btn:hover:not(:disabled) {

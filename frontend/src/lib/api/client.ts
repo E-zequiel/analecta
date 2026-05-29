@@ -91,14 +91,14 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 		...opts,
 		headers: {
 			...(hasBody ? { 'Content-Type': 'application/json' } : {}),
-			...opts.headers
-		}
+			...opts.headers,
+		},
 	});
 
 	if (!res.ok) {
 		let detail = res.statusText;
 		try {
-			const body = await res.json();
+			const body = (await res.json()) as Record<string, unknown>;
 			if (typeof body.detail === 'string') detail = body.detail;
 		} catch {
 			// ignore parse errors
@@ -115,7 +115,15 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 // ---------------------------------------------------------------------------
 
 export const entries = {
-	list(params?: { status?: string; flag?: string; exclude_flag?: string; tag?: string; q?: string; sort_by?: 'title' | 'created_at'; sort_dir?: 'asc' | 'desc' }): Promise<Entry[]> {
+	list(params?: {
+		status?: string;
+		flag?: string;
+		exclude_flag?: string;
+		tag?: string;
+		q?: string;
+		sort_by?: 'title' | 'created_at';
+		sort_dir?: 'asc' | 'desc';
+	}): Promise<Entry[]> {
 		const filtered = Object.entries(params ?? {}).filter(
 			(pair): pair is [string, string] => pair[1] !== undefined
 		);
@@ -140,13 +148,13 @@ export const entries = {
 	patch(id: number, body: EntryPatch): Promise<Entry> {
 		return apiFetch<Entry>(`/entries/${id}`, {
 			method: 'PATCH',
-			body: JSON.stringify(body)
+			body: JSON.stringify(body),
 		});
 	},
 
 	delete(id: number): Promise<void> {
 		return apiFetch<void>(`/entries/${id}`, { method: 'DELETE' });
-	}
+	},
 };
 
 export const tags = {
@@ -157,29 +165,29 @@ export const tags = {
 	create(name: string): Promise<Tag> {
 		return apiFetch<Tag>('/tags', {
 			method: 'POST',
-			body: JSON.stringify({ name })
+			body: JSON.stringify({ name }),
 		});
 	},
 
 	rename(name: string, newName: string): Promise<Tag> {
 		return apiFetch<Tag>(`/tags/${encodeURIComponent(name)}`, {
 			method: 'PUT',
-			body: JSON.stringify({ new_name: newName })
+			body: JSON.stringify({ new_name: newName }),
 		});
 	},
 
 	delete(name: string): Promise<void> {
 		return apiFetch<void>(`/tags/${encodeURIComponent(name)}`, { method: 'DELETE' });
-	}
+	},
 };
 
 export const extract = {
 	url(url: string): Promise<Entry> {
 		return apiFetch<Entry>('/extract', {
 			method: 'POST',
-			body: JSON.stringify({ url })
+			body: JSON.stringify({ url }),
 		});
-	}
+	},
 };
 
 export const config = {
@@ -190,15 +198,13 @@ export const config = {
 	update(body: AppConfigUpdate): Promise<AppConfig> {
 		return apiFetch<AppConfig>('/config', {
 			method: 'PUT',
-			body: JSON.stringify(body)
+			body: JSON.stringify(body),
 		});
-	}
+	},
 };
 
 export const pkm = {
 	parseUrl(url: string): Promise<{ entry_id: number | null }> {
-		return apiFetch<{ entry_id: number | null }>(
-			`/pkm/parse-url?url=${encodeURIComponent(url)}`
-		);
-	}
+		return apiFetch<{ entry_id: number | null }>(`/pkm/parse-url?url=${encodeURIComponent(url)}`);
+	},
 };
