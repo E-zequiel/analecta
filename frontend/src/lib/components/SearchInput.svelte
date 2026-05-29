@@ -1,5 +1,5 @@
 <script lang="ts">
-	let { onSearch }: { onSearch: (q: string) => void } = $props();
+	const { onSearch }: { onSearch: (q: string) => void } = $props();
 
 	let value = $state('');
 	let timer: ReturnType<typeof setTimeout>;
@@ -18,13 +18,7 @@
 </script>
 
 <div class="search-wrap">
-	<input
-		type="search"
-		placeholder="Search…"
-		{value}
-		oninput={handleInput}
-		class="search-input"
-	/>
+	<input type="search" placeholder="Search…" {value} oninput={handleInput} class="search-input" />
 	{#if value}
 		<button class="clear-btn" onclick={handleClear} aria-label="Clear search">✕</button>
 	{/if}

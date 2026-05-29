@@ -4,10 +4,10 @@ import { port } from '$lib/stores/sidecar';
 type AccentKey = 'red' | 'yellow' | 'green' | 'cyan';
 
 const ACCENT_MAP: Record<AccentKey, { dark: [string, string]; light: [string, string] }> = {
-	red:    { dark: ['#ff757f', '#db4b4b'], light: ['#c52f65', '#9e1e52'] },
+	red: { dark: ['#ff757f', '#db4b4b'], light: ['#c52f65', '#9e1e52'] },
 	yellow: { dark: ['#e0af68', '#c99a4b'], light: ['#a07025', '#7d5512'] },
-	green:  { dark: ['#9ece6a', '#73a85a'], light: ['#587539', '#3d5427'] },
-	cyan:   { dark: ['#7dcfff', '#5aafc5'], light: ['#0f4b6e', '#08364f'] },
+	green: { dark: ['#9ece6a', '#73a85a'], light: ['#587539', '#3d5427'] },
+	cyan: { dark: ['#7dcfff', '#5aafc5'], light: ['#0f4b6e', '#08364f'] },
 };
 
 async function loadCustomFont(fontPath: string): Promise<string | null> {
@@ -31,7 +31,7 @@ async function loadCustomFont(fontPath: string): Promise<string | null> {
 export async function applyFont(
 	variant: 'regular' | 'nerd' | 'custom',
 	customPath: string | null,
-	uiFontSize: number = 16.0,
+	_uiFontSize: number = 16.0,
 	readingFontSize: number = 17.0,
 	theme: 'dark' | 'light' = 'dark',
 	accentColor: AccentKey = 'yellow'
@@ -54,6 +54,8 @@ export async function applyFont(
 		}
 	}
 	const family =
-		variant === 'nerd' ? "'Inconsolata NF', 'JetBrains Mono', monospace" : "'JetBrains Mono', monospace";
+		variant === 'nerd'
+			? "'Inconsolata NF', 'JetBrains Mono', monospace"
+			: "'JetBrains Mono', monospace";
 	root.style.setProperty('--font-family', family);
 }

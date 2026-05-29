@@ -7,7 +7,7 @@
 		tags as tagsApi,
 		config as configApi,
 		type Entry,
-		type Tag
+		type Tag,
 	} from '$lib/api/client';
 	import { activeSection, selectedTag, lastViewedId } from '$lib/stores/ui';
 	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
@@ -50,7 +50,7 @@
 		{ id: 'bookmark', label: 'BOOKMARK' },
 		{ id: 'gem', label: 'GEM' },
 		{ id: 'archive', label: 'ARCHIVE' },
-		{ id: 'tags', label: 'TAGS' }
+		{ id: 'tags', label: 'TAGS' },
 	];
 
 	function sectionListParams(
@@ -116,11 +116,31 @@
 	$effect(() => {
 		if ($activeSection !== 'collecta') return;
 		const vid = $lastViewedId;
-		entriesApi.getMetrics().then((m) => { collectaMetrics = m; }).catch(() => {});
-		entriesApi.getCounts().then((c) => { collectaCounts = c; }).catch(() => {});
-		tagsApi.list().then((t) => { collectaTagGrid = t; }).catch(() => {});
+		entriesApi
+			.getMetrics()
+			.then((m) => {
+				collectaMetrics = m;
+			})
+			.catch(() => {});
+		entriesApi
+			.getCounts()
+			.then((c) => {
+				collectaCounts = c;
+			})
+			.catch(() => {});
+		tagsApi
+			.list()
+			.then((t) => {
+				collectaTagGrid = t;
+			})
+			.catch(() => {});
 		if (vid !== null) {
-			entriesApi.get(vid).then((e) => { lastOpenedEntry = e; }).catch(() => {});
+			entriesApi
+				.get(vid)
+				.then((e) => {
+					lastOpenedEntry = e;
+				})
+				.catch(() => {});
 		}
 	});
 
@@ -211,23 +231,49 @@
 		prevAddedTick = tick;
 		const section = untrack(() => $activeSection);
 		if (section === 'tags') {
-			tagsApi.list().then((d) => { tagGrid = d; }).catch(() => {});
+			tagsApi
+				.list()
+				.then((d) => {
+					tagGrid = d;
+				})
+				.catch(() => {});
 			if (untrack(() => expandedTag)) {
 				entriesApi
 					.list({ tag: untrack(() => expandedTag)! })
-					.then((d) => { tagEntries = d; })
+					.then((d) => {
+						tagEntries = d;
+					})
 					.catch(() => {});
 			}
 			return;
 		}
 		if (section === 'collecta') {
-			entriesApi.getCounts().then((c) => { collectaCounts = c; }).catch(() => {});
-			tagsApi.list().then((t) => { collectaTagGrid = t; }).catch(() => {});
+			entriesApi
+				.getCounts()
+				.then((c) => {
+					collectaCounts = c;
+				})
+				.catch(() => {});
+			tagsApi
+				.list()
+				.then((t) => {
+					collectaTagGrid = t;
+				})
+				.catch(() => {});
 			const expanded = untrack(() => collectaExpanded);
 			if (expanded && expanded !== 'tags') {
 				entriesApi
-					.list(sectionListParams(expanded, undefined, untrack(() => sortBy), untrack(() => sortDir)))
-					.then((d) => { collectaEntries = d; })
+					.list(
+						sectionListParams(
+							expanded,
+							undefined,
+							untrack(() => sortBy),
+							untrack(() => sortDir)
+						)
+					)
+					.then((d) => {
+						collectaEntries = d;
+					})
 					.catch(() => {});
 			}
 			return;
@@ -237,7 +283,9 @@
 		const dir = untrack(() => sortDir);
 		entriesApi
 			.list(sectionListParams(section, tag, by, dir))
-			.then((data) => { entryList = data; })
+			.then((data) => {
+				entryList = data;
+			})
 			.catch(() => {});
 	});
 
@@ -248,23 +296,49 @@
 		prevChangedTick = tick;
 		const section = untrack(() => $activeSection);
 		if (section === 'tags') {
-			tagsApi.list().then((d) => { tagGrid = d; }).catch(() => {});
+			tagsApi
+				.list()
+				.then((d) => {
+					tagGrid = d;
+				})
+				.catch(() => {});
 			if (untrack(() => expandedTag)) {
 				entriesApi
 					.list({ tag: untrack(() => expandedTag)! })
-					.then((d) => { tagEntries = d; })
+					.then((d) => {
+						tagEntries = d;
+					})
 					.catch(() => {});
 			}
 			return;
 		}
 		if (section === 'collecta') {
-			entriesApi.getCounts().then((c) => { collectaCounts = c; }).catch(() => {});
-			tagsApi.list().then((t) => { collectaTagGrid = t; }).catch(() => {});
+			entriesApi
+				.getCounts()
+				.then((c) => {
+					collectaCounts = c;
+				})
+				.catch(() => {});
+			tagsApi
+				.list()
+				.then((t) => {
+					collectaTagGrid = t;
+				})
+				.catch(() => {});
 			const expanded = untrack(() => collectaExpanded);
 			if (expanded && expanded !== 'tags') {
 				entriesApi
-					.list(sectionListParams(expanded, undefined, untrack(() => sortBy), untrack(() => sortDir)))
-					.then((d) => { collectaEntries = d; })
+					.list(
+						sectionListParams(
+							expanded,
+							undefined,
+							untrack(() => sortBy),
+							untrack(() => sortDir)
+						)
+					)
+					.then((d) => {
+						collectaEntries = d;
+					})
 					.catch(() => {});
 			}
 			return;
@@ -274,7 +348,9 @@
 		const dir = untrack(() => sortDir);
 		entriesApi
 			.list(sectionListParams(section, tag, by, dir))
-			.then((data) => { entryList = data; })
+			.then((data) => {
+				entryList = data;
+			})
 			.catch(() => {});
 	});
 </script>
@@ -310,7 +386,7 @@
 
 			<!-- Subdashboard grid -->
 			<div class="collecta-grid">
-				{#each COLLECTA_GRID as card}
+				{#each COLLECTA_GRID as card (card.id)}
 					<button
 						class="collecta-card"
 						class:active={collectaExpanded === card.id}
@@ -372,7 +448,7 @@
 									>
 										<span class="tag-entry-title">{entry.title}</span>
 										<div class="tag-entry-badges">
-											{#each entryBadges(entry) as badge}
+											{#each entryBadges(entry) as badge (badge.cls)}
 												<span class="badge {badge.cls}">{badge.label}</span>
 											{/each}
 										</div>
@@ -414,13 +490,10 @@
 						<p class="hint">No entries.</p>
 					{:else}
 						{#each tagEntries as entry (entry.id)}
-							<button
-								class="tag-entry-card"
-								onclick={() => navigateInTab(entry.id, entry.title)}
-							>
+							<button class="tag-entry-card" onclick={() => navigateInTab(entry.id, entry.title)}>
 								<span class="tag-entry-title">{entry.title}</span>
 								<div class="tag-entry-badges">
-									{#each entryBadges(entry) as badge}
+									{#each entryBadges(entry) as badge (badge.cls)}
 										<span class="badge {badge.cls}">{badge.label}</span>
 									{/each}
 								</div>
@@ -487,7 +560,9 @@
 		border-radius: 20px;
 		cursor: pointer;
 		font-family: inherit;
-		transition: border-color 0.15s, background 0.15s;
+		transition:
+			border-color 0.15s,
+			background 0.15s;
 	}
 
 	.tag-chip:hover {
@@ -542,7 +617,9 @@
 		cursor: pointer;
 		text-align: left;
 		font-family: inherit;
-		transition: border-color 0.15s, background 0.15s;
+		transition:
+			border-color 0.15s,
+			background 0.15s;
 	}
 
 	.tag-entry-card:hover {
@@ -572,10 +649,22 @@
 		font-weight: 700;
 	}
 
-	.badge-archive  { background: var(--bg-highlight); color: var(--fg-muted); }
-	.badge-read     { background: var(--bg-highlight); color: var(--yellow); }
-	.badge-bookmark { background: var(--bg-highlight); color: var(--cyan); }
-	.badge-gem      { background: var(--bg-highlight); color: var(--magenta); }
+	.badge-archive {
+		background: var(--bg-highlight);
+		color: var(--fg-muted);
+	}
+	.badge-read {
+		background: var(--bg-highlight);
+		color: var(--yellow);
+	}
+	.badge-bookmark {
+		background: var(--bg-highlight);
+		color: var(--cyan);
+	}
+	.badge-gem {
+		background: var(--bg-highlight);
+		color: var(--magenta);
+	}
 
 	.hint {
 		padding: 1rem 0;
@@ -670,7 +759,9 @@
 		cursor: pointer;
 		font-family: inherit;
 		text-align: left;
-		transition: border-color 0.15s, background 0.15s;
+		transition:
+			border-color 0.15s,
+			background 0.15s;
 	}
 
 	.collecta-card:hover {

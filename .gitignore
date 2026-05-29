@@ -21,9 +21,11 @@ env/
 
 
 # ========================
-# Linting
+# Linting / Formatting
 # ========================
 .ruff_cache/
+.eslintcache
+.prettiercache
 
 # ========================
 # Testing & Coverage

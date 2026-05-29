@@ -2,12 +2,19 @@
   "name": "analecta",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "electron:dev": "pnpm --filter analecta-electron run dev",
     "electron:build": "pnpm --filter analecta-electron run build",
     "dist": "pnpm --filter frontend build && python scripts/build_sidecar.py && pnpm --filter analecta-electron run dist"
   },
   "devDependencies": {
-    "socket": "1.1.99"
+    "eslint": "10.4.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-svelte": "3.17.1",
+    "prettier": "3.8.3",
+    "prettier-plugin-svelte": "4.0.1",
+    "socket": "1.1.99",
+    "typescript-eslint": "8.60.0"
   }
 }

@@ -17,7 +17,7 @@
 		Gem,
 		BrainCircuit,
 		ChevronDown,
-		ChevronRight
+		ChevronRight,
 	} from '@lucide/svelte';
 	import {
 		entries as entriesApi,
@@ -49,9 +49,15 @@
 		if (!match) return [];
 		const fields: [string, string][] = [];
 		const LABELS: Record<string, string> = {
-			title: 'Title', url: 'Source', author: 'Author', published: 'Published',
-			created_at: 'Created', description: 'Description', tags: 'Tags',
-			status: 'Status', source_type: 'Type'
+			title: 'Title',
+			url: 'Source',
+			author: 'Author',
+			published: 'Published',
+			created_at: 'Created',
+			description: 'Description',
+			tags: 'Tags',
+			status: 'Status',
+			source_type: 'Type',
 		};
 		for (const line of match[1].split('\n')) {
 			const m = line.match(/^(\w+):\s*(.*)/);
@@ -61,7 +67,12 @@
 			let val: string;
 			if (raw.startsWith('[') && raw.endsWith(']')) {
 				const inner = raw.slice(1, -1).trim();
-				val = inner ? inner.split(',').map((s) => s.trim()).join(', ') : '';
+				val = inner
+					? inner
+							.split(',')
+							.map((s) => s.trim())
+							.join(', ')
+					: '';
 			} else {
 				val = raw.replace(/^["']|["']$/g, '').trim();
 			}
@@ -79,12 +90,25 @@
 			if (!contentEl) return;
 			if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 			const step = 120;
-			if (e.key === 'ArrowDown') { contentEl.scrollBy(0, step); e.preventDefault(); }
-			else if (e.key === 'ArrowUp') { contentEl.scrollBy(0, -step); e.preventDefault(); }
-			else if (e.key === 'PageDown') { contentEl.scrollBy(0, contentEl.clientHeight * 0.85); e.preventDefault(); }
-			else if (e.key === 'PageUp') { contentEl.scrollBy(0, -contentEl.clientHeight * 0.85); e.preventDefault(); }
-			else if (e.key === 'Home') { contentEl.scrollTo(0, 0); e.preventDefault(); }
-			else if (e.key === 'End') { contentEl.scrollTo(0, contentEl.scrollHeight); e.preventDefault(); }
+			if (e.key === 'ArrowDown') {
+				contentEl.scrollBy(0, step);
+				e.preventDefault();
+			} else if (e.key === 'ArrowUp') {
+				contentEl.scrollBy(0, -step);
+				e.preventDefault();
+			} else if (e.key === 'PageDown') {
+				contentEl.scrollBy(0, contentEl.clientHeight * 0.85);
+				e.preventDefault();
+			} else if (e.key === 'PageUp') {
+				contentEl.scrollBy(0, -contentEl.clientHeight * 0.85);
+				e.preventDefault();
+			} else if (e.key === 'Home') {
+				contentEl.scrollTo(0, 0);
+				e.preventDefault();
+			} else if (e.key === 'End') {
+				contentEl.scrollTo(0, contentEl.scrollHeight);
+				e.preventDefault();
+			}
 		}
 		window.addEventListener('keydown', handleKeydown);
 		return () => window.removeEventListener('keydown', handleKeydown);
@@ -103,8 +127,7 @@
 			? allTags
 					.map((t) => t.name)
 					.filter(
-						(n) =>
-							!entry?.tags.includes(n) && n.toLowerCase().includes(newTagInput.toLowerCase())
+						(n) => !entry?.tags.includes(n) && n.toLowerCase().includes(newTagInput.toLowerCase())
 					)
 					.slice(0, 6)
 			: []
@@ -135,9 +158,12 @@
 
 	// Config is stable across entries — fetch once on mount.
 	onMount(() => {
-		configApi.get().then((cfg) => {
-			readingFontSize = cfg.reading_font_size;
-		}).catch(() => {});
+		configApi
+			.get()
+			.then((cfg) => {
+				readingFontSize = cfg.reading_font_size;
+			})
+			.catch(() => {});
 	});
 
 	// Re-fetch entry whenever the route param changes (same-component navigation).
@@ -248,7 +274,9 @@
 
 	async function removeTag(name: string) {
 		if (!entry) return;
-		const removedEntry = await entriesApi.patch(entry.id, { tags: entry.tags.filter((t) => t !== name) });
+		const removedEntry = await entriesApi.patch(entry.id, {
+			tags: entry.tags.filter((t) => t !== name),
+		});
 		entry = removedEntry;
 		lastChangedEntry.set(removedEntry);
 		entryChangedTick.update((n) => n + 1);
@@ -256,7 +284,13 @@
 
 	function handleRightClick(e: MouseEvent) {
 		if (!entry) return;
-		showContextMenu(e, { id: entry.id, title: entry.title, url: entry.url, file_path: entry.file_path, flags: entry.flags });
+		showContextMenu(e, {
+			id: entry.id,
+			title: entry.title,
+			url: entry.url,
+			file_path: entry.file_path,
+			flags: entry.flags,
+		});
 	}
 
 	async function handleContentClick(e: MouseEvent) {
@@ -283,7 +317,12 @@
 			<button class="btn-icon" onclick={copyUrl} title="Copy URL">
 				<Link size={18} />
 			</button>
-			<button class="btn-icon" class:active={entry.flags?.includes('archive')} onclick={() => toggleFlag('archive')} title="Archive">
+			<button
+				class="btn-icon"
+				class:active={entry.flags?.includes('archive')}
+				onclick={() => toggleFlag('archive')}
+				title="Archive"
+			>
 				<Archive size={18} />
 			</button>
 			<button class="btn-icon" onclick={deleteEntry} title="Delete">
@@ -313,33 +352,36 @@
 					class="btn-icon"
 					class:active={entry.status === 'read'}
 					onclick={() => setStatus('read')}
-					title="Read"
-				><Eye size={18} /></button>
+					title="Read"><Eye size={18} /></button
+				>
 				<button
 					class="btn-icon"
 					class:active={entry.status === 'unread'}
 					onclick={() => setStatus('unread')}
-					title="Unread"
-				><EyeClosed size={18} /></button>
+					title="Unread"><EyeClosed size={18} /></button
+				>
 				<button
 					class="btn-icon"
 					class:active={entry.flags?.includes('bookmark')}
 					onclick={() => toggleFlag('bookmark')}
-					title="Bookmark"
-				><Bookmark size={18} /></button>
+					title="Bookmark"><Bookmark size={18} /></button
+				>
 				<button
 					class="btn-icon"
 					class:active={entry.flags?.includes('gem')}
 					onclick={() => toggleFlag('gem')}
-					title="Gem"
-				><Gem size={18} /></button>
+					title="Gem"><Gem size={18} /></button
+				>
 			</div>
 
 			<div class="tags-container" bind:this={tagsContainerEl}>
 				<button
 					class="btn-icon"
 					class:active={tagsOpen}
-					onclick={() => { tagsOpen = !tagsOpen; if (tagsOpen) fetchAllTags(); }}
+					onclick={() => {
+						tagsOpen = !tagsOpen;
+						if (tagsOpen) fetchAllTags();
+					}}
 					title="Tags"
 				>
 					<BrainCircuit size={18} />
@@ -352,7 +394,9 @@
 								{#each entry.tags as tag (tag)}
 									<span class="chip">
 										<span class="chip-label">{tag}</span>
-										<button class="chip-remove" onclick={() => removeTag(tag)} title="Remove">×</button>
+										<button class="chip-remove" onclick={() => removeTag(tag)} title="Remove"
+											>×</button
+										>
 									</span>
 								{/each}
 							</div>
@@ -364,8 +408,10 @@
 							bind:value={newTagInput}
 							bind:this={tagAddInputEl}
 							onkeydown={(e) => {
-								if (e.key === 'Enter') { e.preventDefault(); addTag(newTagInput); }
-								else if (e.key === 'Escape') tagsOpen = false;
+								if (e.key === 'Enter') {
+									e.preventDefault();
+									addTag(newTagInput);
+								} else if (e.key === 'Escape') tagsOpen = false;
 							}}
 						/>
 						{#if tagSuggestions.length > 0}
@@ -391,7 +437,7 @@
 
 				{#if propertyFields.length > 0}
 					<div class="properties-panel">
-						<button class="properties-header" onclick={() => propertiesOpen = !propertiesOpen}>
+						<button class="properties-header" onclick={() => (propertiesOpen = !propertiesOpen)}>
 							{#if propertiesOpen}
 								<ChevronDown size={12} />
 							{:else}
@@ -401,7 +447,7 @@
 						</button>
 						{#if propertiesOpen}
 							<div class="properties-body">
-								{#each propertyFields as [label, val]}
+								{#each propertyFields as [label, val] (label)}
 									<div class="property-row">
 										<span class="property-key">{label}</span>
 										<span class="property-val">{val}</span>
@@ -414,6 +460,7 @@
 
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 				<div class="markdown-body" onclick={handleContentClick}>
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -- markdown-it output, not raw user/network HTML -->
 					{@html html}
 				</div>
 			</div>
@@ -478,7 +525,10 @@
 		color: var(--fg-muted);
 		font-family: inherit;
 		cursor: pointer;
-		transition: color 0.15s, background 0.15s, border-color 0.15s;
+		transition:
+			color 0.15s,
+			background 0.15s,
+			border-color 0.15s;
 		flex-shrink: 0;
 	}
 
@@ -552,7 +602,9 @@
 		letter-spacing: 0.05em;
 		cursor: pointer;
 		text-align: left;
-		transition: color 0.12s, background 0.12s;
+		transition:
+			color 0.12s,
+			background 0.12s;
 	}
 
 	.properties-header:hover {
@@ -685,7 +737,9 @@
 		font-size: 0.78rem;
 		cursor: pointer;
 		text-align: left;
-		transition: color 0.12s, background 0.12s;
+		transition:
+			color 0.12s,
+			background 0.12s;
 	}
 
 	.suggestion-item:hover {

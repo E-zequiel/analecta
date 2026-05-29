@@ -5,10 +5,10 @@
 	import { applyFont } from '$lib/font';
 
 	const ACCENT_OPTIONS = [
-		{ id: 'red',    label: 'Red'    },
+		{ id: 'red', label: 'Red' },
 		{ id: 'yellow', label: 'Yellow' },
-		{ id: 'green',  label: 'Green'  },
-		{ id: 'cyan',   label: 'Cyan'   },
+		{ id: 'green', label: 'Green' },
+		{ id: 'cyan', label: 'Cyan' },
 	] as const satisfies { id: 'red' | 'yellow' | 'green' | 'cyan'; label: string }[];
 
 	let form = $state({
@@ -52,10 +52,20 @@
 	}
 
 	function applyCurrentFont(): Promise<void> {
-		return applyFont(form.font_variant, customFontPath || null, form.ui_font_size, form.reading_font_size, form.theme, form.accent_color);
+		return applyFont(
+			form.font_variant,
+			customFontPath || null,
+			form.ui_font_size,
+			form.reading_font_size,
+			form.theme,
+			form.accent_color
+		);
 	}
 
-	function startEditUiFont() { origUiFont = form.ui_font_size; editingUiFont = true; }
+	function startEditUiFont() {
+		origUiFont = form.ui_font_size;
+		editingUiFont = true;
+	}
 	function commitUiFont() {
 		form.ui_font_size = Math.min(20, Math.max(10, form.ui_font_size));
 		editingUiFont = false;
@@ -67,7 +77,10 @@
 		editingUiFont = false;
 	}
 
-	function startEditReadingFont() { origReadingFont = form.reading_font_size; editingReadingFont = true; }
+	function startEditReadingFont() {
+		origReadingFont = form.reading_font_size;
+		editingReadingFont = true;
+	}
 	function commitReadingFont() {
 		form.reading_font_size = Math.min(24, Math.max(12, form.reading_font_size));
 		editingReadingFont = false;
@@ -138,7 +151,10 @@
 	async function autoSaveFontVariant() {
 		try {
 			await applyCurrentFont();
-			await configApi.update({ font_variant: form.font_variant, custom_font_path: customFontPath || null });
+			await configApi.update({
+				font_variant: form.font_variant,
+				custom_font_path: customFontPath || null,
+			});
 			flash((v) => (fontVariantSaved = v));
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
@@ -147,7 +163,7 @@
 
 	async function browseFont() {
 		const selected = await openDialog({
-			filters: [{ name: 'TrueType Font', extensions: ['ttf'] }]
+			filters: [{ name: 'TrueType Font', extensions: ['ttf'] }],
 		});
 		if (typeof selected === 'string') {
 			customFontPath = selected;
@@ -234,7 +250,6 @@
 		form.close_to_tray = !form.close_to_tray;
 		autoSaveCloseToTray();
 	}
-
 </script>
 
 <div class="settings-page">
@@ -257,7 +272,9 @@
 					bind:value={form.vault_path}
 					onblur={autoSaveVaultPath}
 				/>
-				<button onclick={browseVault} disabled={browsing}>{browsing ? 'Opening…' : 'Browse…'}</button>
+				<button onclick={browseVault} disabled={browsing}
+					>{browsing ? 'Opening…' : 'Browse…'}</button
+				>
 			</div>
 		</div>
 		<div class="field">
@@ -297,15 +314,18 @@
 						style:font-size="{form.ui_font_size}px"
 						bind:value={form.ui_font_size}
 						onblur={commitUiFont}
-						onkeydown={(e) => { if (e.key === 'Enter') commitUiFont(); else if (e.key === 'Escape') cancelUiFont(); }}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') commitUiFont();
+							else if (e.key === 'Escape') cancelUiFont();
+						}}
 					/>
 				{:else}
 					<button
 						class="range-value"
 						style:font-size="{form.ui_font_size}px"
 						onclick={startEditUiFont}
-						title="Click to edit"
-					>{form.ui_font_size}px</button>
+						title="Click to edit">{form.ui_font_size}px</button
+					>
 				{/if}
 			</div>
 		</div>
@@ -336,15 +356,18 @@
 						style:font-size="{form.reading_font_size}px"
 						bind:value={form.reading_font_size}
 						onblur={commitReadingFont}
-						onkeydown={(e) => { if (e.key === 'Enter') commitReadingFont(); else if (e.key === 'Escape') cancelReadingFont(); }}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') commitReadingFont();
+							else if (e.key === 'Escape') cancelReadingFont();
+						}}
 					/>
 				{:else}
 					<button
 						class="range-value"
 						style:font-size="{form.reading_font_size}px"
 						onclick={startEditReadingFont}
-						title="Click to edit"
-					>{form.reading_font_size}px</button>
+						title="Click to edit">{form.reading_font_size}px</button
+					>
 				{/if}
 			</div>
 		</div>
@@ -368,7 +391,9 @@
 	<section>
 		<h2>Appearance</h2>
 		<div class="field toggle-field">
-			<label for="theme-toggle">Theme {#if themeSaved}<span class="saved-tag">✓</span>{/if}</label>
+			<label for="theme-toggle"
+				>Theme {#if themeSaved}<span class="saved-tag">✓</span>{/if}</label
+			>
 			<button
 				id="theme-toggle"
 				role="switch"
@@ -385,7 +410,7 @@
 				Accent color {#if accentSaved}<span class="saved-tag">✓</span>{/if}
 			</span>
 			<div class="accent-swatches">
-				{#each ACCENT_OPTIONS as opt}
+				{#each ACCENT_OPTIONS as opt (opt.id)}
 					<button
 						class="swatch swatch-{opt.id}"
 						class:active={form.accent_color === opt.id}
@@ -428,7 +453,6 @@
 			</button>
 		</div>
 	</section>
-
 </div>
 
 <style>
@@ -624,13 +648,23 @@
 		border: 2px solid transparent;
 		cursor: pointer;
 		padding: 0;
-		transition: border-color 0.12s, transform 0.1s;
+		transition:
+			border-color 0.12s,
+			transform 0.1s;
 	}
 
-	.swatch-red    { background: var(--red);    }
-	.swatch-yellow { background: var(--yellow); }
-	.swatch-green  { background: var(--green);  }
-	.swatch-cyan   { background: var(--cyan);   }
+	.swatch-red {
+		background: var(--red);
+	}
+	.swatch-yellow {
+		background: var(--yellow);
+	}
+	.swatch-green {
+		background: var(--green);
+	}
+	.swatch-cyan {
+		background: var(--cyan);
+	}
 
 	.swatch.active {
 		border-color: var(--fg);
@@ -647,5 +681,4 @@
 		font-size: 13px;
 		margin-bottom: 1rem;
 	}
-
 </style>
