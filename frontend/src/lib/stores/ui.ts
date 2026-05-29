@@ -28,3 +28,4 @@ export const collapseAllSignal = writable(0);
 export const rightSidebarOpen = persisted('right-sidebar-open', true);
 export const rightSidebarWidth = persisted('right-sidebar-width', 240);
 export const backlinksOpen = persisted('backlinks-open', false);
+export const backlinksWidth = persisted('backlinks-width', 240);
