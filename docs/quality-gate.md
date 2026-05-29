@@ -38,15 +38,9 @@ implementation block is considered complete **only after this script passes clea
 
 ### svelte-check
 
-`svelte-check` is run with `--fail-on-warnings`. Exactly one warning is accepted as a
-tooling limitation:
-
-| File | Warning code | Reason |
-|------|-------------|--------|
-| `frontend/src/lib/components/MarkdownEditor.svelte` | `state_referenced_locally` | CodeMirror requires capturing the initial prop value inside `onMount`; the compiler still emits the warning because the variable is declared at module scope before the assignment. Unfixable without breaking CodeMirror initialization. |
-
-Any warning outside this exception must be investigated and resolved before considering
-a block complete.
+`svelte-check` is run with `--fail-on-warnings`. As of 2026-05-29 there are **zero accepted
+warnings** — all previously known issues have been resolved. Any new warning must be
+investigated and resolved before considering a block complete.
 
 ### vite build: accepted chunk size hint
 
