@@ -467,6 +467,10 @@
 				</div>
 			{/if}
 		</div>
+	{:else if $activeSection === 'backlinks'}
+		<div class="backlinks-placeholder">
+			<p class="hint">Backlinks graph — coming soon.</p>
+		</div>
 	{:else if $activeSection === 'tags'}
 		<div class="tags-dashboard">
 			<div class="tag-grid">
@@ -539,6 +543,13 @@
 		flex: 1;
 		overflow-y: auto;
 		padding: 0.75rem 1rem;
+	}
+
+	.backlinks-placeholder {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		padding: 1rem;
 	}
 
 	/* Tags dashboard */

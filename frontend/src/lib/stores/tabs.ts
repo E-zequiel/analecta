@@ -24,6 +24,7 @@ const SECTION_LABELS: Record<string, string> = {
 	archive: 'ARCHIVE',
 	tags: 'TAGS',
 	collecta: 'COLLECTA',
+	backlinks: 'BACKLINKS',
 };
 
 function makeSectionTab(sectionId: string): AppTab {

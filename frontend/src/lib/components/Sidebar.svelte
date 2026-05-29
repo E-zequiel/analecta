@@ -364,8 +364,10 @@
 					</div>
 				{/if}
 			{/each}
+		</nav>
 
-			<!-- Tags section -->
+		<!-- Tags section — fixed below scrollable nav, mirrors RightSidebar Backlinks layout -->
+		<div class="tags-section">
 			<div class="section-row">
 				<button
 					class="chevron-btn"
@@ -427,7 +429,7 @@
 			{/if}
 
 			{#if $tagsExpanded}
-				<div class="section-entries" transition:slide={{ duration: 140 }}>
+				<div class="section-entries tags-section-entries" transition:slide={{ duration: 140 }}>
 					{#each tagList as tag (tag.name)}
 						{#if editingTag === tag.name}
 							<div class="tag-edit-row">
@@ -477,7 +479,7 @@
 					{/each}
 				</div>
 			{/if}
-		</nav>
+		</div>
 	{/if}
 
 	<!-- Bottom bar -->
@@ -628,6 +630,17 @@
 		flex: 1;
 		overflow-y: auto;
 		padding: 4px 0;
+		min-height: 0;
+	}
+
+	.tags-section {
+		flex-shrink: 0;
+		border-top: 1px solid var(--border);
+	}
+
+	.tags-section-entries {
+		max-height: 160px;
+		overflow-y: auto;
 	}
 
 	.section-row {
