@@ -211,6 +211,49 @@ Only pin to a version that has a **verified tag** in the tool's GitHub repositor
 
 ---
 
+## Control 9: Local Dependency Scan Protocol
+
+The Socket CI job (`ci.yml`) only runs on PRs that change a lockfile. This means new packages installed locally on a branch — between `pnpm add` and the PR — are unscanned until the PR is opened. Running `scripts/socket-audit.sh` locally closes that gap.
+
+### When to run
+
+| Trigger | Action |
+|---------|--------|
+| After any `pnpm add` or `uv add` | Run `./scripts/socket-audit.sh` before committing |
+| After the weekly `deps-update.yml` PR lands | Run locally before merging (in addition to `check.sh`) |
+| Before opening a PR that touches `pnpm-lock.yaml` or `backend/uv.lock` | Run as a pre-PR gate |
+
+### How to run
+
+```bash
+./scripts/socket-audit.sh
+```
+
+`bws run` injects `SOCKET_SECURITY_API_TOKEN` at runtime from Bitwarden Secrets Manager — no token is written to disk. Requires the `bws` CLI and a valid `BWS_ACCESS_TOKEN` in the shell environment.
+
+**Org picker:** If the script opens an interactive prompt asking which organization to use, set `SOCKET_ORG` in your shell profile to skip it on future runs:
+
+```bash
+# ~/.zshrc or ~/.bashrc
+export SOCKET_ORG=YourOrgName
+```
+
+The script passes `--org "$SOCKET_ORG"` only when the variable is set; it falls back to auto-discovery otherwise.
+
+The script calls `pnpm exec socket` (lockfile-pinned, `socket@1.1.99`) — never `pnpm dlx`. This matters because `bws run` injects `SOCKET_SECURITY_API_TOKEN` into the process environment; a `dlx`-downloaded package could exfiltrate it.
+
+### Interpreting results
+
+- **No issues:** proceed.
+- **Known false positives:** check the false-positive catalog in `project_socket_security.md` before acting.
+- **New alert:** investigate before committing. If it is a confirmed false positive, add it to the catalog with a justification. If it is a real risk, do not merge.
+
+### Quota
+
+500 API calls/hour on the free plan. Do **not** add this script to `check.sh` — that runs on every change and would exhaust the quota.
+
+---
+
 ## Repository-Level Settings
 
 These settings are configured in GitHub → Settings → Actions → General and complement the workflow-level controls. They are not visible in workflow files but are part of the security posture.
@@ -253,6 +296,14 @@ When the repository is made public, the **"Fork pull request workflows"** sectio
 1. Resolve the immutable SHA (see Control 1 for the `curl` procedure).
 2. Add the action to the **Actions permissions allowlist** in GitHub Settings before adding it to the workflow file.
 3. Add it to the inventory table in Control 1.
+
+### When adding a new npm or Python package
+
+1. Install with `pnpm add` or `uv add` as usual.
+2. **Immediately run** `./scripts/socket-audit.sh` — do not commit or push before the scan completes.
+3. Review any new alerts against the false-positive catalog in `project_socket_security.md`.
+4. If the alert is a confirmed false positive, add it to the catalog before committing.
+5. If the alert indicates a real risk, do not install the package — find an alternative or escalate.
 
 ### When the `deps-update.yml` weekly PR lands
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Age-gated dependency updater for Analecta.
 
-For each ecosystem (Python/uv, Node/pnpm, Rust/cargo):
+For each ecosystem (Python/uv, Node/pnpm):
   1. Detect packages with available updates.
   2. Query the upstream registry for the release date of the new version.
   3. Skip packages released less than COOLDOWN_DAYS ago.
@@ -17,7 +17,6 @@ import argparse
 import json
 import re
 import subprocess
-import sys
 import tomllib
 import urllib.error
 import urllib.request
@@ -27,7 +26,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.parent
 COOLDOWN_DAYS = 3
 _REGISTRY_TIMEOUT = 15
-_CRATES_UA = "analecta-deps-updater/1.0 (https://github.com/E-zequiel/analecta)"
 
 # ---------------------------------------------------------------------------
 # Types
@@ -86,7 +84,7 @@ def _pypi_release_date(name: str, version: str, all_releases: dict) -> datetime 
         return None
     try:
         return _parse_iso(min(times))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -175,7 +173,7 @@ def _npm_release_date(name: str, version: str) -> datetime | None:
         return None
     try:
         return _parse_iso(ts)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -195,7 +193,7 @@ def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
 
     try:
         outdated = _parse_pnpm_outdated(raw)
-    except (json.JSONDecodeError, StopIteration):
+    except json.JSONDecodeError, StopIteration:
         # Try extracting a JSON block from mixed output
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         if not m:
@@ -234,83 +232,6 @@ def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
 
 
 # ---------------------------------------------------------------------------
-# Rust / cargo
-# ---------------------------------------------------------------------------
-
-
-def _crates_release_date(name: str, version: str) -> datetime | None:
-    data = _fetch_json(
-        f"https://crates.io/api/v1/crates/{name}/{version}",
-        headers={"User-Agent": _CRATES_UA},
-    )
-    if data is None:
-        return None
-    created: str | None = data.get("version", {}).get("created_at")
-    if not created:
-        return None
-    try:
-        return _parse_iso(created)
-    except (ValueError, TypeError):
-        return None
-
-
-def update_rust(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
-    """Check and apply Rust dependency updates via cargo."""
-    print("\n=== Rust (cargo) ===")
-    tauri_dir = REPO_ROOT / "src-tauri"
-
-    result = _run(["cargo", "update", "--dry-run"], cwd=tauri_dir)
-    output = result.stdout + result.stderr
-
-    candidates: list[tuple[str, str, str]] = []
-    for line in output.splitlines():
-        m = re.search(r"Updating (\S+) v(\S+) -> v(\S+)", line)
-        if m:
-            candidates.append((m.group(1), m.group(2), m.group(3)))
-
-    if not candidates:
-        print("  nothing to update")
-        return [], []
-
-    with (tauri_dir / "Cargo.toml").open("rb") as f:
-        cargo_toml = tomllib.load(f)
-    direct_deps: set[str] = (
-        set(cargo_toml.get("dependencies", {}).keys())
-        | set(cargo_toml.get("build-dependencies", {}).keys())
-    )
-
-    updated: list[Updated] = []
-    skipped: list[Skipped] = []
-
-    for name, old_ver, new_ver in sorted(candidates):
-        if name not in direct_deps:
-            continue
-        print(f"  {name}: {old_ver} -> {new_ver}")
-
-        release_dt = _crates_release_date(name, new_ver)
-        if release_dt is None:
-            print("    [warn] release date unavailable, skipping")
-            continue
-        if not _age_ok(release_dt, cooldown):
-            days_old = (datetime.now(UTC) - release_dt).days
-            print(f"    [skip] {days_old}d old (cooldown: {cooldown}d)")
-            skipped.append((name, new_ver, release_dt))
-            continue
-
-        result = _run(
-            ["cargo", "update", "-p", name, "--precise", new_ver],
-            cwd=tauri_dir,
-        )
-        if result.returncode != 0:
-            print(f"    [error] {result.stderr.strip()}")
-        else:
-            print("    [ok] updated")
-            updated.append((name, old_ver, new_ver))
-
-    return updated, skipped
-
-
-# ---------------------------------------------------------------------------
 # PR body
 # ---------------------------------------------------------------------------
 
@@ -320,8 +241,6 @@ def _pr_body(
     py_sk: list[Skipped],
     nd_up: list[Updated],
     nd_sk: list[Skipped],
-    rs_up: list[Updated],
-    rs_sk: list[Skipped],
     cooldown: int,
 ) -> str:
     today = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -344,7 +263,8 @@ def _pr_body(
         if sk:
             lines.append("")
             eligible = [
-                f"`{n}` {v} _(eligible {(release_dt + timedelta(days=cooldown)).strftime('%Y-%m-%d')})_"
+                f"`{n}` {v} _(eligible "
+                f"{(release_dt + timedelta(days=cooldown)).strftime('%Y-%m-%d')})_"
                 for n, v, release_dt in sk
             ]
             lines.append(f"**Skipped — too recent:** {', '.join(eligible)}")
@@ -352,7 +272,6 @@ def _pr_body(
 
     _section("Python", py_up, py_sk)
     _section("Node / pnpm", nd_up, nd_sk)
-    _section("Rust / cargo", rs_up, rs_sk)
 
     lines += [
         "---",
@@ -368,23 +287,33 @@ def _pr_body(
 
 
 def main() -> None:
+    """Entry point for the age-gated dependency updater."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cooldown", type=int, default=COOLDOWN_DAYS,
-                        metavar="DAYS", help="minimum age in days (default: 3)")
-    parser.add_argument("--pr-body-file", type=Path, default=None, metavar="PATH",
-                        help="write PR body markdown to this file")
+    parser.add_argument(
+        "--cooldown",
+        type=int,
+        default=COOLDOWN_DAYS,
+        metavar="DAYS",
+        help="minimum age in days (default: 3)",
+    )
+    parser.add_argument(
+        "--pr-body-file",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="write PR body markdown to this file",
+    )
     args = parser.parse_args()
 
     py_up, py_sk = update_python(args.cooldown)
     nd_up, nd_sk = update_node(args.cooldown)
-    rs_up, rs_sk = update_rust(args.cooldown)
 
-    total_up = len(py_up) + len(nd_up) + len(rs_up)
-    total_sk = len(py_sk) + len(nd_sk) + len(rs_sk)
+    total_up = len(py_up) + len(nd_up)
+    total_sk = len(py_sk) + len(nd_sk)
     print(f"\n==> {total_up} updated, {total_sk} skipped (cooldown)")
 
     if args.pr_body_file:
-        body = _pr_body(py_up, py_sk, nd_up, nd_sk, rs_up, rs_sk, args.cooldown)
+        body = _pr_body(py_up, py_sk, nd_up, nd_sk, args.cooldown)
         args.pr_body_file.write_text(body)
         print(f"    PR body written to {args.pr_body_file}")
 
