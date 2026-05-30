@@ -64,6 +64,24 @@ export interface BacklinksResult {
 	linked: Backlink[];
 }
 
+export interface GraphNode {
+	node_id: string;
+	label: string;
+	kind: 'entry' | 'tag';
+	source_type: string | null;
+}
+
+export interface GraphEdge {
+	source: string;
+	target: string;
+	weight: number;
+}
+
+export interface GraphResult {
+	nodes: GraphNode[];
+	edges: GraphEdge[];
+}
+
 export interface AppConfig {
 	vault_path: string;
 	font_variant: 'regular' | 'nerd' | 'custom';
@@ -173,6 +191,10 @@ export const entries = {
 
 	getBacklinks(id: number): Promise<BacklinksResult> {
 		return apiFetch<BacklinksResult>(`/entries/${id}/backlinks`);
+	},
+
+	getGraph(): Promise<GraphResult> {
+		return apiFetch<GraphResult>('/entries/graph');
 	},
 };
 

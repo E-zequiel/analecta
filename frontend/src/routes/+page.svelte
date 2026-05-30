@@ -14,6 +14,7 @@
 	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
 	import EntryList from '$lib/components/EntryList.svelte';
 	import SortBar from '$lib/components/SortBar.svelte';
+	import VaultGraph from '$lib/components/VaultGraph.svelte';
 
 	let entryList = $state<Entry[]>([]);
 	let loading = $state(false);
@@ -70,7 +71,7 @@
 	// Main list — active for all sections except tags and collecta
 	$effect(() => {
 		const section = $activeSection;
-		if (section === 'tags' || section === 'collecta') return;
+		if (section === 'tags' || section === 'collecta' || section === 'backlinks') return;
 		const tag = $selectedTag ?? undefined;
 		const params = sectionListParams(section, tag, sortBy, sortDir);
 
@@ -468,9 +469,7 @@
 			{/if}
 		</div>
 	{:else if $activeSection === 'backlinks'}
-		<div class="backlinks-placeholder">
-			<p class="hint">Backlinks graph — coming soon.</p>
-		</div>
+		<VaultGraph onentryopen={(id, title, sourceType) => navigateInTab(id, title, sourceType)} />
 	{:else if $activeSection === 'tags'}
 		<div class="tags-dashboard">
 			<div class="tag-grid">
@@ -543,13 +542,6 @@
 		flex: 1;
 		overflow-y: auto;
 		padding: 0.75rem 1rem;
-	}
-
-	.backlinks-placeholder {
-		display: flex;
-		flex-direction: column;
-		height: 100%;
-		padding: 1rem;
 	}
 
 	/* Tags dashboard */
