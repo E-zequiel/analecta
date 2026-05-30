@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from analecta.api.deps import get_index
-from analecta.storage.index import EntryRecord, VaultIndex
+from analecta.storage.index import (
+    EntryRecord,
+    GraphEdgeRecord,
+    GraphNodeRecord,
+    VaultIndex,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -118,6 +123,81 @@ class BacklinksResultOut(BaseModel):
     """
 
     linked: list[BacklinkOut]
+
+
+class GraphNodeOut(BaseModel):
+    """A node in the vault connection graph.
+
+    Attributes:
+        node_id: Prefixed stable identifier — ``entry:{int_id}`` or ``tag:{name}``.
+        label: Display label (entry title or ``#tagname``).
+        kind: Node kind: ``entry`` or ``tag``.
+        source_type: Entry source type or ``None`` for virtual tag nodes.
+    """
+
+    node_id: str
+    label: str
+    kind: str
+    source_type: str | None
+
+
+class GraphEdgeOut(BaseModel):
+    """A weighted directed edge in the vault connection graph.
+
+    Attributes:
+        source: Source node id.
+        target: Target node id.
+        weight: Number of individual references collapsed into this edge.
+    """
+
+    source: str
+    target: str
+    weight: int
+
+
+class GraphResultOut(BaseModel):
+    """Response body for GET /entries/graph.
+
+    Attributes:
+        nodes: All connected nodes (entries + virtual tag nodes).
+        edges: All weighted edges between nodes.
+    """
+
+    nodes: list[GraphNodeOut]
+    edges: list[GraphEdgeOut]
+
+
+def graph_node_out(record: GraphNodeRecord) -> GraphNodeOut:
+    """Convert a GraphNodeRecord to the API GraphNodeOut model.
+
+    Args:
+        record: Storage graph node record.
+
+    Returns:
+        Serialisable GraphNodeOut instance.
+    """
+    return GraphNodeOut(
+        node_id=record.node_id,
+        label=record.label,
+        kind=record.kind,
+        source_type=record.source_type,
+    )
+
+
+def graph_edge_out(record: GraphEdgeRecord) -> GraphEdgeOut:
+    """Convert a GraphEdgeRecord to the API GraphEdgeOut model.
+
+    Args:
+        record: Storage graph edge record.
+
+    Returns:
+        Serialisable GraphEdgeOut instance.
+    """
+    return GraphEdgeOut(
+        source=record.source,
+        target=record.target,
+        weight=record.weight,
+    )
 
 
 def entry_out(record: EntryRecord) -> EntryOut:
@@ -248,6 +328,29 @@ async def get_entry_metrics(
         Dict with keys reads_week, reads_month, reads_year.
     """
     return await asyncio.to_thread(index.get_metrics)
+
+
+@router.get("/entries/graph", response_model=GraphResultOut)
+async def get_entries_graph(
+    index: VaultIndex = Depends(get_index),
+) -> GraphResultOut:
+    """Return all connected nodes and weighted edges for the vault graph.
+
+    Isolated entries (no backlink connections) are excluded. Unresolved
+    hashtags produce virtual tag nodes. Wikilinks without a matching entry
+    are silently skipped.
+
+    Args:
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        GraphResultOut with all nodes and edges.
+    """
+    nodes, edges = await asyncio.to_thread(index.get_graph)
+    return GraphResultOut(
+        nodes=[graph_node_out(n) for n in nodes],
+        edges=[graph_edge_out(e) for e in edges],
+    )
 
 
 @router.get("/entries/{entry_id}", response_model=EntryOut)

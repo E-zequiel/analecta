@@ -32,6 +32,38 @@ class BacklinkRecord:
 
 
 @dataclass
+class GraphNodeRecord:
+    """A node in the vault connection graph.
+
+    Args:
+        node_id: Prefixed stable identifier — ``entry:{int_id}`` or ``tag:{name}``.
+        label: Display label (entry title or ``#tagname``).
+        kind: Node kind: ``entry`` or ``tag``.
+        source_type: Entry source type (``article``, ``youtube``, etc.) or ``None``.
+    """
+
+    node_id: str
+    label: str
+    kind: str
+    source_type: str | None
+
+
+@dataclass
+class GraphEdgeRecord:
+    """A weighted directed edge in the vault connection graph.
+
+    Args:
+        source: Source node id.
+        target: Target node id.
+        weight: Number of individual references collapsed into this edge.
+    """
+
+    source: str
+    target: str
+    weight: int
+
+
+@dataclass
 class EntryRecord:
     """Mirrors the ``entries`` table row.
 
@@ -637,6 +669,105 @@ class VaultIndex:
             "SELECT name, count FROM tags ORDER BY count DESC, name ASC"
         ).fetchall()
         return [(row[0], row[1]) for row in rows]
+
+    def get_graph(
+        self,
+    ) -> tuple[list[GraphNodeRecord], list[GraphEdgeRecord]]:
+        """Return all connected nodes and weighted edges for the vault graph.
+
+        Resolves ``backlink_refs`` against the current ``entries`` table using
+        the same title-matching rules as :meth:`get_backlinks`. Wikilinks that
+        do not resolve to an existing entry are skipped. Unresolved hashtags
+        produce virtual tag nodes (``tag:{name}``). Multiple occurrences of the
+        same source→target pair are collapsed into a single weighted edge.
+        Entries with no connections (isolated nodes) are excluded.
+
+        Returns:
+            Tuple of ``(nodes, edges)``.  Nodes include both ``entry:`` and
+            ``tag:`` kinds.  Edges are directed but the frontend may treat them
+            as undirected for layout purposes.
+        """
+        from analecta.markdown.hashtags import normalize_tag
+
+        entry_rows = self._conn.execute(
+            "SELECT id, title, source_type FROM entries"
+        ).fetchall()
+        entries: dict[int, tuple[str, str]] = {
+            row[0]: (row[1], row[2]) for row in entry_rows
+        }
+
+        lower_title_to_id: dict[str, int] = {
+            title.lower(): eid for eid, (title, _) in entries.items()
+        }
+        slug_to_id: dict[str, int] = {
+            normalize_tag(title): eid for eid, (title, _) in entries.items()
+        }
+
+        refs = self._conn.execute(
+            "SELECT source_id, target_text, is_hashtag FROM backlink_refs"
+        ).fetchall()
+
+        edge_weights: dict[tuple[str, str], int] = {}
+        virtual_tags: set[str] = set()
+
+        for ref in refs:
+            source_id: int = ref[0]
+            target_text: str = ref[1]
+            is_hashtag: bool = bool(ref[2])
+
+            if source_id not in entries:
+                continue
+
+            source_node = f"entry:{source_id}"
+
+            if not is_hashtag:
+                target_id = lower_title_to_id.get(target_text)
+                if target_id is None or target_id == source_id:
+                    continue
+                target_node = f"entry:{target_id}"
+            else:
+                target_id = slug_to_id.get(target_text)
+                if target_id is not None and target_id != source_id:
+                    target_node = f"entry:{target_id}"
+                else:
+                    target_node = f"tag:{target_text}"
+                    virtual_tags.add(target_text)
+
+            key = (source_node, target_node)
+            edge_weights[key] = edge_weights.get(key, 0) + 1
+
+        connected_entry_ids: set[int] = set()
+        for s, t in edge_weights:
+            if s.startswith("entry:"):
+                connected_entry_ids.add(int(s[6:]))
+            if t.startswith("entry:"):
+                connected_entry_ids.add(int(t[6:]))
+
+        nodes: list[GraphNodeRecord] = [
+            GraphNodeRecord(
+                node_id=f"entry:{eid}",
+                label=entries[eid][0],
+                kind="entry",
+                source_type=entries[eid][1],
+            )
+            for eid in connected_entry_ids
+        ]
+        nodes += [
+            GraphNodeRecord(
+                node_id=f"tag:{name}",
+                label=f"#{name}",
+                kind="tag",
+                source_type=None,
+            )
+            for name in virtual_tags
+        ]
+
+        edges: list[GraphEdgeRecord] = [
+            GraphEdgeRecord(source=s, target=t, weight=w)
+            for (s, t), w in edge_weights.items()
+        ]
+
+        return nodes, edges
 
     def search(self, query: str) -> list[EntryRecord]:
         """Full-text search across title and content using FTS5.

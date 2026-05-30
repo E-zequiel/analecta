@@ -28,8 +28,11 @@
     "@codemirror/view": "^6",
     "@lucide/svelte": "^0.511.0",
     "@uiw/codemirror-theme-tokyo-night": "^4",
+    "graphology": "^0.26.0",
+    "graphology-layout-forceatlas2": "^0.10.1",
     "markdown-it": "^14",
     "markdown-it-footnote": "^4",
-    "markdown-it-task-lists": "^2"
+    "markdown-it-task-lists": "^2",
+    "sigma": "^3.0.3"
   }
 }
