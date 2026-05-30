@@ -6,3 +6,8 @@ allowBuilds:
   esbuild: true
   electron: true
   electron-winstaller: false
+
+# Force tmp to the patched version. CVE-2026-44705 (path traversal) —
+# tmp is dead code in Analecta (no Flatpak target), but pinned for hygiene.
+overrides:
+  tmp: '0.2.7'
