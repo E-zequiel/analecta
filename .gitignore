@@ -80,3 +80,4 @@ frontend/build/
 frontend/.svelte-kit/
 *.tsbuildinfo
 pnpm-debug.log*
+!.npmrc
