@@ -189,6 +189,8 @@ curl -sL https://registry.npmjs.org/<tool>/-/<tool>-<version>.tgz \
 # Output must match the integrity field in pnpm-lock.yaml
 ```
 
+**Scope of this check:** the tarball comparison detects the case where a maintainer's npm account is compromised and they publish a malicious version *without* a corresponding git tag — the npm content diverges from the audited source. It does **not** protect against a registry-level compromise where both the tarball and its hash are served consistently; verifying a tarball against the same registry that served it is circular for that threat. Registry-level threats are addressed by provenance attestations (Control 10).
+
 Once pinned:
 - Replace `pnpm dlx <tool>` with `pnpm exec <tool>` in workflow files.
 - If the job does not already run `pnpm install --frozen-lockfile`, add that step before the tool invocation.
@@ -331,6 +333,73 @@ Run `./scripts/socket-audit.sh` after regenerating (sigstore itself is an npm-ad
 
 ---
 
+## Control 11: Lifecycle Script Restriction
+
+Every npm package can declare `preinstall`, `install`, and `postinstall` scripts in its `package.json`. By default, pnpm runs these scripts for all installed packages, meaning any package in the transitive dependency tree can execute arbitrary code with full user privileges on every `pnpm install`.
+
+`pnpm-workspace.yaml` restricts this to an explicit allowlist via `allowBuilds`:
+
+```yaml
+allowBuilds:
+  electron: true          # must download platform binary via install.js
+  electron-winstaller: false  # explicitly blocked
+```
+
+Only packages in this allowlist are permitted to run lifecycle scripts. All others — including packages with malicious postinstall scripts — are blocked.
+
+### Current allowlist and rationale
+
+| Package | Script | Why allowed |
+|---------|--------|-------------|
+| `electron` | `install.js` — downloads Electron binary via `@electron/get` | Required; no alternative download mechanism |
+| `electron-winstaller` | `select-7z-arch.js` | Blocked — Windows-only, irrelevant on Linux |
+
+`esbuild` was removed from the allowlist on 2026-05-31 — Vite 8 uses Rolldown, so esbuild is not in the dependency tree.
+
+### Verifying allowlist entries
+
+When a package is in `allowBuilds`, its lifecycle script executes on every `pnpm install`. Before adding or retaining an entry, verify the script matches the published npm source:
+
+```bash
+# Hash the installed script
+sha256sum node_modules/.pnpm/<pkg>@<version>/node_modules/<pkg>/install.js
+
+# Hash the same file from the npm registry tarball (independent fetch)
+curl -sL "https://registry.npmjs.org/<pkg>/-/<pkg>-<version>.tgz" \
+  | tar -xzO package/install.js | sha256sum
+
+# Hashes must match exactly.
+```
+
+Do **not** use `raw.githubusercontent.com` for this check — it is flagged as malicious by some security tools (it's GitHub's CDN for raw content, legitimately used but also widely used by malware as free hosting). Use the npm registry tarball or `api.github.com` instead.
+
+**Verified 2026-05-31:** `electron@42.1.0` `install.js` — sha256 `8a6e96a324147490ad5d474e2c6deec608018a90032e80ec8e3ae97a6cd02851` — matches npm registry tarball.
+
+### Auditing the full installed tree
+
+To discover which packages in the installed tree actually have lifecycle scripts (and therefore which ones are silently blocked by the allowlist):
+
+```python
+import json, os
+base = "node_modules/.pnpm"
+for pkg_dir in os.listdir(base):
+    nm = os.path.join(base, pkg_dir, "node_modules")
+    if not os.path.isdir(nm):
+        continue
+    for name in os.listdir(nm):
+        pjson = os.path.join(nm, name, "package.json")
+        if os.path.exists(pjson):
+            d = json.load(open(pjson))
+            lc = {k: v for k, v in d.get("scripts", {}).items()
+                  if k in ("install", "preinstall", "postinstall")}
+            if lc:
+                print(f"{d.get('name')}@{d.get('version')} → {lc}")
+```
+
+As of 2026-05-31: only `electron-winstaller@5.4.0` has a lifecycle script in the installed tree, and it is blocked.
+
+---
+
 ## Repository-Level Settings
 
 These settings are configured in GitHub → Settings → Actions → General and complement the workflow-level controls. They are not visible in workflow files but are part of the security posture.
@@ -382,6 +451,20 @@ When the repository is made public, the **"Fork pull request workflows"** sectio
 4. If the alert is a confirmed false positive, add it to the catalog before committing.
 5. If the alert indicates a real risk, do not install the package — find an alternative or escalate.
 6. For new npm packages: the `verify-provenance` CI job will automatically check whether the package has a SLSA provenance attestation. If it does, the attestation is verified against Sigstore on every PR. No manual action required unless the job fails (see Control 10).
+
+### When auditing `allowBuilds` entries (Control 11)
+
+Run this whenever `pnpm-workspace.yaml` `allowBuilds` changes or when upgrading a package that is in the allowlist:
+
+1. Run the lifecycle script audit (see Control 11) to confirm only the expected packages have lifecycle scripts.
+2. For each package in `allowBuilds: true`, verify its lifecycle script against the npm registry tarball:
+   ```bash
+   curl -sL "https://registry.npmjs.org/<pkg>/-/<pkg>-<version>.tgz" \
+     | tar -xzO package/install.js | sha256sum
+   ```
+3. Compare against the hash of the installed file: `sha256sum node_modules/.pnpm/<pkg>@<version>/node_modules/<pkg>/install.js`
+4. Document the sha256 and date in this file's allowlist table.
+5. If a package no longer needs a lifecycle script (e.g., it was removed from the dep tree), remove it from `allowBuilds`.
 
 ### When the `deps-update.yml` weekly PR lands
 
