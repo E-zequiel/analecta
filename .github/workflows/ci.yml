@@ -51,6 +51,29 @@ jobs:
       - name: Svelte type check
         run: mise exec -- pnpm --filter frontend check
 
+  verify-provenance:
+    runs-on: ubuntu-22.04
+    if: github.repository == 'E-zequiel/analecta'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151  # v4.0.1
+
+      - name: Set up provenance verification environment
+        run: |
+          mise exec -- uv venv .venv-provenance
+          mise exec -- uv pip install --require-hashes \
+            -r scripts/requirements-provenance.lock \
+            --python .venv-provenance
+
+      - name: Verify npm provenance attestations
+        run: .venv-provenance/bin/python scripts/verify-provenance.py
+        env:
+          PYTHONUNBUFFERED: "1"
+
   socket:
     if: >-
       github.repository == 'E-zequiel/analecta' &&
