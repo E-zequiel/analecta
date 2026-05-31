@@ -3,7 +3,6 @@ packages:
   - 'electron'
 
 allowBuilds:
-  esbuild: true
   electron: true
   electron-winstaller: false
 
