@@ -167,7 +167,7 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 
 **Bypass via `workflow_dispatch`:** The `cooldown` input (default `3`) can be set to `0` to bypass the gate. `workflow_dispatch` requires repository write access, so this bypass is not available to external contributors.
 
-**Provenance note:** Lock file hashes provide **integrity** (package content matches the recorded hash). Full **SLSA provenance attestation** (where/how the package was built) is not yet implemented — ecosystem-wide support for Python and Node remains immature. This is a known gap, not an oversight.
+**Provenance note:** Lock file hashes provide **integrity** (package content matches the recorded hash). SLSA provenance attestation for npm packages is implemented in the `verify-provenance` CI job (see Control 10). Python provenance remains unimplemented — PyPI-side ecosystem support is still immature. This is a known gap, not an oversight.
 
 ---
 
@@ -254,6 +254,83 @@ The script calls `pnpm exec socket` (lockfile-pinned, `socket@1.1.99`) — never
 
 ---
 
+## Control 10: Provenance Attestation Verification
+
+The `verify-provenance` CI job (`scripts/verify-provenance.py`) verifies npm SLSA provenance attestations for every package in `pnpm-lock.yaml` that has one.
+
+### Why lockfile integrity alone is insufficient at write time
+
+`pnpm install --frozen-lockfile` verifies packages against the SHA-512 hashes in `pnpm-lock.yaml` (Control 6). This is strong for **read-time** verification. The gap is **write-time**: when `pnpm add <pkg>` is run, pnpm fetches the tarball and the registry's advertised hash in the same request, then writes both to the lockfile. A registry-level compromise could serve a malicious tarball with an internally consistent hash — future `--frozen-lockfile` installs would trust it.
+
+Lockfile integrity is still essential and cannot be dropped; Control 10 adds an independent anchor for the subset of packages that publish provenance.
+
+### How it works
+
+1. **Attestation bundle download:** queries npm registry for `dist.attestations.url` per package.
+2. **Subject hash check:** decodes the DSSE payload from the Sigstore bundle and compares the attested SHA-512 to the pnpm-lock.yaml integrity entry. This is the first check: if an attacker compromised the package at `pnpm add` time, the installed hash in the lockfile would differ from the attested hash.
+3. **Sigstore signature verification:** calls `sigstore.verify.Verifier.production().verify_dsse()` with an `OIDCIssuer` policy requiring a GitHub Actions signing identity. This verifies:
+   - The signing certificate was issued by Fulcio CA (Sigstore's certificate authority).
+   - The certificate's OIDC issuer is `https://token.actions.githubusercontent.com`.
+   - The bundle is included in the Rekor transparency log (tamper-evident, append-only).
+
+Steps 2 and 3 together provide an independent verification anchor: a registry-level MITM cannot forge a Rekor entry retroactively.
+
+### Residual gap (documented, not an oversight)
+
+| Scenario | Covered |
+|---|---|
+| Package was compromised after publication (hash mismatch with attested hash) | ✅ |
+| Fake attestation for malicious package (Sigstore signature invalid) | ✅ |
+| Package has no attestation (~60% of tree) | ❌ — covered only by Socket scan + lockfile integrity |
+| Rekor + Fulcio infrastructure compromise (state-level attack) | ❌ — no practical mitigation exists |
+| Write-time registry compromise for packages WITH attestation | ✅ (subject hash check catches it) |
+| Write-time registry compromise for packages WITHOUT attestation | ❌ — mitigated only by Socket scan + 3-day cooldown |
+
+### Coverage
+
+Provenance attestation adoption in the npm ecosystem is incomplete. Packages without attestations are skipped without error — they are covered by other controls. Measured coverage as of 2026-05-31:
+
+- **52 of 386 installed packages** (13%) have SLSA provenance attestations.
+- Among key application-level deps: `svelte`, `vite`, `electron-builder`, `electron-updater`, `rolldown`, `socket` have attestations. `sigma`, `graphology`, `markdown-it`, `defuddle`, `electron`, `eslint`, `prettier`, `typescript` do not.
+- The 87% without attestations are primarily older utility packages (`acorn`, `semver`, `yargs`, etc.) and packages that predate npm's provenance feature.
+
+Coverage is expected to grow as the ecosystem adopts `--provenance` publishing. The script automatically picks up new attestations without code changes.
+
+### Implementation
+
+```yaml
+# .github/workflows/ci.yml
+verify-provenance:
+  runs-on: ubuntu-22.04
+  permissions:
+    contents: read
+  steps:
+    - uses: actions/checkout@<SHA>
+    - uses: jdx/mise-action@<SHA>
+    - name: Set up provenance verification environment
+      run: |
+        mise exec -- uv venv .venv-provenance
+        mise exec -- uv pip install --require-hashes \
+          -r scripts/requirements-provenance.lock \
+          --python .venv-provenance
+    - name: Verify npm provenance attestations
+      run: .venv-provenance/bin/python scripts/verify-provenance.py
+      env:
+        PYTHONUNBUFFERED: "1"
+```
+
+No new external GitHub Actions are required. `sigstore` and its 31 transitive dependencies are installed from `scripts/requirements-provenance.lock`, which is committed to the repo and contains SHA-256 hashes for every package. `uv pip install --require-hashes` enforces that all installed wheels match those hashes — equivalent to `uv sync --frozen` for the backend.
+
+**Updating sigstore:** regenerate the lockfile with:
+```bash
+echo "sigstore==<new-version>" | mise exec -- uv pip compile --generate-hashes - -o scripts/requirements-provenance.lock
+```
+Run `./scripts/socket-audit.sh` after regenerating (sigstore itself is an npm-adjacent tool, but its Python deps should be scanned via the backend audit path).
+
+**Known Rekor entry-type limitation:** sigstore 4.x cannot verify the integrated timestamp for Rekor entry types newer than `dsse/hashedrekord 0.0.1`. Affected packages receive a compatibility warning (`⚠ Rekor entry type not supported`) rather than a failure. The subject hash check (step 2 above) still passes for these packages, preserving the key supply-chain guarantee. This limitation will resolve as sigstore adds support for newer entry types.
+
+---
+
 ## Repository-Level Settings
 
 These settings are configured in GitHub → Settings → Actions → General and complement the workflow-level controls. They are not visible in workflow files but are part of the security posture.
@@ -304,6 +381,7 @@ When the repository is made public, the **"Fork pull request workflows"** sectio
 3. Review any new alerts against the false-positive catalog in `project_socket_security.md`.
 4. If the alert is a confirmed false positive, add it to the catalog before committing.
 5. If the alert indicates a real risk, do not install the package — find an alternative or escalate.
+6. For new npm packages: the `verify-provenance` CI job will automatically check whether the package has a SLSA provenance attestation. If it does, the attestation is verified against Sigstore on every PR. No manual action required unless the job fails (see Control 10).
 
 ### When the `deps-update.yml` weekly PR lands
 

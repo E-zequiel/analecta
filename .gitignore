@@ -81,3 +81,4 @@ frontend/.svelte-kit/
 *.tsbuildinfo
 pnpm-debug.log*
 !.npmrc
+.venv-provenance/
