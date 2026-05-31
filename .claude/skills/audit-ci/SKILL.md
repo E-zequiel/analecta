@@ -51,6 +51,8 @@ curl -sL https://registry.npmjs.org/<pkg>/-/<pkg>-<version>.tgz \
 
 Only pin to a version that has a verified tag in the tool's GitHub repository. npm versions without a corresponding GitHub tag are unverifiable — use the last verified release instead.
 
+**Scope of this check:** the tarball comparison detects the case where a maintainer's npm account is compromised and they publish a malicious version to npm *without* creating a corresponding git tag — the npm tarball diverges from the source. It does **not** protect against a registry-level compromise where both the tarball and its hash are served consistently; verifying a tarball against the same registry that served it is circular. For that threat, npm provenance attestations (check 2h) are the correct control.
+
 #### 2b. Unpinned action references
 
 ```bash
@@ -118,6 +120,51 @@ Release jobs should use `cancel-in-progress: false`.
 
 Severity: **LOW**
 
+#### 2g. Missing `packageManager` field (pnpm projects)
+
+For repositories using pnpm, check whether `package.json` at the workspace root declares a `packageManager` field with a corepack SHA:
+
+```bash
+grep "packageManager" package.json
+```
+
+The correct form is `"packageManager": "pnpm@X.Y.Z+sha512.<hash>"`. Without it, any pnpm version can run the install — including a version that was unintentionally downgraded, or a compromised binary on a developer's machine. Corepack uses the hash to verify the pnpm binary before executing it.
+
+Generate or update with:
+```bash
+corepack use pnpm@<version>
+```
+
+Severity: **LOW**
+
+#### 2h. Missing lifecycle script restriction (pnpm projects)
+
+Check whether `pnpm-workspace.yaml` restricts which packages are allowed to run install-time lifecycle scripts (`preinstall`, `install`, `postinstall`):
+
+```bash
+grep -A10 "allowBuilds\|onlyBuiltDependencies" pnpm-workspace.yaml
+```
+
+Without this restriction, any installed package — including transitive dependencies — can execute arbitrary code on every `pnpm install`. A compromised package with a malicious `postinstall` script would run with full user privileges.
+
+The correct form is an explicit allowlist of only the packages that genuinely need to run scripts (typically only those that download platform-specific binaries):
+
+```yaml
+# pnpm-workspace.yaml
+allowBuilds:
+  electron: true       # downloads Electron binary
+  esbuild: true        # downloads platform binary (if in tree)
+  some-evil-pkg: false # explicitly blocked
+```
+
+To audit what packages actually have lifecycle scripts in the installed tree:
+```python
+import json, os
+# check package.json files under node_modules/.pnpm for install/postinstall scripts
+```
+
+Severity: **MEDIUM** (install-time RCE vector for any package that runs an unrestricted postinstall)
+
 ### Step 3: Cross-check lockfile coverage
 
 For any `pnpm exec <tool>` or `npx --no-install <tool>` calls found (the already-correct patterns), verify the tool is actually present in the lockfile — a missing entry causes a silent runtime failure:
@@ -157,11 +204,44 @@ Produce the findings table, clean file list, and summary.
 | Level | Meaning |
 |-------|---------|
 | HIGH | Unpinned CLI tool in a step that has secrets in environment scope |
-| MEDIUM | Unpinned action ref, missing permissions guard, missing repo guard on a job that writes or accesses secrets |
-| LOW | `cancel-in-progress: true` on release, `id-token: write` without apparent need |
+| MEDIUM | Unpinned action ref, missing permissions guard, missing repo guard on a job that writes or accesses secrets, missing lifecycle script restriction |
+| LOW | `cancel-in-progress: true` on release, `id-token: write` without apparent need, missing `packageManager` SHA field |
 
 ---
 
 ## After the audit
 
 Once findings are reported, offer to remediate. Always confirm with the user before editing any workflow file. For `pnpm dlx` → `pnpm exec` migrations, follow the full pinning + hash-verification procedure in check 2a: install the devDependency, verify the SHA-512, then update the workflow.
+
+---
+
+## Analecta-specific checks (2i)
+
+Run these in addition to 2a–2h when auditing this repository.
+
+#### 2i. Provenance verification infrastructure
+
+Check that the npm provenance attestation verification setup (Control 10) is intact:
+
+```bash
+# requirements-provenance.lock must exist and be tracked in git
+git ls-files scripts/requirements-provenance.lock
+
+# .venv-provenance/ must be gitignored
+grep "\.venv-provenance" .gitignore
+
+# verify-provenance job must exist in CI
+grep "verify-provenance" .github/workflows/ci.yml
+
+# sigstore must be pinned in the lock file
+grep "^sigstore==" scripts/requirements-provenance.lock
+```
+
+| Finding | Severity | Remediation |
+|---|---|---|
+| `requirements-provenance.lock` not committed | MEDIUM | Regenerate: `echo "sigstore==4.2.0" \| uv pip compile --generate-hashes - -o scripts/requirements-provenance.lock` |
+| `verify-provenance` job missing from `ci.yml` | MEDIUM | Re-add the job — see `docs/github-actions-security.md` Control 10 |
+| `.venv-provenance/` not in `.gitignore` | LOW | Add `.venv-provenance/` to `.gitignore` |
+| `sigstore` not pinned (version range instead of `==`) | LOW | Pin to exact version in lock file |
+
+**Context:** `scripts/verify-provenance.py` verifies Sigstore provenance attestations for the 52/386 installed npm packages (13%) that publish them. It cross-checks the attested subject SHA-512 against `pnpm-lock.yaml` (independent of registry) and verifies the Sigstore bundle against Rekor + Fulcio. See `docs/github-actions-security.md` Control 10 for full threat model and residual gap documentation.
