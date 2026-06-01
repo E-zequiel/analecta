@@ -31,7 +31,7 @@ jobs:
         working-directory: backend
 
       - name: Install Node dependencies
-        run: mise exec -- pnpm install --frozen-lockfile
+        run: mise exec -- pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Run age-gated dependency update
         run: |
