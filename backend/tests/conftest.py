@@ -1,4 +1,3 @@
-import os
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,10 +17,6 @@ from analecta.api.routes.tags import router as tags_router
 from analecta.config import AppConfig
 from analecta.storage.index import VaultIndex
 from analecta.storage.vault import VaultManager
-
-# test_updater.py still uses qtbot (pending deletion in G3)
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
 
 # ---------------------------------------------------------------------------
 # Shared primitive fixtures

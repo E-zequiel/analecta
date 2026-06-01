@@ -23,6 +23,7 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         project: './electron/tsconfig.json',
+        // @ts-ignore - @types/node not hoisted to workspace root; dirname is valid at runtime
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -35,6 +36,7 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         project: './frontend/tsconfig.json',
+        // @ts-ignore - @types/node not hoisted to workspace root; dirname is valid at runtime
         tsconfigRootDir: import.meta.dirname,
       },
     },

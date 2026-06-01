@@ -58,7 +58,7 @@ def _age_ok(release_dt: datetime, cooldown: int) -> bool:
 
 
 def _parse_iso(s: str) -> datetime:
-    dt = datetime.fromisoformat(s.rstrip("Z"))
+    dt = datetime.fromisoformat(s)
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
@@ -84,7 +84,7 @@ def _pypi_release_date(name: str, version: str, all_releases: dict) -> datetime 
         return None
     try:
         return _parse_iso(min(times))
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return None
 
 
@@ -173,7 +173,7 @@ def _npm_release_date(name: str, version: str) -> datetime | None:
         return None
     try:
         return _parse_iso(ts)
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return None
 
 
