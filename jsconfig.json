@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "ES2022",
+    "checkJs": true,
+    "typeRoots": ["node_modules/@types"]
+  },
+  "include": ["eslint.config.js"]
+}
