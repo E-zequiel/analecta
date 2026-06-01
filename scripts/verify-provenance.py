@@ -23,6 +23,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+from typing import cast
 
 LOCKFILE = Path(__file__).resolve().parent.parent / "pnpm-lock.yaml"
 GITHUB_ACTIONS_ISSUER = "https://token.actions.githubusercontent.com"
@@ -51,32 +52,34 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
     return result
 
 
-def _fetch_json(url: str, timeout: int = 10) -> dict | None:
+def _fetch_json(url: str, timeout: int = 10) -> dict[str, object] | None:
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read())
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # pyright: ignore[reportAny]
+            return cast(dict[str, object], json.loads(r.read()))  # pyright: ignore[reportAny]
     except Exception:
         return None
 
 
-def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict] | None:
+def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, object]] | None:
     """Return (predicate_type, bundle) for the first SLSA provenance attestation,
     or None if the package has no provenance attestation on npm."""
     encoded = name.replace("/", "%2F")
     meta = _fetch_json(f"https://registry.npmjs.org/{encoded}/{ver}")
     if not meta:
         return None
-    att_url = meta.get("dist", {}).get("attestations", {}).get("url")
+    dist = cast(dict[str, object], meta.get("dist", {}))
+    attestations_meta = cast(dict[str, object], dist.get("attestations", {}))
+    att_url = cast(str | None, attestations_meta.get("url"))
     if not att_url:
         return None
     data = _fetch_json(att_url)
     if not data:
         return None
-    for att in data.get("attestations", []):
-        pred = att.get("predicateType", "")
+    for att in cast(list[dict[str, object]], data.get("attestations", [])):
+        pred = cast(str, att.get("predicateType", ""))
         if any(pred.startswith(p) for p in SLSA_PREDICATE_PREFIXES):
-            return pred, att.get("bundle", {})
+            return pred, cast(dict[str, object], att.get("bundle", {}))
     return None
 
 
@@ -90,16 +93,18 @@ def _b64_to_hex(integrity: str) -> str | None:
         return None
 
 
-def check_subject_hash(bundle: dict, lockfile_integrity: str) -> tuple[bool, str]:
+def check_subject_hash(bundle: dict[str, object], lockfile_integrity: str) -> tuple[bool, str]:
     """Verify attested subject SHA-512 matches the lockfile integrity.
 
     Returns (ok, message).
     """
     try:
-        payload_b64 = bundle.get("dsseEnvelope", {}).get("payload", "")
-        statement = json.loads(base64.b64decode(payload_b64).decode())
-        for subject in statement.get("subject", []):
-            attested_hex = subject.get("digest", {}).get("sha512")
+        dsse = cast(dict[str, object], bundle.get("dsseEnvelope", {}))
+        payload_b64 = cast(str, dsse.get("payload", ""))
+        statement = cast(dict[str, object], json.loads(base64.b64decode(payload_b64).decode()))
+        for subject in cast(list[dict[str, object]], statement.get("subject", [])):
+            digest = cast(dict[str, object], subject.get("digest", {}))
+            attested_hex = cast(str | None, digest.get("sha512"))
             if not attested_hex:
                 continue
             lockfile_hex = _b64_to_hex(lockfile_integrity)
@@ -109,9 +114,7 @@ def check_subject_hash(bundle: dict, lockfile_integrity: str) -> tuple[bool, str
                 return True, "subject hash matches lockfile integrity"
             return (
                 False,
-                f"hash MISMATCH\n"
-                f"          attested: {attested_hex[:48]}...\n"
-                f"          lockfile: {lockfile_hex[:48]}...",
+                f"hash MISMATCH\n          attested: {attested_hex[:48]}...\n          lockfile: {lockfile_hex[:48]}...",
             )
         return False, "no sha512 subject found in attestation payload"
     except Exception as e:
@@ -129,23 +132,23 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
     Only VerificationError (bad signature / cert chain) is treated as fatal.
     """
     try:
-        from sigstore.errors import NetworkError, VerificationError
-        from sigstore.models import Bundle
-        from sigstore.verify import Verifier
-        from sigstore.verify.policy import OIDCIssuer
+        from sigstore.errors import NetworkError, VerificationError  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
+        from sigstore.models import Bundle  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
+        from sigstore.verify import Verifier  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
+        from sigstore.verify.policy import OIDCIssuer  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
     except ImportError as e:
         return False, f"sigstore not importable: {e}"
 
     try:
-        verifier = Verifier.production()
-        bundle = Bundle.from_json(bundle_json)
-        verifier.verify_dsse(
+        verifier = Verifier.production()  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+        bundle = Bundle.from_json(bundle_json)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+        verifier.verify_dsse(  # pyright: ignore[reportUnknownMemberType]
             bundle=bundle,
             policy=OIDCIssuer(GITHUB_ACTIONS_ISSUER),
         )
         return True, "Sigstore signature verified (Rekor + Fulcio)"
-    except VerificationError as e:
-        msg = str(e)
+    except VerificationError as e:  # pyright: ignore[reportUnknownVariableType]
+        msg = str(e)  # pyright: ignore[reportUnknownArgumentType]
         # sigstore 4.x cannot verify the Rekor integrated timestamp for entry
         # types newer than dsse/hashedrekord 0.0.1. This is a library
         # compatibility gap, not a signature failure. Subject hash check
@@ -153,7 +156,7 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
         if "only supported" in msg or "not supported" in msg:
             return True, f"Rekor entry type not supported by sigstore 4.x — timestamp skipped ({msg})"
         return False, f"Sigstore verification failed: {msg}"
-    except NetworkError as e:
+    except NetworkError as e:  # pyright: ignore[reportUnknownVariableType]
         return True, f"Sigstore network unavailable — signature check skipped ({e})"
     except Exception as e:
         msg = str(e)
@@ -179,7 +182,7 @@ def main() -> int:
             time.sleep(0.02)
             continue
 
-        pred_type, bundle = result
+        _pred_type, bundle = result
         pkg = f"{name}@{ver}"
         print(f"  {pkg}")
 
@@ -214,12 +217,11 @@ def main() -> int:
         for pkg, reason in failed:
             print(f"  ✗ {pkg}: {reason}")
         print()
-        print(
-            "Provenance verification failed. Possible causes:\n"
-            "  • Supply-chain attack: installed hash differs from attested hash\n"
-            "  • Registry served a tampered attestation (Sigstore check failed)\n"
-            "  • Legitimate package re-publish without re-attestation (investigate)"
-        )
+        print("""\
+Provenance verification failed. Possible causes:
+  • Supply-chain attack: installed hash differs from attested hash
+  • Registry served a tampered attestation (Sigstore check failed)
+  • Legitimate package re-publish without re-attestation (investigate)""")
         return 1
 
     print()
