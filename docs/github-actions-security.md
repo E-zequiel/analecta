@@ -167,6 +167,8 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 
 **Bypass via `workflow_dispatch`:** The `cooldown` input (default `3`) can be set to `0` to bypass the gate. `workflow_dispatch` requires repository write access, so this bypass is not available to external contributors.
 
+**`--ignore-scripts` in the install step:** `deps-update.yml` installs the *current* (pre-update) lockfile with `pnpm install --frozen-lockfile --ignore-scripts` before running `deps_update.py`. Lifecycle scripts (notably `electron`'s binary download) are blocked for this install because the job only needs `pnpm outdated` / `pnpm update` tooling — it does not execute the Electron app. This closes the window where the highest-privilege job in the repo (`contents: write` + `pull-requests: write`) would run `allowBuilds`-gated scripts unnecessarily. See Control 12 for the full scan-ordering rationale.
+
 **Provenance note:** Lock file hashes provide **integrity** (package content matches the recorded hash). SLSA provenance attestation for npm packages is implemented in the `verify-provenance` CI job (see Control 10). Python provenance remains unimplemented — PyPI-side ecosystem support is still immature. This is a known gap, not an oversight.
 
 ---
@@ -222,8 +224,11 @@ The Socket CI job (`ci.yml`) only runs on PRs that change a lockfile. This means
 | Trigger | Action |
 |---------|--------|
 | After any `pnpm add` or `uv add` | Run `./scripts/socket-audit.sh` before committing |
+| After running `scripts/deps_update.py` locally | Run `./scripts/socket-audit.sh` before committing or pushing (see note below) |
 | After the weekly `deps-update.yml` PR lands | Run locally before merging (in addition to `check.sh`) |
 | Before opening a PR that touches `pnpm-lock.yaml` or `backend/uv.lock` | Run as a pre-PR gate |
+
+**Local limitation with `deps_update.py`:** `pnpm update` (called by the script for Node packages) has no `--lockfile-only` flag. It updates both `pnpm-lock.yaml` and `node_modules` in one step, meaning `electron`'s postinstall (the only lifecycle script permitted by `allowBuilds`) may run before `socket-audit.sh` can scan the updated lockfile. Running the scan immediately after — and not pushing until it is clean — is the correct compensating control. The hard enforcement gate is CI: the `socket` job in `ci.yml` runs with `--ignore-scripts` and its result gates `check-frontend` and `test-backend` via `needs:` (see Control 12).
 
 ### How to run
 
@@ -400,6 +405,88 @@ As of 2026-05-31: only `electron-winstaller@5.4.0` has a lifecycle script in the
 
 ---
 
+## Control 12: Scan Ordering — Scan Before Lifecycle Scripts
+
+Controls 8, 9, and 11 together establish *which* packages run scripts and *when* the lockfile is scanned. This control addresses the sequencing gap: even with `allowBuilds` restricted to `electron`, a compromised version of `electron` introduced into the lockfile would have its `install.js` (binary download) execute during `pnpm install` **before** `socket ci` could flag it, unless install order is explicitly managed.
+
+### CI: `socket` job installs with `--ignore-scripts`
+
+The `socket` job in `ci.yml` installs dependencies with:
+
+```yaml
+- name: Install dependencies
+  run: mise exec -- pnpm install --frozen-lockfile --ignore-scripts
+```
+
+`--ignore-scripts` blocks all `preinstall`, `install`, and `postinstall` scripts for every package — including `electron`. pnpm still downloads tarballs and populates `node_modules` (linking happens via symlinks, not scripts), but no script code executes. The security property is **no script execution before the scan**, not "no download."
+
+`socket` (the CLI, `v1.1.99`) is a pure-JavaScript tool with no native binary download; it runs correctly under `--ignore-scripts`. Verified locally: `pnpm install --frozen-lockfile --ignore-scripts && pnpm exec socket --version` → `1.1.99`.
+
+After install, `socket ci` reads `pnpm-lock.yaml` and `package.json` directly — it does not require `node_modules` to be populated beyond the tool itself. The scan therefore reflects the full lockfile diff against the base branch before any allowlisted script has run.
+
+### CI: downstream jobs are gated on `socket` passing
+
+`check-frontend` and `test-backend` declare `needs: [socket]` so they only execute after the scan succeeds:
+
+```yaml
+check-frontend:
+  needs: [socket]
+  if: >-
+    !cancelled() &&
+    github.repository == 'E-zequiel/analecta' &&
+    (needs.socket.result == 'success' || needs.socket.result == 'skipped')
+  permissions:
+    contents: read
+```
+
+Key details:
+
+- `!cancelled()` (not `always()`) — a cancelled run does not force downstream jobs to fire.
+- `needs.socket.result == 'skipped'` — on `push` to `main`, the `socket` job does not run (its `if:` excludes non-PR events). Without this clause, `check-frontend` and `test-backend` would be permanently skipped on every main push.
+- `verify-provenance` is **not** gated on `socket` — it installs only Python packages via `uv`; it never calls `pnpm install`.
+
+**Accepted trade-off:** a transient Socket API or BSM outage causes `socket` to fail, which skips `check-frontend` and `test-backend`. The Python test suite and frontend checks are thus coupled to Socket availability. This is intentional — it prevents a merge from slipping through without a scan result.
+
+### CI: `socket` as a required status check
+
+The `needs:` coupling above prevents wasting runner minutes, but the actual merge gate is the **branch protection rule** in GitHub → Settings → Branches → `main`. Add `socket` to the required status checks list there. A skipped required check is treated as "not passed" by GitHub — this is the hard block on merging when socket fails.
+
+### CI: `deps-update.yml` also uses `--ignore-scripts`
+
+`deps-update.yml`'s Node install step (`pnpm install --frozen-lockfile --ignore-scripts`) applies the same restriction. This matters because `deps-update.yml` holds the highest-privilege token in the repo (`contents: write` + `pull-requests: write`). The job only needs `pnpm outdated` / `pnpm update` tooling — the Electron binary is not needed. Blocking scripts there limits the blast radius if the pre-update lockfile ever contained a compromised package.
+
+### Local: advisory workflow (no equivalent of `--ignore-scripts` for `pnpm update`)
+
+`pnpm update` (used by `scripts/deps_update.py`) has no `--lockfile-only` or `--ignore-scripts` flag. It updates `pnpm-lock.yaml` and installs to `node_modules` in a single step, meaning `electron`'s postinstall may run before `socket-audit.sh` can scan the result.
+
+The compensating control is sequencing discipline:
+
+```
+deps_update.py           ← updates lockfile + installs (electron postinstall may run)
+./scripts/socket-audit.sh   ← scans the updated lockfile
+<review output>
+git add pnpm-lock.yaml && git commit   ← only if scan is clean
+```
+
+Do not push before the scan completes. The CI gate (`socket` job) is the hard enforcement; local is advisory.
+
+### Fork PR caveat (relevant when the repo goes public)
+
+The `socket` job is gated on:
+
+```yaml
+github.event.pull_request.head.repo.full_name == github.repository
+```
+
+Fork PRs fail this check — `socket` is skipped. If `socket` is a required status check and the repo is public, fork PRs will have a permanently unresolvable required check (skipped ≠ passed). Mitigations:
+
+- Remove `socket` from required checks (weakens the gate for internal PRs).
+- Or configure GitHub to allow fork PRs to use the Actions secrets needed for socket (requires careful scope review).
+
+This is tracked in `project_public_repo_checklist.md`.
+
+---
+
 ## Repository-Level Settings
 
 These settings are configured in GitHub → Settings → Actions → General and complement the workflow-level controls. They are not visible in workflow files but are part of the security posture.
@@ -466,8 +553,16 @@ Run this whenever `pnpm-workspace.yaml` `allowBuilds` changes or when upgrading 
 4. Document the sha256 and date in this file's allowlist table.
 5. If a package no longer needs a lifecycle script (e.g., it was removed from the dep tree), remove it from `allowBuilds`.
 
+### When running `scripts/deps_update.py` locally
+
+1. Run the script as usual: `mise exec -- python scripts/deps_update.py`.
+2. Immediately run `./scripts/socket-audit.sh` — do not commit or push before the scan completes.
+3. Review any new alerts. If clean, commit only `pnpm-lock.yaml` and `backend/uv.lock` (not `node_modules`).
+4. The CI `socket` job will re-scan on the resulting PR as the hard enforcement gate.
+
 ### When the `deps-update.yml` weekly PR lands
 
 1. Review the PR body — it lists every package updated and every package held back with its eligibility date.
 2. Run `./scripts/check.sh` locally against the updated lock files before merging.
-3. If a package was skipped due to cooldown and you need it urgently, re-run the workflow via `workflow_dispatch` with `cooldown` set to `0`.
+3. The `socket` CI job runs on the PR and gates `check-frontend` and `test-backend` — do not merge if socket fails.
+4. If a package was skipped due to cooldown and you need it urgently, re-run the workflow via `workflow_dispatch` with `cooldown` set to `0`.

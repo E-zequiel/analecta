@@ -17,7 +17,11 @@ concurrency:
 jobs:
   test-backend:
     runs-on: ubuntu-22.04
-    if: github.repository == 'E-zequiel/analecta'
+    needs: [socket]
+    if: >-
+      !cancelled() &&
+      github.repository == 'E-zequiel/analecta' &&
+      (needs.socket.result == 'success' || needs.socket.result == 'skipped')
     permissions:
       contents: read
 
@@ -36,7 +40,11 @@ jobs:
 
   check-frontend:
     runs-on: ubuntu-22.04
-    if: github.repository == 'E-zequiel/analecta'
+    needs: [socket]
+    if: >-
+      !cancelled() &&
+      github.repository == 'E-zequiel/analecta' &&
+      (needs.socket.result == 'success' || needs.socket.result == 'skipped')
     permissions:
       contents: read
 
@@ -88,7 +96,7 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151  # v4.0.1
 
       - name: Install dependencies
-        run: mise exec -- pnpm install --frozen-lockfile
+        run: mise exec -- pnpm install --frozen-lockfile --ignore-scripts
 
       - uses: bitwarden/sm-action@27c0c9dcab679d7250dbab91227c85b49ffa5e0f  # v3.0.0
         with:

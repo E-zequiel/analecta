@@ -213,6 +213,56 @@ Produce the findings table, clean file list, and summary.
 
 Once findings are reported, offer to remediate. Always confirm with the user before editing any workflow file. For `pnpm dlx` → `pnpm exec` migrations, follow the full pinning + hash-verification procedure in check 2a: install the devDependency, verify the SHA-512, then update the workflow.
 
+#### 2j. Scan ordering: scan before lifecycle scripts
+
+Check that the Socket scan job installs with `--ignore-scripts`, that downstream jobs are gated on socket approval, and that `deps-update.yml`'s install step also skips scripts.
+
+**What to grep for:**
+
+```bash
+# socket job must use --ignore-scripts
+grep -A5 "name: Install" .github/workflows/ci.yml | grep "ignore-scripts"
+
+# check-frontend and test-backend must declare needs: [socket]
+grep -n "needs:" .github/workflows/ci.yml
+
+# downstream job if-conditions must use !cancelled(), not always()
+grep -n "cancelled\|always()" .github/workflows/ci.yml
+
+# deps-update.yml install step must also use --ignore-scripts
+grep -n "ignore-scripts" .github/workflows/deps-update.yml
+```
+
+**What correct looks like:**
+
+```yaml
+# socket job: no lifecycle scripts run before the scan
+- name: Install dependencies
+  run: mise exec -- pnpm install --frozen-lockfile --ignore-scripts
+
+# downstream jobs: only run after socket approves
+check-frontend:
+  needs: [socket]
+  if: >-
+    !cancelled() &&
+    github.repository == 'E-zequiel/analecta' &&
+    (needs.socket.result == 'success' || needs.socket.result == 'skipped')
+```
+
+The `|| 'skipped'` clause is required: on `push` to `main`, the `socket` job does not run (it is scoped to PRs), so its result is `'skipped'` — without this clause, `check-frontend` and `test-backend` would never run on main pushes.
+
+**Why `!cancelled()` and not `always()`:** `always()` fires the job even on a cancelled run. `!cancelled()` lets the job run normally (including when socket is skipped) but suppresses it on cancellation.
+
+**`--ignore-scripts` in `deps-update.yml`:** The update workflow holds the highest-privilege token (`contents: write` + `pull-requests: write`). Its initial `pnpm install --frozen-lockfile --ignore-scripts` step blocks `electron`'s binary download (the only script permitted by `allowBuilds`) because the job only needs `pnpm outdated`/`pnpm update` tooling — the Electron binary is not required there.
+
+**Local limitation:** `pnpm update` (called by `scripts/deps_update.py` for Node updates) has no `--lockfile-only` flag — it updates both `pnpm-lock.yaml` and `node_modules` in one step. `electron`'s postinstall may therefore run before `socket-audit.sh` can scan the updated lockfile. The compensating control is to run `./scripts/socket-audit.sh` immediately after `deps_update.py`, before committing or pushing. CI is the hard enforcement gate; local is advisory.
+
+**Branch protection (manual):** For `needs: [socket]` to block merges, add `socket` as a required status check in GitHub → Settings → Branches → `main`. A skipped required check is treated as "not passed."
+
+**Fork PR caveat:** The `socket` job is scoped to non-fork PRs (`head.repo.full_name == github.repository`). If the repo goes public and `socket` is a required status check, fork PRs will have a permanently unresolvable check. Tracked in `project_public_repo_checklist.md`.
+
+Severity: **MEDIUM** (gap: a compromised `allowBuilds`-listed package's postinstall runs before the scan; `--ignore-scripts` closes this for CI, advisory workflow mitigates it locally)
+
 ---
 
 ## Analecta-specific checks (2i)
