@@ -75,6 +75,8 @@ jobs:
 
 `pull-requests: write` is required in `deps-update.yml` so that `gh pr create` (run with `github.token`) can open a PR for the weekly dependency update branch. This permission is declared at the job level only for that job; the release job does not hold it.
 
+`contents: read` is required for every job that uses `actions/checkout` to clone a private repository. This includes the `socket` job — without it, `actions/checkout` cannot authenticate and the clone fails with "Repository not found". On a public repository this permission is redundant (checkout requires no token), but it is harmless and kept for consistency.
+
 No other permission (`packages`, `id-token`, etc.) is granted to any job.
 
 ### Known platform limitation
