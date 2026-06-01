@@ -23,7 +23,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 LOCKFILE = Path(__file__).resolve().parent.parent / "pnpm-lock.yaml"
 GITHUB_ACTIONS_ISSUER = "https://token.actions.githubusercontent.com"
@@ -52,34 +52,34 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
     return result
 
 
-def _fetch_json(url: str, timeout: int = 10) -> dict[str, object] | None:
+def _fetch_json(url: str, timeout: int = 10) -> dict[str, Any] | None:
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=timeout) as r:  # pyright: ignore[reportAny]
-            return cast(dict[str, object], json.loads(r.read()))  # pyright: ignore[reportAny]
+            return cast(dict[str, Any], json.loads(r.read()))  # pyright: ignore[reportAny]
     except Exception:
         return None
 
 
-def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, object]] | None:
+def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, Any]] | None:
     """Return (predicate_type, bundle) for the first SLSA provenance attestation,
     or None if the package has no provenance attestation on npm."""
     encoded = name.replace("/", "%2F")
     meta = _fetch_json(f"https://registry.npmjs.org/{encoded}/{ver}")
     if not meta:
         return None
-    dist = cast(dict[str, object], meta.get("dist", {}))
-    attestations_meta = cast(dict[str, object], dist.get("attestations", {}))
+    dist = cast(dict[str, Any], meta.get("dist", {}))
+    attestations_meta = cast(dict[str, Any], dist.get("attestations", {}))
     att_url = cast(str | None, attestations_meta.get("url"))
     if not att_url:
         return None
     data = _fetch_json(att_url)
     if not data:
         return None
-    for att in cast(list[dict[str, object]], data.get("attestations", [])):
+    for att in cast(list[dict[str, Any]], data.get("attestations", [])):
         pred = cast(str, att.get("predicateType", ""))
         if any(pred.startswith(p) for p in SLSA_PREDICATE_PREFIXES):
-            return pred, cast(dict[str, object], att.get("bundle", {}))
+            return pred, cast(dict[str, Any], att.get("bundle", {}))
     return None
 
 
@@ -93,17 +93,17 @@ def _b64_to_hex(integrity: str) -> str | None:
         return None
 
 
-def check_subject_hash(bundle: dict[str, object], lockfile_integrity: str) -> tuple[bool, str]:
+def check_subject_hash(bundle: dict[str, Any], lockfile_integrity: str) -> tuple[bool, str]:
     """Verify attested subject SHA-512 matches the lockfile integrity.
 
     Returns (ok, message).
     """
     try:
-        dsse = cast(dict[str, object], bundle.get("dsseEnvelope", {}))
+        dsse = cast(dict[str, Any], bundle.get("dsseEnvelope", {}))
         payload_b64 = cast(str, dsse.get("payload", ""))
-        statement = cast(dict[str, object], json.loads(base64.b64decode(payload_b64).decode()))
-        for subject in cast(list[dict[str, object]], statement.get("subject", [])):
-            digest = cast(dict[str, object], subject.get("digest", {}))
+        statement = cast(dict[str, Any], json.loads(base64.b64decode(payload_b64).decode()))
+        for subject in cast(list[dict[str, Any]], statement.get("subject", [])):
+            digest = cast(dict[str, Any], subject.get("digest", {}))
             attested_hex = cast(str | None, digest.get("sha512"))
             if not attested_hex:
                 continue
