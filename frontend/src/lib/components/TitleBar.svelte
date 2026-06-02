@@ -209,36 +209,34 @@
 		</div>
 	{:else if toolbarMode === 'editor' && $editorActions !== null}
 		<div class="toolbar-center">
-			<div class="tb-group">
-				<button class="btn-icon" onclick={() => $editorActions!.goBack()} title="Back">
-					<CornerUpLeft size={16} />
-				</button>
-				<button
-					class="btn-icon"
-					class:active={$editorShowPreview}
-					onclick={() => $editorActions!.togglePreview()}
-					title="Preview"
-				>
-					<BookOpenText size={16} />
-				</button>
-				<button
-					class="btn-icon"
-					class:active={$editorSaved}
-					onclick={() => $editorActions!.save()}
-					disabled={$editorSaving}
-					title={$editorSaving ? 'Saving…' : $editorSaved ? 'Saved ✓' : 'Save'}
-				>
-					<Save size={16} />
-				</button>
-				<button
-					class="btn-icon"
-					onclick={() => $editorActions!.revert()}
-					disabled={!$editorIsDirty}
-					title="Revert"
-				>
-					<RotateCcw size={16} />
-				</button>
-			</div>
+			<button class="btn-icon" onclick={() => $editorActions!.goBack()} title="Back">
+				<CornerUpLeft size={16} />
+			</button>
+			<button
+				class="btn-icon"
+				class:active={$editorShowPreview}
+				onclick={() => $editorActions!.togglePreview()}
+				title="Preview"
+			>
+				<BookOpenText size={16} />
+			</button>
+			<button
+				class="btn-icon"
+				class:active={$editorSaved}
+				onclick={() => $editorActions!.save()}
+				disabled={$editorSaving}
+				title={$editorSaving ? 'Saving…' : $editorSaved ? 'Saved ✓' : 'Save'}
+			>
+				<Save size={16} />
+			</button>
+			<button
+				class="btn-icon"
+				onclick={() => $editorActions!.revert()}
+				disabled={!$editorIsDirty}
+				title="Revert"
+			>
+				<RotateCcw size={16} />
+			</button>
 		</div>
 	{:else}
 		<div class="drag-region">
@@ -411,7 +409,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 6px;
+		gap: 8px;
 		padding: 0 8px;
 	}
 
