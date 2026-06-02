@@ -45,8 +45,15 @@ function validateScrapeUrl(urlStr: string): void {
 		throw new Error('invalid-url');
 	}
 	if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('blocked-protocol');
-	const h = parsed.hostname;
-	if (h === 'localhost' || h === '127.0.0.1' || h === '::1') throw new Error('blocked-local');
+	const h = parsed.hostname.toLowerCase().replace(/^\[|]$/g, '');
+	// Block loopback: 127.0.0.0/8, ::1, and IPv4-mapped IPv6 (::ffff:127.x.x.x).
+	if (h === 'localhost' || h === '::1') throw new Error('blocked-local');
+	if (/^127\./.test(h)) throw new Error('blocked-local');
+	if (/^::ffff:(127\.|7f)/i.test(h)) throw new Error('blocked-local');
+	// Block link-local: 169.254.0.0/16 and ::ffff:169.254.x.x.
+	if (/^169\.254\./.test(h)) throw new Error('blocked-link-local');
+	if (/^::ffff:(169\.254\.|a9fe)/i.test(h)) throw new Error('blocked-link-local');
+	// Block RFC 1918.
 	if (/^10\.|^172\.(1[6-9]|2\d|3[01])\.|^192\.168\./.test(h)) throw new Error('blocked-rfc1918');
 }
 
