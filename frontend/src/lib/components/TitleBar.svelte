@@ -154,7 +154,7 @@
 		display: flex;
 		align-items: center;
 		gap: 2px;
-		padding: 0 4px;
+		padding: 0 6px;
 		border-right: 1px solid var(--border);
 		flex-shrink: 0;
 		overflow: hidden;
@@ -210,15 +210,14 @@
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
-		gap: 0;
-		padding: 0 4px 0 0;
+		gap: 2px;
+		padding: 0 6px;
 		border-left: 1px solid var(--border);
 		flex-shrink: 0;
 	}
 
 	.wc-spacer {
-		width: 6px;
-		flex-shrink: 0;
+		flex: 1;
 	}
 
 	.wc-btn {
@@ -251,6 +250,5 @@
 
 	.panel-toggle {
 		width: 28px;
-		margin-right: 2px;
 	}
 </style>
