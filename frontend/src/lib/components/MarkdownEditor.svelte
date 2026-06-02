@@ -6,10 +6,10 @@
 	import { markdown } from '@codemirror/lang-markdown';
 	import { tokyoNight } from '@uiw/codemirror-theme-tokyo-night';
 
-	let {
+	const {
 		value,
 		onChange,
-		onSave
+		onSave,
 	}: {
 		value: string;
 		onChange: (content: string) => void;
@@ -18,9 +18,10 @@
 
 	let container: HTMLDivElement;
 	let view: EditorView;
-	let lastEmitted = value;
+	let lastEmitted: string;
 
 	onMount(() => {
+		lastEmitted = value;
 		const state = EditorState.create({
 			doc: value,
 			extensions: [
@@ -28,7 +29,13 @@
 				keymap.of([
 					...defaultKeymap,
 					...historyKeymap,
-					{ key: 'Mod-s', run: () => { onSave(); return true; } }
+					{
+						key: 'Mod-s',
+						run: () => {
+							onSave();
+							return true;
+						},
+					},
 				]),
 				markdown(),
 				tokyoNight,
@@ -39,9 +46,9 @@
 					'.cm-scroller': {
 						fontFamily: "'JetBrains Mono', monospace",
 						fontSize: '14px',
-						overflow: 'auto'
+						overflow: 'auto',
 					},
-					'.cm-content': { padding: '1rem 1.5rem', minHeight: '100%' }
+					'.cm-content': { padding: '1rem 1.5rem', minHeight: '100%' },
 				}),
 				EditorView.updateListener.of((update) => {
 					if (update.docChanged) {
@@ -49,8 +56,8 @@
 						lastEmitted = content;
 						onChange(content);
 					}
-				})
-			]
+				}),
+			],
 		});
 
 		view = new EditorView({ state, parent: container });
@@ -60,7 +67,7 @@
 	$effect(() => {
 		if (view && value !== lastEmitted) {
 			view.dispatch({
-				changes: { from: 0, to: view.state.doc.length, insert: value }
+				changes: { from: 0, to: view.state.doc.length, insert: value },
 			});
 			lastEmitted = value;
 		}

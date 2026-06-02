@@ -1,5 +1,5 @@
 <script lang="ts">
-	let { timedOut = false }: { timedOut?: boolean } = $props();
+	const { timedOut = false }: { timedOut?: boolean } = $props();
 </script>
 
 <div class="loading-screen">

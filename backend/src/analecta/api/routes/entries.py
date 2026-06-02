@@ -1,13 +1,19 @@
 import asyncio
 import json
 import logging
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from analecta.api.deps import get_index
-from analecta.storage.index import EntryRecord, VaultIndex
+from analecta.storage.index import (
+    EntryRecord,
+    GraphEdgeRecord,
+    GraphNodeRecord,
+    VaultIndex,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -77,6 +83,121 @@ class EntryOut(BaseModel):
     status: str
     tags: list[str]
     flags: list[str]
+
+
+class BacklinkContextOut(BaseModel):
+    """Surrounding text context for a single backlink occurrence.
+
+    Attributes:
+        heading: Section heading above the reference, if any.
+        pre: Text immediately before the reference.
+        highlight: The matched link text as it appears in source.
+        post: Text immediately after the reference.
+    """
+
+    heading: str | None = None
+    pre: str
+    highlight: str
+    post: str
+
+
+class BacklinkOut(BaseModel):
+    """A single backlink entry.
+
+    Attributes:
+        id: Source entry id.
+        name: Source entry title.
+        context: Surrounding text context for this occurrence.
+    """
+
+    id: int
+    name: str
+    context: BacklinkContextOut
+
+
+class BacklinksResultOut(BaseModel):
+    """Response body for GET /entries/{id}/backlinks.
+
+    Attributes:
+        linked: All backlink occurrences pointing to the requested entry.
+    """
+
+    linked: list[BacklinkOut]
+
+
+class GraphNodeOut(BaseModel):
+    """A node in the vault connection graph.
+
+    Attributes:
+        node_id: Prefixed stable identifier — ``entry:{int_id}`` or ``tag:{name}``.
+        label: Display label (entry title or ``#tagname``).
+        kind: Node kind: ``entry`` or ``tag``.
+        source_type: Entry source type or ``None`` for virtual tag nodes.
+    """
+
+    node_id: str
+    label: str
+    kind: str
+    source_type: str | None
+
+
+class GraphEdgeOut(BaseModel):
+    """A weighted directed edge in the vault connection graph.
+
+    Attributes:
+        source: Source node id.
+        target: Target node id.
+        weight: Number of individual references collapsed into this edge.
+    """
+
+    source: str
+    target: str
+    weight: int
+
+
+class GraphResultOut(BaseModel):
+    """Response body for GET /entries/graph.
+
+    Attributes:
+        nodes: All connected nodes (entries + virtual tag nodes).
+        edges: All weighted edges between nodes.
+    """
+
+    nodes: list[GraphNodeOut]
+    edges: list[GraphEdgeOut]
+
+
+def graph_node_out(record: GraphNodeRecord) -> GraphNodeOut:
+    """Convert a GraphNodeRecord to the API GraphNodeOut model.
+
+    Args:
+        record: Storage graph node record.
+
+    Returns:
+        Serialisable GraphNodeOut instance.
+    """
+    return GraphNodeOut(
+        node_id=record.node_id,
+        label=record.label,
+        kind=record.kind,
+        source_type=record.source_type,
+    )
+
+
+def graph_edge_out(record: GraphEdgeRecord) -> GraphEdgeOut:
+    """Convert a GraphEdgeRecord to the API GraphEdgeOut model.
+
+    Args:
+        record: Storage graph edge record.
+
+    Returns:
+        Serialisable GraphEdgeOut instance.
+    """
+    return GraphEdgeOut(
+        source=record.source,
+        target=record.target,
+        weight=record.weight,
+    )
 
 
 def entry_out(record: EntryRecord) -> EntryOut:
@@ -201,12 +322,35 @@ async def get_entry_counts(
 async def get_entry_metrics(
     index: VaultIndex = Depends(get_index),
 ) -> dict[str, int]:
-    """Return read-activity metrics for the Collectio dashboard.
+    """Return read-activity metrics for the Collecta dashboard.
 
     Returns:
         Dict with keys reads_week, reads_month, reads_year.
     """
     return await asyncio.to_thread(index.get_metrics)
+
+
+@router.get("/entries/graph", response_model=GraphResultOut)
+async def get_entries_graph(
+    index: VaultIndex = Depends(get_index),
+) -> GraphResultOut:
+    """Return all connected nodes and weighted edges for the vault graph.
+
+    Isolated entries (no backlink connections) are excluded. Unresolved
+    hashtags produce virtual tag nodes. Wikilinks without a matching entry
+    are silently skipped.
+
+    Args:
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        GraphResultOut with all nodes and edges.
+    """
+    nodes, edges = await asyncio.to_thread(index.get_graph)
+    return GraphResultOut(
+        nodes=[graph_node_out(n) for n in nodes],
+        edges=[graph_edge_out(e) for e in edges],
+    )
 
 
 @router.get("/entries/{entry_id}", response_model=EntryOut)
@@ -264,9 +408,47 @@ async def patch_entry(
         await asyncio.to_thread(
             index.update_fts_content, entry_id, fts.title, fts.content
         )
+        await asyncio.to_thread(index.index_backlinks, entry_id)
     updated = await asyncio.to_thread(index.get_entry, entry_id)
     assert updated is not None
     return entry_out(updated)
+
+
+@router.get("/entries/{entry_id}/backlinks", response_model=BacklinksResultOut)
+async def get_entry_backlinks(
+    entry_id: int,
+    index: VaultIndex = Depends(get_index),
+) -> BacklinksResultOut:
+    """Return all entries that link to *entry_id*.
+
+    Args:
+        entry_id: Target entry id.
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        BacklinksResultOut with a list of backlink occurrences.
+
+    Raises:
+        HTTPException: 404 if the entry does not exist.
+    """
+    if await asyncio.to_thread(index.get_entry, entry_id) is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    records = await asyncio.to_thread(index.get_backlinks, entry_id)
+    return BacklinksResultOut(
+        linked=[
+            BacklinkOut(
+                id=r.source_id,
+                name=r.source_title,
+                context=BacklinkContextOut(
+                    heading=r.heading,
+                    pre=r.pre,
+                    highlight=r.highlight,
+                    post=r.post,
+                ),
+            )
+            for r in records
+        ]
+    )
 
 
 @router.delete("/entries/{entry_id}", status_code=204)
@@ -287,5 +469,9 @@ async def delete_entry(
     if record is None:
         raise HTTPException(status_code=404, detail="Entry not found")
     file_path = Path(record.file_path)
+    slug = file_path.stem
+    assets_dir = file_path.parent.parent / "assets" / slug
     await asyncio.to_thread(index.hard_delete, entry_id)
     await asyncio.to_thread(_unlink_if_exists, file_path)
+    if assets_dir.is_dir():
+        await asyncio.to_thread(shutil.rmtree, assets_dir)

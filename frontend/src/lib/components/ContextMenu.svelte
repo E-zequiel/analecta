@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { revealItemInDir } from '@tauri-apps/plugin-opener';
-	import { confirm } from '@tauri-apps/plugin-dialog';
+	import { revealInDir, openUrl, confirm } from '$lib/platform';
 	import { entries as entriesApi } from '$lib/api/client';
 	import { contextMenu, hideContextMenu } from '$lib/stores/contextMenu';
 	import { closeTab } from '$lib/stores/tabs';
@@ -24,9 +23,23 @@
 		};
 	});
 
+	async function copyUrl() {
+		if ($contextMenu.entry) {
+			await navigator.clipboard.writeText($contextMenu.entry.url).catch(() => {});
+		}
+		hideContextMenu();
+	}
+
+	async function openInBrowser() {
+		if ($contextMenu.entry) {
+			await openUrl($contextMenu.entry.url).catch(() => {});
+		}
+		hideContextMenu();
+	}
+
 	async function revealFile() {
 		if ($contextMenu.entry) {
-			await revealItemInDir($contextMenu.entry.file_path).catch(() => {});
+			await revealInDir($contextMenu.entry.file_path).catch(() => {});
 		}
 		hideContextMenu();
 	}
@@ -47,7 +60,7 @@
 		const entry = $contextMenu.entry;
 		hideContextMenu();
 		if (!entry) return;
-		const ok = await confirm(`Delete "${entry.title}"?`, { title: 'Confirm Delete', kind: 'warning' });
+		const ok = await confirm(`Delete "${entry.title}"?`, 'Confirm Delete');
 		if (!ok) return;
 		await entriesApi.delete(entry.id);
 		entryChangedTick.update((n) => n + 1);
@@ -58,10 +71,14 @@
 {#if $contextMenu.visible && $contextMenu.entry}
 	<div
 		class="context-menu"
-		style="left: {$contextMenu.x}px; top: {$contextMenu.y}px"
+		style:left="{$contextMenu.x}px"
+		style:top="{$contextMenu.y}px"
 		bind:this={menuEl}
 		role="menu"
 	>
+		<button class="menu-item" onclick={copyUrl} role="menuitem"> Copy article URL </button>
+		<button class="menu-item" onclick={openInBrowser} role="menuitem"> Open in browser </button>
+		<div class="separator"></div>
 		<button class="menu-item" onclick={revealFile} role="menuitem">
 			Show in system explorer
 		</button>
@@ -70,9 +87,7 @@
 			{$contextMenu.entry?.flags?.includes('archive') ? 'Unarchive' : 'Archive'}
 		</button>
 		<div class="separator"></div>
-		<button class="menu-item danger" onclick={deleteEntry} role="menuitem">
-			Delete
-		</button>
+		<button class="menu-item danger" onclick={deleteEntry} role="menuitem"> Delete </button>
 	</div>
 {/if}
 
@@ -100,7 +115,9 @@
 		font-size: 0.82rem;
 		text-align: left;
 		cursor: pointer;
-		transition: background 0.1s, color 0.1s;
+		transition:
+			background 0.1s,
+			color 0.1s;
 	}
 
 	.menu-item:hover {

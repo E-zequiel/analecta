@@ -63,12 +63,15 @@ def _get_lang(code: Tag, pre: Tag) -> str:
 
 
 def _resolve_img_src(src: str) -> str:
-    """Unwrap Next.js /_next/image/ proxy URLs to the underlying CDN URL."""
-    if not src.startswith("/_next/image/"):
+    """Unwrap Next.js ``/_next/image?url=…`` proxy URLs to the underlying CDN URL."""
+    if "/_next/image" not in src:
         return src
-    qs = parse_qs(urlparse(src).query)
-    urls = qs.get("url", [])
-    return unquote(urls[0]) if urls else src
+    try:
+        qs = parse_qs(urlparse(src).query)
+        urls = qs.get("url", [])
+        return unquote(urls[0]) if urls else src
+    except Exception:
+        return src
 
 
 def _normalize_html(soup: BeautifulSoup) -> None:
@@ -87,6 +90,11 @@ def _normalize_html(soup: BeautifulSoup) -> None:
         src = _resolve_img_src(str(graphic.get("src", "")))
         img = soup.new_tag("img", src=src, alt=graphic.get("alt", ""))
         graphic.replace_with(img)
+
+    for img in soup.find_all("img"):
+        src = str(img.get("src", "") or "")
+        if src:
+            img["src"] = _resolve_img_src(src)
 
     for p in soup.find_all("p"):
         for pre in list(p.find_all("pre", recursive=False)):
@@ -128,7 +136,17 @@ class _Converter(markdownify_lib.MarkdownConverter):
 
 
 def _md(**kwargs: Any) -> _Converter:
-    return _Converter(heading_style="ATX", bullets="-", **kwargs)
+    # keep_inline_images_in: markdownify strips images to alt-text when their
+    # direct parent is a heading or table cell (_inline context).  Explicitly
+    # list all heading and cell tags so images inside them are rendered as
+    # full ![alt](src) Markdown instead — preserving the image reference even
+    # when content extraction puts images inside heading elements.
+    return _Converter(
+        heading_style="ATX",
+        bullets="-",
+        keep_inline_images_in=["h1", "h2", "h3", "h4", "h5", "h6", "td", "th"],
+        **kwargs,
+    )
 
 
 class MarkdownConverter:

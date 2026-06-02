@@ -1,15 +1,31 @@
 @font-face {
 	font-family: 'JetBrains Mono';
-	src: url('/fonts/JetBrainsMono-Light.ttf') format('truetype');
-	font-weight: 300;
+	src: url('/fonts/JetBrainsMono-Regular.ttf') format('truetype');
+	font-weight: 400;
 	font-style: normal;
 	font-display: swap;
 }
 
 @font-face {
 	font-family: 'JetBrains Mono';
-	src: url('/fonts/JetBrainsMono-LightItalic.ttf') format('truetype');
-	font-weight: 300;
+	src: url('/fonts/JetBrainsMono-Italic.ttf') format('truetype');
+	font-weight: 400;
+	font-style: italic;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'JetBrains Mono';
+	src: url('/fonts/JetBrainsMono-Bold.ttf') format('truetype');
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'JetBrains Mono';
+	src: url('/fonts/JetBrainsMono-BoldItalic.ttf') format('truetype');
+	font-weight: 700;
 	font-style: italic;
 	font-display: swap;
 }
@@ -31,34 +47,26 @@
 }
 
 @font-face {
-	font-family: 'JetBrains Mono NF';
-	src: url('/fonts/JetBrainsMonoNerdFont-Light.ttf') format('truetype');
-	font-weight: 300;
+	font-family: 'Bricolage Grotesque';
+	font-weight: 200 800;
+	font-style: normal;
+	font-display: swap;
+	src: url('/fonts/BricolageGrotesque-VariableFont_opsz,wdth,wght.ttf') format('truetype');
+}
+
+@font-face {
+	font-family: 'Inconsolata NF';
+	src: url('/fonts/InconsolataNerdFont-Regular.ttf') format('truetype');
+	font-weight: 400;
 	font-style: normal;
 	font-display: swap;
 }
 
 @font-face {
-	font-family: 'JetBrains Mono NF';
-	src: url('/fonts/JetBrainsMonoNerdFont-LightItalic.ttf') format('truetype');
-	font-weight: 300;
-	font-style: italic;
-	font-display: swap;
-}
-
-@font-face {
-	font-family: 'JetBrains Mono NF';
-	src: url('/fonts/JetBrainsMonoNerdFont-SemiBold.ttf') format('truetype');
-	font-weight: 600;
+	font-family: 'Inconsolata NF';
+	src: url('/fonts/InconsolataNerdFont-Bold.ttf') format('truetype');
+	font-weight: 700;
 	font-style: normal;
-	font-display: swap;
-}
-
-@font-face {
-	font-family: 'JetBrains Mono NF';
-	src: url('/fonts/JetBrainsMonoNerdFont-SemiBoldItalic.ttf') format('truetype');
-	font-weight: 600;
-	font-style: italic;
 	font-display: swap;
 }
 
@@ -91,6 +99,7 @@
 	--terminal: #414868;
 	/* Typography */
 	--font-family: 'JetBrains Mono', monospace;
+	--font-ui-family: 'Bricolage Grotesque', sans-serif;
 }
 
 /* Tokyo Night Light palette */
@@ -126,15 +135,16 @@ body {
 	height: 100%;
 	background-color: var(--bg);
 	color: var(--fg);
-	font-family: var(--font-family);
-	font-size: var(--font-ui-size, 16px);
-	font-weight: 300;
+	font-family: var(--font-ui-family);
+	font-size: 17px;
+	font-weight: 400;
+	font-optical-sizing: auto;
 	text-rendering: geometricPrecision;
 }
 
 ::-webkit-scrollbar {
-	width: 4px;
-	height: 4px;
+	width: 12px;
+	height: 12px;
 }
 
 ::-webkit-scrollbar-track {
@@ -142,10 +152,14 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-	background: var(--terminal);
-	border-radius: 2px;
+	background: var(--border);
+	border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
 	background: var(--fg-muted);
+}
+
+.app-root {
+	display: contents;
 }

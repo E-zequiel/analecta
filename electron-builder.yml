@@ -1,0 +1,40 @@
+appId: io.analecta.desktop
+productName: Analecta
+
+directories:
+  buildResources: build-resources
+  output: ../dist-electron
+
+# Paths relative to electron/ (the electron-builder project dir).
+files:
+  - dist/**/*
+  - "!dist/**/*.map"
+  - build-resources/tray-icon.png
+
+extraResources:
+  - from: ../binaries/analecta-sidecar
+    to: analecta-sidecar
+    filter: ["**/*"]
+  # SvelteKit static build served via app:// protocol.
+  - from: ../frontend/build
+    to: frontend-build
+  # Defuddle UMD browser bundle — injected into scraping BrowserWindow via executeJavaScript.
+  - from: node_modules/defuddle/dist/index.full.js
+    to: defuddle-browser.js
+
+linux:
+  target:
+    - deb
+    - rpm
+    - AppImage
+  icon: build-resources/icons
+  category: Utility
+  desktop:
+    entry:
+      MimeType: x-scheme-handler/analecta
+
+publish:
+  provider: github
+  owner: E-zequiel
+  repo: analecta
+  releaseType: draft

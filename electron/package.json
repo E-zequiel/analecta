@@ -1,0 +1,29 @@
+{
+  "name": "analecta-electron",
+  "version": "0.1.0",
+  "description": "Local PKM desktop app — URL extraction to Markdown vault",
+  "author": {
+    "name": "Ezequiel Lazzari",
+    "email": "build@mail.analecta.app"
+  },
+  "homepage": "https://github.com/E-zequiel/analecta",
+  "private": true,
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && VITE_DEV_SERVER_URL=http://localhost:5173 electron dist/main/index.js",
+    "dist": "tsc && electron-builder --config ../electron-builder.yml"
+  },
+  "dependencies": {
+    "@electron-toolkit/preload": "^3.0.0",
+    "@electron-toolkit/utils": "^3.0.0",
+    "defuddle": "0.18.1",
+    "electron-updater": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "electron": "^42.0.0",
+    "electron-builder": "^26.0.0",
+    "typescript": "^6.0.0"
+  }
+}

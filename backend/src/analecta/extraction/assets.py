@@ -4,9 +4,10 @@ import asyncio
 import hashlib
 import re
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
+from bs4 import BeautifulSoup
 
 _HEADERS = {"User-Agent": "analecta/0.1.0 (+https://github.com/E-zequiel/analecta)"}
 _TIMEOUT = 30.0
@@ -72,6 +73,64 @@ def _original_name(url: str) -> str:
     return name or "image"
 
 
+def _resolve_nextjs_image(src: str) -> str:
+    """Unwrap a Next.js ``/_next/image?url=…`` proxy URL to the underlying CDN URL.
+
+    Args:
+        src: Raw ``src`` attribute value from an ``<img>`` tag.
+
+    Returns:
+        Decoded CDN URL when the pattern matches, the original ``src`` otherwise.
+    """
+    if "/_next/image" not in src:
+        return src
+    try:
+        qs = parse_qs(urlparse(src).query)
+        urls = qs.get("url", [])
+        return unquote(urls[0]) if urls else src
+    except Exception:
+        return src
+
+
+def _normalize_graphics(html: str) -> str:
+    """Normalise image elements so ``_discover_images`` can find all real URLs.
+
+    Three transformations are applied:
+
+    1. **``<graphic>`` → ``<img>``**: trafilatura emits images as ``<graphic
+       src="..." alt="..."/>`` (TEI-XML dialect).  Convert them to standard
+       ``<img>`` before image discovery.
+
+    2. **``data-src`` → ``src``**: Sites that use lazy loading (IntersectionObserver,
+       ``loading="lazy"``) sometimes ship with an empty or base64 ``src`` and the
+       real URL in ``data-src``.  Promote ``data-src`` to ``src`` so the
+       downloader can fetch the real image.
+
+    3. **``/_next/image?url=…`` → CDN URL**: Next.js image optimisation proxy
+       URLs are relative to the origin and cannot be fetched by the sidecar.
+       Unwrap them to the underlying absolute CDN URL before download.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    for graphic in list(soup.find_all("graphic")):
+        src = str(graphic.get("src", ""))
+        alt = str(graphic.get("alt", ""))
+        img = soup.new_tag("img", src=src, alt=alt)
+        graphic.replace_with(img)
+
+    for img in soup.find_all("img"):
+        src = str(img.get("src", "") or "")
+        # Promote data-src when src is absent or a data: placeholder.
+        if (not src or src.startswith("data:")) and img.get("data-src"):
+            src = str(img.get("data-src") or "")
+            img["src"] = src
+        # Resolve Next.js image proxy to the underlying CDN URL.
+        if src and "/_next/image" in src:
+            img["src"] = _resolve_nextjs_image(src)
+
+    return str(soup)
+
+
 class AssetDownloader:
     """Downloads images referenced in extracted HTML and rewrites src paths.
 
@@ -92,6 +151,7 @@ class AssetDownloader:
             HTML with ``../assets/{slug}/...`` paths replacing remote src URLs
             for successfully downloaded images.
         """
+        html = _normalize_graphics(html)
         urls = self._discover_images(html)
         if not urls:
             return html

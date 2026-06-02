@@ -8,7 +8,7 @@ This document explains the security controls applied to all CI/CD workflows in t
 
 GitHub Actions workflows run arbitrary code with access to repository secrets. The primary threat vectors are:
 
-1. **Supply chain compromise of third-party actions** — a malicious actor pushes a new release to a dependency action (e.g., `tauri-apps/tauri-action`), which then exfiltrates secrets or tampers with build artifacts during the next workflow run.
+1. **Supply chain compromise of third-party actions** — a malicious actor pushes a new release to a dependency action (e.g., `actions/upload-artifact`), which then exfiltrates secrets or tampers with build artifacts during the next workflow run.
 2. **Secret exfiltration** — overly broad permissions or misplaced secrets allow a compromised step to read values it should not see.
 3. **Fork poisoning** — a fork triggers a workflow that references secrets not available in the fork context, producing misleading errors or enabling a confused-deputy attack.
 4. **Race conditions in release state** — concurrent release jobs produce incomplete GitHub Releases with partial artifact sets.
@@ -35,7 +35,6 @@ uses: actions/checkout@v4
 |--------|-----|-----|---------------|
 | `actions/checkout` | `v6.0.2` | `de0fac2e4500dabe0009e67214ff5f5447ce83dd` | 2026-05-08 |
 | `jdx/mise-action` | `v4.0.1` | `1648a7812b9aeae629881980618f079932869151` | 2026-05-08 |
-| `tauri-apps/tauri-action` | `action-v0.6.2` | `84b9d35b5fc46c1e45415bdb6144030364f7ebc5` | 2026-05-08 |
 | `bitwarden/sm-action` | `v3.0.0` | `27c0c9dcab679d7250dbab91227c85b49ffa5e0f` | 2026-05-08 |
 
 ### How to resolve a SHA for a new action or version
@@ -72,9 +71,11 @@ jobs:
       contents: write  # Minimum needed to create a GitHub Release
 ```
 
-`contents: write` is required because `tauri-apps/tauri-action` calls the GitHub Releases API to create the release and upload `.deb`, `.AppImage`, and `.rpm` assets.
+`contents: write` is required because the release job uses `gh release create` to create the release and upload `.deb`, `.AppImage`, and `.rpm` assets via the GitHub Releases API.
 
 `pull-requests: write` is required in `deps-update.yml` so that `gh pr create` (run with `github.token`) can open a PR for the weekly dependency update branch. This permission is declared at the job level only for that job; the release job does not hold it.
+
+`contents: read` is required for every job that uses `actions/checkout` to clone a private repository. This includes the `socket` job — without it, `actions/checkout` cannot authenticate and the clone fails with "Repository not found". On a public repository this permission is redundant (checkout requires no token), but it is harmless and kept for consistency.
 
 No other permission (`packages`, `id-token`, etc.) is granted to any job.
 
@@ -94,41 +95,42 @@ Both expressions resolve to the same auto-generated job token, but `${{ github.t
 
 | Secret | Source | Used by | Purpose |
 |--------|--------|---------|---------|
-| `github.token` | Auto (runner) | `tauri-action` | Create GitHub Release, upload assets |
+| `github.token` | Auto (runner) | `gh release create` | Create GitHub Release, upload assets |
 | `BWS_ACCESS_TOKEN` | GitHub secret | `sm-action` | Read-only BSM machine account token |
-| `TAURI_SIGNING_PRIVATE_KEY` | BSM via `sm-action` | `tauri-action` | Sign release bundles (Tauri updater) |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | BSM via `sm-action` | `tauri-action` | Decrypt the signing key if passphrase-protected |
+| `SOCKET_SECURITY_API_TOKEN` | BSM via `sm-action` | `pnpm exec socket` | Socket.dev dependency security scan |
 
-`TAURI_SIGNING_PRIVATE_KEY` is **not** stored as a GitHub secret. It lives in Bitwarden Secrets Manager and is injected at runtime by `bitwarden/sm-action`. See `docs/bitwarden-secrets-manager.md` for the full secret management architecture.
+`SOCKET_SECURITY_API_TOKEN` is **not** stored as a GitHub secret. It lives in Bitwarden Secrets Manager and is injected at runtime by `bitwarden/sm-action`. See `docs/bitwarden-secrets-manager.md` for the full secret management architecture and blast radius ranking.
 
-`github.token` auto-expires when the job ends. `BWS_ACCESS_TOKEN` is low-blast-radius (read-only BSM access). `TAURI_SIGNING_PRIVATE_KEY` has no expiry — see rotation procedure below.
+`github.token` auto-expires when the job ends. `BWS_ACCESS_TOKEN` is low-blast-radius (read-only BSM access).
 
-### Why `TAURI_SIGNING_PRIVATE_KEY` is the highest-risk secret
-
-- It signs every release bundle. A leaked key allows an attacker to publish malicious updates that the auto-updater will accept and install silently on users' machines.
-- Rotation requires re-generating the keypair and publishing a new `pubkey` in `tauri.conf.json` — existing installations cannot auto-update until users manually reinstall.
-- **If this key is ever suspected compromised: rotate immediately and publish a forced manual update.**
-- Storing it in BSM (not as a GitHub secret) reduces the attack surface: GitHub credential leaks do not expose it.
-
-### Rotation procedure for `TAURI_SIGNING_PRIVATE_KEY`
-
-1. Generate a new keypair without writing to disk: `mise exec -- cargo tauri signer generate` (no `-w` flag — keys printed to stdout only).
-2. Update the secret value in the **BSM Web App** (Web App only — local machine account is read-only).
-3. Update `plugins.updater.pubkey` in `src-tauri/tauri.conf.json` with the new public key.
-4. Tag and release a new version — signed with the new key.
-5. Users must manually install this version; the old auto-updater cannot verify the new signature.
+**Linux electron-builder does not require code signing.** `electron-updater` verifies release downloads via SHA-512 checksums embedded in `latest-linux.yml` — no private key needed.
 
 ---
 
 ## Control 4: Repository Guard
 
-The release job includes a repository check:
+All jobs include a base repository check:
 
 ```yaml
 if: github.repository == 'E-zequiel/analecta'
 ```
 
-This prevents forked repositories from triggering the release job. In a fork, `TAURI_SIGNING_PRIVATE_KEY` does not exist and the job would fail with a confusing error. The guard makes it an explicit, clean skip instead, and eliminates the surface area for confused-deputy attacks where a fork PR could manipulate the release workflow.
+This prevents forked repositories from triggering jobs on their own pushes where secrets would be absent and produce confusing failures.
+
+### Fork PR behaviour with `on: pull_request`
+
+When an external contributor opens a PR from a fork, GitHub runs `on: pull_request` workflows in the context of the **base repository** — so `github.repository` evaluates to `'E-zequiel/analecta'` and the base guard alone does **not** skip fork PR runs. GitHub's own protection for this trigger is that secrets are stripped entirely: `BWS_ACCESS_TOKEN` arrives as an empty string, and any step that requires it fails.
+
+For jobs that should only run on internal PRs (branches in this repo, not forks), the base guard is extended with:
+
+```yaml
+if: >-
+  github.repository == 'E-zequiel/analecta' &&
+  github.event_name == 'pull_request' &&
+  github.event.pull_request.head.repo.full_name == github.repository
+```
+
+`head.repo.full_name == github.repository` is false for every fork PR, so the job is skipped with a clean neutral result rather than failing with an authentication error. The `socket` job in `ci.yml` uses this extended condition because it requires `BWS_ACCESS_TOKEN` to retrieve `SOCKET_SECURITY_API_TOKEN` from BSM.
 
 ---
 
@@ -150,7 +152,6 @@ concurrency:
 |-------|-----------|
 | Python | `uv sync --frozen` — fails if `uv.lock` is out of date; no network resolution |
 | Node.js | `pnpm install --frozen-lockfile` — fails if `pnpm-lock.yaml` is out of date |
-| Rust | `Cargo.lock` is checked into the repository and used by `cargo build` automatically |
 
 The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python environment established by `uv sync --frozen`. PyInstaller and all its dependencies are resolved deterministically.
 
@@ -158,17 +159,333 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 
 ## Control 7: Age-Gated Dependency Updates
 
-`.github/workflows/deps-update.yml` runs on a weekly schedule (Mondays 06:00 UTC) and via `workflow_dispatch` (repo write-access users only). It updates Python, Node, and Rust lock files, but applies a **cooldown gate** before touching any package:
+`.github/workflows/deps-update.yml` runs on a weekly schedule (Mondays 06:00 UTC) and via `workflow_dispatch` (repo write-access users only). It updates Python and Node lock files, but applies a **cooldown gate** before touching any package:
 
-1. Detect outdated packages via `uv`, `pnpm outdated`, and `cargo update --dry-run`.
-2. Query the upstream registry for the new version's release date (PyPI JSON API, npm registry `time` map, crates.io API).
+1. Detect outdated packages via `uv` and `pnpm outdated`.
+2. Query the upstream registry for the new version's release date (PyPI JSON API, npm registry `time` map).
 3. **Skip** any package released fewer than 3 days ago — this prevents "day-zero supply chain" attacks where a malicious release is injected before the community has time to detect and report it.
-4. Apply updates selectively via `uv lock --upgrade-package`, `pnpm update --filter`, and `cargo update --precise`.
+4. Apply updates selectively via `uv lock --upgrade-package` and `pnpm update --filter`.
 5. Open a pull request summarising what was updated and what was held back (with eligibility dates).
 
 **Bypass via `workflow_dispatch`:** The `cooldown` input (default `3`) can be set to `0` to bypass the gate. `workflow_dispatch` requires repository write access, so this bypass is not available to external contributors.
 
-**Provenance note:** Lock file hashes provide **integrity** (package content matches the recorded hash). Full **SLSA provenance attestation** (where/how the package was built) is not yet implemented — ecosystem-wide support for Python, Node, and Rust remains immature. This is a known gap, not an oversight.
+**`--ignore-scripts` in the install step:** `deps-update.yml` installs the *current* (pre-update) lockfile with `pnpm install --frozen-lockfile --ignore-scripts` before running `deps_update.py`. Lifecycle scripts (notably `electron`'s binary download) are blocked for this install because the job only needs `pnpm outdated` / `pnpm update` tooling — it does not execute the Electron app. This closes the window where the highest-privilege job in the repo (`contents: write` + `pull-requests: write`) would run `allowBuilds`-gated scripts unnecessarily. See Control 12 for the full scan-ordering rationale.
+
+**Provenance note:** Lock file hashes provide **integrity** (package content matches the recorded hash). SLSA provenance attestation for npm packages is implemented in the `verify-provenance` CI job (see Control 10). Python provenance remains unimplemented — PyPI-side ecosystem support is still immature. This is a known gap, not an oversight.
+
+---
+
+## Control 8: Lockfile-Pinned CLI Tools
+
+Tools executed via `pnpm dlx`, `npx`, `yarn dlx`, or `npm exec` are downloaded from the npm registry at the moment the step runs — no hash is verified against any lockfile. If a step that calls one of these commands also has secrets in its `env:` block, a compromised package version can read the process environment and exfiltrate those secrets.
+
+This attack surface was demonstrated by the **Mini Shai-Hulud campaign (2026-05-19)**, in which 323 packages in the @antv npm ecosystem were compromised in an automated burst. The Socket CLI — a dependency security scanner — was the ironically named example in this repository: `pnpm dlx socket ci` ran with `SOCKET_SECURITY_API_TOKEN` in the environment. A compromised `socket` package release would have been the exfiltration vector.
+
+### Fix: install as a lockfile-managed devDependency
+
+```bash
+# 1. Add the tool at the version matching its last verified GitHub tag
+pnpm add -D -w <tool>@<version>
+
+# 2. Verify the lockfile hash against the npm tarball directly
+curl -sL https://registry.npmjs.org/<tool>/-/<tool>-<version>.tgz \
+  | openssl dgst -sha512 -binary | base64
+# Output must match the integrity field in pnpm-lock.yaml
+```
+
+**Scope of this check:** the tarball comparison detects the case where a maintainer's npm account is compromised and they publish a malicious version *without* a corresponding git tag — the npm content diverges from the audited source. It does **not** protect against a registry-level compromise where both the tarball and its hash are served consistently; verifying a tarball against the same registry that served it is circular for that threat. Registry-level threats are addressed by provenance attestations (Control 10).
+
+Once pinned:
+- Replace `pnpm dlx <tool>` with `pnpm exec <tool>` in workflow files.
+- If the job does not already run `pnpm install --frozen-lockfile`, add that step before the tool invocation.
+
+Every subsequent `pnpm install --frozen-lockfile` in CI will verify the SHA-512 hash of the downloaded tarball against the lockfile before execution.
+
+### Version selection policy
+
+Only pin to a version that has a **verified tag** in the tool's GitHub repository. npm versions that exist on the registry without a corresponding GitHub tag cannot be traced to audited source code — use the last verified release instead.
+
+### Never install globally in CI
+
+`pnpm add -g <tool>` bypasses the lockfile and reintroduces the unverified download pattern. Always use workspace `devDependencies`.
+
+### Current CLI tool inventory
+
+| Tool | Version | Verified GitHub tag | SHA-512 verified |
+|------|---------|--------------------|--------------------|
+| `socket` | `1.1.99` | [`v1.1.99`](https://github.com/SocketDev/socket-cli/releases/tag/v1.1.99) | Yes — matches `pnpm-lock.yaml` integrity field |
+
+---
+
+## Control 9: Local Dependency Scan Protocol
+
+The Socket CI job (`ci.yml`) only runs on PRs that change a lockfile. This means new packages installed locally on a branch — between `pnpm add` and the PR — are unscanned until the PR is opened. Running `scripts/socket-audit.sh` locally closes that gap.
+
+### When to run
+
+| Trigger | Action |
+|---------|--------|
+| After any `pnpm add` or `uv add` | Run `./scripts/socket-audit.sh` before committing |
+| After running `scripts/deps_update.py` locally | Run `./scripts/socket-audit.sh` before committing or pushing (see note below) |
+| After the weekly `deps-update.yml` PR lands | Run locally before merging (in addition to `check.sh`) |
+| Before opening a PR that touches `pnpm-lock.yaml` or `backend/uv.lock` | Run as a pre-PR gate |
+
+**Local limitation with `deps_update.py`:** `pnpm update` (called by the script for Node packages) has no `--lockfile-only` flag. It updates both `pnpm-lock.yaml` and `node_modules` in one step, meaning `electron`'s postinstall (the only lifecycle script permitted by `allowBuilds`) may run before `socket-audit.sh` can scan the updated lockfile. Running the scan immediately after — and not pushing until it is clean — is the correct compensating control. The hard enforcement gate is CI: the `socket` job in `ci.yml` runs with `--ignore-scripts` and its result gates `check-frontend` and `test-backend` via `needs:` (see Control 12).
+
+### How to run
+
+```bash
+./scripts/socket-audit.sh
+```
+
+`bws run` injects `SOCKET_SECURITY_API_TOKEN` at runtime from Bitwarden Secrets Manager — no token is written to disk. Requires the `bws` CLI and a valid `BWS_ACCESS_TOKEN` in the shell environment.
+
+**Org picker:** If the script opens an interactive prompt asking which organization to use, set `SOCKET_ORG` in your shell profile to skip it on future runs:
+
+```bash
+# ~/.zshrc or ~/.bashrc
+export SOCKET_ORG=YourOrgName
+```
+
+The script passes `--org "$SOCKET_ORG"` only when the variable is set; it falls back to auto-discovery otherwise.
+
+The script calls `pnpm exec socket` (lockfile-pinned, `socket@1.1.99`) — never `pnpm dlx`. This matters because `bws run` injects `SOCKET_SECURITY_API_TOKEN` into the process environment; a `dlx`-downloaded package could exfiltrate it.
+
+### Interpreting results
+
+- **No issues:** proceed.
+- **Known false positives:** check the false-positive catalog in `project_socket_security.md` before acting.
+- **New alert:** investigate before committing. If it is a confirmed false positive, add it to the catalog with a justification. If it is a real risk, do not merge.
+
+### Quota
+
+500 API calls/hour on the free plan. Do **not** add this script to `check.sh` — that runs on every change and would exhaust the quota.
+
+---
+
+## Control 10: Provenance Attestation Verification
+
+The `verify-provenance` CI job (`scripts/verify-provenance.py`) verifies npm SLSA provenance attestations for every package in `pnpm-lock.yaml` that has one.
+
+### Why lockfile integrity alone is insufficient at write time
+
+`pnpm install --frozen-lockfile` verifies packages against the SHA-512 hashes in `pnpm-lock.yaml` (Control 6). This is strong for **read-time** verification. The gap is **write-time**: when `pnpm add <pkg>` is run, pnpm fetches the tarball and the registry's advertised hash in the same request, then writes both to the lockfile. A registry-level compromise could serve a malicious tarball with an internally consistent hash — future `--frozen-lockfile` installs would trust it.
+
+Lockfile integrity is still essential and cannot be dropped; Control 10 adds an independent anchor for the subset of packages that publish provenance.
+
+### How it works
+
+1. **Attestation bundle download:** queries npm registry for `dist.attestations.url` per package.
+2. **Subject hash check:** decodes the DSSE payload from the Sigstore bundle and compares the attested SHA-512 to the pnpm-lock.yaml integrity entry. This is the first check: if an attacker compromised the package at `pnpm add` time, the installed hash in the lockfile would differ from the attested hash.
+3. **Sigstore signature verification:** calls `sigstore.verify.Verifier.production().verify_dsse()` with an `OIDCIssuer` policy requiring a GitHub Actions signing identity. This verifies:
+   - The signing certificate was issued by Fulcio CA (Sigstore's certificate authority).
+   - The certificate's OIDC issuer is `https://token.actions.githubusercontent.com`.
+   - The bundle is included in the Rekor transparency log (tamper-evident, append-only).
+
+Steps 2 and 3 together provide an independent verification anchor: a registry-level MITM cannot forge a Rekor entry retroactively.
+
+### Residual gap (documented, not an oversight)
+
+| Scenario | Covered |
+|---|---|
+| Package was compromised after publication (hash mismatch with attested hash) | ✅ |
+| Fake attestation for malicious package (Sigstore signature invalid) | ✅ |
+| Package has no attestation (~60% of tree) | ❌ — covered only by Socket scan + lockfile integrity |
+| Rekor + Fulcio infrastructure compromise (state-level attack) | ❌ — no practical mitigation exists |
+| Write-time registry compromise for packages WITH attestation | ✅ (subject hash check catches it) |
+| Write-time registry compromise for packages WITHOUT attestation | ❌ — mitigated only by Socket scan + 3-day cooldown |
+
+### Coverage
+
+Provenance attestation adoption in the npm ecosystem is incomplete. Packages without attestations are skipped without error — they are covered by other controls. Measured coverage as of 2026-05-31:
+
+- **52 of 386 installed packages** (13%) have SLSA provenance attestations.
+- Among key application-level deps: `svelte`, `vite`, `electron-builder`, `electron-updater`, `rolldown`, `socket` have attestations. `sigma`, `graphology`, `markdown-it`, `defuddle`, `electron`, `eslint`, `prettier`, `typescript` do not.
+- The 87% without attestations are primarily older utility packages (`acorn`, `semver`, `yargs`, etc.) and packages that predate npm's provenance feature.
+
+Coverage is expected to grow as the ecosystem adopts `--provenance` publishing. The script automatically picks up new attestations without code changes.
+
+### Implementation
+
+```yaml
+# .github/workflows/ci.yml
+verify-provenance:
+  runs-on: ubuntu-22.04
+  permissions:
+    contents: read
+  steps:
+    - uses: actions/checkout@<SHA>
+    - uses: jdx/mise-action@<SHA>
+    - name: Set up provenance verification environment
+      run: |
+        mise exec -- uv venv .venv-provenance
+        mise exec -- uv pip install --require-hashes \
+          -r scripts/requirements-provenance.lock \
+          --python .venv-provenance
+    - name: Verify npm provenance attestations
+      run: .venv-provenance/bin/python scripts/verify-provenance.py
+      env:
+        PYTHONUNBUFFERED: "1"
+```
+
+No new external GitHub Actions are required. `sigstore` and its 31 transitive dependencies are installed from `scripts/requirements-provenance.lock`, which is committed to the repo and contains SHA-256 hashes for every package. `uv pip install --require-hashes` enforces that all installed wheels match those hashes — equivalent to `uv sync --frozen` for the backend.
+
+**Updating sigstore:** regenerate the lockfile with:
+```bash
+echo "sigstore==<new-version>" | mise exec -- uv pip compile --generate-hashes - -o scripts/requirements-provenance.lock
+```
+Run `./scripts/socket-audit.sh` after regenerating (sigstore itself is an npm-adjacent tool, but its Python deps should be scanned via the backend audit path).
+
+**Known Rekor entry-type limitation:** sigstore 4.x cannot verify the integrated timestamp for Rekor entry types newer than `dsse/hashedrekord 0.0.1`. Affected packages receive a compatibility warning (`⚠ Rekor entry type not supported`) rather than a failure. The subject hash check (step 2 above) still passes for these packages, preserving the key supply-chain guarantee. This limitation will resolve as sigstore adds support for newer entry types.
+
+---
+
+## Control 11: Lifecycle Script Restriction
+
+Every npm package can declare `preinstall`, `install`, and `postinstall` scripts in its `package.json`. By default, pnpm runs these scripts for all installed packages, meaning any package in the transitive dependency tree can execute arbitrary code with full user privileges on every `pnpm install`.
+
+`pnpm-workspace.yaml` restricts this to an explicit allowlist via `allowBuilds`:
+
+```yaml
+allowBuilds:
+  electron: true          # must download platform binary via install.js
+  electron-winstaller: false  # explicitly blocked
+```
+
+Only packages in this allowlist are permitted to run lifecycle scripts. All others — including packages with malicious postinstall scripts — are blocked.
+
+### Current allowlist and rationale
+
+| Package | Script | Why allowed |
+|---------|--------|-------------|
+| `electron` | `install.js` — downloads Electron binary via `@electron/get` | Required; no alternative download mechanism |
+| `electron-winstaller` | `select-7z-arch.js` | Blocked — Windows-only, irrelevant on Linux |
+
+`esbuild` was removed from the allowlist on 2026-05-31 — Vite 8 uses Rolldown, so esbuild is not in the dependency tree.
+
+### Verifying allowlist entries
+
+When a package is in `allowBuilds`, its lifecycle script executes on every `pnpm install`. Before adding or retaining an entry, verify the script matches the published npm source:
+
+```bash
+# Hash the installed script
+sha256sum node_modules/.pnpm/<pkg>@<version>/node_modules/<pkg>/install.js
+
+# Hash the same file from the npm registry tarball (independent fetch)
+curl -sL "https://registry.npmjs.org/<pkg>/-/<pkg>-<version>.tgz" \
+  | tar -xzO package/install.js | sha256sum
+
+# Hashes must match exactly.
+```
+
+Do **not** use `raw.githubusercontent.com` for this check — it is flagged as malicious by some security tools (it's GitHub's CDN for raw content, legitimately used but also widely used by malware as free hosting). Use the npm registry tarball or `api.github.com` instead.
+
+**Verified 2026-05-31:** `electron@42.1.0` `install.js` — sha256 `8a6e96a324147490ad5d474e2c6deec608018a90032e80ec8e3ae97a6cd02851` — matches npm registry tarball.
+
+### Auditing the full installed tree
+
+To discover which packages in the installed tree actually have lifecycle scripts (and therefore which ones are silently blocked by the allowlist):
+
+```python
+import json, os
+base = "node_modules/.pnpm"
+for pkg_dir in os.listdir(base):
+    nm = os.path.join(base, pkg_dir, "node_modules")
+    if not os.path.isdir(nm):
+        continue
+    for name in os.listdir(nm):
+        pjson = os.path.join(nm, name, "package.json")
+        if os.path.exists(pjson):
+            d = json.load(open(pjson))
+            lc = {k: v for k, v in d.get("scripts", {}).items()
+                  if k in ("install", "preinstall", "postinstall")}
+            if lc:
+                print(f"{d.get('name')}@{d.get('version')} → {lc}")
+```
+
+As of 2026-05-31: only `electron-winstaller@5.4.0` has a lifecycle script in the installed tree, and it is blocked.
+
+---
+
+## Control 12: Scan Ordering — Scan Before Lifecycle Scripts
+
+Controls 8, 9, and 11 together establish *which* packages run scripts and *when* the lockfile is scanned. This control addresses the sequencing gap: even with `allowBuilds` restricted to `electron`, a compromised version of `electron` introduced into the lockfile would have its `install.js` (binary download) execute during `pnpm install` **before** `socket ci` could flag it, unless install order is explicitly managed.
+
+### CI: `socket` job installs with `--ignore-scripts`
+
+The `socket` job in `ci.yml` installs dependencies with:
+
+```yaml
+- name: Install dependencies
+  run: mise exec -- pnpm install --frozen-lockfile --ignore-scripts
+```
+
+`--ignore-scripts` blocks all `preinstall`, `install`, and `postinstall` scripts for every package — including `electron`. pnpm still downloads tarballs and populates `node_modules` (linking happens via symlinks, not scripts), but no script code executes. The security property is **no script execution before the scan**, not "no download."
+
+`socket` (the CLI, `v1.1.99`) is a pure-JavaScript tool with no native binary download; it runs correctly under `--ignore-scripts`. Verified locally: `pnpm install --frozen-lockfile --ignore-scripts && pnpm exec socket --version` → `1.1.99`.
+
+After install, `socket ci` reads `pnpm-lock.yaml` and `package.json` directly — it does not require `node_modules` to be populated beyond the tool itself. The scan therefore reflects the full lockfile diff against the base branch before any allowlisted script has run.
+
+### CI: downstream jobs are gated on `socket` passing
+
+`check-frontend` and `test-backend` declare `needs: [socket]` so they only execute after the scan succeeds:
+
+```yaml
+check-frontend:
+  needs: [socket]
+  if: >-
+    !cancelled() &&
+    github.repository == 'E-zequiel/analecta' &&
+    (needs.socket.result == 'success' || needs.socket.result == 'skipped')
+  permissions:
+    contents: read
+```
+
+Key details:
+
+- `!cancelled()` (not `always()`) — a cancelled run does not force downstream jobs to fire.
+- `needs.socket.result == 'skipped'` — on `push` to `main`, the `socket` job does not run (its `if:` excludes non-PR events). Without this clause, `check-frontend` and `test-backend` would be permanently skipped on every main push.
+- `verify-provenance` is **not** gated on `socket` — it installs only Python packages via `uv`; it never calls `pnpm install`.
+
+**Accepted trade-off:** a transient Socket API or BSM outage causes `socket` to fail, which skips `check-frontend` and `test-backend`. The Python test suite and frontend checks are thus coupled to Socket availability. This is intentional — it prevents a merge from slipping through without a scan result.
+
+### CI: `socket` as a required status check
+
+The `needs:` coupling above prevents wasting runner minutes, but the actual merge gate is the **branch protection rule** in GitHub → Settings → Branches → `main`. Add `socket` to the required status checks list there. A skipped required check is treated as "not passed" by GitHub — this is the hard block on merging when socket fails.
+
+### CI: `deps-update.yml` also uses `--ignore-scripts`
+
+`deps-update.yml`'s Node install step (`pnpm install --frozen-lockfile --ignore-scripts`) applies the same restriction. This matters because `deps-update.yml` holds the highest-privilege token in the repo (`contents: write` + `pull-requests: write`). The job only needs `pnpm outdated` / `pnpm update` tooling — the Electron binary is not needed. Blocking scripts there limits the blast radius if the pre-update lockfile ever contained a compromised package.
+
+### Local: advisory workflow (no equivalent of `--ignore-scripts` for `pnpm update`)
+
+`pnpm update` (used by `scripts/deps_update.py`) has no `--lockfile-only` or `--ignore-scripts` flag. It updates `pnpm-lock.yaml` and installs to `node_modules` in a single step, meaning `electron`'s postinstall may run before `socket-audit.sh` can scan the result.
+
+The compensating control is sequencing discipline:
+
+```
+deps_update.py           ← updates lockfile + installs (electron postinstall may run)
+./scripts/socket-audit.sh   ← scans the updated lockfile
+<review output>
+git add pnpm-lock.yaml && git commit   ← only if scan is clean
+```
+
+Do not push before the scan completes. The CI gate (`socket` job) is the hard enforcement; local is advisory.
+
+### Fork PR caveat (relevant when the repo goes public)
+
+The `socket` job is gated on:
+
+```yaml
+github.event.pull_request.head.repo.full_name == github.repository
+```
+
+Fork PRs fail this check — `socket` is skipped. If `socket` is a required status check and the repo is public, fork PRs will have a permanently unresolvable required check (skipped ≠ passed). Mitigations:
+
+- Remove `socket` from required checks (weakens the gate for internal PRs).
+- Or configure GitHub to allow fork PRs to use the Actions secrets needed for socket (requires careful scope review).
+
+This is tracked in `project_public_repo_checklist.md`.
 
 ---
 
@@ -181,7 +498,7 @@ These settings are configured in GitHub → Settings → Actions → General and
 - **Mode:** "Allow E-zequiel, and select non-E-zequiel, actions"
 - Allow actions created by GitHub: ✅ (covers `actions/*`)
 - Allow actions by Marketplace verified creators: ❌ (too broad)
-- **Explicit allowlist:** `jdx/mise-action@*`, `bitwarden/sm-action@*`, `tauri-apps/tauri-action@*`
+- **Explicit allowlist:** `jdx/mise-action@*`, `bitwarden/sm-action@*`
 - Require actions to be pinned to a full-length commit SHA: ✅ (enforced as a repo-level backstop)
 
 Any action not in this list — even if added to a workflow file — cannot run. Update the allowlist when adding a new external action, then add it to the inventory table in Control 1.
@@ -206,7 +523,7 @@ When the repository is made public, the **"Fork pull request workflows"** sectio
 1. **Verify the new tag**: check the action's release notes for breaking changes or security advisories.
 2. **Check the SHA independently**: compare the PR's new SHA against `https://api.github.com/repos/{owner}/{repo}/git/ref/tags/{new-tag}`.
 3. **Review the diff**: Dependabot shows only the SHA change in the workflow file — also read the action's own diff for that version range.
-4. **Merge only if clean**: do not auto-merge action updates that touch steps with access to `TAURI_SIGNING_PRIVATE_KEY`.
+4. **Merge only if clean**: do not auto-merge action updates that touch steps with access to `SOCKET_SECURITY_API_TOKEN`.
 5. **Update the inventory table** in Control 1 with the new SHA and verification date.
 
 ### When adding a new external action
@@ -215,8 +532,39 @@ When the repository is made public, the **"Fork pull request workflows"** sectio
 2. Add the action to the **Actions permissions allowlist** in GitHub Settings before adding it to the workflow file.
 3. Add it to the inventory table in Control 1.
 
+### When adding a new npm or Python package
+
+1. Install with `pnpm add` or `uv add` as usual.
+2. **Immediately run** `./scripts/socket-audit.sh` — do not commit or push before the scan completes.
+3. Review any new alerts against the false-positive catalog in `project_socket_security.md`.
+4. If the alert is a confirmed false positive, add it to the catalog before committing.
+5. If the alert indicates a real risk, do not install the package — find an alternative or escalate.
+6. For new npm packages: the `verify-provenance` CI job will automatically check whether the package has a SLSA provenance attestation. If it does, the attestation is verified against Sigstore on every PR. No manual action required unless the job fails (see Control 10).
+
+### When auditing `allowBuilds` entries (Control 11)
+
+Run this whenever `pnpm-workspace.yaml` `allowBuilds` changes or when upgrading a package that is in the allowlist:
+
+1. Run the lifecycle script audit (see Control 11) to confirm only the expected packages have lifecycle scripts.
+2. For each package in `allowBuilds: true`, verify its lifecycle script against the npm registry tarball:
+   ```bash
+   curl -sL "https://registry.npmjs.org/<pkg>/-/<pkg>-<version>.tgz" \
+     | tar -xzO package/install.js | sha256sum
+   ```
+3. Compare against the hash of the installed file: `sha256sum node_modules/.pnpm/<pkg>@<version>/node_modules/<pkg>/install.js`
+4. Document the sha256 and date in this file's allowlist table.
+5. If a package no longer needs a lifecycle script (e.g., it was removed from the dep tree), remove it from `allowBuilds`.
+
+### When running `scripts/deps_update.py` locally
+
+1. Run the script as usual: `mise exec -- python scripts/deps_update.py`.
+2. Immediately run `./scripts/socket-audit.sh` — do not commit or push before the scan completes.
+3. Review any new alerts. If clean, commit only `pnpm-lock.yaml` and `backend/uv.lock` (not `node_modules`).
+4. The CI `socket` job will re-scan on the resulting PR as the hard enforcement gate.
+
 ### When the `deps-update.yml` weekly PR lands
 
 1. Review the PR body — it lists every package updated and every package held back with its eligibility date.
 2. Run `./scripts/check.sh` locally against the updated lock files before merging.
-3. If a package was skipped due to cooldown and you need it urgently, re-run the workflow via `workflow_dispatch` with `cooldown` set to `0`.
+3. The `socket` CI job runs on the PR and gates `check-frontend` and `test-backend` — do not merge if socket fails.
+4. If a package was skipped due to cooldown and you need it urgently, re-run the workflow via `workflow_dispatch` with `cooldown` set to `0`.

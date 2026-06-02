@@ -35,11 +35,8 @@
 {#if tagList.length > 0}
 	<div class="tag-tree">
 		<p class="label">Tags</p>
-		{#each tagList as tag}
-			<button
-				class:active={$selectedTag === tag.name}
-				onclick={() => select(tag.name)}
-			>
+		{#each tagList as tag (tag.name)}
+			<button class:active={$selectedTag === tag.name} onclick={() => select(tag.name)}>
 				<span class="name">{tag.name}</span>
 				<span class="count">{tag.count}</span>
 			</button>
@@ -79,7 +76,9 @@
 		font-size: 12px;
 		cursor: pointer;
 		text-align: left;
-		transition: color 0.15s, background 0.15s;
+		transition:
+			color 0.15s,
+			background 0.15s;
 	}
 
 	button:hover {

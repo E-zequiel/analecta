@@ -1,16 +1,23 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { invoke } from '@tauri-apps/api/core';
-	import { open as openDialog } from '@tauri-apps/plugin-dialog';
+	import { openDialog, updateVaultScope, relaunch } from '$lib/platform';
 	import { config as configApi } from '$lib/api/client';
 
 	let vaultPath = $state('');
 	let submitting = $state(false);
+	let browsing = $state(false);
 	let error = $state('');
 
 	async function browseVault() {
-		const selected = await openDialog({ directory: true, multiple: false });
-		if (typeof selected === 'string') vaultPath = selected;
+		browsing = true;
+		error = '';
+		try {
+			const selected = await openDialog({ properties: ['openDirectory'] });
+			if (typeof selected === 'string') vaultPath = selected;
+		} catch {
+			error = 'File picker unavailable — type the path directly in the field below.';
+		} finally {
+			browsing = false;
+		}
 	}
 
 	async function submit() {
@@ -19,8 +26,8 @@
 		error = '';
 		try {
 			await configApi.update({ vault_path: vaultPath });
-			await invoke('update_vault_scope', { vaultPath });
-			goto('/');
+			await updateVaultScope(vaultPath);
+			await relaunch();
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 			submitting = false;
@@ -36,13 +43,10 @@
 		<div class="field">
 			<label for="vault-path">Vault location</label>
 			<div class="path-row">
-				<input
-					id="vault-path"
-					type="text"
-					placeholder="/home/user/vault"
-					bind:value={vaultPath}
-				/>
-				<button onclick={browseVault}>Browse…</button>
+				<input id="vault-path" type="text" placeholder="/home/user/vault" bind:value={vaultPath} />
+				<button onclick={browseVault} disabled={browsing}>
+					{browsing ? 'Opening…' : 'Browse…'}
+				</button>
 			</div>
 		</div>
 
@@ -71,12 +75,13 @@
 		border-radius: 10px;
 		padding: 2.5rem;
 		width: 420px;
+		max-width: calc(100% - 2rem);
 	}
 
 	h1 {
 		margin: 0 0 0.5rem;
 		font-size: 1.3rem;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--fg);
 	}
 
@@ -150,7 +155,7 @@
 		color: var(--fg);
 		font-family: inherit;
 		font-size: 14px;
-		font-weight: 600;
+		font-weight: 700;
 		cursor: pointer;
 		transition: background 0.15s;
 	}

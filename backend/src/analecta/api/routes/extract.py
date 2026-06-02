@@ -98,6 +98,7 @@ async def extract_url(
         await asyncio.to_thread(
             index.update_fts_content, entry_id, content.title, markdown
         )
+        await asyncio.to_thread(index.index_backlinks, entry_id)
         event_bus.put_nowait({"type": "entry_added", "id": entry_id})
 
         result = await asyncio.to_thread(index.get_entry, entry_id)

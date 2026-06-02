@@ -8,8 +8,8 @@
 ## Project
 
 Local desktop app: URL → extraction → clean Markdown → local PKM vault.
-Native bundle distribution for Linux (`.deb` / `.rpm` / `.AppImage`) via Tauri 2.0.
-Architecture: Tauri shell (Rust) + Python sidecar (FastAPI) + SvelteKit frontend.
+Native bundle distribution for Linux (`.deb` / `.rpm` / `.AppImage`) via Electron.
+Architecture: Electron shell (TypeScript) + Python sidecar (FastAPI) + SvelteKit frontend.
 
 ---
 
@@ -17,18 +17,18 @@ Architecture: Tauri shell (Rust) + Python sidecar (FastAPI) + SvelteKit frontend
 
 | Layer | Technology |
 |-------|-----------|
-| Shell | **Tauri 2.0** (Rust + WebKitGTK) |
+| Shell | **Electron 42.x** (TypeScript + Chromium) |
 | Frontend | **SvelteKit + TypeScript + Vite** |
-| Icons | **lucide-svelte** |
+| Icons | **@lucide/svelte** |
 | Markdown render | **markdown-it** (client-side) |
 | Editor | **CodeMirror 6** + `@uiw/codemirror-theme-tokyo-night` |
-| Backend sidecar | **Python 3.13 · FastAPI · uvicorn** |
+| Backend sidecar | **Python 3.14 · FastAPI · uvicorn** |
 | Database | **SQLite** with FTS5. No ORM. No Alembic. |
 | HTTP client | **httpx** (async). `requests` is forbidden. |
 | Package managers | Python: **uv** · Node: **pnpm** · Toolchain: **mise** |
 | Testing | **pytest** (backend) |
 | IDE | **Zed** |
-| Distribution | **Tauri bundle only** — no PyPI, no `uv tool` |
+| Distribution | **Electron bundle only** — no PyPI, no `uv tool` |
 
 Global default overrides: no PostgreSQL, no Docker, no PySide6, no PyQt6.
 
@@ -55,13 +55,14 @@ analecta/
 │   ├── tests/
 │   ├── pyproject.toml
 │   ├── backend.spec                # PyInstaller
-│   └── .python-version             # 3.13
+│   └── .python-version             # 3.14
 ├── frontend/                       # SvelteKit
 │   ├── src/
 │   │   ├── lib/api/                # typed HTTP client
 │   │   ├── lib/stores/             # sidecar, sse, ui (selectedTag, sidebarCollapsed, libraryOpen,
 │   │   │                           #   expandedSections, activeSection, searchOpen)
 │   │   ├── lib/markdown/           # markdown-it config
+│   │   ├── lib/platform/           # platform shim (window.electronAPI wrappers)
 │   │   ├── lib/components/
 │   │   │   ├── Sidebar.svelte      # Obsidian-style navigator (collapsible rail, expandable sections)
 │   │   │   ├── SearchDialog.svelte # modal search (Ctrl+K)
@@ -73,19 +74,24 @@ analecta/
 │   │   └── routes/                 # +page.svelte, viewer/[id], editor/[id], settings, first-run
 │   ├── static/fonts/               # JetBrainsMono bundled
 │   └── package.json
-├── src-tauri/                      # Rust shell
-│   ├── src/                        # lib.rs, main.rs, sidecar.rs, commands.rs
-│   ├── capabilities/default.json
-│   └── tauri.conf.json
+├── electron/                       # Electron shell
+│   ├── main/                       # index.ts, sidecar.ts, vault-state.ts, ipc.ts, protocols.ts, tray.ts, updater.ts
+│   ├── preload/                    # index.ts — contextBridge, ALLOWED_CHANNELS whitelist
+│   ├── build-resources/            # icons/ (7 sizes + tray)
+│   ├── package.json
+│   └── tsconfig.json
+├── binaries/                       # sidecar output — gitignored (PyInstaller --onedir)
 ├── scripts/
-│   ├── build_sidecar.py            # PyInstaller + target-triple rename
-│   ├── dev.py                      # sidecar standalone (without Tauri)
+│   ├── build_sidecar.py            # PyInstaller build → binaries/
+│   ├── dev.py                      # sidecar standalone
+│   ├── socket-audit.sh             # local Socket dependency scan via BSM
 │   └── system_deps.sh
 ├── docs/
 ├── .github/workflows/              # ci.yml, release.yml
-├── .mise.toml                      # Python 3.13 · Node LTS · Rust stable · pnpm latest
+├── electron-builder.yml            # packaging: deb, rpm, AppImage
+├── .mise.toml                      # Python 3.14 · Node LTS · pnpm latest
 ├── pnpm-workspace.yaml
-├── package.json                    # root: tauri dev / tauri build
+├── package.json                    # root: electron:dev / electron:build / dist
 └── CLAUDE.md
 ```
 
@@ -96,51 +102,54 @@ analecta/
 ### Layout rules
 
 - Python business logic lives exclusively under `backend/src/analecta/`.
-- Frontend lives under `frontend/`. No Python imports, no direct file I/O — use Tauri plugins.
-- Rust shell in `src-tauri/` manages the window and sidecar lifecycle only.
+- Frontend lives under `frontend/`. No Python imports, no direct file I/O — use Electron IPC (`window.electronAPI`).
+- Electron shell in `electron/` manages the window and sidecar lifecycle only.
 
 ### IPC channels
 
 | Channel | Purpose |
 |---------|---------|
 | **stdin/stdout** | Sidecar lifecycle signals only: `LISTENING_ON_PORT:<n>`, `SIDECAR_READY` |
-| **HTTP loopback** | All data: frontend ↔ `GET/POST/PATCH/DELETE /api/v1/...` |
+| **HTTP loopback (api)** | All data: frontend ↔ `GET/POST/PATCH/DELETE /api/v1/...` |
+| **HTTP loopback (render)** | Tier 2 extraction: sidecar → `POST http://127.0.0.1:{ANALECTA_RENDER_PORT}/render` → Electron main (`scraper.ts`). Token auth via `X-Render-Token`. Returns Defuddle result or `outer_html` fallback. |
 | **SSE** | Backend → frontend push via `GET /api/v1/system/events` |
 
 ### Sidecar lifecycle
 
-1. Tauri spawns `binaries/analecta-sidecar` on app start.
-2. Sidecar binds a dynamic port (`socket.bind(("", 0))`), prints `LISTENING_ON_PORT:<n>` to stdout.
-3. Tauri captures the port and emits `sidecar-ready` event to the frontend.
-4. Frontend renders a loading screen until `sidecar-ready` is received (timeout: 10 s → error state).
-5. On window close, Tauri kills the sidecar child process.
+1. Electron calls `startRenderServer()` → binds a random loopback port, generates `ANALECTA_RENDER_TOKEN`.
+2. Electron spawns `binaries/analecta-sidecar` with `ANALECTA_RENDER_PORT` and `ANALECTA_RENDER_TOKEN` in env.
+3. Sidecar binds a dynamic port (`socket.bind(("", 0))`), prints `LISTENING_ON_PORT:<n>` to stdout.
+4. Electron parses stdout, caches the port, and emits `sidecar-ready` IPC event to the renderer.
+5. Frontend renders a loading screen until `sidecar-ready` is received (timeout: 10 s → error state).
+6. On window close, Electron kills the sidecar child process (`SIGTERM`, 3 s SIGKILL fallback) and closes the render server.
 
 ### Sidecar packaging
 
 - **PyInstaller `--onedir`** (not `--onefile` — PID/lifecycle issue documented in `docs/python-tauri.md` §6).
-- Built by `scripts/build_sidecar.py`; output binary renamed with target-triple suffix for Tauri.
-- Output path: `src-tauri/binaries/` (gitignored).
+- Built by `scripts/build_sidecar.py`.
+- Output path: `binaries/` (repo root).
 
 ### Frontend rules
 
 - **Palette** (Tokyo Night): `bg=#1a1b26` · `fg=#c0caf5` · `accent=#ff757f` (red). CSS variables only. Never hardcode hex — always use the CSS custom properties defined in `app.css`.
 - **Font**: JetBrains Mono. Bundled in `frontend/static/fonts/`. `@font-face` in `app.css`. Base font-size: **16.33px**.
-- **Icons**: `lucide-svelte`. Import by PascalCase name (`import { Settings, SquareLibrary } from 'lucide-svelte'`). Always use the named exports — do not import raw SVG. Verify icon names against `node_modules/lucide-svelte/dist/icons/index.d.ts`.
+- **Icons**: `@lucide/svelte`. Import by PascalCase name (`import { Settings, SquareLibrary } from '@lucide/svelte'`). Always use the named exports — do not import raw SVG. Verify icon names against `node_modules/@lucide/svelte/dist/icons/index.d.ts`.
 - **Sidebar**: Obsidian-style file-explorer navigator. Collapsible (44px rail / 260px full, `Ctrl+B`). Sections: all, unread, read, favorite, recommend, Tags — each expandable with `ChevronRight`. Settings gear icon at bottom. Search opens via `ScanSearch` icon or `Ctrl+K`.
 - **Markdown render**: `markdown-it` + plugins, client-side. No round-trips to the sidecar.
 - **Editor**: CodeMirror 6 with `@uiw/codemirror-theme-tokyo-night`.
 - **Sidecar bootstrap**: never render content before `sidecar-ready` event is received.
-- All I/O via the typed `apiFetch()` wrapper or Tauri plugins. Never block the main thread.
+- All I/O via the typed `apiFetch()` wrapper or Electron IPC (`window.electronAPI.invoke`). Never block the main thread.
 
 ### Distribution
 
-- **Tauri bundle only**: `.deb`, `.rpm`, `.AppImage`. No PyPI, no `uv tool`.
-- Updates via `tauri-plugin-updater`. Signing key (`TAURI_SIGNING_PRIVATE_KEY`) stored in **Bitwarden Secrets Manager** — injected at CI runtime by `bitwarden/sm-action`. `BWS_ACCESS_TOKEN` is the only GitHub Secret in the repo.
+- **Electron bundle only**: `.deb`, `.rpm`, `.AppImage`. No PyPI, no `uv tool`.
+- Updates via `electron-updater`. Signing key stored in **Bitwarden Secrets Manager** — injected at CI runtime by `bitwarden/sm-action`. `BWS_ACCESS_TOKEN` is the only GitHub Secret in the repo.
 - CI release builds triggered by version tag (`v*`) via `.github/workflows/release.yml`.
 
 ### OS integration notes
 
-- **Tray on GNOME/Wayland** (Pop!_OS 24.04): `tauri-plugin-tray` uses `StatusNotifierItem`. GNOME does not display these natively — requires the **AppIndicator and KStatusNotifierItem Support** GNOME extension. Document in README as a user-side dependency. KDE, i3, and Sway work out of the box.
+- **Tray on GNOME/Wayland** (Pop!_OS 24.04): Electron tray uses `StatusNotifierItem` via Chromium. GNOME does not display these natively — requires the **AppIndicator and KStatusNotifierItem Support** GNOME extension. Document in README as a user-side dependency. KDE, i3, and Sway work out of the box.
+- **Wayland native**: Analecta runs Wayland-native by default (no `--ozone-platform=x11`). `dialog.showOpenDialog()` has an 8 s timeout + text-input fallback (FileChooser portal SIGSEGV on COSMIC — cosmic-epoch#3467). `win.focus()` is best-effort on Wayland; always call `show()` first.
 
 ---
 
@@ -208,24 +217,19 @@ Schema changes go in a new `backend/src/analecta/migrations/NNN_description.sql`
 
 ## Security Constraints
 
-- VirusTotal API key: stored in system keyring via `keyring` library exclusively. Never in `config.toml`, never in env vars, never logged.
-- VirusTotal Public API rate limits: **4 requests/min · 500 requests/day** (per ToS). The polling loop in `security/virustotal.py` must enforce a minimum of **15 s between consecutive API calls**. Exceeding limits causes permanent account ban.
-- VirusTotal privacy: every URL submitted to VT is indexed in their public database. The Settings UI **must display a one-time opt-in disclaimer** before the first scan. Never submit URLs silently.
-- VirusTotal ToS: Public API is non-commercial only. The app must remain free and open-source. Any monetisation path requires a Premium API licence.
 - `analecta://` URL scheme handler: validate and sanitize the `id` parameter before any DB query. Treat it as untrusted input.
 - Asset downloader: validate `Content-Type` header before writing. Reject non-image MIME types.
 - playwright: headless only, no persistent profile, sandbox flag enabled.
 - No `.env` files anywhere in the project tree. Configuration is TOML only.
-- Frontend never accesses the keyring directly. API key management goes through `PUT /api/v1/security/virustotal/key`.
 
 ---
 
 ## Distribution & Updater
 
-Single distribution channel: **Tauri bundle** (`.deb` / `.rpm` / `.AppImage`).
+Single distribution channel: **Electron bundle** (`.deb` / `.rpm` / `.AppImage`).
 
-- Build: `mise exec -- pnpm tauri build` (runs `scripts/build_sidecar.py` via `beforeBuildCommand`).
-- Updates: `tauri-plugin-updater` with signed releases. Private key stored as GitHub secret `TAURI_SIGNING_PRIVATE_KEY`.
+- Build: `mise exec -- pnpm dist` (runs `scripts/build_sidecar.py`, then `pnpm --filter frontend build`, then `electron-builder`).
+- Updates: `electron-updater` with signed releases. Private key stored in BSM — injected via `sm-action`.
 - PyPI / `uv tool` channel: **discontinued**. Do not implement or reference.
 
 ---
@@ -237,15 +241,13 @@ Single distribution channel: **Tauri bundle** (`.deb` / `.rpm` / `.AppImage`).
 | `/fetch <url>` | Run extraction pipeline and print resulting Markdown to stdout |
 | `/dev` | `cd backend && mise exec -- uv run python -m analecta` (sidecar standalone) |
 | `/test` | `cd backend && mise exec -- uv run pytest -v` |
-| `/build` | `mise exec -- pnpm tauri build` |
+| `/build` | `mise exec -- pnpm dist` |
 
 ---
 
 ## Secret Management
 
-Two-layer model:
-- **BSM** (Web App / `bws`): Developer-level single source of truth.
-- **System keyring** (`keyring` library): Runtime user-level. The app reads secrets from here at runtime.
+Single source of truth: **BSM** (Web App / `bws`).
 
 ### Policy for Claude Code
 
@@ -259,16 +261,7 @@ Two-layer model:
     Purpose: <what it's used for>
     Action : 1. Open Bitwarden Secrets Manager Web App.
              2. Create a new secret with Key: "<secret_name>" in the active Project.
-             3. (Optional) If testing locally without BSM injection, add to local keyring via Python:
-                `import keyring; keyring.set_password("analecta", "<secret_name>", "<VALUE>")`
-    Runtime: App reads via `keyring.get_password("analecta", "<secret_name>")`
 ```
-
-### Known secrets
-
-| Secret | BSM Key | Runtime storage |
-|--------|---------|-----------------|
-| VirusTotal API key | `VIRUSTOTAL_API_KEY` | `keyring.get_password("analecta", "VIRUSTOTAL_API_KEY")` |
 
 ---
 

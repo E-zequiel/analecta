@@ -2,7 +2,7 @@ name: Dependency Update
 
 on:
   schedule:
-    - cron: '0 6 * * 1'  # Every Monday at 06:00 UTC
+    - cron: '0 12 * * 3'  # Every Wednesday at 12:00 UTC
   workflow_dispatch:
     inputs:
       cooldown:
@@ -31,7 +31,7 @@ jobs:
         working-directory: backend
 
       - name: Install Node dependencies
-        run: mise exec -- pnpm install --frozen-lockfile
+        run: mise exec -- pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Run age-gated dependency update
         run: |
@@ -41,7 +41,7 @@ jobs:
       - name: Check for lock file changes
         id: changes
         run: |
-          git diff --quiet -- backend/uv.lock pnpm-lock.yaml src-tauri/Cargo.lock \
+          git diff --quiet -- backend/uv.lock pnpm-lock.yaml \
             && echo "changed=false" >> "$GITHUB_OUTPUT" \
             || echo "changed=true" >> "$GITHUB_OUTPUT"
 
@@ -56,7 +56,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           BRANCH="deps-update/$(date -u +%Y-%m-%d)"
           git checkout -b "$BRANCH"
-          git add backend/uv.lock pnpm-lock.yaml src-tauri/Cargo.lock
+          git add backend/uv.lock pnpm-lock.yaml
           git commit -m "chore(deps): weekly dependency update $(date -u +%Y-%m-%d)"
           git push origin "$BRANCH"
           gh pr create \

@@ -13,6 +13,7 @@ a = Analysis(
         # trafilatura reads settings.cfg at import time via Path(__file__).parent;
         # without this, configparser raises NoOptionError on min_extracted_size.
         *collect_data_files('trafilatura'),
+        *collect_data_files('justext'),
     ],
     hiddenimports=[
         # Dynamic loaders not reachable by static analysis
@@ -22,8 +23,6 @@ a = Analysis(
         'markdownify',
         'markdown_it',
         'youtube_transcript_api',
-        'keyring.backends',
-        'keyring.backends.SecretService',
         'httpx',
         'sse_starlette',
         # uvicorn lazy-loads its protocol/loop implementations at startup

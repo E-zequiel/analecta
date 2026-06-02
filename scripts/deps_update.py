@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Age-gated dependency updater for Analecta.
 
-For each ecosystem (Python/uv, Node/pnpm, Rust/cargo):
+For each ecosystem (Python/uv, Node/pnpm):
   1. Detect packages with available updates.
   2. Query the upstream registry for the release date of the new version.
   3. Skip packages released less than COOLDOWN_DAYS ago.
@@ -17,17 +17,16 @@ import argparse
 import json
 import re
 import subprocess
-import sys
 import tomllib
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 REPO_ROOT = Path(__file__).parent.parent
 COOLDOWN_DAYS = 3
 _REGISTRY_TIMEOUT = 15
-_CRATES_UA = "analecta-deps-updater/1.0 (https://github.com/E-zequiel/analecta)"
 
 # ---------------------------------------------------------------------------
 # Types
@@ -41,11 +40,11 @@ type Skipped = tuple[str, str, datetime]  # (name, new, release_dt)
 # ---------------------------------------------------------------------------
 
 
-def _fetch_json(url: str, *, headers: dict[str, str] | None = None) -> dict | None:  # type: ignore[type-arg]
+def _fetch_json(url: str, *, headers: dict[str, str] | None = None) -> dict[str, Any] | None:
     req = urllib.request.Request(url, headers=headers or {})
     try:
-        with urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT) as resp:
-            return json.loads(resp.read())  # type: ignore[no-any-return]
+        with urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT) as resp:  # pyright: ignore[reportAny]
+            return cast(dict[str, Any], json.loads(resp.read()))  # pyright: ignore[reportAny]
     except (urllib.error.URLError, json.JSONDecodeError, OSError) as exc:
         print(f"    [warn] registry error for {url}: {exc}")
         return None
@@ -60,10 +59,8 @@ def _age_ok(release_dt: datetime, cooldown: int) -> bool:
 
 
 def _parse_iso(s: str) -> datetime:
-    s = s.rstrip("Z")
-    if "+" not in s and len(s) == 19:
-        s += "+00:00"
-    return datetime.fromisoformat(s).replace(tzinfo=UTC) if s.endswith("+00:00") else datetime.fromisoformat(s)
+    dt = datetime.fromisoformat(s)
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -77,10 +74,10 @@ def _pkg_name(dep: str) -> str:
     return m.group(1) if m else ""
 
 
-def _pypi_release_date(name: str, version: str, all_releases: dict) -> datetime | None:  # type: ignore[type-arg]
-    files = all_releases.get(version, [])
-    times = [
-        f.get("upload_time_iso_8601") or f.get("upload_time")
+def _pypi_release_date(_name: str, version: str, all_releases: dict[str, Any]) -> datetime | None:
+    files = cast(list[dict[str, Any]], all_releases.get(version, []))
+    times: list[str] = [
+        cast(str, f.get("upload_time_iso_8601") or f.get("upload_time"))
         for f in files
         if f.get("upload_time_iso_8601") or f.get("upload_time")
     ]
@@ -100,16 +97,19 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
     with (backend / "pyproject.toml").open("rb") as f:
         pyproject = tomllib.load(f)
 
-    direct: list[str] = list(pyproject.get("project", {}).get("dependencies", []))
-    for group in pyproject.get("dependency-groups", {}).values():
+    project_section = cast(dict[str, Any], pyproject.get("project", {}))
+    direct: list[str] = list(cast(list[str], project_section.get("dependencies", [])))
+    dep_groups = cast(dict[str, list[Any]], pyproject.get("dependency-groups", {}))
+    for group in dep_groups.values():
         direct.extend(d for d in group if isinstance(d, str))
 
     names = sorted({_pkg_name(d) for d in direct if _pkg_name(d)})
 
     with (backend / "uv.lock").open("rb") as f:
         lock = tomllib.load(f)
+    packages = cast(list[dict[str, Any]], lock.get("package", []))
     current_versions: dict[str, str] = {
-        p["name"]: p["version"] for p in lock.get("package", [])
+        cast(str, p["name"]): cast(str, p["version"]) for p in packages
     }
 
     updated: list[Updated] = []
@@ -119,13 +119,15 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
         data = _fetch_json(f"https://pypi.org/pypi/{name}/json")
         if data is None:
             continue
-        latest: str = data.get("info", {}).get("version", "")
+        info = cast(dict[str, Any], data.get("info", {}))
+        latest: str = cast(str, info.get("version", ""))
         current = current_versions.get(name, "")
         if not latest or latest == current:
             continue
         print(f"  {name}: {current} -> {latest}")
 
-        release_dt = _pypi_release_date(name, latest, data.get("releases", {}))
+        releases = cast(dict[str, Any], data.get("releases", {}))
+        release_dt = _pypi_release_date(name, latest, releases)
         if release_dt is None:
             print("    [warn] release date unavailable, skipping")
             continue
@@ -150,20 +152,20 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
 # ---------------------------------------------------------------------------
 
 
-def _parse_pnpm_outdated(raw: str) -> dict[str, dict]:  # type: ignore[type-arg]
+def _parse_pnpm_outdated(raw: str) -> dict[str, dict[str, Any]]:
     """Parse pnpm outdated --json output (flat or workspace-nested)."""
-    data: dict = json.loads(raw)
+    data = cast(dict[str, Any], json.loads(raw))
     if not data:
         return {}
-    first = next(iter(data.values()), {})
+    first = next(iter(data.values()), None)
     # Flat format: first value has "current" / "wanted" keys directly
     if isinstance(first, dict) and ("current" in first or "wanted" in first):
-        return data
+        return cast(dict[str, dict[str, Any]], data)
     # Workspace-nested: {"frontend": {"pkg": {...}}}
-    merged: dict[str, dict] = {}  # type: ignore[type-arg]
+    merged: dict[str, dict[str, Any]] = {}
     for ws_pkgs in data.values():
         if isinstance(ws_pkgs, dict):
-            merged.update(ws_pkgs)
+            merged.update(cast(dict[str, dict[str, Any]], ws_pkgs))
     return merged
 
 
@@ -172,7 +174,8 @@ def _npm_release_date(name: str, version: str) -> datetime | None:
     data = _fetch_json(f"https://registry.npmjs.org/{encoded}")
     if data is None:
         return None
-    ts: str | None = data.get("time", {}).get(version)
+    time_dict = cast(dict[str, str], data.get("time", {}))
+    ts = time_dict.get(version)
     if not ts:
         return None
     try:
@@ -197,7 +200,7 @@ def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
 
     try:
         outdated = _parse_pnpm_outdated(raw)
-    except (json.JSONDecodeError, StopIteration):
+    except json.JSONDecodeError, StopIteration:
         # Try extracting a JSON block from mixed output
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         if not m:
@@ -209,8 +212,8 @@ def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
     skipped: list[Skipped] = []
 
     for name, info in sorted(outdated.items()):
-        current: str = info.get("current", "")
-        wanted: str = info.get("wanted", "")
+        current: str = cast(str, info.get("current", ""))
+        wanted: str = cast(str, info.get("wanted", ""))
         if not wanted or wanted == current:
             continue
         print(f"  {name}: {current} -> {wanted}")
@@ -236,83 +239,6 @@ def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
 
 
 # ---------------------------------------------------------------------------
-# Rust / cargo
-# ---------------------------------------------------------------------------
-
-
-def _crates_release_date(name: str, version: str) -> datetime | None:
-    data = _fetch_json(
-        f"https://crates.io/api/v1/crates/{name}/{version}",
-        headers={"User-Agent": _CRATES_UA},
-    )
-    if data is None:
-        return None
-    created: str | None = data.get("version", {}).get("created_at")
-    if not created:
-        return None
-    try:
-        return _parse_iso(created)
-    except (ValueError, TypeError):
-        return None
-
-
-def update_rust(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
-    """Check and apply Rust dependency updates via cargo."""
-    print("\n=== Rust (cargo) ===")
-    tauri_dir = REPO_ROOT / "src-tauri"
-
-    result = _run(["cargo", "update", "--dry-run"], cwd=tauri_dir)
-    output = result.stdout + result.stderr
-
-    candidates: list[tuple[str, str, str]] = []
-    for line in output.splitlines():
-        m = re.search(r"Updating (\S+) v(\S+) -> v(\S+)", line)
-        if m:
-            candidates.append((m.group(1), m.group(2), m.group(3)))
-
-    if not candidates:
-        print("  nothing to update")
-        return [], []
-
-    with (tauri_dir / "Cargo.toml").open("rb") as f:
-        cargo_toml = tomllib.load(f)
-    direct_deps: set[str] = (
-        set(cargo_toml.get("dependencies", {}).keys())
-        | set(cargo_toml.get("build-dependencies", {}).keys())
-    )
-
-    updated: list[Updated] = []
-    skipped: list[Skipped] = []
-
-    for name, old_ver, new_ver in sorted(candidates):
-        if name not in direct_deps:
-            continue
-        print(f"  {name}: {old_ver} -> {new_ver}")
-
-        release_dt = _crates_release_date(name, new_ver)
-        if release_dt is None:
-            print("    [warn] release date unavailable, skipping")
-            continue
-        if not _age_ok(release_dt, cooldown):
-            days_old = (datetime.now(UTC) - release_dt).days
-            print(f"    [skip] {days_old}d old (cooldown: {cooldown}d)")
-            skipped.append((name, new_ver, release_dt))
-            continue
-
-        result = _run(
-            ["cargo", "update", "-p", name, "--precise", new_ver],
-            cwd=tauri_dir,
-        )
-        if result.returncode != 0:
-            print(f"    [error] {result.stderr.strip()}")
-        else:
-            print("    [ok] updated")
-            updated.append((name, old_ver, new_ver))
-
-    return updated, skipped
-
-
-# ---------------------------------------------------------------------------
 # PR body
 # ---------------------------------------------------------------------------
 
@@ -322,8 +248,6 @@ def _pr_body(
     py_sk: list[Skipped],
     nd_up: list[Updated],
     nd_sk: list[Skipped],
-    rs_up: list[Updated],
-    rs_sk: list[Skipped],
     cooldown: int,
 ) -> str:
     today = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -354,7 +278,6 @@ def _pr_body(
 
     _section("Python", py_up, py_sk)
     _section("Node / pnpm", nd_up, nd_sk)
-    _section("Rust / cargo", rs_up, rs_sk)
 
     lines += [
         "---",
@@ -370,25 +293,37 @@ def _pr_body(
 
 
 def main() -> None:
+    """Entry point for the age-gated dependency updater."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cooldown", type=int, default=COOLDOWN_DAYS,
-                        metavar="DAYS", help="minimum age in days (default: 3)")
-    parser.add_argument("--pr-body-file", type=Path, default=None, metavar="PATH",
-                        help="write PR body markdown to this file")
+    _ = parser.add_argument(
+        "--cooldown",
+        type=int,
+        default=COOLDOWN_DAYS,
+        metavar="DAYS",
+        help="minimum age in days (default: 3)",
+    )
+    _ = parser.add_argument(
+        "--pr-body-file",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="write PR body markdown to this file",
+    )
     args = parser.parse_args()
+    cooldown: int = cast(int, args.cooldown)
+    pr_body_file: Path | None = cast(Path | None, args.pr_body_file)
 
-    py_up, py_sk = update_python(args.cooldown)
-    nd_up, nd_sk = update_node(args.cooldown)
-    rs_up, rs_sk = update_rust(args.cooldown)
+    py_up, py_sk = update_python(cooldown)
+    nd_up, nd_sk = update_node(cooldown)
 
-    total_up = len(py_up) + len(nd_up) + len(rs_up)
-    total_sk = len(py_sk) + len(nd_sk) + len(rs_sk)
+    total_up = len(py_up) + len(nd_up)
+    total_sk = len(py_sk) + len(nd_sk)
     print(f"\n==> {total_up} updated, {total_sk} skipped (cooldown)")
 
-    if args.pr_body_file:
-        body = _pr_body(py_up, py_sk, nd_up, nd_sk, rs_up, rs_sk, args.cooldown)
-        args.pr_body_file.write_text(body)
-        print(f"    PR body written to {args.pr_body_file}")
+    if pr_body_file:
+        body = _pr_body(py_up, py_sk, nd_up, nd_sk, cooldown)
+        _ = pr_body_file.write_text(body)
+        print(f"    PR body written to {pr_body_file}")
 
 
 if __name__ == "__main__":
