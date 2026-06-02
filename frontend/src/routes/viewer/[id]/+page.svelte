@@ -30,44 +30,46 @@
 	let source = $state('');
 	let propertiesOpen = $state(false);
 
-	function parseFrontmatter(src: string): [string, string][] {
-		const match = src.match(/^---\n([\s\S]*?)\n---/);
-		if (!match) return [];
-		const fields: [string, string][] = [];
-		const LABELS: Record<string, string> = {
-			title: 'Title',
-			url: 'Source',
-			author: 'Author',
-			published: 'Published',
-			created_at: 'Created',
-			description: 'Description',
-			tags: 'Tags',
-			status: 'Status',
-			source_type: 'Type',
-		};
-		for (const line of match[1].split('\n')) {
-			const m = line.match(/^(\w+):\s*(.*)/);
-			if (!m) continue;
-			const [, key, raw] = m;
-			if (!(key in LABELS)) continue;
-			let val: string;
-			if (raw.startsWith('[') && raw.endsWith(']')) {
-				const inner = raw.slice(1, -1).trim();
-				val = inner
-					? inner
-							.split(',')
-							.map((s) => s.trim())
-							.join(', ')
-					: '';
-			} else {
-				val = raw.replace(/^["']|["']$/g, '').trim();
-			}
-			if (val) fields.push([LABELS[key], val]);
-		}
-		return fields;
+	function formatDate(iso: string): string {
+		return new Date(iso).toLocaleDateString('en-US', {
+			month: 'short',
+			day: 'numeric',
+			year: 'numeric',
+		});
 	}
 
-	const propertyFields = $derived(parseFrontmatter(source));
+	function parseFrontmatter(src: string): {
+		author?: string;
+		published?: string;
+		description?: string;
+	} {
+		const match = src.match(/^---\n([\s\S]*?)\n---/);
+		if (!match) return {};
+		const result: { author?: string; published?: string; description?: string } = {};
+		for (const line of match[1].split('\n')) {
+			const m = line.match(/^(author|published|description):\s*(.*)/);
+			if (!m) continue;
+			const val = m[2].replace(/^["']|["']$/g, '').trim();
+			if (val) result[m[1] as 'author' | 'published' | 'description'] = val;
+		}
+		return result;
+	}
+
+	const frontmatter = $derived(parseFrontmatter(source));
+
+	const wordCount = $derived(
+		source
+			.replace(/^---[\s\S]*?---\n?/, '')
+			.replace(/[#*`[\]_~>]/g, ' ')
+			.trim()
+			.split(/\s+/)
+			.filter(Boolean).length
+	);
+	const readTime = $derived(
+		wordCount > 0 ? `~${Math.max(1, Math.round(wordCount / 200))} min` : ''
+	);
+	const charCount = $derived(source.replace(/^---[\s\S]*?---\n?/, '').trim().length);
+
 	let contentEl = $state<HTMLElement | null>(null);
 	let readingFontSize = $state(17);
 
@@ -358,34 +360,80 @@
 	{#if error}
 		<div class="error-banner">{error}</div>
 	{:else if entry && html}
+		<button class="props-bar" onclick={() => (propertiesOpen = !propertiesOpen)}>
+			<span class="status-badge">{entry.status}</span>
+			<span class="props-url">{entry.url}</span>
+			<span class="props-meta">{formatDate(entry.created_at)}</span>
+			{#if readTime}<span class="props-meta">{readTime}</span>{/if}
+			{#if propertiesOpen}<ChevronDown size={11} />{:else}<ChevronRight size={11} />{/if}
+		</button>
+		{#if propertiesOpen}
+			<div class="props-expanded">
+				<div class="props-grid">
+					<!-- Col1 (2fr): Author · Type · URL · Description -->
+					<div class="props-col">
+						{#if frontmatter.author}
+							<div class="props-field">
+								<div class="props-label">Author</div>
+								<span class="props-value">{frontmatter.author}</span>
+							</div>
+						{/if}
+						<div class="props-field">
+							<div class="props-label">Type</div>
+							<span class="props-value">{entry.source_type}</span>
+						</div>
+						<div class="props-field">
+							<div class="props-label">URL</div>
+							<span class="props-url-value">{entry.url}</span>
+						</div>
+						{#if frontmatter.description}
+							<div class="props-field">
+								<div class="props-label">Description</div>
+								<span class="props-value">{frontmatter.description}</span>
+							</div>
+						{/if}
+					</div>
+					<!-- Col2 (1fr): Published · Saved · Words · Characters -->
+					<div class="props-col">
+						{#if frontmatter.published}
+							<div class="props-field">
+								<div class="props-label">Published</div>
+								<span class="props-value">{frontmatter.published}</span>
+							</div>
+						{/if}
+						<div class="props-field">
+							<div class="props-label">Saved</div>
+							<span class="props-value">{formatDate(entry.created_at)}</span>
+						</div>
+						<div class="props-field">
+							<div class="props-label">Words</div>
+							<span class="props-value">{wordCount.toLocaleString()}</span>
+						</div>
+						<div class="props-field">
+							<div class="props-label">Characters</div>
+							<span class="props-value">{charCount.toLocaleString()}</span>
+						</div>
+					</div>
+					<!-- Col3 (1fr): Tags -->
+					<div class="props-col">
+						{#if entry.tags.length > 0}
+							<div class="props-field">
+								<div class="props-label">Tags</div>
+								<div class="props-tags">
+									{#each entry.tags as tag (tag)}
+										<span class="prop-tag">#{tag}</span>
+									{/each}
+								</div>
+							</div>
+						{/if}
+					</div>
+				</div>
+			</div>
+		{/if}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="content" bind:this={contentEl} oncontextmenu={handleRightClick}>
 			<div class="content-inner">
 				<h1 class="entry-title">{entry.title}</h1>
-
-				{#if propertyFields.length > 0}
-					<div class="properties-panel">
-						<button class="properties-header" onclick={() => (propertiesOpen = !propertiesOpen)}>
-							{#if propertiesOpen}
-								<ChevronDown size={12} />
-							{:else}
-								<ChevronRight size={12} />
-							{/if}
-							<span>Properties</span>
-						</button>
-						{#if propertiesOpen}
-							<div class="properties-body">
-								{#each propertyFields as [label, val] (label)}
-									<div class="property-row">
-										<span class="property-key">{label}</span>
-										<span class="property-val">{val}</span>
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</div>
-				{/if}
-
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 				<div class="markdown-body" onclick={handleContentClick}>
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -- markdown-it output, not raw user/network HTML -->
@@ -437,67 +485,113 @@
 		line-height: 1.3;
 	}
 
-	.properties-panel {
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		margin-bottom: 1.5rem;
-		overflow: hidden;
-	}
-
-	.properties-header {
+	.props-bar {
+		height: 33px;
 		display: flex;
 		align-items: center;
-		gap: 6px;
 		width: 100%;
-		padding: 5px 10px;
-		background: var(--bg-alt);
-		border: none;
-		color: var(--fg-muted);
-		font-family: inherit;
-		font-size: 0.75rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		padding: 0 16px;
+		gap: 12px;
 		cursor: pointer;
-		text-align: left;
-		transition:
-			color 0.12s,
-			background 0.12s;
-	}
-
-	.properties-header:hover {
-		color: var(--fg);
-		background: var(--bg-highlight);
-	}
-
-	.properties-body {
-		padding: 4px 0;
-	}
-
-	.property-row {
-		display: flex;
-		align-items: baseline;
-		gap: 8px;
-		padding: 3px 10px;
-	}
-
-	.property-row:hover {
-		background: var(--bg-highlight);
-	}
-
-	.property-key {
+		background: var(--bg-dark);
+		border: none;
+		border-bottom: 1px solid var(--border);
 		flex-shrink: 0;
-		width: 80px;
-		color: var(--fg-muted);
-		font-size: 0.75rem;
-		font-weight: 600;
+		transition: background 0.12s;
+		color: inherit;
+		font-family: inherit;
 	}
 
-	.property-val {
-		color: var(--fg);
-		font-size: 0.82rem;
-		word-break: break-word;
+	.props-bar:hover {
+		background: var(--bg-highlight);
+	}
+
+	.status-badge {
+		font-size: 0.6rem;
+		font-weight: 700;
+		padding: 2px 7px;
+		border-radius: 3px;
+		background: color-mix(in srgb, var(--accent) 13%, transparent);
+		color: var(--accent);
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		flex-shrink: 0;
+	}
+
+	.props-url {
+		font-size: 0.75rem;
+		color: var(--fg-muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		flex: 1;
+		text-align: left;
+	}
+
+	.props-meta {
+		font-size: 0.68rem;
+		color: var(--fg-muted);
+		flex-shrink: 0;
+	}
+
+	.props-expanded {
+		padding: 0 16px 14px;
+		border-bottom: 1px solid var(--border);
+		background: var(--bg-dark);
+		flex-shrink: 0;
+	}
+
+	.props-grid {
+		display: grid;
+		grid-template-columns: 2fr 1fr 1fr;
+		gap: 0 32px;
+		padding-top: 12px;
+		align-items: start;
+	}
+
+	.props-col {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.props-field {
 		min-width: 0;
+	}
+
+	.props-label {
+		font-size: 0.6rem;
+		letter-spacing: 0.1em;
+		font-weight: 700;
+		color: var(--fg-muted);
+		text-transform: uppercase;
+		margin-bottom: 5px;
+	}
+
+	.props-value {
+		font-size: 0.75rem;
+		color: var(--fg);
+	}
+
+	.props-url-value {
+		font-size: 0.75rem;
+		color: var(--accent);
+		word-break: break-all;
+	}
+
+	.props-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+
+	.prop-tag {
+		font-size: 0.65rem;
+		color: var(--fg-muted);
+		padding: 1px 6px;
+		border-radius: 3px;
+		background: var(--bg-alt);
+		border: 1px solid var(--border);
 	}
 
 	.tags-panel {
