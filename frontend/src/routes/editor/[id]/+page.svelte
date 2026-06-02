@@ -5,6 +5,13 @@
 	import { readTextFile, writeTextFile } from '$lib/platform';
 	import { entries as entriesApi, type Entry } from '$lib/api/client';
 	import { entryChangedTick } from '$lib/stores/sse';
+	import {
+		editorSaving,
+		editorSaved,
+		editorShowPreview,
+		editorIsDirty,
+		editorActions,
+	} from '$lib/stores/toolbar';
 	import { createRenderer } from '$lib/markdown/renderer';
 	import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
 	import '$lib/markdown/tokyo-night.css';
@@ -22,16 +29,51 @@
 
 	let previewTimer: ReturnType<typeof setTimeout>;
 
-	onMount(async () => {
-		try {
-			const e = await entriesApi.get(entryId);
-			entry = e;
-			const source = await readTextFile(e.file_path);
-			content = source;
-			originalContent = source;
-		} catch (err) {
-			error = err instanceof Error ? err.message : String(err);
-		}
+	onMount(() => {
+		entriesApi
+			.get(entryId)
+			.then((e) => {
+				entry = e;
+				return readTextFile(e.file_path);
+			})
+			.then((source) => {
+				content = source;
+				originalContent = source;
+			})
+			.catch((err) => {
+				error = err instanceof Error ? err.message : String(err);
+			});
+
+		editorActions.set({
+			save,
+			revert,
+			togglePreview,
+			goBack: () => goto(`/viewer/${entryId}`),
+		});
+
+		return () => {
+			editorActions.set(null);
+			editorSaving.set(false);
+			editorSaved.set(false);
+			editorShowPreview.set(false);
+			editorIsDirty.set(false);
+		};
+	});
+
+	$effect(() => {
+		editorSaving.set(saving);
+	});
+
+	$effect(() => {
+		editorSaved.set(saved);
+	});
+
+	$effect(() => {
+		editorShowPreview.set(showPreview);
+	});
+
+	$effect(() => {
+		editorIsDirty.set(content !== originalContent);
 	});
 
 	function extractHashtags(text: string): string[] {
@@ -95,18 +137,6 @@
 </script>
 
 <div class="editor-page">
-	<div class="toolbar">
-		<button class="btn" onclick={() => goto(`/viewer/${entryId}`)}>← Back</button>
-		<button class="btn" class:active={showPreview} onclick={togglePreview}>Preview</button>
-		<button class="btn" onclick={save} disabled={saving}>
-			{saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}
-		</button>
-		<button class="btn" onclick={revert} disabled={content === originalContent}>Revert</button>
-		{#if entry}
-			<span class="entry-title">{entry.title}</span>
-		{/if}
-	</div>
-
 	{#if error}
 		<div class="error-banner">{error}</div>
 	{/if}
@@ -135,57 +165,6 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-	}
-
-	.toolbar {
-		display: flex;
-		align-items: center;
-		gap: 0.25rem;
-		padding: 0.5rem 1rem;
-		border-bottom: 1px solid var(--border);
-		background: var(--bg-dark);
-		flex-shrink: 0;
-	}
-
-	.entry-title {
-		margin-left: 0.5rem;
-		font-size: 12px;
-		color: var(--fg-muted);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.btn {
-		padding: 0.3rem 0.6rem;
-		background: none;
-		border: 1px solid transparent;
-		border-radius: 4px;
-		color: var(--fg-muted);
-		font-family: inherit;
-		font-size: 12px;
-		cursor: pointer;
-		white-space: nowrap;
-		transition:
-			color 0.15s,
-			background 0.15s,
-			border-color 0.15s;
-	}
-
-	.btn:hover:not(:disabled) {
-		color: var(--fg);
-		background: var(--bg-highlight);
-	}
-
-	.btn:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-
-	.btn.active {
-		color: var(--accent);
-		border-color: var(--accent-dark);
-		background: var(--bg-highlight);
 	}
 
 	.error-banner {

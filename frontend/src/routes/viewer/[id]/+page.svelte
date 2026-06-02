@@ -3,22 +3,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { openUrl, confirm, readTextFile } from '$lib/platform';
-	import {
-		CornerUpLeft,
-		PenLine,
-		Link,
-		Archive,
-		Shredder,
-		AArrowDown,
-		AArrowUp,
-		Eye,
-		EyeClosed,
-		Bookmark,
-		Gem,
-		BrainCircuit,
-		ChevronDown,
-		ChevronRight,
-	} from '@lucide/svelte';
+	import { ChevronDown, ChevronRight } from '@lucide/svelte';
 	import {
 		entries as entriesApi,
 		tags as tagsApi,
@@ -32,6 +17,7 @@
 	import { ensureEntryTab, closeTab } from '$lib/stores/tabs';
 	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
 	import { showContextMenu } from '$lib/stores/contextMenu';
+	import { viewerEntry, viewerFontSize, viewerTagsOpen, viewerActions } from '$lib/stores/toolbar';
 
 	const entryId = $derived(parseInt($page.params['id'] as string));
 
@@ -116,7 +102,6 @@
 
 	let error = $state('');
 
-	let tagsOpen = $state(false);
 	let newTagInput = $state('');
 	let allTags = $state<Tag[]>([]);
 	let tagsContainerEl = $state<HTMLElement | null>(null);
@@ -134,10 +119,11 @@
 	);
 
 	$effect(() => {
-		if (!tagsOpen) return;
+		if (!$viewerTagsOpen) return;
 		function onPointerDown(e: PointerEvent) {
+			if ((e.target as HTMLElement).closest('[data-tags-toggle]')) return;
 			if (tagsContainerEl && !tagsContainerEl.contains(e.target as Node)) {
-				tagsOpen = false;
+				viewerTagsOpen.set(false);
 			}
 		}
 		document.addEventListener('pointerdown', onPointerDown, true);
@@ -145,7 +131,11 @@
 	});
 
 	$effect(() => {
-		if (tagsOpen && tagAddInputEl) tagAddInputEl.focus();
+		if ($viewerTagsOpen && tagAddInputEl) tagAddInputEl.focus();
+	});
+
+	$effect(() => {
+		if ($viewerTagsOpen) fetchAllTags();
 	});
 
 	// Sync entry state when an external patch (e.g. context menu) updates this entry.
@@ -164,6 +154,31 @@
 				readingFontSize = cfg.reading_font_size;
 			})
 			.catch(() => {});
+
+		viewerActions.set({
+			setStatus,
+			toggleFlag,
+			adjustFont: adjustFontSize,
+			copyUrl,
+			deleteEntry,
+			goBack: () => closeTab(`viewer-${entryId}`),
+			goToEditor: () => entry && goto(`/editor/${entry.id}`),
+		});
+
+		return () => {
+			viewerActions.set(null);
+			viewerEntry.set(null);
+			viewerFontSize.set(17);
+			viewerTagsOpen.set(false);
+		};
+	});
+
+	$effect(() => {
+		viewerEntry.set(entry);
+	});
+
+	$effect(() => {
+		viewerFontSize.set(readingFontSize);
 	});
 
 	// Re-fetch entry whenever the route param changes (same-component navigation).
@@ -174,7 +189,7 @@
 		entry = null;
 		html = '';
 		error = '';
-		tagsOpen = false;
+		viewerTagsOpen.set(false);
 
 		let cancelled = false;
 
@@ -305,127 +320,40 @@
 </script>
 
 <div class="viewer">
-	<div class="toolbar">
-		<!-- Left: navigation -->
-		<button class="btn-icon" onclick={() => closeTab(`viewer-${entryId}`)} title="Back">
-			<CornerUpLeft size={18} />
-		</button>
-		{#if entry}
-			<button class="btn-icon" onclick={() => goto(`/editor/${entry!.id}`)} title="Edit">
-				<PenLine size={18} />
-			</button>
-			<button class="btn-icon" onclick={copyUrl} title="Copy URL">
-				<Link size={18} />
-			</button>
-			<button
-				class="btn-icon"
-				class:active={entry.flags?.includes('archive')}
-				onclick={() => toggleFlag('archive')}
-				title="Archive"
-			>
-				<Archive size={18} />
-			</button>
-			<button class="btn-icon" onclick={deleteEntry} title="Delete">
-				<Shredder size={18} />
-			</button>
-		{/if}
-
-		<span class="spacer"></span>
-
-		<!-- Center: font size controls -->
-		<div class="font-controls">
-			<button class="btn-icon" onclick={() => adjustFontSize(-1)} title="Decrease font size">
-				<AArrowDown size={18} />
-			</button>
-			<span class="font-size-label">{readingFontSize}px</span>
-			<button class="btn-icon" onclick={() => adjustFontSize(1)} title="Increase font size">
-				<AArrowUp size={18} />
-			</button>
+	{#if $viewerTagsOpen && entry}
+		<div class="tags-panel" bind:this={tagsContainerEl}>
+			{#if entry.tags.length > 0}
+				<div class="tag-chips">
+					{#each entry.tags as tag (tag)}
+						<span class="chip">
+							<span class="chip-label">{tag}</span>
+							<button class="chip-remove" onclick={() => removeTag(tag)} title="Remove">×</button>
+						</span>
+					{/each}
+				</div>
+			{/if}
+			<input
+				class="tag-add-input"
+				type="text"
+				placeholder="Add tag…"
+				bind:value={newTagInput}
+				bind:this={tagAddInputEl}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') {
+						e.preventDefault();
+						addTag(newTagInput);
+					} else if (e.key === 'Escape') viewerTagsOpen.set(false);
+				}}
+			/>
+			{#if tagSuggestions.length > 0}
+				<div class="tag-suggestions">
+					{#each tagSuggestions as s (s)}
+						<button class="suggestion-item" onclick={() => addTag(s)}>{s}</button>
+					{/each}
+				</div>
+			{/if}
 		</div>
-
-		<span class="spacer"></span>
-
-		<!-- Right: status toggles + tags -->
-		{#if entry}
-			<div class="status-controls">
-				<button
-					class="btn-icon"
-					class:active={entry.status === 'read'}
-					onclick={() => setStatus('read')}
-					title="Read"><Eye size={18} /></button
-				>
-				<button
-					class="btn-icon"
-					class:active={entry.status === 'unread'}
-					onclick={() => setStatus('unread')}
-					title="Unread"><EyeClosed size={18} /></button
-				>
-				<button
-					class="btn-icon"
-					class:active={entry.flags?.includes('bookmark')}
-					onclick={() => toggleFlag('bookmark')}
-					title="Bookmark"><Bookmark size={18} /></button
-				>
-				<button
-					class="btn-icon"
-					class:active={entry.flags?.includes('gem')}
-					onclick={() => toggleFlag('gem')}
-					title="Gem"><Gem size={18} /></button
-				>
-			</div>
-
-			<div class="tags-container" bind:this={tagsContainerEl}>
-				<button
-					class="btn-icon"
-					class:active={tagsOpen}
-					onclick={() => {
-						tagsOpen = !tagsOpen;
-						if (tagsOpen) fetchAllTags();
-					}}
-					title="Tags"
-				>
-					<BrainCircuit size={18} />
-				</button>
-
-				{#if tagsOpen}
-					<div class="tags-panel">
-						{#if entry.tags.length > 0}
-							<div class="tag-chips">
-								{#each entry.tags as tag (tag)}
-									<span class="chip">
-										<span class="chip-label">{tag}</span>
-										<button class="chip-remove" onclick={() => removeTag(tag)} title="Remove"
-											>×</button
-										>
-									</span>
-								{/each}
-							</div>
-						{/if}
-						<input
-							class="tag-add-input"
-							type="text"
-							placeholder="Add tag…"
-							bind:value={newTagInput}
-							bind:this={tagAddInputEl}
-							onkeydown={(e) => {
-								if (e.key === 'Enter') {
-									e.preventDefault();
-									addTag(newTagInput);
-								} else if (e.key === 'Escape') tagsOpen = false;
-							}}
-						/>
-						{#if tagSuggestions.length > 0}
-							<div class="tag-suggestions">
-								{#each tagSuggestions as s (s)}
-									<button class="suggestion-item" onclick={() => addTag(s)}>{s}</button>
-								{/each}
-							</div>
-						{/if}
-					</div>
-				{/if}
-			</div>
-		{/if}
-	</div>
+	{/if}
 
 	{#if error}
 		<div class="error-banner">{error}</div>
@@ -475,77 +403,6 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-	}
-
-	.toolbar {
-		display: flex;
-		align-items: center;
-		gap: 2px;
-		padding: 0 6px;
-		border-bottom: 1px solid var(--border);
-		background: var(--bg-dark);
-		flex-shrink: 0;
-		min-height: 40px;
-	}
-
-	.spacer {
-		flex: 1;
-	}
-
-	.font-controls {
-		display: flex;
-		align-items: center;
-		gap: 2px;
-	}
-
-	.font-size-label {
-		font-size: 0.72rem;
-		color: var(--fg-muted);
-		padding: 0 4px;
-		min-width: 2.8rem;
-		text-align: center;
-	}
-
-	.status-controls {
-		display: flex;
-		align-items: center;
-		gap: 2px;
-	}
-
-	.btn-icon {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 28px;
-		height: 28px;
-		padding: 0;
-		background: none;
-		border: 1px solid transparent;
-		border-radius: 4px;
-		color: var(--fg-muted);
-		font-family: inherit;
-		cursor: pointer;
-		transition:
-			color 0.15s,
-			background 0.15s,
-			border-color 0.15s;
-		flex-shrink: 0;
-	}
-
-	.btn-icon:hover:not(:disabled) {
-		color: var(--fg);
-		background: var(--bg-highlight);
-	}
-
-	.btn-icon:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.btn-icon.active {
-		color: var(--accent);
-		border-color: var(--accent-dark);
-		background: var(--bg-highlight);
 	}
 
 	.error-banner {
@@ -643,14 +500,10 @@
 		min-width: 0;
 	}
 
-	.tags-container {
-		position: relative;
-	}
-
 	.tags-panel {
-		position: absolute;
-		right: 0;
-		top: calc(100% + 4px);
+		position: fixed;
+		top: 44px;
+		right: 6px;
 		width: 220px;
 		background: var(--bg-dark);
 		border: 1px solid var(--border);

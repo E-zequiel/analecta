@@ -8,6 +8,21 @@
 		ChevronsDownUp,
 		ChevronsUpDown,
 		ScanSearch,
+		CornerUpLeft,
+		PenLine,
+		Link,
+		Archive,
+		Shredder,
+		AArrowDown,
+		AArrowUp,
+		Eye,
+		EyeClosed,
+		Bookmark,
+		Gem,
+		BrainCircuit,
+		RotateCcw,
+		Save,
+		BookOpenText,
 	} from '@lucide/svelte';
 	import {
 		windowMinimize,
@@ -28,8 +43,28 @@
 		rightSidebarWidth,
 	} from '$lib/stores/ui';
 	import { activeEntryTitle } from '$lib/stores/tabs';
+	import { page } from '$app/stores';
+	import {
+		viewerEntry,
+		viewerFontSize,
+		viewerTagsOpen,
+		viewerActions,
+		editorSaving,
+		editorSaved,
+		editorShowPreview,
+		editorIsDirty,
+		editorActions,
+	} from '$lib/stores/toolbar';
 
 	let maximized = $state(false);
+
+	const toolbarMode = $derived(
+		$page.url.pathname.startsWith('/viewer/')
+			? 'viewer'
+			: $page.url.pathname.startsWith('/editor/')
+				? 'editor'
+				: null
+	);
 
 	function onTitlebarMouseDown(e: MouseEvent) {
 		if (e.button !== 0) return;
@@ -92,12 +127,126 @@
 		{/if}
 	</div>
 
-	<!-- CENTER: drag region + título de entrada activa -->
-	<div class="drag-region">
-		{#if $activeEntryTitle}
-			<span class="active-title">{$activeEntryTitle}</span>
-		{/if}
-	</div>
+	<!-- CENTER: drag region / toolbar -->
+	{#if toolbarMode === 'viewer' && $viewerActions !== null}
+		<div class="toolbar-center viewer-toolbar">
+			{#if $viewerEntry}
+				<div class="tb-group">
+					<button class="btn-icon" onclick={() => $viewerActions!.goBack()} title="Back">
+						<CornerUpLeft size={16} />
+					</button>
+					<button class="btn-icon" onclick={() => $viewerActions!.goToEditor()} title="Edit">
+						<PenLine size={16} />
+					</button>
+					<button class="btn-icon" onclick={() => $viewerActions!.copyUrl()} title="Copy URL">
+						<Link size={16} />
+					</button>
+					<button
+						class="btn-icon"
+						class:active={$viewerEntry.flags?.includes('archive')}
+						onclick={() => $viewerActions!.toggleFlag('archive')}
+						title="Archive"
+					>
+						<Archive size={16} />
+					</button>
+					<button class="btn-icon" onclick={() => $viewerActions!.deleteEntry()} title="Delete">
+						<Shredder size={16} />
+					</button>
+				</div>
+				<div class="tb-group">
+					<button class="btn-icon" onclick={() => $viewerActions!.adjustFont(-1)} title="Decrease font size">
+						<AArrowDown size={16} />
+					</button>
+					<span class="font-size-label">{$viewerFontSize}px</span>
+					<button class="btn-icon" onclick={() => $viewerActions!.adjustFont(1)} title="Increase font size">
+						<AArrowUp size={16} />
+					</button>
+				</div>
+				<div class="tb-group">
+					<button
+						class="btn-icon"
+						class:active={$viewerEntry.status === 'read'}
+						onclick={() => $viewerActions!.setStatus('read')}
+						title="Read"
+					>
+						<Eye size={16} />
+					</button>
+					<button
+						class="btn-icon"
+						class:active={$viewerEntry.status === 'unread'}
+						onclick={() => $viewerActions!.setStatus('unread')}
+						title="Unread"
+					>
+						<EyeClosed size={16} />
+					</button>
+					<button
+						class="btn-icon"
+						class:active={$viewerEntry.flags?.includes('bookmark')}
+						onclick={() => $viewerActions!.toggleFlag('bookmark')}
+						title="Bookmark"
+					>
+						<Bookmark size={16} />
+					</button>
+					<button
+						class="btn-icon"
+						class:active={$viewerEntry.flags?.includes('gem')}
+						onclick={() => $viewerActions!.toggleFlag('gem')}
+						title="Gem"
+					>
+						<Gem size={16} />
+					</button>
+					<button
+						class="btn-icon"
+						class:active={$viewerTagsOpen}
+						data-tags-toggle
+						onclick={() => viewerTagsOpen.update((v) => !v)}
+						title="Tags"
+					>
+						<BrainCircuit size={16} />
+					</button>
+				</div>
+			{/if}
+		</div>
+	{:else if toolbarMode === 'editor' && $editorActions !== null}
+		<div class="toolbar-center">
+			<div class="tb-group">
+				<button class="btn-icon" onclick={() => $editorActions!.goBack()} title="Back">
+					<CornerUpLeft size={16} />
+				</button>
+				<button
+					class="btn-icon"
+					class:active={$editorShowPreview}
+					onclick={() => $editorActions!.togglePreview()}
+					title="Preview"
+				>
+					<BookOpenText size={16} />
+				</button>
+				<button
+					class="btn-icon"
+					class:active={$editorSaved}
+					onclick={() => $editorActions!.save()}
+					disabled={$editorSaving}
+					title={$editorSaving ? 'Saving…' : $editorSaved ? 'Saved ✓' : 'Save'}
+				>
+					<Save size={16} />
+				</button>
+				<button
+					class="btn-icon"
+					onclick={() => $editorActions!.revert()}
+					disabled={!$editorIsDirty}
+					title="Revert"
+				>
+					<RotateCcw size={16} />
+				</button>
+			</div>
+		</div>
+	{:else}
+		<div class="drag-region">
+			{#if $activeEntryTitle}
+				<span class="active-title">{$activeEntryTitle}</span>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- RIGHT: PanelRight toggle + spacer + controles de ventana -->
 	<div
@@ -253,5 +402,71 @@
 
 	.panel-toggle {
 		width: 28px;
+	}
+
+	/* ── Center toolbar ── */
+	.toolbar-center {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		padding: 0 8px;
+	}
+
+	.viewer-toolbar {
+		justify-content: space-between;
+		padding: 0 28px;
+		gap: 0;
+	}
+
+	.tb-group {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.font-size-label {
+		font-size: 0.72rem;
+		color: var(--fg-muted);
+		padding: 0 4px;
+		min-width: 2.8rem;
+		text-align: center;
+	}
+
+	.btn-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 26px;
+		height: 26px;
+		padding: 0;
+		background: none;
+		border: 1px solid transparent;
+		border-radius: 4px;
+		color: var(--fg-muted);
+		cursor: pointer;
+		transition:
+			color 0.15s,
+			background 0.15s,
+			border-color 0.15s;
+		flex-shrink: 0;
+	}
+
+	.btn-icon:hover:not(:disabled) {
+		color: var(--fg);
+		background: var(--bg-highlight);
+	}
+
+	.btn-icon:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.btn-icon.active {
+		color: var(--accent);
+		border-color: var(--accent-dark);
+		background: var(--bg-highlight);
 	}
 </style>
