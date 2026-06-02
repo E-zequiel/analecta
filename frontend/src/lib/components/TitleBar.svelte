@@ -154,11 +154,19 @@
 					</button>
 				</div>
 				<div class="tb-group">
-					<button class="btn-icon" onclick={() => $viewerActions!.adjustFont(-1)} title="Decrease font size">
+					<button
+						class="btn-icon"
+						onclick={() => $viewerActions!.adjustFont(-1)}
+						title="Decrease font size"
+					>
 						<AArrowDown size={16} />
 					</button>
 					<span class="font-size-label">{$viewerFontSize}px</span>
-					<button class="btn-icon" onclick={() => $viewerActions!.adjustFont(1)} title="Increase font size">
+					<button
+						class="btn-icon"
+						onclick={() => $viewerActions!.adjustFont(1)}
+						title="Increase font size"
+					>
 						<AArrowUp size={16} />
 					</button>
 				</div>
