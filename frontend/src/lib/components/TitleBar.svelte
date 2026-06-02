@@ -25,6 +25,7 @@
 		tagsExpanded,
 		expandAllSignal,
 		rightSidebarOpen,
+		rightSidebarWidth,
 	} from '$lib/stores/ui';
 	import { activeEntryTitle } from '$lib/stores/tabs';
 
@@ -94,7 +95,10 @@
 	</div>
 
 	<!-- RIGHT: PanelRight toggle + spacer + controles de ventana -->
-	<div class="window-controls">
+	<div
+		class="window-controls"
+		style:width={$rightSidebarOpen ? `${$rightSidebarWidth}px` : undefined}
+	>
 		<button
 			class="wc-btn panel-toggle"
 			class:active={$rightSidebarOpen}
@@ -205,6 +209,7 @@
 	.window-controls {
 		display: flex;
 		align-items: center;
+		justify-content: flex-end;
 		gap: 0;
 		padding: 0 4px 0 0;
 		border-left: 1px solid var(--border);
