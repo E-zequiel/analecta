@@ -70,7 +70,12 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="titlebar" onmousedown={onTitlebarMouseDown}>
 	<!-- LEFT: sidebar controls -->
-	<div class="sidebar-controls" style:width={$sidebarCollapsed ? '44px' : `${$sidebarWidth}px`}>
+	<div
+		class="sidebar-controls"
+		style:width={$sidebarCollapsed ? '44px' : `${$sidebarWidth}px`}
+		style:justify-content={$sidebarCollapsed ? 'center' : 'space-between'}
+		style:padding={$sidebarCollapsed ? '0' : '0 6px'}
+	>
 		<button class="sc-btn" onclick={toggleSidebar} title="Toggle sidebar">
 			<ChevronsRightLeft size={16} />
 		</button>
@@ -153,8 +158,6 @@
 	.sidebar-controls {
 		display: flex;
 		align-items: center;
-		gap: 2px;
-		padding: 0 6px;
 		border-right: 1px solid var(--border);
 		flex-shrink: 0;
 		overflow: hidden;
