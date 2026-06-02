@@ -2,38 +2,36 @@
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { openUrl } from '@tauri-apps/plugin-opener';
-	import { confirm } from '@tauri-apps/plugin-dialog';
-	import { readTextFile } from '@tauri-apps/plugin-fs';
+	import { openUrl, confirm, readTextFile } from '$lib/platform';
 	import {
 		CornerUpLeft,
 		PenLine,
 		Link,
 		Archive,
 		Shredder,
-		ShieldCheck,
 		AArrowDown,
 		AArrowUp,
 		Eye,
 		EyeClosed,
 		Bookmark,
 		Gem,
-		BrainCircuit
-	} from 'lucide-svelte';
+		BrainCircuit,
+		ChevronDown,
+		ChevronRight,
+	} from '@lucide/svelte';
 	import {
 		entries as entriesApi,
 		tags as tagsApi,
 		config as configApi,
-		security,
 		type Entry,
 		type Tag,
-		type ScanResult
 	} from '$lib/api/client';
 	import { createRenderer } from '$lib/markdown/renderer';
 	import '$lib/markdown/tokyo-night.css';
 	import { lastViewedId } from '$lib/stores/ui';
 	import { ensureEntryTab, closeTab } from '$lib/stores/tabs';
 	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
+	import { showContextMenu } from '$lib/stores/contextMenu';
 
 	const entryId = $derived(parseInt($page.params['id'] as string));
 
@@ -43,7 +41,47 @@
 
 	let entry = $state<Entry | null>(null);
 	let html = $state('');
-	let vtEnabled = $state(false);
+	let source = $state('');
+	let propertiesOpen = $state(false);
+
+	function parseFrontmatter(src: string): [string, string][] {
+		const match = src.match(/^---\n([\s\S]*?)\n---/);
+		if (!match) return [];
+		const fields: [string, string][] = [];
+		const LABELS: Record<string, string> = {
+			title: 'Title',
+			url: 'Source',
+			author: 'Author',
+			published: 'Published',
+			created_at: 'Created',
+			description: 'Description',
+			tags: 'Tags',
+			status: 'Status',
+			source_type: 'Type',
+		};
+		for (const line of match[1].split('\n')) {
+			const m = line.match(/^(\w+):\s*(.*)/);
+			if (!m) continue;
+			const [, key, raw] = m;
+			if (!(key in LABELS)) continue;
+			let val: string;
+			if (raw.startsWith('[') && raw.endsWith(']')) {
+				const inner = raw.slice(1, -1).trim();
+				val = inner
+					? inner
+							.split(',')
+							.map((s) => s.trim())
+							.join(', ')
+					: '';
+			} else {
+				val = raw.replace(/^["']|["']$/g, '').trim();
+			}
+			if (val) fields.push([LABELS[key], val]);
+		}
+		return fields;
+	}
+
+	const propertyFields = $derived(parseFrontmatter(source));
 	let contentEl = $state<HTMLElement | null>(null);
 	let readingFontSize = $state(17);
 
@@ -52,20 +90,30 @@
 			if (!contentEl) return;
 			if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 			const step = 120;
-			if (e.key === 'ArrowDown') { contentEl.scrollBy(0, step); e.preventDefault(); }
-			else if (e.key === 'ArrowUp') { contentEl.scrollBy(0, -step); e.preventDefault(); }
-			else if (e.key === 'PageDown') { contentEl.scrollBy(0, contentEl.clientHeight * 0.85); e.preventDefault(); }
-			else if (e.key === 'PageUp') { contentEl.scrollBy(0, -contentEl.clientHeight * 0.85); e.preventDefault(); }
-			else if (e.key === 'Home') { contentEl.scrollTo(0, 0); e.preventDefault(); }
-			else if (e.key === 'End') { contentEl.scrollTo(0, contentEl.scrollHeight); e.preventDefault(); }
+			if (e.key === 'ArrowDown') {
+				contentEl.scrollBy(0, step);
+				e.preventDefault();
+			} else if (e.key === 'ArrowUp') {
+				contentEl.scrollBy(0, -step);
+				e.preventDefault();
+			} else if (e.key === 'PageDown') {
+				contentEl.scrollBy(0, contentEl.clientHeight * 0.85);
+				e.preventDefault();
+			} else if (e.key === 'PageUp') {
+				contentEl.scrollBy(0, -contentEl.clientHeight * 0.85);
+				e.preventDefault();
+			} else if (e.key === 'Home') {
+				contentEl.scrollTo(0, 0);
+				e.preventDefault();
+			} else if (e.key === 'End') {
+				contentEl.scrollTo(0, contentEl.scrollHeight);
+				e.preventDefault();
+			}
 		}
 		window.addEventListener('keydown', handleKeydown);
 		return () => window.removeEventListener('keydown', handleKeydown);
 	});
 
-	let scanning = $state(false);
-	let scanResult = $state<ScanResult | null>(null);
-	let scanError = $state('');
 	let error = $state('');
 
 	let tagsOpen = $state(false);
@@ -79,8 +127,7 @@
 			? allTags
 					.map((t) => t.name)
 					.filter(
-						(n) =>
-							!entry?.tags.includes(n) && n.toLowerCase().includes(newTagInput.toLowerCase())
+						(n) => !entry?.tags.includes(n) && n.toLowerCase().includes(newTagInput.toLowerCase())
 					)
 					.slice(0, 6)
 			: []
@@ -111,10 +158,12 @@
 
 	// Config is stable across entries — fetch once on mount.
 	onMount(() => {
-		configApi.get().then((cfg) => {
-			vtEnabled = cfg.virustotal_enabled;
-			readingFontSize = cfg.reading_font_size;
-		}).catch(() => {});
+		configApi
+			.get()
+			.then((cfg) => {
+				readingFontSize = cfg.reading_font_size;
+			})
+			.catch(() => {});
 	});
 
 	// Re-fetch entry whenever the route param changes (same-component navigation).
@@ -125,9 +174,6 @@
 		entry = null;
 		html = '';
 		error = '';
-		scanning = false;
-		scanResult = null;
-		scanError = '';
 		tagsOpen = false;
 
 		let cancelled = false;
@@ -137,12 +183,13 @@
 			.then((e) => {
 				if (cancelled) return Promise.reject('cancelled');
 				entry = e;
-				ensureEntryTab(id, e.title);
+				ensureEntryTab(id, e.title, e.source_type);
 				return readTextFile(e.file_path);
 			})
-			.then((source) => {
+			.then((src) => {
 				if (cancelled) return;
-				html = createRenderer(entry!.file_path)(source);
+				source = src;
+				html = createRenderer(entry!.file_path)(src);
 			})
 			.catch((err) => {
 				if (!cancelled && err !== 'cancelled') {
@@ -190,7 +237,7 @@
 
 	async function deleteEntry() {
 		if (!entry) return;
-		const ok = await confirm(`Delete "${entry.title}"?`, { title: 'Confirm Delete', kind: 'warning' });
+		const ok = await confirm(`Delete "${entry.title}"?`, 'Confirm Delete');
 		if (!ok) return;
 		await entriesApi.delete(entry.id);
 		entryChangedTick.update((n) => n + 1);
@@ -227,24 +274,23 @@
 
 	async function removeTag(name: string) {
 		if (!entry) return;
-		const removedEntry = await entriesApi.patch(entry.id, { tags: entry.tags.filter((t) => t !== name) });
+		const removedEntry = await entriesApi.patch(entry.id, {
+			tags: entry.tags.filter((t) => t !== name),
+		});
 		entry = removedEntry;
 		lastChangedEntry.set(removedEntry);
 		entryChangedTick.update((n) => n + 1);
 	}
 
-	async function runScan() {
-		if (!entry || scanning) return;
-		scanning = true;
-		scanResult = null;
-		scanError = '';
-		try {
-			scanResult = await security.scan(entry.id);
-		} catch (err) {
-			scanError = err instanceof Error ? err.message : String(err);
-		} finally {
-			scanning = false;
-		}
+	function handleRightClick(e: MouseEvent) {
+		if (!entry) return;
+		showContextMenu(e, {
+			id: entry.id,
+			title: entry.title,
+			url: entry.url,
+			file_path: entry.file_path,
+			flags: entry.flags,
+		});
 	}
 
 	async function handleContentClick(e: MouseEvent) {
@@ -271,22 +317,17 @@
 			<button class="btn-icon" onclick={copyUrl} title="Copy URL">
 				<Link size={18} />
 			</button>
-			<button class="btn-icon" class:active={entry.flags?.includes('archive')} onclick={() => toggleFlag('archive')} title="Archive">
+			<button
+				class="btn-icon"
+				class:active={entry.flags?.includes('archive')}
+				onclick={() => toggleFlag('archive')}
+				title="Archive"
+			>
 				<Archive size={18} />
 			</button>
 			<button class="btn-icon" onclick={deleteEntry} title="Delete">
 				<Shredder size={18} />
 			</button>
-			{#if vtEnabled}
-				<button
-					class="btn-icon"
-					onclick={runScan}
-					disabled={scanning}
-					title={scanning ? 'Scanning…' : 'VirusTotal'}
-				>
-					<ShieldCheck size={18} />
-				</button>
-			{/if}
 		{/if}
 
 		<span class="spacer"></span>
@@ -311,33 +352,36 @@
 					class="btn-icon"
 					class:active={entry.status === 'read'}
 					onclick={() => setStatus('read')}
-					title="Read"
-				><Eye size={18} /></button>
+					title="Read"><Eye size={18} /></button
+				>
 				<button
 					class="btn-icon"
 					class:active={entry.status === 'unread'}
 					onclick={() => setStatus('unread')}
-					title="Unread"
-				><EyeClosed size={18} /></button>
+					title="Unread"><EyeClosed size={18} /></button
+				>
 				<button
 					class="btn-icon"
 					class:active={entry.flags?.includes('bookmark')}
 					onclick={() => toggleFlag('bookmark')}
-					title="Bookmark"
-				><Bookmark size={18} /></button>
+					title="Bookmark"><Bookmark size={18} /></button
+				>
 				<button
 					class="btn-icon"
 					class:active={entry.flags?.includes('gem')}
 					onclick={() => toggleFlag('gem')}
-					title="Gem"
-				><Gem size={18} /></button>
+					title="Gem"><Gem size={18} /></button
+				>
 			</div>
 
 			<div class="tags-container" bind:this={tagsContainerEl}>
 				<button
 					class="btn-icon"
 					class:active={tagsOpen}
-					onclick={() => { tagsOpen = !tagsOpen; if (tagsOpen) fetchAllTags(); }}
+					onclick={() => {
+						tagsOpen = !tagsOpen;
+						if (tagsOpen) fetchAllTags();
+					}}
 					title="Tags"
 				>
 					<BrainCircuit size={18} />
@@ -350,7 +394,9 @@
 								{#each entry.tags as tag (tag)}
 									<span class="chip">
 										<span class="chip-label">{tag}</span>
-										<button class="chip-remove" onclick={() => removeTag(tag)} title="Remove">×</button>
+										<button class="chip-remove" onclick={() => removeTag(tag)} title="Remove"
+											>×</button
+										>
 									</span>
 								{/each}
 							</div>
@@ -362,8 +408,10 @@
 							bind:value={newTagInput}
 							bind:this={tagAddInputEl}
 							onkeydown={(e) => {
-								if (e.key === 'Enter') { e.preventDefault(); addTag(newTagInput); }
-								else if (e.key === 'Escape') tagsOpen = false;
+								if (e.key === 'Enter') {
+									e.preventDefault();
+									addTag(newTagInput);
+								} else if (e.key === 'Escape') tagsOpen = false;
 							}}
 						/>
 						{#if tagSuggestions.length > 0}
@@ -379,26 +427,40 @@
 		{/if}
 	</div>
 
-	{#if scanResult}
-		<div class="scan-result" class:danger={scanResult.malicious > 0}>
-			VirusTotal: <strong>{scanResult.verdict}</strong> —
-			{scanResult.malicious} malicious · {scanResult.suspicious} suspicious ·
-			{scanResult.undetected} undetected / {scanResult.total} engines
-		</div>
-	{/if}
-
-	{#if scanError}
-		<div class="scan-result danger">{scanError}</div>
-	{/if}
-
 	{#if error}
 		<div class="error-banner">{error}</div>
 	{:else if entry && html}
-		<div class="content" bind:this={contentEl}>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="content" bind:this={contentEl} oncontextmenu={handleRightClick}>
 			<div class="content-inner">
 				<h1 class="entry-title">{entry.title}</h1>
+
+				{#if propertyFields.length > 0}
+					<div class="properties-panel">
+						<button class="properties-header" onclick={() => (propertiesOpen = !propertiesOpen)}>
+							{#if propertiesOpen}
+								<ChevronDown size={12} />
+							{:else}
+								<ChevronRight size={12} />
+							{/if}
+							<span>Properties</span>
+						</button>
+						{#if propertiesOpen}
+							<div class="properties-body">
+								{#each propertyFields as [label, val] (label)}
+									<div class="property-row">
+										<span class="property-key">{label}</span>
+										<span class="property-val">{val}</span>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 				<div class="markdown-body" onclick={handleContentClick}>
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -- markdown-it output, not raw user/network HTML -->
 					{@html html}
 				</div>
 			</div>
@@ -463,7 +525,10 @@
 		color: var(--fg-muted);
 		font-family: inherit;
 		cursor: pointer;
-		transition: color 0.15s, background 0.15s, border-color 0.15s;
+		transition:
+			color 0.15s,
+			background 0.15s,
+			border-color 0.15s;
 		flex-shrink: 0;
 	}
 
@@ -483,18 +548,6 @@
 		background: var(--bg-highlight);
 	}
 
-	.scan-result {
-		padding: 0.4rem 1rem;
-		font-size: 12px;
-		background: var(--bg-alt);
-		border-bottom: 1px solid var(--border);
-		color: var(--green);
-	}
-
-	.scan-result.danger {
-		color: var(--red);
-	}
-
 	.error-banner {
 		padding: 1rem;
 		color: var(--red);
@@ -510,6 +563,7 @@
 	.content {
 		flex: 1;
 		overflow-y: auto;
+		min-width: 0;
 	}
 
 	.content-inner {
@@ -520,10 +574,73 @@
 
 	.entry-title {
 		font-size: 1.4rem;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--red);
-		margin: 0 0 1.5rem;
+		margin: 0 0 1rem;
 		line-height: 1.3;
+	}
+
+	.properties-panel {
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		margin-bottom: 1.5rem;
+		overflow: hidden;
+	}
+
+	.properties-header {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		width: 100%;
+		padding: 5px 10px;
+		background: var(--bg-alt);
+		border: none;
+		color: var(--fg-muted);
+		font-family: inherit;
+		font-size: 0.75rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		cursor: pointer;
+		text-align: left;
+		transition:
+			color 0.12s,
+			background 0.12s;
+	}
+
+	.properties-header:hover {
+		color: var(--fg);
+		background: var(--bg-highlight);
+	}
+
+	.properties-body {
+		padding: 4px 0;
+	}
+
+	.property-row {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		padding: 3px 10px;
+	}
+
+	.property-row:hover {
+		background: var(--bg-highlight);
+	}
+
+	.property-key {
+		flex-shrink: 0;
+		width: 80px;
+		color: var(--fg-muted);
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+
+	.property-val {
+		color: var(--fg);
+		font-size: 0.82rem;
+		word-break: break-word;
+		min-width: 0;
 	}
 
 	.tags-container {
@@ -621,7 +738,9 @@
 		font-size: 0.78rem;
 		cursor: pointer;
 		text-align: left;
-		transition: color 0.12s, background 0.12s;
+		transition:
+			color 0.12s,
+			background 0.12s;
 	}
 
 	.suggestion-item:hover {

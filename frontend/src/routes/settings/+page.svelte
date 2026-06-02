@@ -1,15 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { invoke } from '@tauri-apps/api/core';
-	import { open as openDialog } from '@tauri-apps/plugin-dialog';
-	import { config as configApi, security } from '$lib/api/client';
+	import { openDialog, updateVaultScope, relaunch, setCloseToTray } from '$lib/platform';
+	import { config as configApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 
 	const ACCENT_OPTIONS = [
-		{ id: 'red',    label: 'Red'    },
+		{ id: 'red', label: 'Red' },
 		{ id: 'yellow', label: 'Yellow' },
-		{ id: 'green',  label: 'Green'  },
-		{ id: 'cyan',   label: 'Cyan'   },
+		{ id: 'green', label: 'Green' },
+		{ id: 'cyan', label: 'Cyan' },
 	] as const satisfies { id: 'red' | 'yellow' | 'green' | 'cyan'; label: string }[];
 
 	let form = $state({
@@ -18,15 +17,12 @@
 		ui_font_size: 16.0,
 		reading_font_size: 17.0,
 		update_channel: 'stable' as 'stable' | 'dev',
-		virustotal_enabled: false,
 		theme: 'dark' as 'dark' | 'light',
 		accent_color: 'yellow' as 'red' | 'yellow' | 'green' | 'cyan',
+		close_to_tray: true,
 	});
 	let initialVaultPath = $state('');
 	let customFontPath = $state('');
-	let vtApiKey = $state('');
-	let vtKeyExists = $state(false);
-	let showDisclaimer = $state(false);
 	let error = $state('');
 
 	// Per-field saved indicators
@@ -37,11 +33,9 @@
 	let channelSaved = $state(false);
 	let themeSaved = $state(false);
 	let accentSaved = $state(false);
+	let closeToTraySaved = $state(false);
 
-	// VT section
-	let vtSaving = $state(false);
-	let vtSaved = $state(false);
-	let vtError = $state('');
+	let browsing = $state(false);
 
 	let uiFontTimer: ReturnType<typeof setTimeout> | null = null;
 	let readingFontTimer: ReturnType<typeof setTimeout> | null = null;
@@ -58,10 +52,20 @@
 	}
 
 	function applyCurrentFont(): Promise<void> {
-		return applyFont(form.font_variant, customFontPath || null, form.ui_font_size, form.reading_font_size, form.theme, form.accent_color);
+		return applyFont(
+			form.font_variant,
+			customFontPath || null,
+			form.ui_font_size,
+			form.reading_font_size,
+			form.theme,
+			form.accent_color
+		);
 	}
 
-	function startEditUiFont() { origUiFont = form.ui_font_size; editingUiFont = true; }
+	function startEditUiFont() {
+		origUiFont = form.ui_font_size;
+		editingUiFont = true;
+	}
 	function commitUiFont() {
 		form.ui_font_size = Math.min(20, Math.max(10, form.ui_font_size));
 		editingUiFont = false;
@@ -73,7 +77,10 @@
 		editingUiFont = false;
 	}
 
-	function startEditReadingFont() { origReadingFont = form.reading_font_size; editingReadingFont = true; }
+	function startEditReadingFont() {
+		origReadingFont = form.reading_font_size;
+		editingReadingFont = true;
+	}
 	function commitReadingFont() {
 		form.reading_font_size = Math.min(24, Math.max(12, form.reading_font_size));
 		editingReadingFont = false;
@@ -87,20 +94,19 @@
 
 	onMount(async () => {
 		try {
-			const [cfg, keyStatus] = await Promise.all([configApi.get(), security.keyExists()]);
+			const cfg = await configApi.get();
 			form = {
 				vault_path: cfg.vault_path,
 				font_variant: cfg.font_variant,
 				ui_font_size: cfg.ui_font_size,
 				reading_font_size: cfg.reading_font_size,
 				update_channel: cfg.update_channel,
-				virustotal_enabled: cfg.virustotal_enabled,
 				theme: cfg.theme,
 				accent_color: cfg.accent_color,
+				close_to_tray: cfg.close_to_tray,
 			};
 			initialVaultPath = cfg.vault_path;
 			customFontPath = cfg.custom_font_path ?? '';
-			vtKeyExists = keyStatus.exists;
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		}
@@ -115,8 +121,10 @@
 		try {
 			await configApi.update({ vault_path: form.vault_path });
 			if (form.vault_path !== initialVaultPath) {
-				await invoke('update_vault_scope', { vaultPath: form.vault_path });
-				initialVaultPath = form.vault_path;
+				await updateVaultScope(form.vault_path);
+				// Sidecar VaultIndex is not hot-reloadable; restart to apply new vault.
+				await relaunch();
+				return;
 			}
 			flash((v) => (vaultSaved = v));
 		} catch (err) {
@@ -125,17 +133,28 @@
 	}
 
 	async function browseVault() {
-		const selected = await openDialog({ directory: true, multiple: false });
-		if (typeof selected === 'string') {
-			form.vault_path = selected;
-			await autoSaveVaultPath();
+		browsing = true;
+		error = '';
+		try {
+			const selected = await openDialog({ properties: ['openDirectory'] });
+			if (typeof selected === 'string') {
+				form.vault_path = selected;
+				await autoSaveVaultPath();
+			}
+		} catch {
+			error = 'File picker unavailable — type the path directly in the field below.';
+		} finally {
+			browsing = false;
 		}
 	}
 
 	async function autoSaveFontVariant() {
 		try {
 			await applyCurrentFont();
-			await configApi.update({ font_variant: form.font_variant, custom_font_path: customFontPath || null });
+			await configApi.update({
+				font_variant: form.font_variant,
+				custom_font_path: customFontPath || null,
+			});
 			flash((v) => (fontVariantSaved = v));
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
@@ -144,8 +163,7 @@
 
 	async function browseFont() {
 		const selected = await openDialog({
-			multiple: false,
-			filters: [{ name: 'TrueType Font', extensions: ['ttf'] }]
+			filters: [{ name: 'TrueType Font', extensions: ['ttf'] }],
 		});
 		if (typeof selected === 'string') {
 			customFontPath = selected;
@@ -218,36 +236,19 @@
 		}
 	}
 
-	function handleVtToggle() {
-		if (!form.virustotal_enabled) {
-			showDisclaimer = true;
-		} else {
-			form.virustotal_enabled = false;
-		}
-	}
-
-	function acceptDisclaimer() {
-		form.virustotal_enabled = true;
-		showDisclaimer = false;
-	}
-
-	async function saveVt() {
-		if (vtSaving) return;
-		vtSaving = true;
-		vtError = '';
+	async function autoSaveCloseToTray() {
 		try {
-			await configApi.update({ virustotal_enabled: form.virustotal_enabled });
-			if (vtApiKey) {
-				await security.setKey(vtApiKey);
-				vtApiKey = '';
-				vtKeyExists = true;
-			}
-			flash((v) => (vtSaved = v));
+			await configApi.update({ close_to_tray: form.close_to_tray });
+			await setCloseToTray(form.close_to_tray).catch(() => {});
+			flash((v) => (closeToTraySaved = v));
 		} catch (err) {
-			vtError = err instanceof Error ? err.message : String(err);
-		} finally {
-			vtSaving = false;
+			error = err instanceof Error ? err.message : String(err);
 		}
+	}
+
+	function toggleCloseToTray() {
+		form.close_to_tray = !form.close_to_tray;
+		autoSaveCloseToTray();
 	}
 </script>
 
@@ -271,7 +272,9 @@
 					bind:value={form.vault_path}
 					onblur={autoSaveVaultPath}
 				/>
-				<button onclick={browseVault}>Browse…</button>
+				<button onclick={browseVault} disabled={browsing}
+					>{browsing ? 'Opening…' : 'Browse…'}</button
+				>
 			</div>
 		</div>
 		<div class="field">
@@ -280,7 +283,7 @@
 			</label>
 			<select id="font-variant" bind:value={form.font_variant} onchange={autoSaveFontVariant}>
 				<option value="regular">JetBrains Mono</option>
-				<option value="nerd">JetBrains Mono Nerd Font</option>
+				<option value="nerd">Inconsolata Nerd Font</option>
 				<option value="custom">Custom…</option>
 			</select>
 		</div>
@@ -308,18 +311,21 @@
 						min="10"
 						max="20"
 						step="0.5"
-						style="font-size: {form.ui_font_size}px"
+						style:font-size="{form.ui_font_size}px"
 						bind:value={form.ui_font_size}
 						onblur={commitUiFont}
-						onkeydown={(e) => { if (e.key === 'Enter') commitUiFont(); else if (e.key === 'Escape') cancelUiFont(); }}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') commitUiFont();
+							else if (e.key === 'Escape') cancelUiFont();
+						}}
 					/>
 				{:else}
 					<button
 						class="range-value"
-						style="font-size: {form.ui_font_size}px"
+						style:font-size="{form.ui_font_size}px"
 						onclick={startEditUiFont}
-						title="Click to edit"
-					>{form.ui_font_size}px</button>
+						title="Click to edit">{form.ui_font_size}px</button
+					>
 				{/if}
 			</div>
 		</div>
@@ -347,18 +353,21 @@
 						min="12"
 						max="24"
 						step="0.5"
-						style="font-size: {form.reading_font_size}px"
+						style:font-size="{form.reading_font_size}px"
 						bind:value={form.reading_font_size}
 						onblur={commitReadingFont}
-						onkeydown={(e) => { if (e.key === 'Enter') commitReadingFont(); else if (e.key === 'Escape') cancelReadingFont(); }}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') commitReadingFont();
+							else if (e.key === 'Escape') cancelReadingFont();
+						}}
 					/>
 				{:else}
 					<button
 						class="range-value"
-						style="font-size: {form.reading_font_size}px"
+						style:font-size="{form.reading_font_size}px"
 						onclick={startEditReadingFont}
-						title="Click to edit"
-					>{form.reading_font_size}px</button>
+						title="Click to edit">{form.reading_font_size}px</button
+					>
 				{/if}
 			</div>
 		</div>
@@ -382,7 +391,9 @@
 	<section>
 		<h2>Appearance</h2>
 		<div class="field toggle-field">
-			<label for="theme-toggle">Theme {#if themeSaved}<span class="saved-tag">✓</span>{/if}</label>
+			<label for="theme-toggle"
+				>Theme {#if themeSaved}<span class="saved-tag">✓</span>{/if}</label
+			>
 			<button
 				id="theme-toggle"
 				role="switch"
@@ -399,7 +410,7 @@
 				Accent color {#if accentSaved}<span class="saved-tag">✓</span>{/if}
 			</span>
 			<div class="accent-swatches">
-				{#each ACCENT_OPTIONS as opt}
+				{#each ACCENT_OPTIONS as opt (opt.id)}
 					<button
 						class="swatch swatch-{opt.id}"
 						class:active={form.accent_color === opt.id}
@@ -424,77 +435,25 @@
 		</div>
 	</section>
 
-	<section class="section-vt">
-		<h2>VirusTotal</h2>
-		{#if vtError}
-			<p class="error">{vtError}</p>
-		{/if}
+	<section>
+		<h2>Window</h2>
 		<div class="field toggle-field">
-			<label for="vt-toggle">Enable scanning</label>
+			<label for="close-to-tray-toggle">
+				Close to tray {#if closeToTraySaved}<span class="saved-tag">✓</span>{/if}
+			</label>
 			<button
-				id="vt-toggle"
+				id="close-to-tray-toggle"
 				role="switch"
-				aria-checked={form.virustotal_enabled}
+				aria-checked={form.close_to_tray}
 				class="toggle"
-				class:on={form.virustotal_enabled}
-				onclick={handleVtToggle}
+				class:on={form.close_to_tray}
+				onclick={toggleCloseToTray}
 			>
-				{form.virustotal_enabled ? 'On' : 'Off'}
-			</button>
-		</div>
-		{#if form.virustotal_enabled}
-			<div class="field">
-				<label for="vt-key">
-					API Key {vtKeyExists ? '(stored — enter to replace)' : '(not set)'}
-				</label>
-				<input
-					id="vt-key"
-					type="password"
-					placeholder={vtKeyExists ? '••••••••' : 'Paste API key…'}
-					bind:value={vtApiKey}
-					autocomplete="off"
-				/>
-			</div>
-		{/if}
-		<div class="vt-actions">
-			<button class="btn-save" onclick={saveVt} disabled={vtSaving}>
-				{vtSaving ? 'Saving…' : vtSaved ? 'Saved ✓' : 'Save'}
+				{form.close_to_tray ? 'On' : 'Off'}
 			</button>
 		</div>
 	</section>
 </div>
-
-<!-- VirusTotal disclaimer modal -->
-{#if showDisclaimer}
-	<div
-		class="modal-backdrop"
-		role="presentation"
-		onclick={() => (showDisclaimer = false)}
-		onkeydown={(e) => { if (e.key === 'Escape') showDisclaimer = false; }}
-	>
-		<div
-			class="modal"
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby="vt-disclaimer-title"
-			tabindex="-1"
-			onclick={(e) => e.stopPropagation()}
-			onkeydown={(e) => e.stopPropagation()}
-		>
-			<h3 id="vt-disclaimer-title">VirusTotal — Privacy Notice</h3>
-			<ul>
-				<li>Every URL you scan is <strong>submitted to VirusTotal and indexed publicly</strong> in their database.</li>
-				<li>The Public API is <strong>non-commercial only</strong>. Analecta must remain free and open-source.</li>
-				<li>Rate limits: <strong>4 requests/min · 500 requests/day</strong>. Exceeding them risks a permanent account ban.</li>
-			</ul>
-			<p class="modal-note">You will need a free VirusTotal account to obtain an API key.</p>
-			<div class="modal-actions">
-				<button onclick={() => (showDisclaimer = false)}>Cancel</button>
-				<button class="btn-accept" onclick={acceptDisclaimer}>I understand — Enable</button>
-			</div>
-		</div>
-	</div>
-{/if}
 
 <style>
 	.settings-page {
@@ -506,13 +465,13 @@
 	h1 {
 		margin: 0 0 1.5rem;
 		font-size: 1.2rem;
-		font-weight: 600;
+		font-weight: 700;
 	}
 
 	h2 {
 		margin: 0 0 0.75rem;
 		font-size: 0.85rem;
-		font-weight: 600;
+		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		color: var(--fg-muted);
@@ -521,14 +480,6 @@
 	section {
 		margin-bottom: 2rem;
 		padding-bottom: 1.5rem;
-		border-bottom: 1px solid var(--border);
-	}
-
-	.section-vt {
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		padding: 1.25rem;
-		background: var(--bg-dark);
 		border-bottom: 1px solid var(--border);
 	}
 
@@ -551,7 +502,6 @@
 	}
 
 	input[type='text'],
-	input[type='password'],
 	select {
 		padding: 0.4rem 0.6rem;
 		background: var(--bg-alt);
@@ -575,7 +525,6 @@
 	}
 
 	input[type='text']:focus,
-	input[type='password']:focus,
 	select:focus {
 		border-color: var(--accent-dark);
 	}
@@ -642,9 +591,7 @@
 		line-height: 1;
 	}
 
-	.path-row button,
-	.vt-actions button,
-	.modal-actions button {
+	.path-row button {
 		padding: 0.4rem 0.75rem;
 		background: var(--bg-highlight);
 		border: 1px solid var(--border);
@@ -655,9 +602,7 @@
 		cursor: pointer;
 	}
 
-	.path-row button:hover,
-	.vt-actions button:hover:not(:disabled),
-	.modal-actions button:hover {
+	.path-row button:hover {
 		border-color: var(--accent-dark);
 		color: var(--accent);
 	}
@@ -703,13 +648,23 @@
 		border: 2px solid transparent;
 		cursor: pointer;
 		padding: 0;
-		transition: border-color 0.12s, transform 0.1s;
+		transition:
+			border-color 0.12s,
+			transform 0.1s;
 	}
 
-	.swatch-red    { background: var(--red);    }
-	.swatch-yellow { background: var(--yellow); }
-	.swatch-green  { background: var(--green);  }
-	.swatch-cyan   { background: var(--cyan);   }
+	.swatch-red {
+		background: var(--red);
+	}
+	.swatch-yellow {
+		background: var(--yellow);
+	}
+	.swatch-green {
+		background: var(--green);
+	}
+	.swatch-cyan {
+		background: var(--cyan);
+	}
 
 	.swatch.active {
 		border-color: var(--fg);
@@ -721,79 +676,9 @@
 		border-color: var(--fg-muted);
 	}
 
-	.vt-actions {
-		margin-top: 0.75rem;
-		display: flex;
-		justify-content: flex-end;
-	}
-
-	.btn-save {
-		min-width: 80px;
-	}
-
-	.btn-save:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
 	.error {
 		color: var(--red);
 		font-size: 13px;
 		margin-bottom: 1rem;
-	}
-
-	/* Modal */
-	.modal-backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.6);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 100;
-	}
-
-	.modal {
-		background: var(--bg-alt);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		padding: 1.5rem;
-		max-width: 420px;
-		width: 90%;
-	}
-
-	.modal h3 {
-		margin: 0 0 1rem;
-		font-size: 1rem;
-		color: var(--yellow);
-	}
-
-	.modal ul {
-		padding-left: 1.25rem;
-		margin: 0 0 1rem;
-		font-size: 13px;
-		line-height: 1.6;
-		color: var(--fg-dark);
-	}
-
-	.modal li {
-		margin-bottom: 0.5rem;
-	}
-
-	.modal-note {
-		font-size: 12px;
-		color: var(--fg-muted);
-		margin: 0 0 1.25rem;
-	}
-
-	.modal-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: 0.5rem;
-	}
-
-	.btn-accept {
-		border-color: var(--accent-dark) !important;
-		color: var(--accent) !important;
 	}
 </style>

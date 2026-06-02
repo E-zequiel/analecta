@@ -3,6 +3,7 @@ import { writable } from 'svelte/store';
 export interface ContextMenuEntry {
 	id: number;
 	title: string;
+	url: string;
 	file_path: string;
 	flags: string[];
 }
@@ -18,7 +19,7 @@ export const contextMenu = writable<ContextMenuState>({
 	visible: false,
 	x: 0,
 	y: 0,
-	entry: null
+	entry: null,
 });
 
 export function showContextMenu(e: MouseEvent, entry: ContextMenuEntry): void {

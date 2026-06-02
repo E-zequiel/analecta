@@ -133,14 +133,15 @@ Both protocols are registered with `protocol.registerSchemesAsPrivileged()` befo
 A CSP is applied to all responses via `session.defaultSession.webRequest.onHeadersReceived`. This provides defense in depth: even if the renderer executes injected script, the CSP restricts what it can load or connect to.
 
 ```
-default-src  'self' app:;
-connect-src  'self' http://localhost:* app:;
-img-src      'self' app: analecta-file: data: blob: https:;
-style-src    'self' 'unsafe-inline' app:;
-font-src     'self' app:;
-script-src   'self' app:;
-object-src   'none';
-base-uri     'self';
+default-src    'self' app:;
+connect-src    'self' http://localhost:* app:;
+img-src        'self' app: analecta-file: data: blob: https:;
+style-src-elem 'self' app:;
+style-src-attr 'none';
+font-src       'self' app:;
+script-src     'self' 'sha256-<computed at startup>' app:;
+object-src     'none';
+base-uri       'self';
 ```
 
 Key decisions:
@@ -148,7 +149,8 @@ Key decisions:
 - `img-src` allows `analecta-file:` (vault images) and `https:` (remote article images). Remote images were a deliberate decision for the article reader; they are not blocked.
 - `object-src 'none'` blocks Flash and other plugin content.
 - `base-uri 'self'` prevents `<base>` tag injection from changing the document base URL.
-- `'unsafe-inline'` in `style-src` is required by SvelteKit's generated styles. Scoped styles cannot be hashed at build time without additional tooling.
+- `script-src` does **not** use `'unsafe-inline'`. SvelteKit injects one inline script per build (`__sveltekit_xyz = { base: "" }`). `protocols.ts` reads `index.html` at app startup, computes the SHA-256 hash of that script, and includes it in `script-src`. The hash is recomputed on every launch so it stays correct across builds without a separate build step.
+- `style-src` is split into sub-directives per CSP Level 3: `style-src-elem` governs `<style>` tags and `<link>` stylesheets; `style-src-attr` governs `style=""` attributes on elements. `'unsafe-inline'` is absent from both. The built HTML has no inline `<style>` tags (`ssr = false` → external CSS only), so no hashes are needed for `style-src-elem`. `style-src-attr 'none'` is safe because all dynamic style bindings have been migrated from `style="template"` to Svelte's `style:property` directive, which compiles to `element.style.setProperty()` — a CSSStyleDeclaration API call not governed by `style-src-attr` per spec. Svelte 5's built-in transitions (`transition:slide`) use WAAPI (`element.animate()`), not `<style>` injection.
 
 ---
 
@@ -172,6 +174,28 @@ const ALLOWED_CHANNELS = [
 If the renderer calls `window.electronAPI.invoke('arbitrary-channel')`, the preload throws before `ipcRenderer.invoke` is called. The main process never receives the call.
 
 The `on` method (for event listeners) is similarly guarded: only `sidecar-ready` and `deep-link` events are forwarded.
+
+---
+
+### Render Server & URL Filtering
+
+The Electron main process runs a lightweight HTTP server (`scraper.ts`) bound exclusively to `127.0.0.1` on an OS-assigned random port. The Python sidecar calls this server to request Tier 2 (Chromium-rendered) extraction. Two controls protect it:
+
+**Token authentication.** The server generates a `ANALECTA_RENDER_TOKEN` via `crypto.randomBytes(32)` at startup and passes it to the sidecar via the `ANALECTA_RENDER_TOKEN` environment variable. Every request must include this token in the `X-Render-Token` header; requests without it receive HTTP 401. The token is never written to disk or logged.
+
+**URL blocklist (`validateScrapeUrl`).** Before spawning a `BrowserWindow`, the entry URL is validated against the following blocklist:
+
+| Category | Blocked range |
+|----------|--------------|
+| Non-HTTP/HTTPS protocols | Any scheme other than `http:` / `https:` |
+| Loopback (IPv4) | `127.0.0.0/8` (entire block, not just `.1`) |
+| Loopback (IPv6) | `::1` |
+| IPv4-mapped IPv6 loopback | `::ffff:127.x.x.x` (dotted) · `::ffff:7f...` (hex) |
+| Link-local (IPv4) | `169.254.0.0/16` |
+| Link-local (IPv6-mapped) | `::ffff:169.254.x.x` · `::ffff:a9fe:...` |
+| RFC 1918 private ranges | `10.0.0.0/8` · `172.16.0.0/12` · `192.168.0.0/16` |
+
+**Known limitation.** The filter applies to the entry URL supplied by the sidecar. Once Chromium has loaded the initial page, server-side redirects and JavaScript-triggered navigations are not re-validated. This is an accepted residual risk: the scraping `BrowserWindow` has no preload script and no IPC surface, so it cannot call back into the main process. Its only output is a serialized HTML string returned to the sidecar — there is no mechanism for a redirect to a local service to exfiltrate data back to a remote party.
 
 ---
 
@@ -214,6 +238,43 @@ If a handler only needs to read a file, do not also write. If a handler only nee
 
 **6. Document the handler's purpose in `ipc.ts`.**  
 A one-line comment above each `ipcMain.handle` block explaining what it does and what validation it applies makes security review possible.
+
+**7. Apply loopback filtering before implementing bulk or automated extraction.**  
+The current extraction flow is single-URL and user-initiated: the user explicitly submits each URL through the UI, so they are always the authorizing party. This changes if any of the following features are ever added:
+
+- Bulk URL import (CSV, OPML, clipboard list)
+- RSS / Atom / JSON Feed ingestion
+- Webhook-triggered or scheduled extraction
+- Any path where a URL enters the pipeline from an external or semi-trusted source without per-URL user confirmation
+
+In all such cases, URLs arrive from sources the user does not fully control. A URL crafted to redirect to a loopback address could cause the Python sidecar's `httpx` client to inadvertently fetch internal services, since `ArticleExtractor._fetch` uses `follow_redirects=True` without a post-redirect destination filter.
+
+Before shipping any feature in the list above:
+
+1. **Validate the submitted URL** against the same blocklist used in `validateScrapeUrl` (loopback, link-local, RFC 1918) before it enters `ArticleExtractor.extract()`.
+2. **Add an `httpx` response event hook** in `_fetch` that inspects the resolved URL after redirects and raises `ExtractionError` if the final destination falls within a blocked range. Example skeleton:
+
+```python
+import ipaddress
+
+def _block_loopback_redirect(response: httpx.Response) -> None:
+    host = response.url.host.strip("[]")
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return  # hostname, not an IP literal — DNS result is not re-checked here
+    blocked = [
+        ipaddress.ip_network("127.0.0.0/8"),
+        ipaddress.ip_network("169.254.0.0/16"),
+        ipaddress.ip_network("::1/128"),
+        ipaddress.ip_network("::ffff:127.0.0.0/104"),
+        ipaddress.ip_network("::ffff:169.254.0.0/112"),
+    ]
+    if any(addr in net for net in blocked):
+        raise ExtractionError(f"Redirect to blocked address: {response.url}")
+```
+
+This is not required today because the user is always the authorizing party for each URL. It becomes required the moment that assumption no longer holds.
 
 ---
 

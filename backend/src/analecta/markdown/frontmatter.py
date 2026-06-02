@@ -16,7 +16,7 @@ def build_frontmatter(content: ExtractedContent, created_at: str) -> str:
         String beginning and ending with ``---``, suitable for prepending to
         a Markdown document.
     """
-    data = {
+    data: dict[str, object] = {
         "title": content.title,
         "url": content.url,
         "source_type": content.source_type,
@@ -24,6 +24,9 @@ def build_frontmatter(content: ExtractedContent, created_at: str) -> str:
         "tags": [],
         "status": "unread",
     }
+    for field in ("author", "description", "published"):
+        if content.metadata.get(field):
+            data[field] = content.metadata[field]
     body = yaml.dump(data, allow_unicode=True, sort_keys=False)
     return f"---\n{body}---\n"
 

@@ -3,8 +3,8 @@
 		ArrowDownAZ,
 		ArrowDownZA,
 		ArrowDownWideNarrow,
-		ArrowDownNarrowWide
-	} from 'lucide-svelte';
+		ArrowDownNarrowWide,
+	} from '@lucide/svelte';
 
 	interface Props {
 		sortBy: 'title' | 'created_at';
@@ -12,7 +12,7 @@
 		onsort: (sortBy: 'title' | 'created_at', sortDir: 'asc' | 'desc') => void;
 	}
 
-	let { sortBy, sortDir, onsort }: Props = $props();
+	const { sortBy, sortDir, onsort }: Props = $props();
 
 	const OPTIONS = [
 		{ sortBy: 'title' as const, sortDir: 'asc' as const, Icon: ArrowDownAZ, title: 'Title A→Z' },
@@ -21,19 +21,19 @@
 			sortBy: 'created_at' as const,
 			sortDir: 'desc' as const,
 			Icon: ArrowDownWideNarrow,
-			title: 'Newest first'
+			title: 'Newest first',
 		},
 		{
 			sortBy: 'created_at' as const,
 			sortDir: 'asc' as const,
 			Icon: ArrowDownNarrowWide,
-			title: 'Oldest first'
-		}
+			title: 'Oldest first',
+		},
 	];
 </script>
 
 <div class="sort-bar" role="group" aria-label="Sort order">
-	{#each OPTIONS as opt}
+	{#each OPTIONS as opt (`${opt.sortBy}-${opt.sortDir}`)}
 		<button
 			class="sort-btn"
 			class:active={sortBy === opt.sortBy && sortDir === opt.sortDir}

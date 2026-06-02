@@ -21,9 +21,11 @@ env/
 
 
 # ========================
-# Linting
+# Linting / Formatting
 # ========================
 .ruff_cache/
+.eslintcache
+.prettiercache
 
 # ========================
 # Testing & Coverage
@@ -59,11 +61,11 @@ coverage.xml
 node_modules/
 
 # ========================
-# Rust / Tauri
+# Electron
 # ========================
-src-tauri/target/
-src-tauri/binaries/
-src-tauri/gen/
+electron/dist/
+dist-electron/
+binaries/
 
 # ========================
 # PyInstaller build stage
@@ -78,3 +80,5 @@ frontend/build/
 frontend/.svelte-kit/
 *.tsbuildinfo
 pnpm-debug.log*
+!.npmrc
+.venv-provenance/

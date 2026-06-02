@@ -1,7 +1,6 @@
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
@@ -12,10 +11,8 @@ from starlette.testclient import TestClient
 from analecta.api.events import EventBus
 from analecta.api.routes.config import router as config_router
 from analecta.api.routes.pkm import router as pkm_router
-from analecta.api.routes.security import router as security_router
 from analecta.api.routes.system import router as system_router
 from analecta.config import AppConfig
-from analecta.security.virustotal import ScanResult, VirusTotalScanner
 from analecta.storage.index import EntryRecord, VaultIndex
 
 # ---------------------------------------------------------------------------
@@ -37,15 +34,8 @@ def _seed_entry(index: VaultIndex, url: str = "https://example.com/1") -> int:
     )
 
 
-def _make_app(
-    tmp_path: Path,
-    *,
-    virustotal_enabled: bool = False,
-) -> FastAPI:
-    config = AppConfig(
-        vault_path=tmp_path / "vault",
-        virustotal_enabled=virustotal_enabled,
-    )
+def _make_app(tmp_path: Path) -> FastAPI:
+    config = AppConfig(vault_path=tmp_path / "vault")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
@@ -60,7 +50,6 @@ def _make_app(
     app = FastAPI(lifespan=lifespan)
     app.include_router(config_router, prefix="/api/v1")
     app.include_router(pkm_router, prefix="/api/v1")
-    app.include_router(security_router, prefix="/api/v1")
     app.include_router(system_router, prefix="/api/v1")
     return app
 
@@ -76,17 +65,6 @@ def client(tmp_path: Path) -> Generator[TestClient]:
         yield c
 
 
-@pytest.fixture
-def vt_client(tmp_path: Path) -> Generator[TestClient]:
-    """App with virustotal_enabled=True and one seeded entry."""
-    app = _make_app(tmp_path, virustotal_enabled=True)
-    cfg = AppConfig(vault_path=tmp_path / "vault", virustotal_enabled=True)
-    with VaultIndex(cfg.vault_path / "analecta.db") as idx:
-        _seed_entry(idx)
-    with TestClient(app) as c:
-        yield c
-
-
 # ---------------------------------------------------------------------------
 # GET /config
 # ---------------------------------------------------------------------------
@@ -95,9 +73,7 @@ def vt_client(tmp_path: Path) -> Generator[TestClient]:
 def test_get_config_200(client: TestClient) -> None:
     r = client.get("/api/v1/config")
     assert r.status_code == 200
-    data = r.json()
-    assert "vault_path" in data
-    assert "virustotal_enabled" in data
+    assert "vault_path" in r.json()
 
 
 # ---------------------------------------------------------------------------
@@ -108,79 +84,22 @@ def test_get_config_200(client: TestClient) -> None:
 def test_put_config_200(tmp_path: Path, mocker: MockerFixture) -> None:
     mocker.patch("analecta.api.routes.config.save_config")
     with TestClient(_make_app(tmp_path)) as c:
-        r = c.put("/api/v1/config", json={"virustotal_enabled": True})
+        r = c.put("/api/v1/config", json={"update_channel": "dev"})
     assert r.status_code == 200
-    assert r.json()["virustotal_enabled"] is True
+    assert r.json()["update_channel"] == "dev"
+
+
+def test_put_config_close_to_tray(tmp_path: Path, mocker: MockerFixture) -> None:
+    mocker.patch("analecta.api.routes.config.save_config")
+    with TestClient(_make_app(tmp_path)) as c:
+        r = c.put("/api/v1/config", json={"close_to_tray": False})
+    assert r.status_code == 200
+    assert r.json()["close_to_tray"] is False
 
 
 def test_put_config_invalid_font_422(client: TestClient) -> None:
     r = client.put("/api/v1/config", json={"font_variant": "not-a-variant"})
     assert r.status_code == 422
-
-
-# ---------------------------------------------------------------------------
-# GET /security/virustotal/key/exists
-# ---------------------------------------------------------------------------
-
-
-def test_key_exists_false_initially(client: TestClient) -> None:
-    r = client.get("/api/v1/security/virustotal/key/exists")
-    assert r.status_code == 200
-    assert r.json() == {"exists": False}
-
-
-# ---------------------------------------------------------------------------
-# PUT /security/virustotal/key
-# ---------------------------------------------------------------------------
-
-
-def test_set_key_204(client: TestClient) -> None:
-    r = client.put("/api/v1/security/virustotal/key", json={"value": "test-api-key"})
-    assert r.status_code == 204
-
-
-def test_key_exists_true_after_set(client: TestClient) -> None:
-    client.put("/api/v1/security/virustotal/key", json={"value": "test-api-key"})
-    r = client.get("/api/v1/security/virustotal/key/exists")
-    assert r.status_code == 200
-    assert r.json() == {"exists": True}
-
-
-# ---------------------------------------------------------------------------
-# POST /security/virustotal/scan
-# ---------------------------------------------------------------------------
-
-
-def test_scan_403_when_vt_disabled(client: TestClient) -> None:
-    r = client.post("/api/v1/security/virustotal/scan", json={"entry_id": 1})
-    assert r.status_code == 403
-
-
-def test_scan_404_unknown_entry(tmp_path: Path) -> None:
-    with TestClient(_make_app(tmp_path, virustotal_enabled=True)) as c:
-        r = c.post("/api/v1/security/virustotal/scan", json={"entry_id": 9999})
-    assert r.status_code == 404
-
-
-def test_scan_200(vt_client: TestClient, mocker: MockerFixture) -> None:
-    fake_result = ScanResult(
-        url="https://example.com/1",
-        analysis_id="test-id",
-        malicious=0,
-        suspicious=0,
-        undetected=80,
-        harmless=10,
-    )
-    mocker.patch.object(
-        VirusTotalScanner, "scan", new_callable=AsyncMock, return_value=fake_result
-    )
-
-    r = vt_client.post("/api/v1/security/virustotal/scan", json={"entry_id": 1})
-    assert r.status_code == 200
-    data = r.json()
-    assert data["verdict"] == "clean"
-    assert data["entry_id"] == 1
-    assert data["total"] == 90
 
 
 # ---------------------------------------------------------------------------

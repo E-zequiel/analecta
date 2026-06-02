@@ -49,6 +49,39 @@ export interface Tag {
 	count: number;
 }
 
+export interface Backlink {
+	id: number;
+	name: string;
+	context?: {
+		heading?: string;
+		pre: string;
+		highlight: string;
+		post: string;
+	};
+}
+
+export interface BacklinksResult {
+	linked: Backlink[];
+}
+
+export interface GraphNode {
+	node_id: string;
+	label: string;
+	kind: 'entry' | 'tag';
+	source_type: string | null;
+}
+
+export interface GraphEdge {
+	source: string;
+	target: string;
+	weight: number;
+}
+
+export interface GraphResult {
+	nodes: GraphNode[];
+	edges: GraphEdge[];
+}
+
 export interface AppConfig {
 	vault_path: string;
 	font_variant: 'regular' | 'nerd' | 'custom';
@@ -56,11 +89,12 @@ export interface AppConfig {
 	reading_font_size: number;
 	custom_font_path: string | null;
 	update_channel: 'stable' | 'dev';
-	virustotal_enabled: boolean;
 	theme: 'dark' | 'light';
 	accent_color: 'red' | 'yellow' | 'green' | 'cyan';
 	open_tab_ids: string[];
 	active_tab_id: string;
+	first_run: boolean;
+	close_to_tray: boolean;
 }
 
 export interface AppConfigUpdate {
@@ -70,21 +104,11 @@ export interface AppConfigUpdate {
 	reading_font_size?: number;
 	custom_font_path?: string | null;
 	update_channel?: 'stable' | 'dev';
-	virustotal_enabled?: boolean;
 	theme?: 'dark' | 'light';
 	accent_color?: 'red' | 'yellow' | 'green' | 'cyan';
 	open_tab_ids?: string[];
 	active_tab_id?: string;
-}
-
-export interface ScanResult {
-	entry_id: number;
-	verdict: string;
-	malicious: number;
-	suspicious: number;
-	undetected: number;
-	harmless: number;
-	total: number;
+	close_to_tray?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -100,14 +124,14 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 		...opts,
 		headers: {
 			...(hasBody ? { 'Content-Type': 'application/json' } : {}),
-			...opts.headers
-		}
+			...opts.headers,
+		},
 	});
 
 	if (!res.ok) {
 		let detail = res.statusText;
 		try {
-			const body = await res.json();
+			const body = (await res.json()) as Record<string, unknown>;
 			if (typeof body.detail === 'string') detail = body.detail;
 		} catch {
 			// ignore parse errors
@@ -124,7 +148,15 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 // ---------------------------------------------------------------------------
 
 export const entries = {
-	list(params?: { status?: string; flag?: string; exclude_flag?: string; tag?: string; q?: string; sort_by?: 'title' | 'created_at'; sort_dir?: 'asc' | 'desc' }): Promise<Entry[]> {
+	list(params?: {
+		status?: string;
+		flag?: string;
+		exclude_flag?: string;
+		tag?: string;
+		q?: string;
+		sort_by?: 'title' | 'created_at';
+		sort_dir?: 'asc' | 'desc';
+	}): Promise<Entry[]> {
 		const filtered = Object.entries(params ?? {}).filter(
 			(pair): pair is [string, string] => pair[1] !== undefined
 		);
@@ -149,13 +181,21 @@ export const entries = {
 	patch(id: number, body: EntryPatch): Promise<Entry> {
 		return apiFetch<Entry>(`/entries/${id}`, {
 			method: 'PATCH',
-			body: JSON.stringify(body)
+			body: JSON.stringify(body),
 		});
 	},
 
 	delete(id: number): Promise<void> {
 		return apiFetch<void>(`/entries/${id}`, { method: 'DELETE' });
-	}
+	},
+
+	getBacklinks(id: number): Promise<BacklinksResult> {
+		return apiFetch<BacklinksResult>(`/entries/${id}/backlinks`);
+	},
+
+	getGraph(): Promise<GraphResult> {
+		return apiFetch<GraphResult>('/entries/graph');
+	},
 };
 
 export const tags = {
@@ -166,29 +206,29 @@ export const tags = {
 	create(name: string): Promise<Tag> {
 		return apiFetch<Tag>('/tags', {
 			method: 'POST',
-			body: JSON.stringify({ name })
+			body: JSON.stringify({ name }),
 		});
 	},
 
 	rename(name: string, newName: string): Promise<Tag> {
 		return apiFetch<Tag>(`/tags/${encodeURIComponent(name)}`, {
 			method: 'PUT',
-			body: JSON.stringify({ new_name: newName })
+			body: JSON.stringify({ new_name: newName }),
 		});
 	},
 
 	delete(name: string): Promise<void> {
 		return apiFetch<void>(`/tags/${encodeURIComponent(name)}`, { method: 'DELETE' });
-	}
+	},
 };
 
 export const extract = {
 	url(url: string): Promise<Entry> {
 		return apiFetch<Entry>('/extract', {
 			method: 'POST',
-			body: JSON.stringify({ url })
+			body: JSON.stringify({ url }),
 		});
-	}
+	},
 };
 
 export const config = {
@@ -199,35 +239,13 @@ export const config = {
 	update(body: AppConfigUpdate): Promise<AppConfig> {
 		return apiFetch<AppConfig>('/config', {
 			method: 'PUT',
-			body: JSON.stringify(body)
-		});
-	}
-};
-
-export const security = {
-	keyExists(): Promise<{ exists: boolean }> {
-		return apiFetch<{ exists: boolean }>('/security/virustotal/key/exists');
-	},
-
-	setKey(value: string): Promise<void> {
-		return apiFetch<void>('/security/virustotal/key', {
-			method: 'PUT',
-			body: JSON.stringify({ value })
+			body: JSON.stringify(body),
 		});
 	},
-
-	scan(entry_id: number): Promise<ScanResult> {
-		return apiFetch<ScanResult>('/security/virustotal/scan', {
-			method: 'POST',
-			body: JSON.stringify({ entry_id })
-		});
-	}
 };
 
 export const pkm = {
 	parseUrl(url: string): Promise<{ entry_id: number | null }> {
-		return apiFetch<{ entry_id: number | null }>(
-			`/pkm/parse-url?url=${encodeURIComponent(url)}`
-		);
-	}
+		return apiFetch<{ entry_id: number | null }>(`/pkm/parse-url?url=${encodeURIComponent(url)}`);
+	},
 };

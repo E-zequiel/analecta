@@ -35,29 +35,44 @@ jobs:
         run: mise exec -- uv sync --frozen
         working-directory: backend
 
-      - name: Install frontend dependencies
+      - name: Install Node dependencies
         run: mise exec -- pnpm install --frozen-lockfile
 
-      - name: Build sidecar
-        run: mise exec -- python scripts/build_sidecar.py
-
-      - name: Load signing secrets from BSM
+      - name: Load Socket token from BSM
         uses: bitwarden/sm-action@27c0c9dcab679d7250dbab91227c85b49ffa5e0f  # v3.0.0
         with:
           access_token: ${{ secrets.BWS_ACCESS_TOKEN }}
           secrets: |
-            c89beccf-29a6-4d6d-8e24-b44401595d1a > TAURI_SIGNING_PRIVATE_KEY
-            04477dfa-d36c-4591-8062-b4440157dc26 > TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+            70b60912-8193-4bb0-8ec8-b45000cda95a > SOCKET_SECURITY_API_TOKEN
 
-      - name: Build and publish Tauri bundle
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5  # action-v0.6.2
+      - name: Socket dependency scan
+        run: mise exec -- pnpm exec socket scan create . --json
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ env.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Analecta ${{ github.ref_name }}
-          releaseDraft: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          args: --target x86_64-unknown-linux-gnu
+          SOCKET_SECURITY_API_TOKEN: ${{ env.SOCKET_SECURITY_API_TOKEN }}
+
+      - name: Build sidecar
+        run: mise exec -- python scripts/build_sidecar.py
+
+      - name: Build frontend
+        run: mise exec -- pnpm --filter frontend build
+
+      - name: Compile Electron TypeScript
+        run: mise exec -- pnpm --filter analecta-electron run build
+
+      - name: Package with electron-builder
+        run: mise exec -- pnpm --filter analecta-electron run dist
+
+      - name: Create GitHub Release
+        run: |
+          EXTRA_FLAGS=""
+          if [[ "$RELEASE_TAG" == *"-"* ]]; then
+            EXTRA_FLAGS="--prerelease"
+          fi
+          gh release create "$RELEASE_TAG" \
+            --title "Analecta $RELEASE_TAG" \
+            --draft \
+            $EXTRA_FLAGS \
+            dist-electron/*.deb dist-electron/*.rpm dist-electron/*.AppImage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}

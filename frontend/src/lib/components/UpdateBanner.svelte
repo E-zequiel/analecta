@@ -1,13 +1,12 @@
 <script lang="ts">
-	import type { Update } from '@tauri-apps/plugin-updater';
-	import { relaunch } from '@tauri-apps/plugin-process';
+	import { downloadAndInstallUpdate, relaunch } from '$lib/platform';
 
-	let { update }: { update: Update } = $props();
+	const { version }: { version: string } = $props();
 	let installing = $state(false);
 
 	async function installUpdate() {
 		installing = true;
-		await update.downloadAndInstall();
+		await downloadAndInstallUpdate();
 		await relaunch();
 	}
 </script>
@@ -16,7 +15,7 @@
 	{#if installing}
 		<span class="message">Installing update…</span>
 	{:else}
-		<span class="message">Update available: <strong>v{update.version}</strong></span>
+		<span class="message">Update available: <strong>v{version}</strong></span>
 		<button onclick={installUpdate}>Install &amp; restart</button>
 	{/if}
 </div>

@@ -11,10 +11,11 @@
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3",
-    "@sveltejs/kit": "^2",
+    "@sveltejs/kit": "^2.60.1",
     "@sveltejs/vite-plugin-svelte": "^7",
     "@types/markdown-it": "^14",
-    "svelte": "^5",
+    "@types/node": "^24.12.4",
+    "svelte": "^5.55.8",
     "svelte-check": "^4",
     "typescript": "^6",
     "vite": "^8"
@@ -25,19 +26,13 @@
     "@codemirror/lang-markdown": "^6",
     "@codemirror/state": "^6",
     "@codemirror/view": "^6",
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
-    "@tauri-apps/plugin-deep-link": "^2.4.9",
-    "@tauri-apps/plugin-dialog": "^2",
-    "@tauri-apps/plugin-fs": "^2",
-    "@tauri-apps/plugin-opener": "^2.5.4",
-    "@tauri-apps/plugin-process": "^2",
-    "@tauri-apps/plugin-shell": "^2",
-    "@tauri-apps/plugin-updater": "^2",
+    "@lucide/svelte": "^0.511.0",
     "@uiw/codemirror-theme-tokyo-night": "^4",
-    "lucide-svelte": "^1.0.1",
+    "graphology": "^0.26.0",
+    "graphology-layout-forceatlas2": "^0.10.1",
     "markdown-it": "^14",
     "markdown-it-footnote": "^4",
-    "markdown-it-task-lists": "^2"
+    "markdown-it-task-lists": "^2",
+    "sigma": "^3.0.3"
   }
 }

@@ -44,7 +44,7 @@
 
 	function open(entry: Entry) {
 		close();
-		navigateInTab(entry.id, entry.title);
+		navigateInTab(entry.id, entry.title, entry.source_type);
 	}
 
 	function handleKey(e: KeyboardEvent) {
@@ -57,9 +57,15 @@
 </script>
 
 {#if $searchOpen}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 	<div class="backdrop" onclick={close} onkeydown={handleBackdropKey} role="button" tabindex="-1">
-		<div class="dialog" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={handleKey}>
+		<div
+			class="dialog"
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={handleKey}
+		>
 			<input
 				bind:this={inputEl}
 				class="search-input"

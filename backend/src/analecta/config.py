@@ -21,24 +21,22 @@ class AppConfig(BaseModel):
         custom_font_path: Absolute path to a user-supplied ``.ttf`` file.
             Only used when ``font_variant`` is ``custom``.
         update_channel: Release channel for the built-in updater.
-        virustotal_enabled: Whether to offer VirusTotal URL scanning. Requires
-            the user's API key to be present in the system keyring. Disabled
-            by default.
         theme: UI colour theme — ``dark`` or ``light``.
         accent_color: Active accent colour drawn from the Tokyo Night palette.
     """
 
     vault_path: Path = Path.home() / "Documents" / "Analecta"
+    first_run: bool = False
     font_variant: Literal["regular", "nerd", "custom"] = "regular"
     ui_font_size: float = 16.0
     reading_font_size: float = 17.0
     custom_font_path: str | None = None
     update_channel: Literal["stable", "dev"] = "stable"
-    virustotal_enabled: bool = False
     theme: Literal["dark", "light"] = "dark"
     accent_color: Literal["red", "yellow", "green", "cyan"] = "yellow"
     open_tab_ids: list[str] = ["section-library"]
     active_tab_id: str = "section-library"
+    close_to_tray: bool = True
 
     @field_validator("vault_path", mode="before")
     @classmethod
@@ -56,7 +54,7 @@ def load_config(config_path: Path = CONFIG_PATH) -> AppConfig:
         Validated AppConfig instance.
     """
     if not config_path.exists():
-        return AppConfig()
+        return AppConfig(first_run=True)
     with config_path.open("rb") as fh:
         data = tomllib.load(fh)
     return AppConfig.model_validate(data)
@@ -78,11 +76,11 @@ def save_config(config: AppConfig, config_path: Path = CONFIG_PATH) -> None:
         "ui_font_size": config.ui_font_size,
         "reading_font_size": config.reading_font_size,
         "update_channel": config.update_channel,
-        "virustotal_enabled": config.virustotal_enabled,
         "theme": config.theme,
         "accent_color": config.accent_color,
         "open_tab_ids": list(config.open_tab_ids),
         "active_tab_id": config.active_tab_id,
+        "close_to_tray": config.close_to_tray,
     }
     if config.custom_font_path is not None:
         data["custom_font_path"] = config.custom_font_path

@@ -2,8 +2,9 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+	import { readTextFile, writeTextFile } from '$lib/platform';
 	import { entries as entriesApi, type Entry } from '$lib/api/client';
+	import { entryChangedTick } from '$lib/stores/sse';
 	import { createRenderer } from '$lib/markdown/renderer';
 	import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
 	import '$lib/markdown/tokyo-night.css';
@@ -34,11 +35,13 @@
 	});
 
 	function extractHashtags(text: string): string[] {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local algorithmic variable, not reactive state
 		const tags = new Set<string>();
 		for (const line of text.split('\n')) {
-			if (line.trimStart().startsWith('#')) continue;
-			for (const m of line.matchAll(/#([a-z][a-z0-9_]*)/g)) {
-				tags.add(m[1]);
+			// Skip markdown headings (# Heading) but not hashtag-only lines (#tag1 #tag2)
+			if (/^#{1,6}(?:\s|$)/.test(line.trimStart())) continue;
+			for (const m of line.matchAll(/#([a-zA-Z][a-zA-Z0-9_]*)/g)) {
+				tags.add(m[1].toLowerCase());
 			}
 		}
 		return [...tags];
@@ -63,9 +66,10 @@
 			await writeTextFile(entry.file_path, content);
 			await entriesApi.patch(entry.id, {
 				tags: extractHashtags(content),
-				fts: { title: entry.title, content }
+				fts: { title: entry.title, content },
 			});
 			originalContent = content;
+			entryChangedTick.update((n) => n + 1);
 			saved = true;
 			setTimeout(() => {
 				saved = false;
@@ -114,8 +118,8 @@
 			</div>
 			{#if showPreview}
 				<div class="pane preview-pane">
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div class="markdown-body preview-content">
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -- markdown-it output, not raw user/network HTML -->
 						{@html previewHtml}
 					</div>
 				</div>
@@ -162,7 +166,10 @@
 		font-size: 12px;
 		cursor: pointer;
 		white-space: nowrap;
-		transition: color 0.15s, background 0.15s, border-color 0.15s;
+		transition:
+			color 0.15s,
+			background 0.15s,
+			border-color 0.15s;
 	}
 
 	.btn:hover:not(:disabled) {

@@ -3,20 +3,20 @@
 	import { navigateInTab, openEntryTab } from '$lib/stores/tabs';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 
-	let { entries, loading = false }: { entries: Entry[]; loading?: boolean } = $props();
+	const { entries, loading = false }: { entries: Entry[]; loading?: boolean } = $props();
 
 	const sourceColors: Record<string, string> = {
 		article: 'var(--accent)',
 		youtube: 'var(--red)',
 		substack: 'var(--accent-warm)',
-		x: 'var(--fg-muted)'
+		x: 'var(--fg-muted)',
 	};
 
 	function formatDate(iso: string): string {
 		return new Date(iso).toLocaleDateString(undefined, {
 			year: 'numeric',
 			month: 'short',
-			day: 'numeric'
+			day: 'numeric',
 		});
 	}
 </script>
@@ -30,18 +30,18 @@
 		{#each entries as entry (entry.id)}
 			<button
 				class="entry-card"
-				onclick={() => navigateInTab(entry.id, entry.title)}
+				onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
 				onmousedown={(e) => {
 					if (e.button === 1) {
 						e.preventDefault();
-						openEntryTab(entry.id, entry.title, true);
+						openEntryTab(entry.id, entry.title, true, entry.source_type);
 					}
 				}}
 				oncontextmenu={(e) => showContextMenu(e, entry)}
 			>
 				<div class="entry-header">
 					<span class="title">{entry.title}</span>
-					<span class="source" style="color: {sourceColors[entry.source_type] ?? 'var(--fg-muted)'}">
+					<span class="source" style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}>
 						{entry.source_type}
 					</span>
 				</div>
@@ -50,7 +50,7 @@
 					{#if entry.status !== 'unread'}
 						<span class="status">{entry.status}</span>
 					{/if}
-					{#each entry.tags as tag}
+					{#each entry.tags as tag (tag)}
 						<span class="tag">#{tag}</span>
 					{/each}
 				</div>
@@ -84,7 +84,9 @@
 		cursor: pointer;
 		text-align: left;
 		font-family: inherit;
-		transition: border-color 0.15s, background 0.15s;
+		transition:
+			border-color 0.15s,
+			background 0.15s;
 	}
 
 	.entry-card:hover {
@@ -101,7 +103,7 @@
 
 	.title {
 		font-size: 13px;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--fg);
 		overflow: hidden;
 		text-overflow: ellipsis;

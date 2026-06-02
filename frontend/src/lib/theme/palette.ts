@@ -23,7 +23,7 @@ export const palette = {
 	teal: '#1abc9c',
 	// Structure
 	border: '#292e42',
-	terminal: '#414868'
+	terminal: '#414868',
 } as const;
 
 export type PaletteKey = keyof typeof palette;

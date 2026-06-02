@@ -70,6 +70,30 @@ def test_frontmatter_source_type_youtube():
     assert "source_type: youtube" in fm
 
 
+def test_frontmatter_includes_metadata_fields():
+    content = _content(
+        metadata={
+            "author": "Alice",
+            "description": "A summary",
+            "published": "2024-06-01",
+        }
+    )
+    fm = build_frontmatter(content, _CREATED_AT)
+    inner = fm.split("---\n", 2)[1]
+    data = yaml.safe_load(inner)
+    assert data["author"] == "Alice"
+    assert data["description"] == "A summary"
+    assert data["published"] == "2024-06-01"
+
+
+def test_frontmatter_omits_absent_metadata_fields():
+    content = _content(metadata={"extractor": "readability"})
+    fm = build_frontmatter(content, _CREATED_AT)
+    assert "author:" not in fm
+    assert "description:" not in fm
+    assert "published:" not in fm
+
+
 # ---------------------------------------------------------------------------
 # build_template_block
 # ---------------------------------------------------------------------------
@@ -125,6 +149,28 @@ def test_convert_preserves_img_src():
     content = _content(html='<img src="../assets/slug/abc.jpg" alt="photo">')
     md = MarkdownConverter().convert(content, _CREATED_AT)
     assert "../assets/slug/abc.jpg" in md
+
+
+def test_convert_img_inside_heading_renders_as_image_syntax():
+    # Images inside headings must produce ![alt](src), not just the alt text.
+    content = _content(
+        html=(
+            '<h2><img src="https://cdn.example.com/img.png"'
+            ' alt="cover-photo"/>Title</h2>'
+        )
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "![cover-photo](https://cdn.example.com/img.png)" in md
+
+
+def test_convert_resolves_nextjs_image_proxy():
+    encoded = "https%3A%2F%2Fcdn.example.com%2Fphoto.jpg"
+    content = _content(
+        html=f'<img src="/_next/image?url={encoded}&w=1080&q=75" alt="photo">'
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "https://cdn.example.com/photo.jpg" in md
+    assert "/_next/image" not in md
 
 
 # ---------------------------------------------------------------------------
