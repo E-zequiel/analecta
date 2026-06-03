@@ -591,7 +591,7 @@
 	}
 
 	.tag-chip-count {
-		font-size: 11px;
+		font-size: 13px;
 		color: var(--fg-muted);
 		background: var(--bg-highlight);
 		border-radius: 10px;
@@ -711,7 +711,7 @@
 	}
 
 	.metric-label {
-		font-size: 11px;
+		font-size: 13px;
 		font-weight: 700;
 		color: var(--fg-muted);
 		text-transform: uppercase;
@@ -823,7 +823,7 @@
 	}
 
 	.collecta-nav-btn {
-		font-size: 11px;
+		font-size: 13px;
 		color: var(--fg-muted);
 		background: none;
 		border: none;
