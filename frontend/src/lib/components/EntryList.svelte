@@ -29,7 +29,7 @@
 	{:else}
 		{#each entries as entry (entry.id)}
 			<button
-				class="entry-card"
+				class="entry-row"
 				onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
 				onmousedown={(e) => {
 					if (e.button === 1) {
@@ -39,20 +39,23 @@
 				}}
 				oncontextmenu={(e) => showContextMenu(e, entry)}
 			>
-				<div class="entry-header">
-					<span class="title">{entry.title}</span>
-					<span class="source" style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}>
-						{entry.source_type}
-					</span>
-				</div>
-				<div class="entry-meta">
-					<span class="date">{formatDate(entry.created_at)}</span>
-					{#if entry.status !== 'unread'}
-						<span class="status">{entry.status}</span>
-					{/if}
-					{#each entry.tags as tag (tag)}
-						<span class="tag">#{tag}</span>
-					{/each}
+				<div class="entry-body">
+					<div class="entry-top">
+						<span class="entry-title">{entry.title}</span>
+						<span
+							class="entry-source"
+							style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
+						>{entry.source_type}</span>
+					</div>
+					<div class="entry-meta">
+						<span class="entry-date">{formatDate(entry.created_at)}</span>
+						{#if entry.status !== 'unread'}
+							<span class="entry-status">{entry.status}</span>
+						{/if}
+						{#each entry.tags as tag (tag)}
+							<span class="entry-tag">#{tag}</span>
+						{/each}
+					</div>
 				</div>
 			</button>
 		{/each}
@@ -63,77 +66,86 @@
 	.entry-list {
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
 	}
 
 	.hint {
-		padding: 1rem;
+		padding: 2rem 1.25rem;
 		color: var(--fg-muted);
 		font-size: 13px;
+		font-style: italic;
 	}
 
-	.entry-card {
+	.entry-row {
 		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
+		align-items: flex-start;
 		width: 100%;
-		padding: 0.75rem 1rem;
-		background: var(--bg-alt);
-		border: 1px solid var(--border);
-		border-radius: 6px;
+		padding: 12px 20px;
+		border: none;
+		border-bottom: 1px solid var(--border);
+		background: transparent;
 		cursor: pointer;
 		text-align: left;
 		font-family: inherit;
-		transition:
-			border-color 0.15s,
-			background 0.15s;
+		transition: background 0.1s;
 	}
 
-	.entry-card:hover {
+	.entry-row:hover {
 		background: var(--bg-highlight);
-		border-color: var(--accent-dark);
 	}
 
-	.entry-header {
+	.entry-body {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.entry-top {
 		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-		gap: 0.5rem;
+		align-items: flex-start;
+		gap: 8px;
+		margin-bottom: 4px;
 	}
 
-	.title {
-		font-size: 13px;
-		font-weight: 700;
+	.entry-title {
+		flex: 1;
+		font-size: 0.85rem;
+		font-weight: 600;
 		color: var(--fg);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		line-height: 1.4;
 	}
 
-	.source {
-		font-size: 11px;
+	.entry-source {
+		font-size: 0.68rem;
 		flex-shrink: 0;
+		padding: 2px 7px;
+		border-radius: 3px;
+		background: var(--bg-alt);
+		border: 1px solid var(--border);
+		margin-top: 2px;
 	}
 
 	.entry-meta {
 		display: flex;
-		gap: 0.5rem;
-		flex-wrap: wrap;
+		gap: 8px;
 		align-items: center;
+		flex-wrap: wrap;
 	}
 
-	.date {
-		font-size: 11px;
+	.entry-date {
+		font-size: 0.68rem;
 		color: var(--fg-muted);
 	}
 
-	.status {
-		font-size: 11px;
+	.entry-status {
+		font-size: 0.68rem;
 		color: var(--yellow);
 	}
 
-	.tag {
-		font-size: 11px;
-		color: var(--magenta);
+	.entry-tag {
+		font-size: 0.62rem;
+		color: var(--fg-muted);
+		padding: 1px 5px;
+		border-radius: 3px;
+		background: var(--bg-alt);
+		border: 1px solid var(--border);
 	}
 </style>

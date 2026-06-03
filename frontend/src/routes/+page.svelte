@@ -541,7 +541,6 @@
 	.list-wrap {
 		flex: 1;
 		overflow-y: auto;
-		padding: 0.75rem 1rem;
 	}
 
 	/* Tags dashboard */
