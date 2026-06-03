@@ -26,6 +26,7 @@
 		Library,
 		Origami,
 		Waypoints,
+		PanelRight,
 	} from '@lucide/svelte';
 	import {
 		windowMinimize,
@@ -134,17 +135,17 @@
 		style:padding={$sidebarCollapsed ? '0' : '0 6px'}
 	>
 		<button class="sc-btn" onclick={toggleSidebar} title="Toggle sidebar">
-			<ChevronsRightLeft size={16} />
+			<ChevronsRightLeft size={18} />
 		</button>
 		{#if !$sidebarCollapsed}
 			<button class="sc-btn" onclick={collapseAll} title="Collapse all sections">
-				<ChevronsDownUp size={16} />
+				<ChevronsDownUp size={18} />
 			</button>
 			<button class="sc-btn" onclick={expandAll} title="Expand all sections">
-				<ChevronsUpDown size={16} />
+				<ChevronsUpDown size={18} />
 			</button>
 			<button class="sc-btn" onclick={openSearch} title="Search (Ctrl+K)">
-				<ScanSearch size={16} />
+				<ScanSearch size={18} />
 			</button>
 		{/if}
 	</div>
@@ -155,13 +156,13 @@
 			{#if $viewerEntry}
 				<div class="tb-group">
 					<button class="btn-icon" onclick={() => $viewerActions!.goBack()} title="Back">
-						<CornerUpLeft size={16} />
+						<CornerUpLeft size={18} />
 					</button>
 					<button class="btn-icon" onclick={() => $viewerActions!.goToEditor()} title="Edit">
-						<PenLine size={16} />
+						<PenLine size={18} />
 					</button>
 					<button class="btn-icon" onclick={() => $viewerActions!.copyUrl()} title="Copy URL">
-						<Link size={16} />
+						<Link size={18} />
 					</button>
 					<button
 						class="btn-icon"
@@ -169,10 +170,10 @@
 						onclick={() => $viewerActions!.toggleFlag('archive')}
 						title="Archive"
 					>
-						<Archive size={16} />
+						<Archive size={18} />
 					</button>
 					<button class="btn-icon" onclick={() => $viewerActions!.deleteEntry()} title="Delete">
-						<Shredder size={16} />
+						<Shredder size={18} />
 					</button>
 				</div>
 				<div class="tb-group">
@@ -181,7 +182,7 @@
 						onclick={() => $viewerActions!.adjustFont(-1)}
 						title="Decrease font size"
 					>
-						<AArrowDown size={16} />
+						<AArrowDown size={18} />
 					</button>
 					<span class="font-size-label">{$viewerFontSize}px</span>
 					<button
@@ -189,7 +190,7 @@
 						onclick={() => $viewerActions!.adjustFont(1)}
 						title="Increase font size"
 					>
-						<AArrowUp size={16} />
+						<AArrowUp size={18} />
 					</button>
 				</div>
 				<div class="tb-group">
@@ -199,7 +200,7 @@
 						onclick={() => $viewerActions!.setStatus('read')}
 						title="Read"
 					>
-						<Eye size={16} />
+						<Eye size={18} />
 					</button>
 					<button
 						class="btn-icon"
@@ -207,7 +208,7 @@
 						onclick={() => $viewerActions!.setStatus('unread')}
 						title="Unread"
 					>
-						<EyeClosed size={16} />
+						<EyeClosed size={18} />
 					</button>
 					<button
 						class="btn-icon"
@@ -215,7 +216,7 @@
 						onclick={() => $viewerActions!.toggleFlag('bookmark')}
 						title="Bookmark"
 					>
-						<Bookmark size={16} />
+						<Bookmark size={18} />
 					</button>
 					<button
 						class="btn-icon"
@@ -223,7 +224,7 @@
 						onclick={() => $viewerActions!.toggleFlag('gem')}
 						title="Gem"
 					>
-						<Gem size={16} />
+						<Gem size={18} />
 					</button>
 					<button
 						class="btn-icon"
@@ -232,7 +233,7 @@
 						onclick={() => viewerTagsOpen.update((v) => !v)}
 						title="Tags"
 					>
-						<BrainCircuit size={16} />
+						<BrainCircuit size={18} />
 					</button>
 				</div>
 			{/if}
@@ -240,7 +241,7 @@
 	{:else if toolbarMode === 'editor' && $editorActions !== null}
 		<div class="toolbar-center">
 			<button class="btn-icon" onclick={() => $editorActions!.goBack()} title="Back">
-				<CornerUpLeft size={16} />
+				<CornerUpLeft size={18} />
 			</button>
 			<button
 				class="btn-icon"
@@ -248,7 +249,7 @@
 				onclick={() => $editorActions!.togglePreview()}
 				title="Preview"
 			>
-				<BookOpenText size={16} />
+				<BookOpenText size={18} />
 			</button>
 			<button
 				class="btn-icon"
@@ -257,7 +258,7 @@
 				disabled={$editorSaving}
 				title={$editorSaving ? 'Saving…' : $editorSaved ? 'Saved ✓' : 'Save'}
 			>
-				<Save size={16} />
+				<Save size={18} />
 			</button>
 			<button
 				class="btn-icon"
@@ -265,7 +266,7 @@
 				disabled={!$editorIsDirty}
 				title="Revert"
 			>
-				<RotateCcw size={16} />
+				<RotateCcw size={18} />
 			</button>
 		</div>
 	{:else}
@@ -292,35 +293,23 @@
 			onclick={toggleRightSidebar}
 			title="Toggle entry stack"
 		>
-			<svg
-				width="14"
-				height="14"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.5"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			>
-				<rect width="18" height="18" x="3" y="3" rx="2" />
-				<path d="M15 3v18" />
-			</svg>
+			<PanelRight size={18} />
 		</button>
 
 		<div class="wc-spacer"></div>
 
 		<button class="wc-btn" onclick={() => windowMinimize().catch(() => {})} title="Minimize">
-			<Minus size={12} />
+			<Minus size={18} />
 		</button>
 		<button
 			class="wc-btn"
 			onclick={() => windowMaximize().catch(() => {})}
 			title={maximized ? 'Restore' : 'Maximize'}
 		>
-			<Square size={12} />
+			<Square size={18} />
 		</button>
 		<button class="wc-btn wc-close" onclick={() => windowClose().catch(() => {})} title="Close">
-			<X size={12} />
+			<X size={18} />
 		</button>
 	</div>
 </div>
@@ -465,7 +454,7 @@
 	.tb-group {
 		display: flex;
 		align-items: center;
-		gap: 2px;
+		gap: 4px;
 	}
 
 	.font-size-label {
