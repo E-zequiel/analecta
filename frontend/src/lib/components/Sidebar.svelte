@@ -298,8 +298,10 @@
 	}
 
 	function selectTag(name: string) {
-		selectedTag.set(name);
-		if (!$viewerEntry) {
+		if ($viewerEntry) {
+			selectedTag.set($selectedTag === name ? null : name);
+		} else {
+			selectedTag.set(name);
 			navigateInSectionTab('tags');
 		}
 	}
