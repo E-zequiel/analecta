@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { X, Cable, ChevronDown, ChevronRight } from '@lucide/svelte';
+	import { X, Cable } from '@lucide/svelte';
 	import { entries as entriesApi, type Backlink } from '$lib/api/client';
 
 	export type StackEntry = {
@@ -17,7 +17,6 @@
 		onwidthchange,
 		activeEntryId = null,
 		onbacklinksopen,
-		onbacklinksection,
 	}: {
 		entries?: StackEntry[];
 		activeId?: string | null;
@@ -27,7 +26,6 @@
 		onwidthchange?: (w: number) => void;
 		activeEntryId?: number | null;
 		onbacklinksopen?: (id: number, name: string) => void;
-		onbacklinksection?: () => void;
 	} = $props();
 
 	const SOURCE_COLORS: Record<string, string> = {
@@ -62,14 +60,12 @@
 		e.preventDefault();
 	}
 
-	let backlinksExpanded = $state(true);
 	let backlinks = $state<Backlink[]>([]);
 
 	$effect(() => {
 		const id = activeEntryId;
-		const expanded = backlinksExpanded;
 		backlinks = [];
-		if (id === null || !expanded) return;
+		if (id === null) return;
 
 		let cancelled = false;
 		entriesApi
@@ -129,47 +125,34 @@
 	{#if activeEntryId !== null}
 		<div class="backlinks-section">
 			<div class="bl-row">
-				<button
-					class="bl-chevron"
-					onclick={() => (backlinksExpanded = !backlinksExpanded)}
-					title={backlinksExpanded ? 'Collapse' : 'Expand'}
-				>
-					{#if backlinksExpanded}
-						<ChevronDown size={13} />
-					{:else}
-						<ChevronRight size={13} />
-					{/if}
-				</button>
-				<button class="bl-header-btn" onclick={() => onbacklinksection?.()}>
+				<div class="bl-header">
 					<Cable size={15} />
 					<span class="bl-label">BACKLINKS</span>
 					{#if backlinks.length > 0}
 						<span class="bl-count">{backlinks.length}</span>
 					{/if}
-				</button>
+				</div>
 			</div>
 
-			{#if backlinksExpanded}
-				{#if backlinks.length === 0}
-					<p class="bl-empty">No backlinks.</p>
-				{:else}
-					<div class="bl-list">
-						{#each backlinks as item, i (`${item.id}-${i}`)}
-							<button class="bl-item" onclick={() => onbacklinksopen?.(item.id, item.name)}>
-								<span class="bl-item-name">{item.name}</span>
-								{#if item.context?.heading}
-									<span class="bl-item-heading">{item.context.heading}</span>
-								{/if}
-								{#if item.context}
-									<span class="bl-item-ctx"
-										>…{item.context.pre}<em class="bl-em">{item.context.highlight}</em>{item.context
-											.post}…</span
-									>
-								{/if}
-							</button>
-						{/each}
-					</div>
-				{/if}
+			{#if backlinks.length === 0}
+				<p class="bl-empty">No backlinks.</p>
+			{:else}
+				<div class="bl-list">
+					{#each backlinks as item, i (`${item.id}-${i}`)}
+						<button class="bl-item" onclick={() => onbacklinksopen?.(item.id, item.name)}>
+							<span class="bl-item-name">{item.name}</span>
+							{#if item.context?.heading}
+								<span class="bl-item-heading">{item.context.heading}</span>
+							{/if}
+							{#if item.context}
+								<span class="bl-item-ctx"
+									>…{item.context.pre}<em class="bl-em">{item.context.highlight}</em>{item.context
+										.post}…</span
+								>
+							{/if}
+						</button>
+					{/each}
+				</div>
 			{/if}
 		</div>
 	{/if}
@@ -308,47 +291,19 @@
 		padding: 0 4px 0 2px;
 	}
 
-	.bl-chevron {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 22px;
-		height: 30px;
-		padding: 0;
-		background: none;
-		border: none;
-		border-radius: 3px;
-		color: var(--fg-muted);
-		cursor: pointer;
-		flex-shrink: 0;
-		transition: color 0.12s;
-	}
-	.bl-chevron:hover {
-		color: var(--fg);
-	}
-
-	.bl-header-btn {
+	.bl-header {
 		display: flex;
 		align-items: center;
 		gap: 5px;
 		flex: 1;
 		min-width: 0;
-		padding: 3px 4px;
-		background: none;
-		border: none;
-		border-radius: 3px;
+		padding: 6px 4px;
 		color: var(--fg-muted);
 		font-family: inherit;
 		font-size: 0.7rem;
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		cursor: pointer;
-		text-align: left;
-		transition: color 0.12s;
-	}
-	.bl-header-btn:hover {
-		color: var(--fg);
 	}
 
 	.bl-label {

@@ -31,7 +31,6 @@
 		activateTab,
 		closeTab,
 		openEntryTab,
-		navigateInSectionTab,
 		syncActiveTabFromPath,
 		restoreTabsFromConfig,
 		saveTabs,
@@ -274,7 +273,6 @@
 					onwidthchange={(w) => rightSidebarWidth.set(w)}
 					activeEntryId={activeViewerEntryId}
 					onbacklinksopen={(id, name) => openEntryTab(id, name)}
-					onbacklinksection={() => navigateInSectionTab('backlinks')}
 				/>
 			{/if}
 		</div>
