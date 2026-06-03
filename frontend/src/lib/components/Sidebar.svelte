@@ -37,9 +37,9 @@
 		activeSection,
 		selectedTag,
 		lastViewedId,
-		tagsExpanded,
 		expandAllSignal,
 	} from '$lib/stores/ui';
+	import { viewerEntry } from '$lib/stores/toolbar';
 	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
@@ -81,6 +81,29 @@
 		if ($sidebarCollapsed) urlInputActive.set(false);
 	});
 
+	const currentEntryTagSet = $derived(new Set($viewerEntry?.tags ?? []));
+	const sortedTagList = $derived(
+		currentEntryTagSet.size > 0
+			? [
+					...tagList.filter((t) => currentEntryTagSet.has(t.name)),
+					...tagList.filter((t) => !currentEntryTagSet.has(t.name)),
+				]
+			: tagList
+	);
+
+	let tagsFlashing = $state(false);
+
+	function flashEntryTags() {
+		if (currentEntryTagSet.size === 0) return;
+		tagsFlashing = false;
+		requestAnimationFrame(() => {
+			tagsFlashing = true;
+			setTimeout(() => {
+				tagsFlashing = false;
+			}, 700);
+		});
+	}
+
 	let newTagExpanded = $state(false);
 	let newTagName = $state('');
 	let newTagInputEl = $state<HTMLInputElement | null>(null);
@@ -119,7 +142,7 @@
 
 	function refreshAll() {
 		fetchCounts();
-		if ($tagsExpanded) fetchTags();
+		fetchTags();
 		for (const id of $expandedSections) {
 			fetchSection(id);
 		}
@@ -143,7 +166,6 @@
 
 	function expandAll() {
 		expandedSections.set(new Set(SECTIONS.map((s) => s.id)));
-		tagsExpanded.set(true);
 		for (const s of SECTIONS) fetchSection(s.id);
 		fetchTags();
 	}
@@ -274,11 +296,6 @@
 		});
 	}
 
-	function toggleTags() {
-		tagsExpanded.update((v) => !v);
-		if ($tagsExpanded) fetchTags();
-	}
-
 	function selectSection(id: SectionId) {
 		selectedTag.set(null);
 		toggleSection(id);
@@ -287,7 +304,9 @@
 
 	function selectTag(name: string) {
 		selectedTag.set(name);
-		navigateInSectionTab('tags');
+		if (!$viewerEntry) {
+			navigateInSectionTab('tags');
+		}
 	}
 
 	function openEntry(id: number, title: string) {
@@ -370,22 +389,14 @@
 		<div class="tags-section">
 			<div class="section-row">
 				<button
-					class="chevron-btn"
-					onclick={toggleTags}
-					title={$tagsExpanded ? 'Collapse' : 'Expand'}
-				>
-					{#if $tagsExpanded}
-						<ChevronDown size={13} />
-					{:else}
-						<ChevronRight size={13} />
-					{/if}
-				</button>
-				<button
 					class="section-label"
 					class:active={$activeSection === 'tags'}
 					onclick={() => {
-						navigateInSectionTab('tags');
-						toggleTags();
+						if ($viewerEntry) {
+							flashEntryTags();
+						} else {
+							navigateInSectionTab('tags');
+						}
 					}}
 				>
 					<BrainCircuit size={18} />
@@ -428,57 +439,63 @@
 				</div>
 			{/if}
 
-			{#if $tagsExpanded}
-				<div class="section-entries tags-section-entries" transition:slide={{ duration: 140 }}>
-					{#each tagList as tag (tag.name)}
-						{#if editingTag === tag.name}
-							<div class="tag-edit-row">
-								<input
-									class="tag-input"
-									type="text"
-									bind:value={editTagValue}
-									onkeydown={(e) => {
-										if (e.key === 'Enter') {
-											e.preventDefault();
-											renameTag(tag.name, editTagValue);
-										} else if (e.key === 'Escape') editingTag = null;
-									}}
-									onblur={() => renameTag(tag.name, editTagValue)}
-								/>
-							</div>
-						{:else}
-							<div class="tag-item">
-								<button
-									class="tag-item-label"
-									class:active-entry={$selectedTag === tag.name}
-									onclick={() => selectTag(tag.name)}
-									title={tag.name}
-								>
-									<span class="tag-name">{tag.name}</span>
-									<span class="tag-count">{tag.count}</span>
-								</button>
-								<div class="tag-actions">
-									<button
-										class="tag-action-btn"
-										onclick={() => {
-											editingTag = tag.name;
-											editTagValue = tag.name;
-										}}
-										title="Rename tag"><Pencil size={13} /></button
-									>
-									<button
-										class="tag-action-btn"
-										onclick={() => deleteTag(tag.name)}
-										title="Delete tag"><Trash2 size={13} /></button
-									>
-								</div>
-							</div>
-						{/if}
+			<div class="section-entries tags-section-entries">
+				{#each sortedTagList as tag, i (tag.name)}
+					{@const isEntryTag = currentEntryTagSet.has(tag.name)}
+					{#if i === currentEntryTagSet.size && currentEntryTagSet.size > 0 && i < sortedTagList.length}
+						<div class="tag-section-divider"></div>
+					{/if}
+					{#if editingTag === tag.name}
+						<div class="tag-edit-row">
+							<input
+								class="tag-input"
+								type="text"
+								bind:value={editTagValue}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') {
+										e.preventDefault();
+										renameTag(tag.name, editTagValue);
+									} else if (e.key === 'Escape') editingTag = null;
+								}}
+								onblur={() => renameTag(tag.name, editTagValue)}
+							/>
+						</div>
 					{:else}
-						<span class="empty-section">No tags</span>
-					{/each}
-				</div>
-			{/if}
+						<div
+							class="tag-item"
+							class:current-entry-tag={isEntryTag}
+							class:flashing={isEntryTag && tagsFlashing}
+						>
+							<button
+								class="tag-item-label"
+								class:active-entry={$selectedTag === tag.name}
+								onclick={() => selectTag(tag.name)}
+								title={tag.name}
+							>
+								<span class="tag-name">{tag.name}</span>
+								<span class="tag-count">{tag.count}</span>
+							</button>
+							<div class="tag-actions">
+								<button
+									class="tag-action-btn"
+									onclick={() => {
+										editingTag = tag.name;
+										editTagValue = tag.name;
+									}}
+									title="Rename tag"><Pencil size={13} /></button
+								>
+								<button
+									class="tag-action-btn"
+									onclick={() => deleteTag(tag.name)}
+									title="Delete tag"><Trash2 size={13} /></button
+								>
+							</div>
+						</div>
+					{/if}
+				{:else}
+					<span class="empty-section">No tags</span>
+				{/each}
+			</div>
 		</div>
 	{/if}
 
@@ -641,6 +658,33 @@
 	.tags-section-entries {
 		max-height: 160px;
 		overflow-y: auto;
+		padding-left: 4px;
+	}
+
+	.tag-section-divider {
+		height: 1px;
+		background: var(--border);
+		margin: 3px 8px;
+	}
+
+	.tag-item.current-entry-tag {
+		border-left: 2px solid var(--accent);
+		border-radius: 3px;
+		background: color-mix(in srgb, var(--accent) 6%, transparent);
+	}
+
+	@keyframes tag-flash {
+		0%,
+		100% {
+			background: color-mix(in srgb, var(--accent) 6%, transparent);
+		}
+		45% {
+			background: color-mix(in srgb, var(--accent) 22%, transparent);
+		}
+	}
+
+	.tag-item.current-entry-tag.flashing {
+		animation: tag-flash 600ms ease-in-out;
 	}
 
 	.section-row {

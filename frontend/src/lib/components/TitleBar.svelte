@@ -43,7 +43,6 @@
 		searchOpen,
 		expandedSections,
 		activeSection,
-		tagsExpanded,
 		expandAllSignal,
 		rightSidebarOpen,
 		rightSidebarWidth,
@@ -102,7 +101,6 @@
 	}
 	function collapseAll() {
 		expandedSections.set(new Set());
-		tagsExpanded.set(false);
 	}
 	function expandAll() {
 		expandAllSignal.update((n) => n + 1);
