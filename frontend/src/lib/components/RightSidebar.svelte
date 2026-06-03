@@ -91,7 +91,12 @@
 	<div class="stack-list">
 		{#each entries as entry (entry.id)}
 			{@const active = entry.id === activeId}
-			<div class="stack-item" class:active style:--src-color={sourceColor(entry.sourceType)}>
+			<div
+				class="stack-item"
+				class:active
+				style:--src-color={sourceColor(entry.sourceType)}
+				onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); onclose?.(entry.id); } }}
+			>
 				<button
 					class="stack-item-btn"
 					onclick={() => onselect?.(entry.id, entry.title)}
