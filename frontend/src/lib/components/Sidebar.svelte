@@ -464,12 +464,12 @@
 											editingTag = tag.name;
 											editTagValue = tag.name;
 										}}
-										title="Rename tag"><Pencil size={11} /></button
+										title="Rename tag"><Pencil size={13} /></button
 									>
 									<button
 										class="tag-action-btn"
 										onclick={() => deleteTag(tag.name)}
-										title="Delete tag"><Trash2 size={11} /></button
+										title="Delete tag"><Trash2 size={13} /></button
 									>
 								</div>
 							</div>
