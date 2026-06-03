@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import {
-		Minus,
-		Square,
+		ChevronDown,
+		Maximize2,
+		Minimize2,
 		X,
 		ChevronsRightLeft,
 		ChevronsDownUp,
@@ -298,18 +299,22 @@
 
 		<div class="wc-spacer"></div>
 
-		<button class="wc-btn" onclick={() => windowMinimize().catch(() => {})} title="Minimize">
-			<Minus size={18} />
+		<button class="wc-btn" onclick={() => windowMinimize().catch(() => {})} title="Hide">
+			<ChevronDown size={15} />
 		</button>
 		<button
 			class="wc-btn"
 			onclick={() => windowMaximize().catch(() => {})}
-			title={maximized ? 'Restore' : 'Maximize'}
+			title={maximized ? 'Minimize' : 'Maximize'}
 		>
-			<Square size={18} />
+			{#if maximized}
+				<Minimize2 size={15} />
+			{:else}
+				<Maximize2 size={15} />
+			{/if}
 		</button>
 		<button class="wc-btn wc-close" onclick={() => windowClose().catch(() => {})} title="Close">
-			<X size={18} />
+			<X size={15} />
 		</button>
 	</div>
 </div>
@@ -392,7 +397,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
-		gap: 2px;
+		gap: 4px;
 		padding: 0 6px;
 		border-left: 1px solid var(--border);
 		flex-shrink: 0;
@@ -406,8 +411,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 32px;
-		height: 28px;
+		width: 28px;
+		height: 26px;
 		background: none;
 		border: none;
 		border-radius: 4px;
