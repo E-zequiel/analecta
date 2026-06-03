@@ -469,7 +469,7 @@
 	}
 
 	.font-size-label {
-		font-size: 0.72rem;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		padding: 0 4px;
 		min-width: 2.8rem;

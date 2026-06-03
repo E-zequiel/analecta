@@ -100,6 +100,9 @@
 	/* Typography */
 	--font-family: 'JetBrains Mono', monospace;
 	--font-ui-family: 'Bricolage Grotesque', sans-serif;
+	--font-size-label:    0.78rem;
+	--font-size-sublabel: 0.72rem;
+	--font-size-count:    0.70rem;
 }
 
 /* Tokyo Night Light palette */
