@@ -786,6 +786,7 @@
 		justify-content: center;
 		gap: 4px;
 		padding: 6px 0;
+		margin-top: auto;
 	}
 
 	.create-tag-btn {
