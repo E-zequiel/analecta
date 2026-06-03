@@ -22,7 +22,6 @@ export const activeSection = writable<string>('library');
 export const searchOpen = writable(false);
 export const lastViewedId = writable<number | null>(null);
 export const expandAllSignal = writable(0);
-export const collapseAllSignal = writable(0);
 
 export const rightSidebarOpen = persisted('right-sidebar-open', true);
 export const rightSidebarWidth = persisted('right-sidebar-width', 240);
