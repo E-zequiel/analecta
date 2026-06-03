@@ -86,19 +86,6 @@
 		$viewerEntry ? tagList.filter((t) => currentEntryTagSet.has(t.name)) : tagList
 	);
 
-	let tagsFlashing = $state(false);
-
-	function flashEntryTags() {
-		if (currentEntryTagSet.size === 0) return;
-		tagsFlashing = false;
-		requestAnimationFrame(() => {
-			tagsFlashing = true;
-			setTimeout(() => {
-				tagsFlashing = false;
-			}, 700);
-		});
-	}
-
 	let newTagExpanded = $state(false);
 	let newTagName = $state('');
 	let newTagInputEl = $state<HTMLInputElement | null>(null);
@@ -388,13 +375,7 @@
 				<button
 					class="section-label"
 					class:active={$activeSection === 'tags'}
-					onclick={() => {
-						if ($viewerEntry) {
-							flashEntryTags();
-						} else {
-							navigateInSectionTab('tags');
-						}
-					}}
+					onclick={() => navigateInSectionTab('tags')}
 				>
 					<BrainCircuit size={18} />
 					<span class="label-text">TAGS</span>
@@ -454,7 +435,7 @@
 							/>
 						</div>
 					{:else}
-						<div class="tag-item" class:flashing={tagsFlashing}>
+						<div class="tag-item">
 							<button
 								class="tag-item-label"
 								class:active-entry={$selectedTag === tag.name}
@@ -648,20 +629,6 @@
 		max-height: 160px;
 		overflow-y: auto;
 		padding-left: 4px;
-	}
-
-	@keyframes tag-flash {
-		0%,
-		100% {
-			background: transparent;
-		}
-		45% {
-			background: color-mix(in srgb, var(--accent) 16%, transparent);
-		}
-	}
-
-	.tag-item.flashing {
-		animation: tag-flash 600ms ease-in-out;
 	}
 
 	.section-row {
