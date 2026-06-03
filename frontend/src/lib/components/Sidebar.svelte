@@ -82,13 +82,8 @@
 	});
 
 	const currentEntryTagSet = $derived(new Set($viewerEntry?.tags ?? []));
-	const sortedTagList = $derived(
-		currentEntryTagSet.size > 0
-			? [
-					...tagList.filter((t) => currentEntryTagSet.has(t.name)),
-					...tagList.filter((t) => !currentEntryTagSet.has(t.name)),
-				]
-			: tagList
+	const displayTagList = $derived(
+		$viewerEntry ? tagList.filter((t) => currentEntryTagSet.has(t.name)) : tagList
 	);
 
 	let tagsFlashing = $state(false);
@@ -440,11 +435,7 @@
 			{/if}
 
 			<div class="section-entries tags-section-entries">
-				{#each sortedTagList as tag, i (tag.name)}
-					{@const isEntryTag = currentEntryTagSet.has(tag.name)}
-					{#if i === currentEntryTagSet.size && currentEntryTagSet.size > 0 && i < sortedTagList.length}
-						<div class="tag-section-divider"></div>
-					{/if}
+				{#each displayTagList as tag (tag.name)}
 					{#if editingTag === tag.name}
 						<div class="tag-edit-row">
 							<input
@@ -461,11 +452,7 @@
 							/>
 						</div>
 					{:else}
-						<div
-							class="tag-item"
-							class:current-entry-tag={isEntryTag}
-							class:flashing={isEntryTag && tagsFlashing}
-						>
+						<div class="tag-item" class:flashing={tagsFlashing}>
 							<button
 								class="tag-item-label"
 								class:active-entry={$selectedTag === tag.name}
@@ -661,29 +648,17 @@
 		padding-left: 4px;
 	}
 
-	.tag-section-divider {
-		height: 1px;
-		background: var(--border);
-		margin: 3px 8px;
-	}
-
-	.tag-item.current-entry-tag {
-		border-left: 2px solid var(--accent);
-		border-radius: 3px;
-		background: color-mix(in srgb, var(--accent) 6%, transparent);
-	}
-
 	@keyframes tag-flash {
 		0%,
 		100% {
-			background: color-mix(in srgb, var(--accent) 6%, transparent);
+			background: transparent;
 		}
 		45% {
-			background: color-mix(in srgb, var(--accent) 22%, transparent);
+			background: color-mix(in srgb, var(--accent) 16%, transparent);
 		}
 	}
 
-	.tag-item.current-entry-tag.flashing {
+	.tag-item.flashing {
 		animation: tag-flash 600ms ease-in-out;
 	}
 
