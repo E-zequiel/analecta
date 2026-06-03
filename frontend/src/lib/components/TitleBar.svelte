@@ -23,6 +23,9 @@
 		RotateCcw,
 		Save,
 		BookOpenText,
+		Library,
+		Origami,
+		Waypoints,
 	} from '@lucide/svelte';
 	import {
 		windowMinimize,
@@ -37,6 +40,7 @@
 		sidebarWidth,
 		searchOpen,
 		expandedSections,
+		activeSection,
 		tagsExpanded,
 		expandAllSignal,
 		rightSidebarOpen,
@@ -55,6 +59,24 @@
 		editorIsDirty,
 		editorActions,
 	} from '$lib/stores/toolbar';
+
+	const SECTION_ICONS = {
+		library: Library,
+		unread: EyeClosed,
+		read: Eye,
+		bookmark: Bookmark,
+		gem: Gem,
+		archive: Archive,
+		tags: BrainCircuit,
+		collecta: Origami,
+		backlinks: Waypoints,
+	} as const;
+
+	const SectionIcon = $derived(
+		$activeSection in SECTION_ICONS
+			? SECTION_ICONS[$activeSection as keyof typeof SECTION_ICONS]
+			: null
+	);
 
 	let maximized = $state(false);
 
@@ -249,7 +271,12 @@
 	{:else}
 		<div class="drag-region">
 			{#if $activeEntryTitle}
-				<span class="active-title">{$activeEntryTitle}</span>
+				<div class="section-label">
+					{#if SectionIcon}
+						<SectionIcon size={13} />
+					{/if}
+					<span class="active-title">{$activeEntryTitle}</span>
+				</div>
 			{/if}
 		</div>
 	{/if}
@@ -353,13 +380,21 @@
 		user-select: none;
 	}
 
+	.section-label {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		color: var(--fg-muted);
+		min-width: 0;
+		max-width: 480px;
+	}
+
 	.active-title {
 		font-size: 13px;
 		color: var(--fg-muted);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		max-width: 480px;
 		font-family: var(--font-ui-family);
 	}
 
