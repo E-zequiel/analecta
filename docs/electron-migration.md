@@ -148,6 +148,20 @@ The Python sidecar was always the location of all business logic. The SvelteKit 
 
 ---
 
+## Known Wayland Quirks
+
+### Tiling WM: unmaximize gap (COSMIC / Pop!_OS)
+
+**Symptom:** After using a WM-level maximize shortcut (e.g. Super+M in COSMIC Pop Shell) to maximize and then restore a window that was moved to a different tile, a visual gap appears on the right and bottom edges. The window occupies less space than its assigned tile. Clicking any other window in the workspace resolves it immediately.
+
+**Root cause:** On WM-initiated unmaximize, COSMIC configures the window at the pre-move (stale) tile bounds rather than the current tile bounds. Electron's `getBounds()` reflects the wrong size and Chromium never commits a `wl_buffer` at the correct dimensions. The application-initiated path (`win.unmaximize()`) is unaffected because Electron drives the full `xdg_toplevel` configure cycle itself.
+
+**Workaround (implemented in `electron/main/index.ts`):** Track the last normal bounds via `resize`/`move` events. After unmaximize settles (100 ms debounce), if current bounds diverge from the saved normal bounds, call `setBounds(savedBounds)`. This sends a real size change to the compositor, which processes it and redraws the tile correctly. On well-behaved compositors (GNOME/Mutter) the sizes always match, so `setBounds` is never called — the guard is a safe no-op.
+
+**Scope:** Guarded by `isWaylandNative` (`XDG_SESSION_TYPE === wayland`). Confirmed on COSMIC (Pop!_OS 24.04). May also affect Sway, Hyprland, and KDE Plasma tiling under similar tile-move + maximize sequences.
+
+---
+
 ## Discarded Alternatives
 
 **Fontconfig system tuning** — Improves FreeType rendering but does not match Skrifa's output, and requires user-side configuration that cannot be part of a packaged application.
