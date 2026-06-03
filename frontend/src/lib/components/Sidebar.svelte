@@ -611,7 +611,7 @@
 
 	.paste-feedback {
 		padding: 3px 10px;
-		font-size: 0.72rem;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		background: var(--bg-highlight);
 		border-bottom: 1px solid var(--border);
@@ -682,7 +682,7 @@
 		border-radius: 4px;
 		color: var(--fg-dark);
 		font-family: inherit;
-		font-size: 0.78rem;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
@@ -709,7 +709,7 @@
 	}
 
 	.count {
-		font-size: 0.72rem;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		margin-left: auto;
 		flex-shrink: 0;
@@ -730,7 +730,7 @@
 		border-radius: 3px;
 		color: var(--fg-muted);
 		font-family: inherit;
-		font-size: 0.78rem;
+		font-size: var(--font-size-label);
 		cursor: pointer;
 		text-align: left;
 		overflow: hidden;
@@ -810,7 +810,7 @@
 		border-radius: 3px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 0.78rem;
+		font-size: var(--font-size-label);
 		outline: none;
 		box-sizing: border-box;
 	}
@@ -838,7 +838,7 @@
 		border-radius: 3px 0 0 3px;
 		color: var(--fg-muted);
 		font-family: inherit;
-		font-size: 0.78rem;
+		font-size: var(--font-size-label);
 		cursor: pointer;
 		text-align: left;
 		overflow: hidden;
@@ -898,7 +898,7 @@
 		border-radius: 3px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 0.78rem;
+		font-size: var(--font-size-label);
 		outline: none;
 		box-sizing: border-box;
 	}

@@ -624,7 +624,7 @@
 		background: var(--bg-alt);
 		border: 1px solid var(--border);
 		border-radius: 4px;
-		font-size: 0.72rem;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg);
 	}
 
@@ -682,7 +682,7 @@
 		border: none;
 		color: var(--fg-muted);
 		font-family: inherit;
-		font-size: 0.78rem;
+		font-size: var(--font-size-label);
 		cursor: pointer;
 		text-align: left;
 		transition:
