@@ -258,6 +258,7 @@
 					aria-orientation="vertical"
 					aria-label="Resize sidebar"
 					onpointerdown={startResize}
+				ondblclick={() => sidebarWidth.set(240)}
 				></div>
 			{/if}
 			<main>
