@@ -15,7 +15,7 @@ function persisted<T>(key: string, initialValue: T) {
 
 export const selectedTag = writable<string | null>(null);
 export const sidebarCollapsed = persisted('sidebar-collapsed', false);
-export const sidebarWidth = persisted('sidebar-width', 160);
+export const sidebarWidth = persisted('sidebar-width', 240);
 export const libraryOpen = writable(true);
 export const expandedSections = writable<Set<string>>(new Set());
 export const activeSection = writable<string>('library');
