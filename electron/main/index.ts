@@ -118,6 +118,56 @@ app
 		mainWindow.on('maximize', () => mainWindow!.webContents.send('window-maximized', true));
 		mainWindow.on('unmaximize', () => mainWindow!.webContents.send('window-maximized', false));
 
+		// Wayland tiling WM workaround — confirmed on COSMIC (Pop!_OS), likely affects
+		// Sway, Hyprland, and KDE Plasma tiling as well.
+		//
+		// When a WM-initiated unmaximize (e.g. Super+M in COSMIC) restores a window
+		// that was moved to a different tile between maximize and unmaximize, the
+		// compositor may configure the window at stale bounds instead of the correct
+		// tile size. Electron's getBounds() reflects the wrong size and the committed
+		// wl_buffer is never updated to match the tile, leaving a visual gap on the
+		// right and bottom edges.
+		//
+		// The application-initiated path (win.unmaximize()) does not trigger this
+		// because Electron drives the full xdg_toplevel configure cycle itself.
+		//
+		// Fix: track the last normal bounds; after unmaximize settle, if they diverge
+		// from the current bounds, call setBounds() with the saved value. This sends a
+		// real size change to the compositor, which processes it and closes the gap.
+		// On well-behaved compositors (GNOME/Mutter) the sizes match and no setBounds
+		// is ever called — the guard makes this path a safe no-op.
+		if (isWaylandNative) {
+			let _wmMaximized = false;
+			let _pendingUnmaximize = false;
+			let _lastNormalBounds: { x: number; y: number; width: number; height: number } | null = null;
+			let _resizeSettleTimer: ReturnType<typeof setTimeout> | null = null;
+
+			mainWindow.on('maximize', () => { _wmMaximized = true; });
+			mainWindow.on('unmaximize', () => { _wmMaximized = false; _pendingUnmaximize = true; });
+
+			mainWindow.on('resize', () => {
+				if (!_wmMaximized && !_pendingUnmaximize) {
+					_lastNormalBounds = mainWindow!.getBounds();
+				}
+				if (!_pendingUnmaximize) return;
+				if (_resizeSettleTimer) clearTimeout(_resizeSettleTimer);
+				_resizeSettleTimer = setTimeout(() => {
+					_pendingUnmaximize = false;
+					if (!mainWindow || mainWindow.isDestroyed() || !_lastNormalBounds) return;
+					const cur = mainWindow.getBounds();
+					if (cur.width !== _lastNormalBounds.width || cur.height !== _lastNormalBounds.height) {
+						mainWindow.setBounds(_lastNormalBounds);
+					}
+				}, 100);
+			});
+
+			mainWindow.on('move', () => {
+				if (!_wmMaximized && !_pendingUnmaximize) {
+					_lastNormalBounds = mainWindow!.getBounds();
+				}
+			});
+		}
+
 		const { port: renderPort, token: renderToken } = await startRenderServer();
 		spawnSidecar(renderPort, renderToken);
 
