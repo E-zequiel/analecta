@@ -58,7 +58,7 @@
 		border: none;
 		color: var(--fg-muted);
 		cursor: pointer;
-		font-size: 11px;
+		font-size: 13px;
 		padding: 0;
 		line-height: 1;
 	}

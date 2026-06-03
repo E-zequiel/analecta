@@ -54,7 +54,7 @@
 
 	.label {
 		margin: 0 0 0.25rem 1rem;
-		font-size: 11px;
+		font-size: 13px;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		color: var(--fg-muted);
@@ -92,7 +92,7 @@
 	}
 
 	.count {
-		font-size: 11px;
+		font-size: 13px;
 		color: var(--fg-muted);
 	}
 

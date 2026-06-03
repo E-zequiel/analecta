@@ -251,7 +251,7 @@
 	}
 
 	.item-type {
-		font-size: 11px;
+		font-size: 13px;
 		color: var(--fg-muted);
 	}
 
@@ -411,7 +411,7 @@
 	}
 
 	.bl-item-ctx {
-		font-size: 11px;
+		font-size: 13px;
 		color: var(--fg-muted);
 		line-height: 1.3;
 		word-break: break-word;

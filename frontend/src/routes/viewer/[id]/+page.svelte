@@ -365,7 +365,7 @@
 			<span class="props-url">{entry.url}</span>
 			<span class="props-meta">{formatDate(entry.created_at)}</span>
 			{#if readTime}<span class="props-meta">{readTime}</span>{/if}
-			{#if propertiesOpen}<ChevronDown size={11} />{:else}<ChevronRight size={11} />{/if}
+			{#if propertiesOpen}<ChevronDown size={13} />{:else}<ChevronRight size={13} />{/if}
 		</button>
 		{#if propertiesOpen}
 			<div class="props-expanded">
