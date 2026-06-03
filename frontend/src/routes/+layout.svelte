@@ -303,16 +303,24 @@
 	}
 
 	.resize-handle {
-		width: 4px;
+		width: 0;
 		flex-shrink: 0;
-		background: transparent;
 		cursor: col-resize;
-		transition: background 0.15s;
 		outline: none;
+		position: relative;
+		z-index: 1;
 	}
 
-	.resize-handle:hover,
-	.shell.resizing .resize-handle {
+	.resize-handle::after {
+		content: '';
+		position: absolute;
+		inset: 0 -4px;
+		cursor: col-resize;
+		transition: background 0.15s;
+	}
+
+	.resize-handle:hover::after,
+	.shell.resizing .resize-handle::after {
 		background: var(--accent);
 		opacity: 0.45;
 	}
