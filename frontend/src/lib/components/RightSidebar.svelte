@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { X, Cable } from '@lucide/svelte';
-	import { entries as entriesApi, type Backlink } from '$lib/api/client';
+	import { entries as entriesApi, type Backlink, type Entry } from '$lib/api/client';
+	import { selectedTag } from '$lib/stores/ui';
 
 	export type StackEntry = {
 		id: string;
@@ -61,6 +62,25 @@
 	}
 
 	let backlinks = $state<Backlink[]>([]);
+	let tagEntries = $state<Entry[]>([]);
+
+	$effect(() => {
+		const tag = $selectedTag;
+		const id = activeEntryId;
+		tagEntries = [];
+		if (!tag || id === null) return;
+
+		let cancelled = false;
+		entriesApi
+			.list({ tag })
+			.then((result) => {
+				if (!cancelled) tagEntries = result.filter((e) => e.id !== id);
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	});
 
 	$effect(() => {
 		const id = activeEntryId;
@@ -124,35 +144,65 @@
 
 	{#if activeEntryId !== null}
 		<div class="backlinks-section">
-			<div class="bl-row">
-				<div class="bl-header">
-					<Cable size={15} />
-					<span class="bl-label">BACKLINKS</span>
-					{#if backlinks.length > 0}
-						<span class="bl-count">{backlinks.length}</span>
-					{/if}
+			{#if $selectedTag}
+				<div class="bl-row">
+					<div class="bl-header">
+						<span class="bl-tag-name">#{$selectedTag}</span>
+						{#if tagEntries.length > 0}
+							<span class="bl-count">{tagEntries.length}</span>
+						{/if}
+					</div>
+					<button
+						class="bl-clear-btn"
+						onclick={() => selectedTag.set(null)}
+						title="Back to backlinks"
+					>
+						<X size={13} />
+					</button>
 				</div>
-			</div>
 
-			{#if backlinks.length === 0}
-				<p class="bl-empty">No backlinks.</p>
+				{#if tagEntries.length === 0}
+					<p class="bl-empty">No entries.</p>
+				{:else}
+					<div class="bl-list">
+						{#each tagEntries as entry (entry.id)}
+							<button class="bl-item" onclick={() => onbacklinksopen?.(entry.id, entry.title)}>
+								<span class="bl-item-name">{entry.title}</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
 			{:else}
-				<div class="bl-list">
-					{#each backlinks as item, i (`${item.id}-${i}`)}
-						<button class="bl-item" onclick={() => onbacklinksopen?.(item.id, item.name)}>
-							<span class="bl-item-name">{item.name}</span>
-							{#if item.context?.heading}
-								<span class="bl-item-heading">{item.context.heading}</span>
-							{/if}
-							{#if item.context}
-								<span class="bl-item-ctx"
-									>…{item.context.pre}<em class="bl-em">{item.context.highlight}</em>{item.context
-										.post}…</span
-								>
-							{/if}
-						</button>
-					{/each}
+				<div class="bl-row">
+					<div class="bl-header">
+						<Cable size={15} />
+						<span class="bl-label">BACKLINKS</span>
+						{#if backlinks.length > 0}
+							<span class="bl-count">{backlinks.length}</span>
+						{/if}
+					</div>
 				</div>
+
+				{#if backlinks.length === 0}
+					<p class="bl-empty">No backlinks.</p>
+				{:else}
+					<div class="bl-list">
+						{#each backlinks as item, i (`${item.id}-${i}`)}
+							<button class="bl-item" onclick={() => onbacklinksopen?.(item.id, item.name)}>
+								<span class="bl-item-name">{item.name}</span>
+								{#if item.context?.heading}
+									<span class="bl-item-heading">{item.context.heading}</span>
+								{/if}
+								{#if item.context}
+									<span class="bl-item-ctx"
+										>…{item.context.pre}<em class="bl-em">{item.context.highlight}</em>{item.context
+											.post}…</span
+									>
+								{/if}
+							</button>
+						{/each}
+					</div>
+				{/if}
 			{/if}
 		</div>
 	{/if}
@@ -308,6 +358,36 @@
 
 	.bl-label {
 		flex: 1;
+	}
+
+	.bl-tag-name {
+		flex: 1;
+		font-size: 0.7rem;
+		font-weight: 700;
+		color: var(--accent);
+		letter-spacing: 0.06em;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.bl-clear-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		padding: 0;
+		background: none;
+		border: none;
+		border-radius: 3px;
+		color: var(--fg-muted);
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: color 0.12s;
+	}
+	.bl-clear-btn:hover {
+		color: var(--fg);
 	}
 
 	.bl-count {
