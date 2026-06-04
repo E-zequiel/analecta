@@ -126,7 +126,7 @@ These are Wayland protocol constraints that cannot be resolved at the applicatio
 
 | # | Limitation | Impact on Analecta |
 |---|-----------|-------------------|
-| P10 | `win.focus()` may flash taskbar instead of raising window (Wayland protocol restriction) | Deep-link handler may not foreground the window on COSMIC; the link is still processed and navigation occurs correctly |
+| P10 | `win.focus()` without a valid xdg-activation token is ignored by the compositor (Wayland protocol restriction) | Deep-link handler may not foreground the window; the link is still processed and navigation occurs correctly. Tray activation solved via notification portal — see [`wayland-tray-focus.md`](wayland-tray-focus.md) |
 | P12 | System tray icon requires AppIndicator support from the compositor panel | Tray icon visibility on COSMIC depends on the panel version; must be verified early in testing |
 | P15 | Multi-monitor window positioning bug in Electron ≥ 38.4 ([#48749](https://github.com/electron/electron/issues/48749)) | Window may open on the wrong monitor in multi-display setups; workaround: launch with `--ozone-platform=x11` |
 
@@ -148,17 +148,12 @@ The Python sidecar was always the location of all business logic. The SvelteKit 
 
 ---
 
-## Known Wayland Quirks
+## Wayland Runtime Notes
 
-### Tiling WM: unmaximize gap (COSMIC / Pop!_OS)
+Implementation details for Wayland-specific behaviors are tracked in dedicated documents:
 
-**Symptom:** After using a WM-level maximize shortcut (e.g. Super+M in COSMIC Pop Shell) to maximize and then restore a window that was moved to a different tile, a visual gap appears on the right and bottom edges. The window occupies less space than its assigned tile. Clicking any other window in the workspace resolves it immediately.
-
-**Root cause:** On WM-initiated unmaximize, COSMIC configures the window at the pre-move (stale) tile bounds rather than the current tile bounds. Electron's `getBounds()` reflects the wrong size and Chromium never commits a `wl_buffer` at the correct dimensions. The application-initiated path (`win.unmaximize()`) is unaffected because Electron drives the full `xdg_toplevel` configure cycle itself.
-
-**Workaround (implemented in `electron/main/index.ts`):** Track the last normal size (`width`/`height` only — position left to the compositor) via `resize`/`move` events, debounced 50 ms to avoid capturing intermediate tile-animation frames. After unmaximize settles (150 ms debounce), if the window is not already re-maximized and the current size diverges from the saved normal size, call `setSize(w, h)`. Using `setSize` instead of `setBounds` avoids overriding the compositor's tile-placement decision. On well-behaved compositors (GNOME/Mutter) the sizes always match, so `setSize` is never called — the guard is a safe no-op.
-
-**Scope:** Guarded by `isWaylandNative` (`XDG_SESSION_TYPE === wayland`). Confirmed on COSMIC (Pop!_OS 24.04). May also affect Sway, Hyprland, and KDE Plasma tiling under similar tile-move + maximize sequences.
+- [`wayland-tiling-wm.md`](wayland-tiling-wm.md) — Unmaximize gap in COSMIC tiling (workaround in `electron/main/index.ts`)
+- [`wayland-tray-focus.md`](wayland-tray-focus.md) — Tray focus and clipboard restrictions; solution via notification portal
 
 ---
 
