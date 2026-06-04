@@ -102,7 +102,11 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <aside class="stack-panel" style:width="{width}px">
-	<div class="resize-handle" onmousedown={startResize} ondblclick={() => onwidthchange?.(240)}></div>
+	<div
+		class="resize-handle"
+		onmousedown={startResize}
+		ondblclick={() => onwidthchange?.(240)}
+	></div>
 
 	<div class="stack-list">
 		{#each entries as entry (entry.id)}
@@ -111,7 +115,12 @@
 				class="stack-item"
 				class:active
 				style:--src-color={sourceColor(entry.sourceType)}
-				onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); onclose?.(entry.id); } }}
+				onauxclick={(e) => {
+					if (e.button === 1) {
+						e.preventDefault();
+						onclose?.(entry.id);
+					}
+				}}
 			>
 				<button
 					class="stack-item-btn"
