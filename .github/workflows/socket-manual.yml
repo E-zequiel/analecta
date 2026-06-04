@@ -1,0 +1,43 @@
+name: Socket Manual Scan
+
+# Triggered manually only — no auto-trigger path.
+# Dispatch this workflow on 'main'; set 'ref' to the branch you want to scan.
+# See docs/github-actions-security.md § Control 13 for the security rationale.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or SHA to scan (e.g. dependabot/npm_and_yarn/...)'
+        required: true
+        default: 'main'
+
+# Default: no permissions. The job declares only what it needs.
+permissions: {}
+
+jobs:
+  socket:
+    runs-on: ubuntu-22.04
+    if: github.repository == 'E-zequiel/analecta'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151  # v4.0.1
+
+      - name: Install dependencies
+        run: mise exec -- pnpm install --frozen-lockfile --ignore-scripts
+
+      - uses: bitwarden/sm-action@27c0c9dcab679d7250dbab91227c85b49ffa5e0f  # v3.0.0
+        with:
+          access_token: ${{ secrets.BWS_ACCESS_TOKEN }}
+          secrets: |
+            70b60912-8193-4bb0-8ec8-b45000cda95a > SOCKET_SECURITY_API_TOKEN
+
+      - name: Socket dependency scan
+        run: mise exec -- pnpm exec socket scan create . --json
+        env:
+          SOCKET_SECURITY_API_TOKEN: ${{ env.SOCKET_SECURITY_API_TOKEN }}

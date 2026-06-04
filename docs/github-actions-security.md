@@ -132,6 +132,33 @@ if: >-
 
 `head.repo.full_name == github.repository` is false for every fork PR, so the job is skipped with a clean neutral result rather than failing with an authentication error. The `socket` job in `ci.yml` uses this extended condition because it requires `BWS_ACCESS_TOKEN` to retrieve `SOCKET_SECURITY_API_TOKEN` from BSM.
 
+### Dependabot PR behavior
+
+Dependabot opens PRs from branches in the same repository, so `head.repo.full_name == github.repository` evaluates to **true** — the extended fork guard alone does not skip the job. However, GitHub deliberately strips secret access for Dependabot-authored PRs: `BWS_ACCESS_TOKEN` resolves to an empty string, causing `bitwarden/sm-action` to fail with "Access token is required".
+
+The job-level guard cannot distinguish Dependabot PRs from regular internal PRs. The fix is applied at the step level:
+
+```yaml
+- uses: bitwarden/sm-action@<SHA>
+  if: github.event.pull_request.user.login != 'dependabot[bot]'
+  with:
+    access_token: ${{ secrets.BWS_ACCESS_TOKEN }}
+    ...
+
+- name: Socket dependency scan
+  if: github.event.pull_request.user.login != 'dependabot[bot]'
+  run: mise exec -- pnpm exec socket ci
+  ...
+```
+
+**Why `user.login`, not `github.actor`:** If a maintainer re-runs a failed workflow, `github.actor` changes to the maintainer's username — but re-running a Dependabot PR does not grant it secret access. The secret steps would fire again and fail for the same reason. `github.event.pull_request.user.login` is the PR *author*, which is immutable across re-runs.
+
+**Why `user.login` cannot be spoofed:** The `[bot]` suffix in GitHub usernames is reserved for GitHub App accounts and cannot be registered as a regular user account.
+
+**Result:** The `socket` job still runs (checkout + install) and reports **success**, satisfying the required status check. Only the two secret-dependent steps are skipped. Socket scan coverage for Dependabot PRs is provided by the **Socket GitHub App** (a native GitHub integration that runs independently of `BWS_ACCESS_TOKEN`). The CLI step that is skipped adds CI enforcement via exit code; the underlying dependency analysis still runs.
+
+For CLI-level enforcement on a Dependabot PR before merging, use the manual scan workflow described in Control 13.
+
 ---
 
 ## Control 5: Concurrency Lock
@@ -489,6 +516,71 @@ This is tracked in `project_public_repo_checklist.md`.
 
 ---
 
+## Control 13: Manual Socket Scan (`socket-manual.yml`)
+
+The `socket` job in `ci.yml` only runs on pull request events — it never runs on `push` to `main`, and its secret-dependent steps are skipped for Dependabot PRs (Control 4). `socket-manual.yml` provides a `workflow_dispatch`-triggered scan that can be run at any time against any branch, filling both gaps.
+
+### Trigger access
+
+`workflow_dispatch` can only be triggered by users with **write access** to the repository via the GitHub UI, GitHub CLI, or GitHub REST API. It cannot be triggered by any automatic GitHub event (push, pull_request, schedule, etc.). Dependabot, fork contributors, and read-only collaborators cannot trigger it.
+
+The effective access boundary is: *anyone with repository write access*. In a single-maintainer repository, this means only the repository owner. If collaborators are ever added, this guarantee extends to them automatically — no additional configuration is needed.
+
+### Ref-trust design: dispatch-on-main with `ref` input
+
+The intuitive dispatch model — trigger the workflow *on the branch being scanned* — carries a security risk: GitHub reads the workflow file **and the action SHAs from the dispatched ref**, not from `main`. A branch that modifies `socket-manual.yml` or updates an action pin would run its own version of the workflow with full `BWS_ACCESS_TOKEN` access. `.mise.toml` is also read from the checked-out tree, so a tampered toolchain version would be used.
+
+The safe design is **dispatch on `main`, checkout target ref**:
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or SHA to scan'
+        required: true
+        default: 'main'
+
+steps:
+  - uses: actions/checkout@<SHA>   # this SHA comes from main's workflow file
+    with:
+      ref: ${{ inputs.ref }}       # the dependency tree scanned comes from here
+```
+
+With this pattern:
+- The workflow definition and all action SHAs always come from `main` (trusted).
+- A branch that rewrites `socket-manual.yml` or modifies an action pin cannot affect the code that runs when you dispatch on `main`.
+- `pnpm-lock.yaml`, `package.json`, and `.mise.toml` still come from the target ref via the `checkout` step — this is intentional (you want to scan that branch's dependency tree) but it means the toolchain config is not independently anchored to `main`.
+
+**Operational rule:** only dispatch against refs whose toolchain config and lockfile you trust — your own branches and Dependabot's registry-sourced bumps (which modify package versions, not `.mise.toml` or workflow files). This is the real control for the toolchain-tampering risk; dispatch-on-main alone does not close it.
+
+**Usage:** in GitHub → Actions → "Socket Manual Scan" → "Run workflow" → leave the branch as `main`, enter the branch name to scan in the `ref` input.
+
+### Security properties
+
+| Property | Value |
+|----------|-------|
+| Trigger | Manual only (`workflow_dispatch`) — no auto-trigger path |
+| Who can trigger | Repository write-access users |
+| Workflow definition source | Always `main` (dispatch-on-main pattern) |
+| Action SHAs source | Always `main` |
+| Dependency tree source | `inputs.ref` (the branch being scanned) |
+| `.mise.toml` source | `inputs.ref` — **not** anchored to `main`; see operational rule above |
+| Secret access | `BWS_ACCESS_TOKEN` — same blast radius as the `socket` job in `ci.yml` |
+| `--ignore-scripts` | Yes — no lifecycle script executes before the scan |
+| Permissions | `permissions: {}` workflow-level; `contents: read` job-level |
+| Scan command | `socket scan create . --json` — full project scan; `socket ci` is PR-context-only and may no-op in a `workflow_dispatch` context |
+
+### When to use
+
+| Scenario | Action |
+|----------|--------|
+| Dependabot PR passed CI but you want CLI-level enforcement before merging | Dispatch on `main`, set `ref` to the PR's branch name |
+| Manual dependency addition on a branch before opening a PR | Dispatch on `main`, set `ref` to your branch |
+| Ad-hoc audit of `main` itself | Dispatch on `main`, leave `ref` as `main` |
+
+---
+
 ## Repository-Level Settings
 
 These settings are configured in GitHub → Settings → Actions → General and complement the workflow-level controls. They are not visible in workflow files but are part of the security posture.
@@ -518,7 +610,14 @@ When the repository is made public, the **"Fork pull request workflows"** sectio
 
 ## Maintenance Checklist
 
-### When Dependabot opens a SHA-update PR
+### When Dependabot opens a dependency PR (npm or Python)
+
+1. **CI will pass.** The `socket` job runs (checkout + install) but skips the secret-dependent steps — `bitwarden/sm-action` and `socket ci` — because the PR author is `dependabot[bot]`. The job reports success, satisfying the required status check.
+2. **Socket GitHub App provides scan coverage.** The native App integration runs independently of `BWS_ACCESS_TOKEN` and posts its findings as a separate check on the PR. Review those results before merging.
+3. **For CLI-level enforcement:** trigger `socket-manual.yml` via GitHub → Actions → "Socket Manual Scan" → "Run workflow". Leave the branch as `main` and enter the Dependabot PR's branch name (e.g., `dependabot/npm_and_yarn/...`) in the `ref` input. See Control 13 for rationale.
+4. **Note on scan scope:** `socket ci` scans the pnpm tree. A Dependabot PR that bumps only Python packages (via `uv`) or workflow action SHAs produces no npm-tree diff — the scan would report "no dependency changes." CLI enforcement is only meaningful for PRs that modify `pnpm-lock.yaml`.
+
+### When Dependabot opens a SHA-update PR (GitHub Actions)
 
 1. **Verify the new tag**: check the action's release notes for breaking changes or security advisories.
 2. **Check the SHA independently**: compare the PR's new SHA against `https://api.github.com/repos/{owner}/{repo}/git/ref/tags/{new-tag}`.
