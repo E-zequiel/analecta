@@ -263,6 +263,82 @@ The `|| 'skipped'` clause is required: on `push` to `main`, the `socket` job doe
 
 Severity: **MEDIUM** (gap: a compromised `allowBuilds`-listed package's postinstall runs before the scan; `--ignore-scripts` closes this for CI, advisory workflow mitigates it locally)
 
+#### 2k. Dependabot PR secret-access pattern
+
+When a `pull_request`-triggered job passes a fork guard (`head.repo.full_name == github.repository`) but contains steps that access secrets — via `bitwarden/sm-action`, `secrets.*`, or a similar injector — check whether those steps have a step-level Dependabot guard:
+
+```bash
+grep -n "head.repo.full_name\|sm-action\|secrets\." .github/workflows/*.yml
+```
+
+**Why the fork guard is insufficient:** GitHub strips secret access from `dependabot[bot]`-authored PRs even when they originate from the same repository. `head.repo.full_name == github.repository` evaluates to `true` for Dependabot PRs — the fork guard passes, the secret step fires, and the job fails with "access token is required."
+
+**What correct looks like:**
+
+```yaml
+- uses: bitwarden/sm-action@<SHA>
+  if: github.event.pull_request.user.login != 'dependabot[bot]'
+  with:
+    access_token: ${{ secrets.BWS_ACCESS_TOKEN }}
+
+- name: Secret-dependent step
+  if: github.event.pull_request.user.login != 'dependabot[bot]'
+  ...
+```
+
+**Critical: use `user.login`, not `github.actor`.** When a maintainer re-runs a failed workflow on a Dependabot PR, `github.actor` changes to the maintainer's username but the secret restriction on that PR does not lift. The secret steps would fire and fail again. `github.event.pull_request.user.login` is the PR author — immutable across re-runs.
+
+**Critical: step-level guard, not job-level.** A job-level guard causes the entire job to be skipped. If the job is a required status check, GitHub treats "skipped" as "not passed" — the PR stays blocked. The guard must be at the step level so the job runs to completion (reporting success) while only the secret-dependent steps are bypassed.
+
+**`[bot]` spoofability:** The `[bot]` suffix is reserved for GitHub App accounts and cannot be registered as a regular user. This condition cannot be spoofed.
+
+**Analecta instance:** `ci.yml` → `socket` job. The `bitwarden/sm-action` and `socket ci` steps carry `if: github.event.pull_request.user.login != 'dependabot[bot]'`. The Socket GitHub App (native integration) provides scan coverage for Dependabot PRs independently of `BWS_ACCESS_TOKEN`. For CLI-level enforcement before merging a Dependabot PR, use `socket-manual.yml` (see check 2l).
+
+Severity: **MEDIUM** (Dependabot PRs cause required-check failures; fails CI without compromising secrets)
+
+#### 2l. `workflow_dispatch` ref-trust
+
+When a workflow triggered by `workflow_dispatch` accesses secrets and uses `actions/checkout` without `ref: ${{ inputs.<name> }}`:
+
+```bash
+# Find workflow_dispatch workflows that access secrets
+grep -l "workflow_dispatch" .github/workflows/*.yml | xargs grep -l "secrets\."
+
+# Check whether each uses a ref input for checkout
+grep -A5 "actions/checkout" .github/workflows/<workflow>.yml | grep "ref:"
+```
+
+**The risk:** GitHub reads the workflow file AND all action SHAs from the dispatched ref. A branch that modifies the workflow file or updates an action pin runs its own version of the workflow — with full secret access.
+
+**The safe pattern — dispatch on `main`, checkout by input:**
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or SHA to target'
+        required: true
+        default: 'main'
+
+steps:
+  - uses: actions/checkout@<SHA>   # SHA from main's workflow definition — always trusted
+    with:
+      ref: ${{ inputs.ref }}       # the content being examined comes from the target ref
+```
+
+With this pattern the user dispatches the workflow *on `main`*, not on the target branch. The workflow definition and action SHAs come from `main`; a branch that rewrites the workflow cannot affect the code that runs.
+
+**Important scope of this guarantee:** only the workflow definition and action SHAs are anchored to `main`. With `ref: ${{ inputs.ref }}`, the checkout populates the working tree from the target ref — so `.mise.toml`, lockfiles, and any config read from the tree still come from the branch being scanned. This is intentional (you want to examine that branch's content) but it means toolchain config is not independently anchored. The real control for this residual risk is operational: **only dispatch against refs whose toolchain config and lockfile you trust** (your own branches, Dependabot's registry-sourced bumps). Do not dispatch against refs from untrusted contributors.
+
+**Also check the scan command:** `socket ci` is designed for PR context — it diffs against a base branch. In `workflow_dispatch` (no PR), it may no-op and report green without scanning anything. For manual/release contexts, use `socket scan create . --json` instead.
+
+**When this check does not apply:** `workflow_dispatch` workflows that do not access secrets and have no significant blast radius. The risk is specifically relevant when the workflow accesses high-value secrets such as `BWS_ACCESS_TOKEN`.
+
+**Analecta instance:** `socket-manual.yml` correctly uses dispatch-on-main + `ref` input, and `socket scan create . --json` (not `socket ci`). `deps-update.yml` also uses `workflow_dispatch` but accesses no high-value secrets directly — it uses only `github.token` with a scoped `pull-requests: write` grant. No finding on either.
+
+Severity: **MEDIUM** (a branch that modifies the workflow could run with secret access when dispatched directly; mitigated if dispatch is manually supervised and restricted to write-access users)
+
 ---
 
 ## Analecta-specific checks (2i)
