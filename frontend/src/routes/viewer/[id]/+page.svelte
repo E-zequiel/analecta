@@ -77,6 +77,7 @@
 		function handleKeydown(e: KeyboardEvent) {
 			if (!contentEl) return;
 			if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+			if (e.target instanceof HTMLElement && e.target.closest('.tags-dialog')) return;
 			const step = 120;
 			if (e.key === 'ArrowDown') {
 				contentEl.scrollBy(0, step);
@@ -108,6 +109,7 @@
 	let allTags = $state<Tag[]>([]);
 	let tagsContainerEl = $state<HTMLElement | null>(null);
 	let tagAddInputEl = $state<HTMLInputElement | null>(null);
+	let showAllSuggestions = $state(false);
 
 	const tagSuggestions = $derived(
 		newTagInput.length > 0
@@ -117,12 +119,34 @@
 						(n) => !entry?.tags.includes(n) && n.toLowerCase().includes(newTagInput.toLowerCase())
 					)
 					.slice(0, 6)
-			: []
+			: showAllSuggestions
+				? allTags
+						.map((t) => t.name)
+						.filter((n) => !entry?.tags.includes(n))
+						.slice(0, 6)
+				: []
 	);
 
 	$effect(() => {
-		if ($viewerTagsOpen) setTimeout(() => tagAddInputEl?.focus(), 0);
+		if ($viewerTagsOpen) {
+			setTimeout(() => tagAddInputEl?.focus(), 0);
+		} else {
+			showAllSuggestions = false;
+		}
 	});
+
+	function navigateSuggestion(direction: 1 | -1, from: HTMLElement) {
+		if (!tagsContainerEl) return;
+		const items = Array.from(tagsContainerEl.querySelectorAll<HTMLElement>('.suggestion-item'));
+		const idx = items.indexOf(from);
+		if (direction === -1 && idx <= 0) {
+			tagAddInputEl?.focus();
+		} else if (direction === 1 && idx === items.length - 1) {
+			tagAddInputEl?.focus();
+		} else {
+			items[idx + direction]?.focus();
+		}
+	}
 
 	$effect(() => {
 		if ($viewerTagsOpen) fetchAllTags();
@@ -266,15 +290,15 @@
 	async function addTag(name: string) {
 		if (!entry || !name.trim()) return;
 		const trimmed = name.trim();
-		if (entry.tags.includes(trimmed)) {
-			newTagInput = '';
-			return;
-		}
 		newTagInput = '';
-		const addedEntry = await entriesApi.patch(entry.id, { tags: [...entry.tags, trimmed] });
-		entry = addedEntry;
-		lastChangedEntry.set(addedEntry);
-		entryChangedTick.update((n) => n + 1);
+		showAllSuggestions = false;
+		if (!entry.tags.includes(trimmed)) {
+			const addedEntry = await entriesApi.patch(entry.id, { tags: [...entry.tags, trimmed] });
+			entry = addedEntry;
+			lastChangedEntry.set(addedEntry);
+			entryChangedTick.update((n) => n + 1);
+		}
+		setTimeout(() => tagAddInputEl?.focus(), 0);
 	}
 
 	async function removeTag(name: string) {
@@ -350,13 +374,32 @@
 					if (e.key === 'Enter') {
 						e.preventDefault();
 						addTag(newTagInput);
+					} else if (e.key === 'ArrowDown') {
+						e.preventDefault();
+						showAllSuggestions = true;
+						setTimeout(
+							() => tagsContainerEl?.querySelector<HTMLElement>('.suggestion-item')?.focus(),
+							0
+						);
 					} else if (e.key === 'Escape') viewerTagsOpen.set(false);
 				}}
 			/>
 			{#if tagSuggestions.length > 0}
 				<div class="tag-suggestions">
 					{#each tagSuggestions as s (s)}
-						<button class="suggestion-item" onclick={() => addTag(s)}>{s}</button>
+						<button
+							class="suggestion-item"
+							onclick={() => addTag(s)}
+							onkeydown={(e) => {
+								if (e.key === 'ArrowDown') {
+									e.preventDefault();
+									navigateSuggestion(1, e.currentTarget);
+								} else if (e.key === 'ArrowUp') {
+									e.preventDefault();
+									navigateSuggestion(-1, e.currentTarget);
+								} else if (e.key === 'Escape') viewerTagsOpen.set(false);
+							}}
+						>{s}</button>
 					{/each}
 				</div>
 			{/if}
@@ -708,8 +751,10 @@
 			background 0.12s;
 	}
 
-	.suggestion-item:hover {
+	.suggestion-item:hover,
+	.suggestion-item:focus {
 		color: var(--fg);
 		background: var(--bg-highlight);
+		outline: none;
 	}
 </style>
