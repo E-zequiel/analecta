@@ -7,6 +7,7 @@ Usage:
 Idempotent: skips the build if pyproject.toml, backend.spec, and all
 backend/src/**/*.py files are unchanged since the last run.
 """
+
 import hashlib
 import shutil
 import subprocess
@@ -29,6 +30,7 @@ def _compute_hash() -> str:
 
 
 def main() -> None:
+    """Build the PyInstaller sidecar binary, skipping if sources are unchanged."""
     current = _compute_hash()
     if CACHE_FILE.exists() and CACHE_FILE.read_text().strip() == current:
         print("sidecar: cached, skipping build")
@@ -42,9 +44,15 @@ def main() -> None:
 
     subprocess.run(
         [
-            "mise", "exec", "--", "uv", "run", "pyinstaller",
+            "mise",
+            "exec",
+            "--",
+            "uv",
+            "run",
+            "pyinstaller",
             "backend.spec",
-            "--distpath", str(BINARIES),
+            "--distpath",
+            str(BINARIES),
             "--noconfirm",
         ],
         cwd=BACKEND,
