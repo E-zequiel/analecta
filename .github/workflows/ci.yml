@@ -100,12 +100,14 @@ jobs:
         run: mise exec -- pnpm install --frozen-lockfile --ignore-scripts
 
       - uses: bitwarden/sm-action@27c0c9dcab679d7250dbab91227c85b49ffa5e0f  # v3.0.0
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         with:
           access_token: ${{ secrets.BWS_ACCESS_TOKEN }}
           secrets: |
             70b60912-8193-4bb0-8ec8-b45000cda95a > SOCKET_SECURITY_API_TOKEN
 
       - name: Socket dependency scan
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         run: mise exec -- pnpm exec socket ci
         env:
           SOCKET_SECURITY_API_TOKEN: ${{ env.SOCKET_SECURITY_API_TOKEN }}
