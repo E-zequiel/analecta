@@ -139,8 +139,19 @@ app
 		if (isWaylandNative) {
 			let _wmMaximized = false;
 			let _pendingUnmaximize = false;
-			let _lastNormalBounds: { x: number; y: number; width: number; height: number } | null = null;
+			let _lastNormalBounds: { width: number; height: number } | null = null;
 			let _resizeSettleTimer: ReturnType<typeof setTimeout> | null = null;
+			let _normalBoundsTimer: ReturnType<typeof setTimeout> | null = null;
+
+			const captureNormalBounds = () => {
+				if (_normalBoundsTimer) clearTimeout(_normalBoundsTimer);
+				_normalBoundsTimer = setTimeout(() => {
+					if (!_wmMaximized && !_pendingUnmaximize) {
+						const b = mainWindow!.getBounds();
+						_lastNormalBounds = { width: b.width, height: b.height };
+					}
+				}, 50);
+			};
 
 			mainWindow.on('maximize', () => {
 				_wmMaximized = true;
@@ -151,25 +162,22 @@ app
 			});
 
 			mainWindow.on('resize', () => {
-				if (!_wmMaximized && !_pendingUnmaximize) {
-					_lastNormalBounds = mainWindow!.getBounds();
-				}
+				captureNormalBounds();
 				if (!_pendingUnmaximize) return;
 				if (_resizeSettleTimer) clearTimeout(_resizeSettleTimer);
 				_resizeSettleTimer = setTimeout(() => {
 					_pendingUnmaximize = false;
 					if (!mainWindow || mainWindow.isDestroyed() || !_lastNormalBounds) return;
+					if (mainWindow.isMaximized()) return;
 					const cur = mainWindow.getBounds();
 					if (cur.width !== _lastNormalBounds.width || cur.height !== _lastNormalBounds.height) {
-						mainWindow.setBounds(_lastNormalBounds);
+						mainWindow.setSize(_lastNormalBounds.width, _lastNormalBounds.height);
 					}
-				}, 100);
+				}, 150);
 			});
 
 			mainWindow.on('move', () => {
-				if (!_wmMaximized && !_pendingUnmaximize) {
-					_lastNormalBounds = mainWindow!.getBounds();
-				}
+				captureNormalBounds();
 			});
 		}
 
