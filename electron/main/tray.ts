@@ -1,4 +1,4 @@
-import { app, Menu, Tray, nativeImage } from 'electron';
+import { app, Menu, Tray, nativeImage, Notification } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import type { BrowserWindow } from 'electron';
@@ -20,9 +20,24 @@ export function createTray(win: BrowserWindow): void {
 			{
 				label: 'Add URL from clipboard',
 				click: () => {
-					win.show();
-					win.focus();
-					win.webContents.send('tray-paste-url');
+					if (!Notification.isSupported()) {
+						win.show();
+						win.focus();
+						win.webContents.send('tray-paste-url');
+						return;
+					}
+					const notif = new Notification({
+						title: 'Analecta',
+						body: 'Add URL from clipboard',
+						silent: true,
+						timeoutType: 'never',
+					});
+					notif.once('click', () => {
+						win.show();
+						win.focus();
+						win.webContents.send('tray-paste-url');
+					});
+					notif.show();
 				},
 			},
 			{
