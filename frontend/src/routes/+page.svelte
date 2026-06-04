@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { confirm } from '$lib/platform';
 	import {
 		entries as entriesApi,
 		tags as tagsApi,
@@ -27,6 +28,10 @@
 	let expandedTag = $state<string | null>(null);
 	let tagEntries = $state<Entry[]>([]);
 	let tagEntriesLoading = $state(false);
+	let tagContextMenu = $state<{ x: number; y: number; tag: string } | null>(null);
+	let tagContextMenuEl = $state<HTMLElement | null>(null);
+	let editingTagName = $state<string | null>(null);
+	let editingTagValue = $state('');
 
 	// Collecta dashboard state
 	let collectaMetrics = $state<{
@@ -165,6 +170,63 @@
 			return;
 		}
 		await openTagEntries(name);
+	}
+
+	function focusAndSelect(node: HTMLInputElement) {
+		node.focus();
+		node.select();
+	}
+
+	$effect(() => {
+		if (!tagContextMenu) return;
+		function onPointerDown(e: PointerEvent) {
+			if (tagContextMenuEl && !tagContextMenuEl.contains(e.target as Node))
+				tagContextMenu = null;
+		}
+		function onKeyDown(e: KeyboardEvent) {
+			if (e.key === 'Escape') tagContextMenu = null;
+		}
+		document.addEventListener('pointerdown', onPointerDown, true);
+		document.addEventListener('keydown', onKeyDown);
+		return () => {
+			document.removeEventListener('pointerdown', onPointerDown, true);
+			document.removeEventListener('keydown', onKeyDown);
+		};
+	});
+
+	async function refreshTagGrid() {
+		try {
+			tagGrid = await tagsApi.list();
+		} catch {}
+	}
+
+	async function renameTagDashboard(oldName: string, newName: string) {
+		editingTagName = null;
+		const trimmed = newName.trim();
+		if (!trimmed || trimmed === oldName) return;
+		try {
+			await tagsApi.rename(oldName, trimmed);
+			if ($selectedTag === oldName) selectedTag.set(trimmed);
+			if (expandedTag === oldName) expandedTag = trimmed;
+			await refreshTagGrid();
+			entryChangedTick.update((n) => n + 1);
+		} catch {}
+	}
+
+	async function deleteTagDashboard(name: string) {
+		tagContextMenu = null;
+		const ok = await confirm(`Delete tag "#${name}"?`, 'Confirm Delete');
+		if (!ok) return;
+		try {
+			await tagsApi.delete(name);
+			if ($selectedTag === name) selectedTag.set(null);
+			if (expandedTag === name) {
+				expandedTag = null;
+				tagEntries = [];
+			}
+			await refreshTagGrid();
+			entryChangedTick.update((n) => n + 1);
+		} catch {}
 	}
 
 	async function expandCollectaSection(id: string) {
@@ -477,14 +539,36 @@
 					<p class="hint">No tags yet.</p>
 				{:else}
 					{#each tagGrid as tag (tag.name)}
-						<button
-							class="tag-chip"
-							class:active={expandedTag === tag.name}
-							onclick={() => toggleTagEntries(tag.name)}
-						>
-							<span class="tag-chip-name">#{tag.name}</span>
-							<span class="tag-chip-count">{tag.count}</span>
-						</button>
+						{#if editingTagName === tag.name}
+							<input
+								class="tag-chip-edit"
+								type="text"
+								bind:value={editingTagValue}
+								use:focusAndSelect
+								onkeydown={(e) => {
+									if (e.key === 'Enter') {
+										e.preventDefault();
+										renameTagDashboard(tag.name, editingTagValue);
+									} else if (e.key === 'Escape') {
+										editingTagName = null;
+									}
+								}}
+								onblur={() => renameTagDashboard(tag.name, editingTagValue)}
+							/>
+						{:else}
+							<button
+								class="tag-chip"
+								class:active={expandedTag === tag.name}
+								onclick={() => toggleTagEntries(tag.name)}
+								oncontextmenu={(e) => {
+									e.preventDefault();
+									tagContextMenu = { x: e.clientX, y: e.clientY, tag: tag.name };
+								}}
+							>
+								<span class="tag-chip-name">#{tag.name}</span>
+								<span class="tag-chip-count">{tag.count}</span>
+							</button>
+						{/if}
 					{/each}
 				{/if}
 			</div>
@@ -514,6 +598,36 @@
 				</div>
 			{/if}
 		</div>
+
+		{#if tagContextMenu}
+			<div
+				class="tag-context-menu"
+				style:left="{tagContextMenu.x}px"
+				style:top="{tagContextMenu.y}px"
+				bind:this={tagContextMenuEl}
+				role="menu"
+			>
+				<button
+					class="tag-menu-item"
+					role="menuitem"
+					onclick={() => {
+						editingTagName = tagContextMenu!.tag;
+						editingTagValue = tagContextMenu!.tag;
+						tagContextMenu = null;
+					}}
+				>
+					Rename
+				</button>
+				<div class="tag-menu-separator"></div>
+				<button
+					class="tag-menu-item danger"
+					role="menuitem"
+					onclick={() => deleteTagDashboard(tagContextMenu!.tag)}
+				>
+					Delete
+				</button>
+			</div>
+		{/if}
 	{:else}
 		<div class="dashboard">
 			<SortBar
@@ -598,6 +712,68 @@
 		padding: 0 5px;
 		min-width: 18px;
 		text-align: center;
+	}
+
+	.tag-chip-edit {
+		display: flex;
+		align-items: center;
+		padding: 0.3rem 0.7rem;
+		background: var(--bg-alt);
+		border: 1px solid var(--accent);
+		border-radius: 20px;
+		color: var(--fg);
+		font-family: inherit;
+		font-size: 12px;
+		outline: none;
+		min-width: 80px;
+	}
+
+	.tag-context-menu {
+		position: fixed;
+		z-index: 1000;
+		background: var(--bg-alt);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 3px;
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+		min-width: 140px;
+	}
+
+	.tag-menu-item {
+		display: block;
+		width: 100%;
+		padding: 6px 10px;
+		background: none;
+		border: none;
+		border-radius: 4px;
+		color: var(--fg);
+		font-family: inherit;
+		font-size: 0.82rem;
+		text-align: left;
+		cursor: pointer;
+		transition:
+			background 0.1s,
+			color 0.1s;
+	}
+
+	.tag-menu-item:hover {
+		background: var(--bg-highlight);
+		color: var(--accent);
+	}
+
+	.tag-menu-item.danger {
+		color: var(--red);
+	}
+
+	.tag-menu-item.danger:hover {
+		background: var(--bg-highlight);
+		color: var(--red);
+	}
+
+	.tag-menu-separator {
+		height: 1px;
+		background: var(--border);
+		margin: 3px 0;
 	}
 
 	.tag-entry-list {
