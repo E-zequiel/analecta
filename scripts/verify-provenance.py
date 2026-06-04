@@ -62,8 +62,10 @@ def _fetch_json(url: str, timeout: int = 10) -> dict[str, Any] | None:
 
 
 def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, Any]] | None:
-    """Return (predicate_type, bundle) for the first SLSA provenance attestation,
-    or None if the package has no provenance attestation on npm."""
+    """Return (predicate_type, bundle) for the first SLSA provenance attestation.
+
+    Returns None if the package has no provenance attestation on npm.
+    """
     encoded = name.replace("/", "%2F")
     meta = _fetch_json(f"https://registry.npmjs.org/{encoded}/{ver}")
     if not meta:
@@ -93,7 +95,9 @@ def _b64_to_hex(integrity: str) -> str | None:
         return None
 
 
-def check_subject_hash(bundle: dict[str, Any], lockfile_integrity: str) -> tuple[bool, str]:
+def check_subject_hash(
+    bundle: dict[str, Any], lockfile_integrity: str
+) -> tuple[bool, str]:
     """Verify attested subject SHA-512 matches the lockfile integrity.
 
     Returns (ok, message).
@@ -101,7 +105,8 @@ def check_subject_hash(bundle: dict[str, Any], lockfile_integrity: str) -> tuple
     try:
         dsse = cast(dict[str, Any], bundle.get("dsseEnvelope", {}))
         payload_b64 = cast(str, dsse.get("payload", ""))
-        statement = cast(dict[str, Any], json.loads(base64.b64decode(payload_b64).decode()))
+        decoded = base64.b64decode(payload_b64).decode()
+        statement = cast(dict[str, Any], json.loads(decoded))
         for subject in cast(list[dict[str, Any]], statement.get("subject", [])):
             digest = cast(dict[str, Any], subject.get("digest", {}))
             attested_hex = cast(str | None, digest.get("sha512"))
@@ -114,7 +119,9 @@ def check_subject_hash(bundle: dict[str, Any], lockfile_integrity: str) -> tuple
                 return True, "subject hash matches lockfile integrity"
             return (
                 False,
-                f"hash MISMATCH\n          attested: {attested_hex[:48]}...\n          lockfile: {lockfile_hex[:48]}...",
+                "hash MISMATCH\n"
+                f"          attested: {attested_hex[:48]}...\n"
+                f"          lockfile: {lockfile_hex[:48]}...",
             )
         return False, "no sha512 subject found in attestation payload"
     except Exception as e:
@@ -132,10 +139,19 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
     Only VerificationError (bad signature / cert chain) is treated as fatal.
     """
     try:
-        from sigstore.errors import NetworkError, VerificationError  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
-        from sigstore.models import Bundle  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
-        from sigstore.verify import Verifier  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
-        from sigstore.verify.policy import OIDCIssuer  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
+        from sigstore.errors import (  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
+            NetworkError,
+            VerificationError,
+        )
+        from sigstore.models import (  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
+            Bundle,
+        )
+        from sigstore.verify import (  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
+            Verifier,
+        )
+        from sigstore.verify.policy import (  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
+            OIDCIssuer,
+        )
     except ImportError as e:
         return False, f"sigstore not importable: {e}"
 
@@ -154,7 +170,10 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
         # compatibility gap, not a signature failure. Subject hash check
         # (already done) still provides the key supply-chain guarantee.
         if "only supported" in msg or "not supported" in msg:
-            return True, f"Rekor entry type not supported by sigstore 4.x — timestamp skipped ({msg})"
+            return True, (
+                f"Rekor entry type not supported by sigstore 4.x"
+                f" — timestamp skipped ({msg})"
+            )
         return False, f"Sigstore verification failed: {msg}"
     except NetworkError as e:  # pyright: ignore[reportUnknownVariableType]
         return True, f"Sigstore network unavailable — signature check skipped ({e})"
@@ -162,11 +181,14 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
         msg = str(e)
         # Bundle format validation errors are also a compatibility issue.
         if "validation error" in msg or "failed to load bundle" in msg:
-            return True, f"Bundle format not supported by sigstore 4.x — skipped ({msg[:80]})"
+            return True, (
+                f"Bundle format not supported by sigstore 4.x — skipped ({msg[:80]})"
+            )
         return True, f"Sigstore check skipped (unexpected error: {e})"
 
 
 def main() -> int:
+    """Verify provenance for all attested packages in pnpm-lock.yaml."""
     packages = parse_lockfile(LOCKFILE)
     print(f"Parsed {len(packages)} packages from pnpm-lock.yaml")
     print()

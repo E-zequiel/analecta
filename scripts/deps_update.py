@@ -40,7 +40,9 @@ type Skipped = tuple[str, str, datetime]  # (name, new, release_dt)
 # ---------------------------------------------------------------------------
 
 
-def _fetch_json(url: str, *, headers: dict[str, str] | None = None) -> dict[str, Any] | None:
+def _fetch_json(
+    url: str, *, headers: dict[str, str] | None = None
+) -> dict[str, Any] | None:
     req = urllib.request.Request(url, headers=headers or {})
     try:
         with urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT) as resp:  # pyright: ignore[reportAny]
@@ -74,7 +76,9 @@ def _pkg_name(dep: str) -> str:
     return m.group(1) if m else ""
 
 
-def _pypi_release_date(_name: str, version: str, all_releases: dict[str, Any]) -> datetime | None:
+def _pypi_release_date(
+    _name: str, version: str, all_releases: dict[str, Any]
+) -> datetime | None:
     files = cast(list[dict[str, Any]], all_releases.get(version, []))
     times: list[str] = [
         cast(str, f.get("upload_time_iso_8601") or f.get("upload_time"))
@@ -85,7 +89,7 @@ def _pypi_release_date(_name: str, version: str, all_releases: dict[str, Any]) -
         return None
     try:
         return _parse_iso(min(times))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -180,7 +184,7 @@ def _npm_release_date(name: str, version: str) -> datetime | None:
         return None
     try:
         return _parse_iso(ts)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -200,7 +204,7 @@ def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
 
     try:
         outdated = _parse_pnpm_outdated(raw)
-    except (json.JSONDecodeError, StopIteration):
+    except json.JSONDecodeError, StopIteration:
         # Try extracting a JSON block from mixed output
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         if not m:
@@ -270,7 +274,8 @@ def _pr_body(
         if sk:
             lines.append("")
             eligible = [
-                f"`{n}` {v} _(eligible {(release_dt + timedelta(days=cooldown)).strftime('%Y-%m-%d')})_"
+                f"`{n}` {v} _(eligible "
+                f"{(release_dt + timedelta(days=cooldown)).strftime('%Y-%m-%d')})_"
                 for n, v, release_dt in sk
             ]
             lines.append(f"**Skipped — too recent:** {', '.join(eligible)}")
