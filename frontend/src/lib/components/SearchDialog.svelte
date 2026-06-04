@@ -100,7 +100,7 @@
 		display: flex;
 		align-items: flex-start;
 		justify-content: center;
-		padding-top: 80px;
+		padding-top: 28vh;
 		z-index: 200;
 	}
 
