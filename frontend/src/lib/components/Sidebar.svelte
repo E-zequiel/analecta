@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { page } from '$app/stores';
 	import {
@@ -20,7 +20,7 @@
 		Trash2,
 		Archive,
 	} from '@lucide/svelte';
-	import { writable } from 'svelte/store';
+	import { writable, get } from 'svelte/store';
 	import { SvelteMap } from 'svelte/reactivity';
 	import { clipboardReadText, onTrayPasteUrl } from '$lib/platform';
 	import {
@@ -74,9 +74,6 @@
 	let urlInputValue = $state('');
 	let urlInputEl = $state<HTMLInputElement | null>(null);
 
-	$effect(() => {
-		if ($urlInputActive) setTimeout(() => urlInputEl?.focus(), 0);
-	});
 
 	const currentEntryTagSet = $derived(new Set($viewerEntry?.tags ?? []));
 	const displayTagList = $derived(
@@ -160,9 +157,32 @@
 
 	onMount(() => onTrayPasteUrl(() => openUrlInput()));
 
-	function openUrlInput() {
+	async function focusAndFillInput() {
+		try {
+			const text = (await clipboardReadText()).trim();
+			if (text.startsWith('http://') || text.startsWith('https://')) {
+				urlInputValue = text;
+			}
+		} catch {
+			// leave input empty if clipboard is unavailable
+		}
+		urlInputEl?.focus();
+	}
+
+	async function openUrlInput() {
 		urlInputActive.set(true);
 		urlInputValue = '';
+		await tick();
+		if (document.hasFocus()) {
+			await focusAndFillInput();
+		} else {
+			const onFocus = () => {
+				window.removeEventListener('focus', onFocus);
+				if (!get(urlInputActive)) return;
+				focusAndFillInput();
+			};
+			window.addEventListener('focus', onFocus);
+		}
 	}
 
 	async function submitUrl() {
