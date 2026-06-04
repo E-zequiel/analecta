@@ -45,7 +45,8 @@
 						<span
 							class="entry-source"
 							style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
-						>{entry.source_type}</span>
+							>{entry.source_type}</span
+						>
 					</div>
 					<div class="entry-meta">
 						<span class="entry-date">{formatDate(entry.created_at)}</span>

@@ -142,8 +142,13 @@ app
 			let _lastNormalBounds: { x: number; y: number; width: number; height: number } | null = null;
 			let _resizeSettleTimer: ReturnType<typeof setTimeout> | null = null;
 
-			mainWindow.on('maximize', () => { _wmMaximized = true; });
-			mainWindow.on('unmaximize', () => { _wmMaximized = false; _pendingUnmaximize = true; });
+			mainWindow.on('maximize', () => {
+				_wmMaximized = true;
+			});
+			mainWindow.on('unmaximize', () => {
+				_wmMaximized = false;
+				_pendingUnmaximize = true;
+			});
 
 			mainWindow.on('resize', () => {
 				if (!_wmMaximized && !_pendingUnmaximize) {
