@@ -398,8 +398,8 @@
 									e.preventDefault();
 									navigateSuggestion(-1, e.currentTarget);
 								} else if (e.key === 'Escape') viewerTagsOpen.set(false);
-							}}
-						>{s}</button>
+							}}>{s}</button
+						>
 					{/each}
 				</div>
 			{/if}
@@ -408,7 +408,6 @@
 {/if}
 
 <div class="viewer">
-
 	{#if error}
 		<div class="error-banner">{error}</div>
 	{:else if entry && html}

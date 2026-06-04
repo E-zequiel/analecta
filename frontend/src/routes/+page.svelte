@@ -180,8 +180,7 @@
 	$effect(() => {
 		if (!tagContextMenu) return;
 		function onPointerDown(e: PointerEvent) {
-			if (tagContextMenuEl && !tagContextMenuEl.contains(e.target as Node))
-				tagContextMenu = null;
+			if (tagContextMenuEl && !tagContextMenuEl.contains(e.target as Node)) tagContextMenu = null;
 		}
 		function onKeyDown(e: KeyboardEvent) {
 			if (e.key === 'Escape') tagContextMenu = null;
