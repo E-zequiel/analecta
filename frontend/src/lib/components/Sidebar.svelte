@@ -74,7 +74,6 @@
 	let urlInputValue = $state('');
 	let urlInputEl = $state<HTMLInputElement | null>(null);
 
-
 	const currentEntryTagSet = $derived(new Set($viewerEntry?.tags ?? []));
 	const displayTagList = $derived(
 		$viewerEntry ? tagList.filter((t) => currentEntryTagSet.has(t.name)) : tagList
@@ -530,12 +529,7 @@
 		<button class="icon-btn" onclick={() => navigateInSectionTab('collecta')} title="Collecta">
 			<Origami size={18} />
 		</button>
-		<button
-			class="icon-btn"
-			onclick={goLast}
-			title="Last viewed"
-			disabled={$lastViewedId === null}
-		>
+		<button class="icon-btn" onclick={goLast} title="Last viewed" disabled={$lastViewedId === null}>
 			<BookOpenText size={18} />
 		</button>
 		<button
