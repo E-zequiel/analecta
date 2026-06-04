@@ -75,10 +75,7 @@
 	let urlInputEl = $state<HTMLInputElement | null>(null);
 
 	$effect(() => {
-		if ($urlInputActive && urlInputEl) urlInputEl.focus();
-	});
-	$effect(() => {
-		if ($sidebarCollapsed) urlInputActive.set(false);
+		if ($urlInputActive) setTimeout(() => urlInputEl?.focus(), 0);
 	});
 
 	const currentEntryTagSet = $derived(new Set($viewerEntry?.tags ?? []));
@@ -164,7 +161,6 @@
 	onMount(() => onTrayPasteUrl(() => openUrlInput()));
 
 	function openUrlInput() {
-		if ($sidebarCollapsed) sidebarCollapsed.set(false);
 		urlInputActive.set(true);
 		urlInputValue = '';
 	}
@@ -469,59 +465,78 @@
 		</div>
 	{/if}
 
+	<!-- URL input modal -->
+	{#if $urlInputActive}
+		<div
+			class="url-backdrop"
+			onclick={() => urlInputActive.set(false)}
+			onkeydown={(e) => {
+				if (e.key === 'Escape') urlInputActive.set(false);
+			}}
+			role="button"
+			tabindex="-1"
+		>
+			<div
+				class="url-dialog"
+				role="dialog"
+				aria-modal="true"
+				tabindex="-1"
+				onclick={(e) => e.stopPropagation()}
+				onkeydown={(e) => {
+					if (e.key === 'Escape') urlInputActive.set(false);
+				}}
+			>
+				<input
+					class="url-input-modal"
+					type="text"
+					placeholder="Paste or type a URL…"
+					bind:value={urlInputValue}
+					bind:this={urlInputEl}
+					onkeydown={(e) => {
+						if (e.key === 'Enter') {
+							e.preventDefault();
+							submitUrl();
+						} else if (e.key === 'Escape') {
+							urlInputActive.set(false);
+						}
+					}}
+				/>
+			</div>
+		</div>
+	{/if}
+
 	<!-- Bottom bar -->
 	<div class="bottom-bar">
-		{#if $urlInputActive}
-			<input
-				class="url-input"
-				type="text"
-				placeholder="Paste URL…"
-				bind:value={urlInputValue}
-				bind:this={urlInputEl}
-				onkeydown={(e) => {
-					if (e.key === 'Enter') {
-						e.preventDefault();
-						submitUrl();
-					} else if (e.key === 'Escape') {
-						urlInputActive.set(false);
-					}
-				}}
-				onblur={() => {
-					if (!urlInputValue.trim()) urlInputActive.set(false);
-				}}
-			/>
-		{:else}
-			<button class="icon-btn" onclick={() => navigateInSectionTab('collecta')} title="Collecta">
-				<Origami size={18} />
-			</button>
-			<button
-				class="icon-btn"
-				onclick={goLast}
-				title="Last viewed"
-				disabled={$lastViewedId === null}
-			>
-				<BookOpenText size={18} />
-			</button>
-			<button
-				class="icon-btn paste-btn"
-				class:paste-ok={pasteStatus === 'ok'}
-				class:paste-err={pasteStatus === 'error'}
-				class:paste-loading={pasteStatus === 'loading'}
-				onclick={pasteUrl}
-				title="Add URL from clipboard"
-				disabled={pasteStatus === 'loading'}
-			>
-				<ClipboardPaste size={18} />
-			</button>
-			<a
-				href="/settings"
-				class="icon-btn settings-btn"
-				class:active={isSettingsActive}
-				title="Settings"
-			>
-				<Settings size={18} />
-			</a>
-		{/if}
+		<button class="icon-btn" onclick={() => navigateInSectionTab('collecta')} title="Collecta">
+			<Origami size={18} />
+		</button>
+		<button
+			class="icon-btn"
+			onclick={goLast}
+			title="Last viewed"
+			disabled={$lastViewedId === null}
+		>
+			<BookOpenText size={18} />
+		</button>
+		<button
+			class="icon-btn paste-btn"
+			class:paste-ok={pasteStatus === 'ok'}
+			class:paste-err={pasteStatus === 'error'}
+			class:paste-loading={pasteStatus === 'loading'}
+			onclick={pasteUrl}
+			title="Add URL from clipboard"
+			disabled={pasteStatus === 'loading'}
+		>
+			<ClipboardPaste size={18} />
+		</button>
+		<a
+			href="/settings"
+			class="icon-btn settings-btn"
+			class:active={isSettingsActive}
+			title="Settings"
+		>
+			<Settings size={18} />
+		</a>
 	</div>
 </aside>
 
@@ -878,21 +893,40 @@
 		color: var(--fg);
 	}
 
-	.url-input {
-		flex: 1;
-		min-width: 0;
-		padding: 3px 7px;
-		background: var(--bg-highlight);
-		border: 1px solid var(--accent-dark);
-		border-radius: 3px;
+	.url-backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.55);
+		display: flex;
+		align-items: flex-start;
+		justify-content: center;
+		padding-top: 80px;
+		z-index: 200;
+	}
+
+	.url-dialog {
+		width: 540px;
+		max-width: 90vw;
+		background: var(--bg-alt);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		overflow: hidden;
+		box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+	}
+
+	.url-input-modal {
+		width: 100%;
+		padding: 14px 16px;
+		background: transparent;
+		border: none;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: var(--font-size-label);
+		font-size: 1rem;
 		outline: none;
 		box-sizing: border-box;
 	}
 
-	.url-input:focus {
-		border-color: var(--accent);
+	.url-input-modal::placeholder {
+		color: var(--fg-muted);
 	}
 </style>

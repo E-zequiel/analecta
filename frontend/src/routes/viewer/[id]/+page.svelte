@@ -121,19 +121,7 @@
 	);
 
 	$effect(() => {
-		if (!$viewerTagsOpen) return;
-		function onPointerDown(e: PointerEvent) {
-			if ((e.target as HTMLElement).closest('[data-tags-toggle]')) return;
-			if (tagsContainerEl && !tagsContainerEl.contains(e.target as Node)) {
-				viewerTagsOpen.set(false);
-			}
-		}
-		document.addEventListener('pointerdown', onPointerDown, true);
-		return () => document.removeEventListener('pointerdown', onPointerDown, true);
-	});
-
-	$effect(() => {
-		if ($viewerTagsOpen && tagAddInputEl) tagAddInputEl.focus();
+		if ($viewerTagsOpen) setTimeout(() => tagAddInputEl?.focus(), 0);
 	});
 
 	$effect(() => {
@@ -321,9 +309,27 @@
 	}
 </script>
 
-<div class="viewer">
-	{#if $viewerTagsOpen && entry}
-		<div class="tags-panel" bind:this={tagsContainerEl}>
+{#if $viewerTagsOpen && entry}
+	<div
+		class="tags-backdrop"
+		onclick={() => viewerTagsOpen.set(false)}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') viewerTagsOpen.set(false);
+		}}
+		role="button"
+		tabindex="-1"
+	>
+		<div
+			class="tags-dialog"
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
+			bind:this={tagsContainerEl}
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => {
+				if (e.key === 'Escape') viewerTagsOpen.set(false);
+			}}
+		>
 			{#if entry.tags.length > 0}
 				<div class="tag-chips">
 					{#each entry.tags as tag (tag)}
@@ -355,7 +361,10 @@
 				</div>
 			{/if}
 		</div>
-	{/if}
+	</div>
+{/if}
+
+<div class="viewer">
 
 	{#if error}
 		<div class="error-banner">{error}</div>
@@ -594,20 +603,29 @@
 		border: 1px solid var(--border);
 	}
 
-	.tags-panel {
+	.tags-backdrop {
 		position: fixed;
-		top: 44px;
-		right: 6px;
-		width: 220px;
-		background: var(--bg-dark);
+		inset: 0;
+		background: rgba(0, 0, 0, 0.55);
+		display: flex;
+		align-items: flex-start;
+		justify-content: center;
+		padding-top: 80px;
+		z-index: 200;
+	}
+
+	.tags-dialog {
+		width: 320px;
+		max-width: 90vw;
+		background: var(--bg-alt);
 		border: 1px solid var(--border);
-		border-radius: 6px;
-		padding: 6px;
-		z-index: 100;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+		border-radius: 8px;
+		overflow: hidden;
+		box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+		padding: 12px;
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 8px;
 	}
 
 	.tag-chips {
