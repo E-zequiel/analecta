@@ -10,13 +10,14 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT/backend"
 
 echo "==> ruff format --check"
-mise exec -- uv run ruff format --check .
+mise exec -- uv run ruff format --check . ../scripts/
 
 echo "==> ruff check"
-mise exec -- uv run ruff check .
+mise exec -- uv run ruff check . ../scripts/
 
 echo "==> basedpyright"
 mise exec -- uv run basedpyright
+mise exec -- uv run basedpyright ../scripts/
 
 echo "==> pytest (unit)"
 mise exec -- uv run pytest -m "not integration"
