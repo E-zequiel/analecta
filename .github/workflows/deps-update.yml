@@ -2,7 +2,7 @@ name: Dependency Update
 
 on:
   schedule:
-    - cron: '0 12 * * 3'  # Every Wednesday at 12:00 UTC
+    - cron: '0 12 * * 4'  # Every Thursday at 12:00 UTC (09:00 ART)
   workflow_dispatch:
     inputs:
       cooldown:
@@ -55,13 +55,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           BRANCH="deps-update/$(date -u +%Y-%m-%d)"
-          git checkout -b "$BRANCH"
+          git checkout -B "$BRANCH"
           git add backend/uv.lock pnpm-lock.yaml
           git commit -m "chore(deps): weekly dependency update $(date -u +%Y-%m-%d)"
-          git push origin "$BRANCH"
+          git push --force-with-lease origin "$BRANCH"
           gh pr create \
             --title "chore(deps): dependency update $(date -u +%Y-%m-%d)" \
             --body-file /tmp/pr-body.md \
-            --base main
+            --base main \
+            || echo "PR already open for $BRANCH — branch updated in place."
         env:
           GH_TOKEN: ${{ github.token }}

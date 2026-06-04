@@ -200,7 +200,7 @@ def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
 
     try:
         outdated = _parse_pnpm_outdated(raw)
-    except json.JSONDecodeError, StopIteration:
+    except (json.JSONDecodeError, StopIteration):
         # Try extracting a JSON block from mixed output
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         if not m:
