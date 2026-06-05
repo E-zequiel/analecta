@@ -318,6 +318,7 @@
 			title: entry.title,
 			url: entry.url,
 			file_path: entry.file_path,
+			status: entry.status,
 			flags: entry.flags,
 		});
 	}
