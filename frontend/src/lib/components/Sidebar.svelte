@@ -43,6 +43,7 @@
 	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { entryAddedTick, entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
+	import { tooltip } from '$lib/actions/tooltip';
 
 	const SECTIONS = [
 		{ id: 'library', label: 'LIBRARY', icon: Library },
@@ -382,7 +383,8 @@
 					<button
 						class="chevron-btn"
 						onclick={() => toggleSection(section.id)}
-						title={$expandedSections.has(section.id) ? 'Collapse' : 'Expand'}
+						use:tooltip={$expandedSections.has(section.id) ? 'Collapse' : 'Expand'}
+						aria-label={$expandedSections.has(section.id) ? 'Collapse' : 'Expand'}
 					>
 						{#if $expandedSections.has(section.id)}
 							<ChevronDown size={13} />
@@ -411,7 +413,7 @@
 								class:active-entry={$page.params['id'] === String(entry.id)}
 								onclick={() => openEntry(entry.id, entry.title)}
 								oncontextmenu={(e) => showContextMenu(e, entry)}
-								title={entry.title}
+								use:tooltip={entry.title}
 							>
 								{entry.title}
 							</button>
@@ -444,7 +446,8 @@
 						newTagExpanded = !newTagExpanded;
 						if (newTagExpanded) newTagName = '';
 					}}
-					title="Create tag"
+					use:tooltip={'Create tag'}
+					aria-label="Create tag"
 				>
 					<Plus size={13} />
 				</button>
@@ -494,7 +497,7 @@
 								class="tag-item-label"
 								class:active-entry={$selectedTag === tag.name}
 								onclick={() => selectTag(tag.name)}
-								title={tag.name}
+								use:tooltip={tag.name}
 							>
 								<span class="tag-name">{tag.name}</span>
 								<span class="tag-count">{tag.count}</span>
@@ -506,12 +509,14 @@
 										editingTag = tag.name;
 										editTagValue = tag.name;
 									}}
-									title="Rename tag"><Pencil size={13} /></button
+									use:tooltip={'Rename tag'}
+									aria-label="Rename tag"><Pencil size={13} /></button
 								>
 								<button
 									class="tag-action-btn"
 									onclick={() => deleteTag(tag.name)}
-									title="Delete tag"><Trash2 size={13} /></button
+									use:tooltip={'Delete tag'}
+									aria-label="Delete tag"><Trash2 size={13} /></button
 								>
 							</div>
 						</div>
@@ -565,10 +570,21 @@
 
 	<!-- Bottom bar -->
 	<div class="bottom-bar">
-		<button class="icon-btn" onclick={() => navigateInSectionTab('collecta')} title="Collecta">
+		<button
+			class="icon-btn"
+			onclick={() => navigateInSectionTab('collecta')}
+			use:tooltip={'Collecta'}
+			aria-label="Collecta"
+		>
 			<Origami size={18} />
 		</button>
-		<button class="icon-btn" onclick={goLast} title="Last viewed" disabled={$lastViewedId === null}>
+		<button
+			class="icon-btn"
+			onclick={goLast}
+			use:tooltip={'Last viewed'}
+			aria-label="Last viewed"
+			disabled={$lastViewedId === null}
+		>
 			<BookOpenText size={18} />
 		</button>
 		<button
@@ -577,7 +593,8 @@
 			class:paste-err={pasteStatus === 'error'}
 			class:paste-loading={pasteStatus === 'loading'}
 			onclick={pasteUrl}
-			title="Add URL from clipboard"
+			use:tooltip={'Add URL from clipboard'}
+			aria-label="Add URL from clipboard"
 			disabled={pasteStatus === 'loading'}
 		>
 			<ClipboardPaste size={18} />
@@ -586,7 +603,8 @@
 			href="/settings"
 			class="icon-btn settings-btn"
 			class:active={isSettingsActive}
-			title="Settings"
+			use:tooltip={'Settings'}
+			aria-label="Settings"
 		>
 			<Settings size={18} />
 		</a>

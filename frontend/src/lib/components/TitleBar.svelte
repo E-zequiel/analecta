@@ -37,6 +37,7 @@
 		windowIsMaximized,
 		onWindowMaximized,
 	} from '$lib/platform';
+	import { tooltip } from '$lib/actions/tooltip';
 	import {
 		sidebarCollapsed,
 		sidebarWidth,
@@ -133,17 +134,37 @@
 		style:justify-content={$sidebarCollapsed ? 'center' : 'space-between'}
 		style:padding={$sidebarCollapsed ? '0' : '0 6px'}
 	>
-		<button class="sc-btn" onclick={toggleSidebar} title="Toggle sidebar">
+		<button
+			class="sc-btn"
+			onclick={toggleSidebar}
+			use:tooltip={'Toggle sidebar'}
+			aria-label="Toggle sidebar"
+		>
 			<ChevronsRightLeft size={18} />
 		</button>
 		{#if !$sidebarCollapsed}
-			<button class="sc-btn" onclick={collapseAll} title="Collapse all sections">
+			<button
+				class="sc-btn"
+				onclick={collapseAll}
+				use:tooltip={'Collapse all sections'}
+				aria-label="Collapse all sections"
+			>
 				<ChevronsDownUp size={18} />
 			</button>
-			<button class="sc-btn" onclick={expandAll} title="Expand all sections">
+			<button
+				class="sc-btn"
+				onclick={expandAll}
+				use:tooltip={'Expand all sections'}
+				aria-label="Expand all sections"
+			>
 				<ChevronsUpDown size={18} />
 			</button>
-			<button class="sc-btn" onclick={openSearch} title="Search (Ctrl+K)">
+			<button
+				class="sc-btn"
+				onclick={openSearch}
+				use:tooltip={'Search (Ctrl+K)'}
+				aria-label="Search (Ctrl+K)"
+			>
 				<ScanSearch size={18} />
 			</button>
 		{/if}
@@ -154,24 +175,45 @@
 		<div class="toolbar-center viewer-toolbar">
 			{#if $viewerEntry}
 				<div class="tb-group">
-					<button class="btn-icon" onclick={() => $viewerActions!.goBack()} title="Back">
+					<button
+						class="btn-icon"
+						onclick={() => $viewerActions!.goBack()}
+						use:tooltip={'Back'}
+						aria-label="Back"
+					>
 						<CornerUpLeft size={18} />
 					</button>
-					<button class="btn-icon" onclick={() => $viewerActions!.goToEditor()} title="Edit">
+					<button
+						class="btn-icon"
+						onclick={() => $viewerActions!.goToEditor()}
+						use:tooltip={'Edit'}
+						aria-label="Edit"
+					>
 						<PenLine size={18} />
 					</button>
-					<button class="btn-icon" onclick={() => $viewerActions!.copyUrl()} title="Copy URL">
+					<button
+						class="btn-icon"
+						onclick={() => $viewerActions!.copyUrl()}
+						use:tooltip={'Copy URL'}
+						aria-label="Copy URL"
+					>
 						<Link size={18} />
 					</button>
 					<button
 						class="btn-icon"
 						class:active={$viewerEntry.flags?.includes('archive')}
 						onclick={() => $viewerActions!.toggleFlag('archive')}
-						title="Archive"
+						use:tooltip={'Archive'}
+						aria-label="Archive"
 					>
 						<Archive size={18} />
 					</button>
-					<button class="btn-icon" onclick={() => $viewerActions!.deleteEntry()} title="Delete">
+					<button
+						class="btn-icon"
+						onclick={() => $viewerActions!.deleteEntry()}
+						use:tooltip={'Delete'}
+						aria-label="Delete"
+					>
 						<Shredder size={18} />
 					</button>
 				</div>
@@ -179,7 +221,8 @@
 					<button
 						class="btn-icon"
 						onclick={() => $viewerActions!.adjustFont(-1)}
-						title="Decrease font size"
+						use:tooltip={'Decrease font size'}
+						aria-label="Decrease font size"
 					>
 						<AArrowDown size={18} />
 					</button>
@@ -187,7 +230,8 @@
 					<button
 						class="btn-icon"
 						onclick={() => $viewerActions!.adjustFont(1)}
-						title="Increase font size"
+						use:tooltip={'Increase font size'}
+						aria-label="Increase font size"
 					>
 						<AArrowUp size={18} />
 					</button>
@@ -197,7 +241,8 @@
 						class="btn-icon"
 						class:active={$viewerEntry.status === 'read'}
 						onclick={() => $viewerActions!.setStatus('read')}
-						title="Read"
+						use:tooltip={'Read'}
+						aria-label="Read"
 					>
 						<Eye size={18} />
 					</button>
@@ -205,7 +250,8 @@
 						class="btn-icon"
 						class:active={$viewerEntry.status === 'unread'}
 						onclick={() => $viewerActions!.setStatus('unread')}
-						title="Unread"
+						use:tooltip={'Unread'}
+						aria-label="Unread"
 					>
 						<EyeClosed size={18} />
 					</button>
@@ -213,7 +259,8 @@
 						class="btn-icon"
 						class:active={$viewerEntry.flags?.includes('bookmark')}
 						onclick={() => $viewerActions!.toggleFlag('bookmark')}
-						title="Bookmark"
+						use:tooltip={'Bookmark'}
+						aria-label="Bookmark"
 					>
 						<Bookmark size={18} />
 					</button>
@@ -221,7 +268,8 @@
 						class="btn-icon"
 						class:active={$viewerEntry.flags?.includes('gem')}
 						onclick={() => $viewerActions!.toggleFlag('gem')}
-						title="Gem"
+						use:tooltip={'Gem'}
+						aria-label="Gem"
 					>
 						<Gem size={18} />
 					</button>
@@ -230,7 +278,8 @@
 						class:active={$viewerTagsOpen}
 						data-tags-toggle
 						onclick={() => viewerTagsOpen.update((v) => !v)}
-						title="Tags"
+						use:tooltip={'Tags'}
+						aria-label="Tags"
 					>
 						<BrainCircuit size={18} />
 					</button>
@@ -239,14 +288,20 @@
 		</div>
 	{:else if toolbarMode === 'editor' && $editorActions !== null}
 		<div class="toolbar-center">
-			<button class="btn-icon" onclick={() => $editorActions!.goBack()} title="Back">
+			<button
+				class="btn-icon"
+				onclick={() => $editorActions!.goBack()}
+				use:tooltip={'Back'}
+				aria-label="Back"
+			>
 				<CornerUpLeft size={18} />
 			</button>
 			<button
 				class="btn-icon"
 				class:active={$editorShowPreview}
 				onclick={() => $editorActions!.togglePreview()}
-				title="Preview"
+				use:tooltip={'Preview'}
+				aria-label="Preview"
 			>
 				<BookOpenText size={18} />
 			</button>
@@ -255,7 +310,8 @@
 				class:active={$editorSaved}
 				onclick={() => $editorActions!.save()}
 				disabled={$editorSaving}
-				title={$editorSaving ? 'Saving…' : $editorSaved ? 'Saved ✓' : 'Save'}
+				use:tooltip={$editorSaving ? 'Saving…' : $editorSaved ? 'Saved ✓' : 'Save'}
+				aria-label={$editorSaving ? 'Saving…' : $editorSaved ? 'Saved ✓' : 'Save'}
 			>
 				<Save size={18} />
 			</button>
@@ -263,7 +319,8 @@
 				class="btn-icon"
 				onclick={() => $editorActions!.revert()}
 				disabled={!$editorIsDirty}
-				title="Revert"
+				use:tooltip={'Revert'}
+				aria-label="Revert"
 			>
 				<RotateCcw size={18} />
 			</button>
@@ -290,20 +347,27 @@
 			class="wc-btn panel-toggle"
 			class:active={$rightSidebarOpen}
 			onclick={toggleRightSidebar}
-			title="Toggle entry stack"
+			use:tooltip={'Toggle entry stack'}
+			aria-label="Toggle entry stack"
 		>
 			<PanelRight size={18} />
 		</button>
 
 		<div class="wc-spacer"></div>
 
-		<button class="wc-btn" onclick={() => windowMinimize().catch(() => {})} title="Hide">
+		<button
+			class="wc-btn"
+			onclick={() => windowMinimize().catch(() => {})}
+			use:tooltip={'Hide'}
+			aria-label="Hide"
+		>
 			<ChevronDown size={15} />
 		</button>
 		<button
 			class="wc-btn"
 			onclick={() => windowMaximize().catch(() => {})}
-			title={maximized ? 'Minimize' : 'Maximize'}
+			use:tooltip={maximized ? 'Minimize' : 'Maximize'}
+			aria-label={maximized ? 'Minimize' : 'Maximize'}
 		>
 			{#if maximized}
 				<Minimize2 size={15} />
@@ -311,7 +375,12 @@
 				<Maximize2 size={15} />
 			{/if}
 		</button>
-		<button class="wc-btn wc-close" onclick={() => windowClose().catch(() => {})} title="Close">
+		<button
+			class="wc-btn wc-close"
+			onclick={() => windowClose().catch(() => {})}
+			use:tooltip={'Close'}
+			aria-label="Close"
+		>
 			<X size={15} />
 		</button>
 	</div>
