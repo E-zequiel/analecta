@@ -70,6 +70,28 @@
 		hideContextMenu();
 	}
 
+	async function setStatus(status: 'read' | 'unread') {
+		const entry = $contextMenu.entry;
+		hideContextMenu();
+		if (!entry || entry.status === status) return;
+		const updated = await entriesApi.patch(entry.id, { status });
+		lastChangedEntry.set(updated);
+		entryChangedTick.update((n) => n + 1);
+	}
+
+	async function toggleFlag(flag: 'bookmark' | 'gem') {
+		const entry = $contextMenu.entry;
+		hideContextMenu();
+		if (!entry) return;
+		const current = entry.flags ?? [];
+		const newFlags = current.includes(flag)
+			? current.filter((f) => f !== flag)
+			: [...current.filter((f) => f !== 'archive'), flag];
+		const updated = await entriesApi.patch(entry.id, { flags: newFlags });
+		lastChangedEntry.set(updated);
+		entryChangedTick.update((n) => n + 1);
+	}
+
 	async function archiveEntry() {
 		const entry = $contextMenu.entry;
 		hideContextMenu();
@@ -108,6 +130,29 @@
 		<div class="separator"></div>
 		<button class="menu-item" onclick={revealFile} role="menuitem">
 			Show in system explorer
+		</button>
+		<div class="separator"></div>
+		<button
+			class="menu-item"
+			class:is-current={$contextMenu.entry?.status === 'read'}
+			onclick={() => setStatus('read')}
+			role="menuitem"
+		>
+			Read
+		</button>
+		<button
+			class="menu-item"
+			class:is-current={$contextMenu.entry?.status === 'unread'}
+			onclick={() => setStatus('unread')}
+			role="menuitem"
+		>
+			Unread
+		</button>
+		<button class="menu-item" onclick={() => toggleFlag('bookmark')} role="menuitem">
+			{$contextMenu.entry?.flags?.includes('bookmark') ? 'Remove bookmark' : 'Bookmark'}
+		</button>
+		<button class="menu-item" onclick={() => toggleFlag('gem')} role="menuitem">
+			{$contextMenu.entry?.flags?.includes('gem') ? 'Remove gem' : 'Gem'}
 		</button>
 		<div class="separator"></div>
 		<button class="menu-item" onclick={archiveEntry} role="menuitem">
@@ -149,6 +194,14 @@
 
 	.menu-item:hover {
 		background: var(--bg-highlight);
+		color: var(--accent);
+	}
+
+	.menu-item.is-current {
+		color: var(--accent);
+	}
+
+	.menu-item.is-current:hover {
 		color: var(--accent);
 	}
 
