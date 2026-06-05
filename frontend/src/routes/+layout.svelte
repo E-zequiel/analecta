@@ -126,6 +126,10 @@
 				sidebarCollapsed.update((v) => !v);
 				e.preventDefault();
 			}
+			if (e.altKey && e.key === 'b') {
+				rightSidebarOpen.update((v) => !v);
+				e.preventDefault();
+			}
 			if (e.ctrlKey && e.key === 'k') {
 				searchOpen.set(true);
 				e.preventDefault();
