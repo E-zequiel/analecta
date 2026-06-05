@@ -6,9 +6,15 @@
 	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
 
 	let menuEl = $state<HTMLElement | null>(null);
+	let adjustedX = $state(0);
+	let adjustedY = $state(0);
+	let positioned = $state(false);
 
 	$effect(() => {
-		if (!$contextMenu.visible) return;
+		if (!$contextMenu.visible) {
+			positioned = false;
+			return;
+		}
 		function onPointerDown(e: PointerEvent) {
 			if (menuEl && !menuEl.contains(e.target as Node)) hideContextMenu();
 		}
@@ -21,6 +27,26 @@
 			document.removeEventListener('pointerdown', onPointerDown, true);
 			document.removeEventListener('keydown', onKeyDown);
 		};
+	});
+
+	$effect(() => {
+		if (!$contextMenu.visible || !menuEl) {
+			positioned = false;
+			return;
+		}
+		const rect = menuEl.getBoundingClientRect();
+		const vw = window.innerWidth;
+		const vh = window.innerHeight;
+		const gap = 4;
+		let x = $contextMenu.x;
+		let y = $contextMenu.y;
+		if (x + rect.width > vw - gap) x = vw - rect.width - gap;
+		if (y + rect.height > vh - gap) y = vh - rect.height - gap;
+		if (x < gap) x = gap;
+		if (y < gap) y = gap;
+		adjustedX = x;
+		adjustedY = y;
+		positioned = true;
 	});
 
 	async function copyUrl() {
@@ -71,8 +97,9 @@
 {#if $contextMenu.visible && $contextMenu.entry}
 	<div
 		class="context-menu"
-		style:left="{$contextMenu.x}px"
-		style:top="{$contextMenu.y}px"
+		style:left="{adjustedX}px"
+		style:top="{adjustedY}px"
+		style:visibility={positioned ? 'visible' : 'hidden'}
 		bind:this={menuEl}
 		role="menu"
 	>
