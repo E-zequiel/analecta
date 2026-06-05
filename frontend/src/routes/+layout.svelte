@@ -22,6 +22,7 @@
 		sidebarCollapsed,
 		sidebarWidth,
 		searchOpen,
+		shortcutsOpen,
 		rightSidebarOpen,
 		rightSidebarWidth,
 	} from '$lib/stores/ui';
@@ -34,6 +35,7 @@
 		syncActiveTabFromPath,
 		restoreTabsFromConfig,
 		saveTabs,
+		navigateInSectionTab,
 	} from '$lib/stores/tabs';
 	import { pkm, config as configApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
@@ -43,6 +45,7 @@
 	import RightSidebar from '$lib/components/RightSidebar.svelte';
 	import ResizeHandles from '$lib/components/ResizeHandles.svelte';
 	import SearchDialog from '$lib/components/SearchDialog.svelte';
+	import ShortcutsDialog from '$lib/components/ShortcutsDialog.svelte';
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 
@@ -128,6 +131,14 @@
 			}
 			if (e.altKey && e.key === 'b') {
 				rightSidebarOpen.update((v) => !v);
+				e.preventDefault();
+			}
+			if (e.ctrlKey && e.key === 'h') {
+				navigateInSectionTab('collecta');
+				e.preventDefault();
+			}
+			if (e.ctrlKey && e.key === 'j') {
+				shortcutsOpen.update((v) => !v);
 				e.preventDefault();
 			}
 			if (e.ctrlKey && e.key === 'k') {
@@ -283,6 +294,7 @@
 	</div>
 	<ResizeHandles {maximized} />
 	<SearchDialog />
+	<ShortcutsDialog />
 	<ContextMenu />
 {/if}
 
