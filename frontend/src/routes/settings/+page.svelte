@@ -254,214 +254,337 @@
 </script>
 
 <div class="settings-page">
-	<h1>Settings</h1>
+	<div class="settings-main">
+		<h1>Settings</h1>
 
-	{#if error}
-		<p class="error">{error}</p>
-	{/if}
+		{#if error}
+			<p class="error">{error}</p>
+		{/if}
 
-	<section>
-		<h2>Vault</h2>
-		<div class="field">
-			<label for="vault-path">
-				Path {#if vaultSaved}<span class="saved-tag">✓</span>{/if}
-			</label>
-			<div class="path-row">
-				<input
-					id="vault-path"
-					type="text"
-					bind:value={form.vault_path}
-					onblur={autoSaveVaultPath}
-				/>
-				<button onclick={browseVault} disabled={browsing}
-					>{browsing ? 'Opening…' : 'Browse…'}</button
-				>
-			</div>
-		</div>
-		<div class="field">
-			<label for="font-variant">
-				Font {#if fontVariantSaved}<span class="saved-tag">✓</span>{/if}
-			</label>
-			<select id="font-variant" bind:value={form.font_variant} onchange={autoSaveFontVariant}>
-				<option value="regular">JetBrains Mono</option>
-				<option value="nerd">Inconsolata Nerd Font</option>
-				<option value="custom">Custom…</option>
-			</select>
-		</div>
-		<div class="field">
-			<label for="ui-font-size">
-				UI font size {#if uiFontSaved}<span class="saved-tag">✓</span>{/if}
-			</label>
-			<div class="range-row">
-				<span class="range-min">10</span>
-				<input
-					id="ui-font-size"
-					type="range"
-					min="10"
-					max="20"
-					step="0.5"
-					bind:value={form.ui_font_size}
-					oninput={onUiFontInput}
-				/>
-				<span class="range-max">20</span>
-				{#if editingUiFont}
+		<section>
+			<h2>Vault</h2>
+			<div class="field">
+				<label for="vault-path">
+					Path {#if vaultSaved}<span class="saved-tag">✓</span>{/if}
+				</label>
+				<div class="path-row">
 					<input
-						use:focusOnMount
-						class="range-value-input"
-						type="number"
+						id="vault-path"
+						type="text"
+						bind:value={form.vault_path}
+						onblur={autoSaveVaultPath}
+					/>
+					<button onclick={browseVault} disabled={browsing}
+						>{browsing ? 'Opening…' : 'Browse…'}</button
+					>
+				</div>
+			</div>
+			<div class="field">
+				<label for="font-variant">
+					Font {#if fontVariantSaved}<span class="saved-tag">✓</span>{/if}
+				</label>
+				<select id="font-variant" bind:value={form.font_variant} onchange={autoSaveFontVariant}>
+					<option value="regular">JetBrains Mono</option>
+					<option value="nerd">Inconsolata Nerd Font</option>
+					<option value="custom">Custom…</option>
+				</select>
+			</div>
+			<div class="field">
+				<label for="ui-font-size">
+					UI font size {#if uiFontSaved}<span class="saved-tag">✓</span>{/if}
+				</label>
+				<div class="range-row">
+					<span class="range-min">10</span>
+					<input
+						id="ui-font-size"
+						type="range"
 						min="10"
 						max="20"
 						step="0.5"
-						style:font-size="{form.ui_font_size}px"
 						bind:value={form.ui_font_size}
-						onblur={commitUiFont}
-						onkeydown={(e) => {
-							if (e.key === 'Enter') commitUiFont();
-							else if (e.key === 'Escape') cancelUiFont();
-						}}
+						oninput={onUiFontInput}
 					/>
-				{:else}
-					<button
-						class="range-value"
-						style:font-size="{form.ui_font_size}px"
-						onclick={startEditUiFont}
-						use:tooltip={'Click to edit'}>{form.ui_font_size}px</button
-					>
-				{/if}
+					<span class="range-max">20</span>
+					{#if editingUiFont}
+						<input
+							use:focusOnMount
+							class="range-value-input"
+							type="number"
+							min="10"
+							max="20"
+							step="0.5"
+							style:font-size="{form.ui_font_size}px"
+							bind:value={form.ui_font_size}
+							onblur={commitUiFont}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') commitUiFont();
+								else if (e.key === 'Escape') cancelUiFont();
+							}}
+						/>
+					{:else}
+						<button
+							class="range-value"
+							style:font-size="{form.ui_font_size}px"
+							onclick={startEditUiFont}
+							use:tooltip={'Click to edit'}>{form.ui_font_size}px</button
+						>
+					{/if}
+				</div>
 			</div>
-		</div>
-		<div class="field">
-			<label for="reading-font-size">
-				Reading font size {#if readingFontSaved}<span class="saved-tag">✓</span>{/if}
-			</label>
-			<div class="range-row">
-				<span class="range-min">12</span>
-				<input
-					id="reading-font-size"
-					type="range"
-					min="12"
-					max="24"
-					step="0.5"
-					bind:value={form.reading_font_size}
-					oninput={onReadingFontInput}
-				/>
-				<span class="range-max">24</span>
-				{#if editingReadingFont}
+			<div class="field">
+				<label for="reading-font-size">
+					Reading font size {#if readingFontSaved}<span class="saved-tag">✓</span>{/if}
+				</label>
+				<div class="range-row">
+					<span class="range-min">12</span>
 					<input
-						use:focusOnMount
-						class="range-value-input"
-						type="number"
+						id="reading-font-size"
+						type="range"
 						min="12"
 						max="24"
 						step="0.5"
-						style:font-size="{form.reading_font_size}px"
 						bind:value={form.reading_font_size}
-						onblur={commitReadingFont}
-						onkeydown={(e) => {
-							if (e.key === 'Enter') commitReadingFont();
-							else if (e.key === 'Escape') cancelReadingFont();
-						}}
+						oninput={onReadingFontInput}
 					/>
-				{:else}
-					<button
-						class="range-value"
-						style:font-size="{form.reading_font_size}px"
-						onclick={startEditReadingFont}
-						use:tooltip={'Click to edit'}>{form.reading_font_size}px</button
-					>
-				{/if}
-			</div>
-		</div>
-		{#if form.font_variant === 'custom'}
-			<div class="field">
-				<label for="custom-font-path">Font file (.ttf)</label>
-				<div class="path-row">
-					<input
-						id="custom-font-path"
-						type="text"
-						readonly
-						placeholder="No font selected"
-						value={customFontPath}
-					/>
-					<button onclick={browseFont}>Browse…</button>
+					<span class="range-max">24</span>
+					{#if editingReadingFont}
+						<input
+							use:focusOnMount
+							class="range-value-input"
+							type="number"
+							min="12"
+							max="24"
+							step="0.5"
+							style:font-size="{form.reading_font_size}px"
+							bind:value={form.reading_font_size}
+							onblur={commitReadingFont}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') commitReadingFont();
+								else if (e.key === 'Escape') cancelReadingFont();
+							}}
+						/>
+					{:else}
+						<button
+							class="range-value"
+							style:font-size="{form.reading_font_size}px"
+							onclick={startEditReadingFont}
+							use:tooltip={'Click to edit'}>{form.reading_font_size}px</button
+						>
+					{/if}
 				</div>
 			</div>
-		{/if}
-	</section>
+			{#if form.font_variant === 'custom'}
+				<div class="field">
+					<label for="custom-font-path">Font file (.ttf)</label>
+					<div class="path-row">
+						<input
+							id="custom-font-path"
+							type="text"
+							readonly
+							placeholder="No font selected"
+							value={customFontPath}
+						/>
+						<button onclick={browseFont}>Browse…</button>
+					</div>
+				</div>
+			{/if}
+		</section>
 
-	<section>
-		<h2>Appearance</h2>
-		<div class="field toggle-field">
-			<label for="theme-toggle"
-				>Theme {#if themeSaved}<span class="saved-tag">✓</span>{/if}</label
-			>
-			<button
-				id="theme-toggle"
-				role="switch"
-				aria-checked={form.theme === 'light'}
-				class="toggle"
-				class:on={form.theme === 'light'}
-				onclick={toggleTheme}
-			>
-				{form.theme === 'light' ? 'Light' : 'Dark'}
-			</button>
-		</div>
-		<div class="field" role="group" aria-labelledby="accent-label">
-			<span id="accent-label" class="field-caption">
-				Accent color {#if accentSaved}<span class="saved-tag">✓</span>{/if}
-			</span>
-			<div class="accent-swatches">
-				{#each ACCENT_OPTIONS as opt (opt.id)}
-					<button
-						class="swatch swatch-{opt.id}"
-						class:active={form.accent_color === opt.id}
-						use:tooltip={opt.label}
-						aria-label={opt.label}
-						onclick={() => selectAccent(opt.id)}
-					></button>
-				{/each}
+		<section>
+			<h2>Appearance</h2>
+			<div class="field toggle-field">
+				<label for="theme-toggle"
+					>Theme {#if themeSaved}<span class="saved-tag">✓</span>{/if}</label
+				>
+				<button
+					id="theme-toggle"
+					role="switch"
+					aria-checked={form.theme === 'light'}
+					class="toggle"
+					class:on={form.theme === 'light'}
+					onclick={toggleTheme}
+				>
+					{form.theme === 'light' ? 'Light' : 'Dark'}
+				</button>
+			</div>
+			<div class="field" role="group" aria-labelledby="accent-label">
+				<span id="accent-label" class="field-caption">
+					Accent color {#if accentSaved}<span class="saved-tag">✓</span>{/if}
+				</span>
+				<div class="accent-swatches">
+					{#each ACCENT_OPTIONS as opt (opt.id)}
+						<button
+							class="swatch swatch-{opt.id}"
+							class:active={form.accent_color === opt.id}
+							use:tooltip={opt.label}
+							aria-label={opt.label}
+							onclick={() => selectAccent(opt.id)}
+						></button>
+					{/each}
+				</div>
+			</div>
+		</section>
+
+		<section>
+			<h2>Updates</h2>
+			<div class="field">
+				<label for="update-channel">
+					Channel {#if channelSaved}<span class="saved-tag">✓</span>{/if}
+				</label>
+				<select id="update-channel" bind:value={form.update_channel} onchange={autoSaveChannel}>
+					<option value="stable">Stable</option>
+					<option value="dev">Dev</option>
+				</select>
+			</div>
+		</section>
+
+		<section>
+			<h2>Window</h2>
+			<div class="field toggle-field">
+				<label for="close-to-tray-toggle">
+					Close to tray {#if closeToTraySaved}<span class="saved-tag">✓</span>{/if}
+				</label>
+				<button
+					id="close-to-tray-toggle"
+					role="switch"
+					aria-checked={form.close_to_tray}
+					class="toggle"
+					class:on={form.close_to_tray}
+					onclick={toggleCloseToTray}
+				>
+					{form.close_to_tray ? 'On' : 'Off'}
+				</button>
+			</div>
+		</section>
+	</div>
+
+	<aside class="shortcuts-panel">
+		<h2>Keyboard shortcuts</h2>
+
+		<div class="sp-group">
+			<p class="sp-group-label">Navigation</p>
+			<div class="sp-row">
+				<div class="sp-keys"><kbd>Ctrl+B</kbd></div>
+				<div class="sp-desc">Toggle sidebar</div>
+			</div>
+			<div class="sp-row">
+				<div class="sp-keys"><kbd>Alt+B</kbd></div>
+				<div class="sp-desc">Toggle entry stack</div>
+			</div>
+			<div class="sp-row">
+				<div class="sp-keys"><kbd>Ctrl+K</kbd></div>
+				<div class="sp-desc">Search</div>
 			</div>
 		</div>
-	</section>
 
-	<section>
-		<h2>Updates</h2>
-		<div class="field">
-			<label for="update-channel">
-				Channel {#if channelSaved}<span class="saved-tag">✓</span>{/if}
-			</label>
-			<select id="update-channel" bind:value={form.update_channel} onchange={autoSaveChannel}>
-				<option value="stable">Stable</option>
-				<option value="dev">Dev</option>
-			</select>
+		<div class="sp-group">
+			<p class="sp-group-label">Tabs</p>
+			<div class="sp-row">
+				<div class="sp-keys"><kbd>Ctrl+Tab</kbd></div>
+				<div class="sp-desc">Next tab</div>
+			</div>
+			<div class="sp-row">
+				<div class="sp-keys"><kbd>Ctrl+Shift+Tab</kbd></div>
+				<div class="sp-desc">Previous tab</div>
+			</div>
 		</div>
-	</section>
 
-	<section>
-		<h2>Window</h2>
-		<div class="field toggle-field">
-			<label for="close-to-tray-toggle">
-				Close to tray {#if closeToTraySaved}<span class="saved-tag">✓</span>{/if}
-			</label>
-			<button
-				id="close-to-tray-toggle"
-				role="switch"
-				aria-checked={form.close_to_tray}
-				class="toggle"
-				class:on={form.close_to_tray}
-				onclick={toggleCloseToTray}
-			>
-				{form.close_to_tray ? 'On' : 'Off'}
-			</button>
+		<div class="sp-group">
+			<p class="sp-group-label">Reader</p>
+			<div class="sp-row">
+				<div class="sp-keys"><kbd>↑</kbd>&thinsp;/&thinsp;<kbd>↓</kbd></div>
+				<div class="sp-desc">Scroll</div>
+			</div>
+			<div class="sp-row">
+				<div class="sp-keys"><kbd>PgUp</kbd>&thinsp;/&thinsp;<kbd>PgDn</kbd></div>
+				<div class="sp-desc">Fast scroll</div>
+			</div>
+			<div class="sp-row">
+				<div class="sp-keys"><kbd>Home</kbd>&thinsp;/&thinsp;<kbd>End</kbd></div>
+				<div class="sp-desc">Top / bottom</div>
+			</div>
 		</div>
-	</section>
+	</aside>
 </div>
 
 <style>
 	.settings-page {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-start;
 		padding: 2rem;
-		max-width: 560px;
 		color: var(--fg);
+	}
+
+	.settings-main {
+		flex: 1;
+		max-width: 560px;
+		min-width: 320px;
+	}
+
+	/* ── Keyboard shortcuts panel ── */
+	.shortcuts-panel {
+		flex-shrink: 0;
+		width: 210px;
+		margin-left: auto;
+		position: sticky;
+		top: 2rem;
+		background: var(--bg-alt);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 1rem 1.1rem;
+	}
+
+	.sp-group {
+		margin-bottom: 1.1rem;
+	}
+
+	.sp-group:last-child {
+		margin-bottom: 0;
+	}
+
+	.sp-group-label {
+		font-size: 0.62rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.07em;
+		color: var(--fg-muted);
+		margin: 0 0 0.4rem;
+		padding-bottom: 3px;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.sp-row {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 0.6rem;
+		align-items: center;
+		padding: 3px 0;
+	}
+
+	.sp-keys {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.sp-desc {
+		font-size: 0.72rem;
+		color: var(--fg-dark);
+	}
+
+	kbd {
+		font-family: var(--font-family);
+		font-size: 0.62rem;
+		background: var(--bg-highlight);
+		border: 1px solid var(--terminal);
+		border-bottom-width: 2px;
+		border-radius: 3px;
+		padding: 1px 5px;
+		color: var(--fg-dark);
+		white-space: nowrap;
+		display: inline-block;
+		line-height: 1.4;
 	}
 
 	h1 {
