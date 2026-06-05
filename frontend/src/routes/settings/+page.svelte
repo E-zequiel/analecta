@@ -15,7 +15,7 @@
 	let form = $state({
 		vault_path: '',
 		font_variant: 'regular' as 'regular' | 'nerd' | 'custom',
-		ui_font_size: 16.0,
+		ui_font_size: 17.0,
 		reading_font_size: 17.0,
 		update_channel: 'stable' as 'stable' | 'dev',
 		theme: 'dark' as 'dark' | 'light',
@@ -512,21 +512,22 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: flex-start;
-		padding: 2rem;
+		gap: 8em;
+		padding: 2.33rem;
+		max-width: 840px;
 		color: var(--fg);
 	}
 
 	.settings-main {
 		flex: 1;
-		max-width: 560px;
+		max-width: 420px;
 		min-width: 320px;
 	}
 
 	/* ── Keyboard shortcuts panel ── */
 	.shortcuts-panel {
 		flex-shrink: 0;
-		width: 210px;
-		margin-left: auto;
+		width: 220px;
 		position: sticky;
 		top: 2rem;
 		background: var(--bg-alt);
