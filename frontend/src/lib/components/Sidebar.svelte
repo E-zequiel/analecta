@@ -387,9 +387,9 @@
 						aria-label={$expandedSections.has(section.id) ? 'Collapse' : 'Expand'}
 					>
 						{#if $expandedSections.has(section.id)}
-							<ChevronDown size={13} />
+							<ChevronDown size={18} />
 						{:else}
-							<ChevronRight size={13} />
+							<ChevronRight size={18} />
 						{/if}
 					</button>
 					<button
@@ -721,16 +721,17 @@
 		display: flex;
 		align-items: center;
 		gap: 4px;
-		padding: 0 4px;
+		padding: 3px 4px;
 	}
 
 	.chevron-btn {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 22px;
-		height: 26px;
+		width: 24px;
+		height: 28px;
 		padding: 0;
+		margin-left: 3px;
 		background: none;
 		border: none;
 		border-radius: 3px;
