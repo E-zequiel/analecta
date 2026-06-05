@@ -2,11 +2,13 @@
 	import { X, Cable } from '@lucide/svelte';
 	import { entries as entriesApi, type Backlink, type Entry } from '$lib/api/client';
 	import { selectedTag } from '$lib/stores/ui';
+	import { showContextMenu } from '$lib/stores/contextMenu';
 
 	export type StackEntry = {
 		id: string;
 		title: string;
 		sourceType?: string;
+		entryId?: number;
 	};
 
 	const {
@@ -42,6 +44,23 @@
 
 	const MIN_W = 160;
 	const MAX_W = 320;
+
+	async function handleContextMenu(e: MouseEvent, entryId: number) {
+		e.preventDefault();
+		try {
+			const entry = await entriesApi.get(entryId);
+			showContextMenu(e, {
+				id: entry.id,
+				title: entry.title,
+				url: entry.url,
+				file_path: entry.file_path,
+				status: entry.status,
+				flags: entry.flags,
+			});
+		} catch {
+			// entry deleted or sidecar not ready
+		}
+	}
 
 	function startResize(e: MouseEvent) {
 		const startX = e.clientX;
@@ -120,6 +139,9 @@
 						e.preventDefault();
 						onclose?.(entry.id);
 					}
+				}}
+				oncontextmenu={(e) => {
+					if (entry.entryId !== undefined) void handleContextMenu(e, entry.entryId);
 				}}
 			>
 				<button
