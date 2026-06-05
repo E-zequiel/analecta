@@ -200,6 +200,8 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 
 **Provenance note:** Lock file hashes provide **integrity** (package content matches the recorded hash). SLSA provenance attestation for npm packages is implemented in the `verify-provenance` CI job (see Control 10). Python provenance remains unimplemented — PyPI-side ecosystem support is still immature. This is a known gap, not an oversight.
 
+**Dependabot PR caveat:** This automated cooldown applies only to packages updated by `deps-update.yml`. Dependabot has no native minimum-age setting and can open a PR for a version published hours earlier — the `schedule.interval: weekly` raises the average buffer but does not guarantee a 3-day minimum. The cooldown must be verified manually before merging any Dependabot package-version PR (see Maintenance Checklist).
+
 ---
 
 ## Control 8: Lockfile-Pinned CLI Tools
@@ -616,6 +618,7 @@ When the repository is made public, the **"Fork pull request workflows"** sectio
 2. **Socket GitHub App provides scan coverage.** The native App integration runs independently of `BWS_ACCESS_TOKEN` and posts its findings as a separate check on the PR. Review those results before merging.
 3. **For CLI-level enforcement:** trigger `socket-manual.yml` via GitHub → Actions → "Socket Manual Scan" → "Run workflow". Leave the branch as `main` and enter the Dependabot PR's branch name (e.g., `dependabot/npm_and_yarn/...`) in the `ref` input. See Control 13 for rationale.
 4. **Note on scan scope:** `socket ci` scans the pnpm tree. A Dependabot PR that bumps only Python packages (via `uv`) or workflow action SHAs produces no npm-tree diff — the scan would report "no dependency changes." CLI enforcement is only meaningful for PRs that modify `pnpm-lock.yaml`.
+5. **Check the release date (3-day cooldown).** The automated cooldown in `deps-update.yml` does not cover Dependabot PRs. Before merging, verify when the updated version was published: for npm packages, check `https://registry.npmjs.org/<pkg>` → `.time.<version>`; for PyPI packages, check `https://pypi.org/pypi/<pkg>/<version>/json` → `.urls[].upload_time`. If the version was published fewer than 3 days ago, hold the merge. Exception: if the PR patches an active CVE, evaluate the CVSS score and architecture-mismatch triage (step 4 above) — it is a deliberate tradeoff between known CVE exposure and supply-chain risk during the early-adoption window.
 
 ### When Dependabot opens a SHA-update PR (GitHub Actions)
 
