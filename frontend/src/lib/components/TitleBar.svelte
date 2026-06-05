@@ -49,7 +49,7 @@
 		rightSidebarWidth,
 	} from '$lib/stores/ui';
 	import { activeEntryTitle } from '$lib/stores/tabs';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import {
 		viewerEntry,
 		viewerFontSize,
@@ -83,9 +83,9 @@
 	let maximized = $state(false);
 
 	const toolbarMode = $derived(
-		$page.url.pathname.startsWith('/viewer/')
+		page.url.pathname.startsWith('/viewer/')
 			? 'viewer'
-			: $page.url.pathname.startsWith('/editor/')
+			: page.url.pathname.startsWith('/editor/')
 				? 'editor'
 				: null
 	);
@@ -159,12 +159,7 @@
 			>
 				<ChevronsUpDown size={18} />
 			</button>
-			<button
-				class="sc-btn"
-				onclick={openSearch}
-				use:tooltip={'Search'}
-				aria-label="Search"
-			>
+			<button class="sc-btn" onclick={openSearch} use:tooltip={'Search'} aria-label="Search">
 				<ScanSearch size={18} />
 			</button>
 		{/if}
