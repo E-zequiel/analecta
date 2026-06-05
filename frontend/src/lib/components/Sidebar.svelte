@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
 	import { slide } from 'svelte/transition';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import {
 		ClipboardPaste,
 		ChevronRight,
@@ -356,7 +356,7 @@
 		if ($lastViewedId !== null) navigateInTab($lastViewedId, `Entry #${$lastViewedId}`);
 	}
 
-	const isSettingsActive = $derived($page.url.pathname.startsWith('/settings'));
+	const isSettingsActive = $derived(page.url.pathname.startsWith('/settings'));
 </script>
 
 <aside
@@ -410,7 +410,7 @@
 						{#each sectionEntries.get(section.id) ?? [] as entry (entry.id)}
 							<button
 								class="entry-item"
-								class:active-entry={$page.params['id'] === String(entry.id)}
+								class:active-entry={page.params['id'] === String(entry.id)}
 								onclick={() => openEntry(entry.id, entry.title)}
 								oncontextmenu={(e) => showContextMenu(e, entry)}
 								use:tooltip={entry.title}
