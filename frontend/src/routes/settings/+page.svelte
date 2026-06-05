@@ -472,6 +472,14 @@
 				<div class="sp-desc">Toggle entry stack</div>
 			</div>
 			<div class="sp-row">
+				<div class="sp-keys"><kbd>Ctrl+H</kbd></div>
+				<div class="sp-desc">Collecta</div>
+			</div>
+			<div class="sp-row">
+				<div class="sp-keys"><kbd>Ctrl+J</kbd></div>
+				<div class="sp-desc">Keyboard shortcuts</div>
+			</div>
+			<div class="sp-row">
 				<div class="sp-keys"><kbd>Ctrl+K</kbd></div>
 				<div class="sp-desc">Search</div>
 			</div>
