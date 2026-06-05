@@ -162,8 +162,8 @@
 			<button
 				class="sc-btn"
 				onclick={openSearch}
-				use:tooltip={'Search (Ctrl+K)'}
-				aria-label="Search (Ctrl+K)"
+				use:tooltip={'Search'}
+				aria-label="Search"
 			>
 				<ScanSearch size={18} />
 			</button>
