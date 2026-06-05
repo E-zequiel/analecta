@@ -18,6 +18,7 @@
 	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { viewerEntry, viewerFontSize, viewerTagsOpen, viewerActions } from '$lib/stores/toolbar';
+	import { tooltip } from '$lib/actions/tooltip';
 
 	const entryId = $derived(parseInt($page.params['id'] as string));
 
@@ -360,7 +361,12 @@
 					{#each entry.tags as tag (tag)}
 						<span class="chip">
 							<span class="chip-label">{tag}</span>
-							<button class="chip-remove" onclick={() => removeTag(tag)} title="Remove">×</button>
+							<button
+								class="chip-remove"
+								onclick={() => removeTag(tag)}
+								use:tooltip={'Remove'}
+								aria-label="Remove">×</button
+							>
 						</span>
 					{/each}
 				</div>

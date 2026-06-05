@@ -166,3 +166,24 @@ body {
 .app-root {
 	display: contents;
 }
+
+/* ── Tooltip overlay ── */
+#analecta-tooltip {
+	position: fixed;
+	z-index: 9999;
+	pointer-events: none;
+	background: var(--bg-alt);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 3px 8px;
+	font-size: var(--font-size-sublabel);
+	font-family: var(--font-ui-family);
+	color: var(--fg-dark);
+	white-space: nowrap;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+	display: none;
+}
+
+#analecta-tooltip.visible {
+	display: block;
+}
