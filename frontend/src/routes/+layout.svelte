@@ -51,7 +51,7 @@
 	const viewerTabs = $derived(
 		$tabs
 			.filter((t) => t.kind === 'viewer')
-			.map((t) => ({ id: t.id, title: t.title, sourceType: t.sourceType }))
+			.map((t) => ({ id: t.id, title: t.title, sourceType: t.sourceType, entryId: t.entryId }))
 	);
 
 	const activeViewerEntryId = $derived(
