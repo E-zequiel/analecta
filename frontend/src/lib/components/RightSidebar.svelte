@@ -3,6 +3,7 @@
 	import { entries as entriesApi, type Backlink, type Entry } from '$lib/api/client';
 	import { selectedTag } from '$lib/stores/ui';
 	import { showContextMenu } from '$lib/stores/contextMenu';
+	import { tooltip } from '$lib/actions/tooltip';
 
 	export type StackEntry = {
 		id: string;
@@ -147,7 +148,7 @@
 				<button
 					class="stack-item-btn"
 					onclick={() => onselect?.(entry.id, entry.title)}
-					title={entry.title}
+					use:tooltip={entry.title}
 				>
 					<span class="item-title">{entry.title}</span>
 					{#if entry.sourceType}
@@ -161,7 +162,8 @@
 						e.stopPropagation();
 						onclose?.(entry.id);
 					}}
-					title="Cerrar"
+					use:tooltip={'Close'}
+					aria-label="Close"
 				>
 					<X size={12} />
 				</button>
@@ -186,7 +188,8 @@
 					<button
 						class="bl-clear-btn"
 						onclick={() => selectedTag.set(null)}
-						title="Back to backlinks"
+						use:tooltip={'Back to backlinks'}
+						aria-label="Back to backlinks"
 					>
 						<X size={13} />
 					</button>

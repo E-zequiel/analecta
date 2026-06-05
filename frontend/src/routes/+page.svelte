@@ -16,6 +16,7 @@
 	import EntryList from '$lib/components/EntryList.svelte';
 	import SortBar from '$lib/components/SortBar.svelte';
 	import VaultGraph from '$lib/components/VaultGraph.svelte';
+	import { tooltip } from '$lib/actions/tooltip';
 
 	let entryList = $state<Entry[]>([]);
 	let loading = $state(false);
@@ -481,7 +482,7 @@
 						<button
 							class="collecta-nav-btn"
 							onclick={() => navigateInSectionTab(collectaExpanded!)}
-							title="Open as tab"
+							use:tooltip={'Open as tab'}
 						>
 							Open ↗
 						</button>

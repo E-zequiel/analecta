@@ -3,6 +3,7 @@
 	import { openDialog, updateVaultScope, relaunch, setCloseToTray } from '$lib/platform';
 	import { config as configApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
+	import { tooltip } from '$lib/actions/tooltip';
 
 	const ACCENT_OPTIONS = [
 		{ id: 'red', label: 'Red' },
@@ -324,7 +325,7 @@
 						class="range-value"
 						style:font-size="{form.ui_font_size}px"
 						onclick={startEditUiFont}
-						title="Click to edit">{form.ui_font_size}px</button
+						use:tooltip={'Click to edit'}>{form.ui_font_size}px</button
 					>
 				{/if}
 			</div>
@@ -366,7 +367,7 @@
 						class="range-value"
 						style:font-size="{form.reading_font_size}px"
 						onclick={startEditReadingFont}
-						title="Click to edit">{form.reading_font_size}px</button
+						use:tooltip={'Click to edit'}>{form.reading_font_size}px</button
 					>
 				{/if}
 			</div>
@@ -414,7 +415,8 @@
 					<button
 						class="swatch swatch-{opt.id}"
 						class:active={form.accent_color === opt.id}
-						title={opt.label}
+						use:tooltip={opt.label}
+						aria-label={opt.label}
 						onclick={() => selectAccent(opt.id)}
 					></button>
 				{/each}
