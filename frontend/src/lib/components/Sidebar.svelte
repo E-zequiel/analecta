@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { page } from '$app/stores';
 	import {
@@ -42,7 +42,7 @@
 	import { viewerEntry } from '$lib/stores/toolbar';
 	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
 	import { showContextMenu } from '$lib/stores/contextMenu';
-	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
+	import { entryAddedTick, entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
 
 	const SECTIONS = [
 		{ id: 'library', label: 'LIBRARY', icon: Library },
@@ -97,10 +97,48 @@
 		}
 	}
 
+	const fetchGen = new SvelteMap<string, number>();
+
 	async function fetchSection(id: string) {
+		const gen = (fetchGen.get(id) ?? 0) + 1;
+		fetchGen.set(id, gen);
 		const data = await entriesApi.list(sectionParams(id));
-		sectionEntries.set(id, data);
+		if (fetchGen.get(id) === gen) {
+			sectionEntries.set(id, data);
+		}
 	}
+
+	function entryBelongsToSection(e: Entry, sectionId: string): boolean {
+		const isArchived = e.flags.includes('archive');
+		if (sectionId === 'archive') return isArchived;
+		if (isArchived) return false;
+		if (sectionId === 'library') return true;
+		if (sectionId === 'bookmark' || sectionId === 'gem') return e.flags.includes(sectionId);
+		return e.status === sectionId;
+	}
+
+	$effect(() => {
+		const changed = $lastChangedEntry;
+		if (!changed) return;
+		untrack(() => {
+			for (const [sectionId, entries] of sectionEntries) {
+				const idx = entries.findIndex((e) => e.id === changed.id);
+				const shouldBeHere = entryBelongsToSection(changed, sectionId);
+				if (idx !== -1 && !shouldBeHere) {
+					sectionEntries.set(
+						sectionId,
+						entries.filter((e) => e.id !== changed.id)
+					);
+				} else if (idx === -1 && shouldBeHere) {
+					sectionEntries.set(sectionId, [changed, ...entries]);
+				} else if (idx !== -1 && shouldBeHere) {
+					const updated = [...entries];
+					updated[idx] = changed;
+					sectionEntries.set(sectionId, updated);
+				}
+			}
+		});
+	});
 
 	async function fetchTags() {
 		try {
@@ -118,7 +156,8 @@
 	function refreshAll() {
 		fetchCounts();
 		fetchTags();
-		for (const id of $expandedSections) {
+		const ids = untrack(() => [...sectionEntries.keys()]);
+		for (const id of ids) {
 			fetchSection(id);
 		}
 	}
