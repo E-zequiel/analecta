@@ -571,7 +571,7 @@ With this pattern:
 | Secret access | `BWS_ACCESS_TOKEN` — same blast radius as the `socket` job in `ci.yml` |
 | `--ignore-scripts` | Yes — no lifecycle script executes before the scan |
 | Permissions | `permissions: {}` workflow-level; `contents: read` job-level |
-| Scan command | `socket scan create . --json` — full project scan; `socket ci` is PR-context-only and may no-op in a `workflow_dispatch` context |
+| Scan command | `socket scan create . --json --no-interactive --org Ezequiel` — full project scan; `socket ci` is PR-context-only and may no-op in a `workflow_dispatch` context; `--no-interactive` prevents silent failures from interactive prompts in non-TTY environments |
 
 ### When to use
 
