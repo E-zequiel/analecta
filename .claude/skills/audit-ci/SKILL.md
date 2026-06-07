@@ -335,7 +335,7 @@ With this pattern the user dispatches the workflow *on `main`*, not on the targe
 
 **When this check does not apply:** `workflow_dispatch` workflows that do not access secrets and have no significant blast radius. The risk is specifically relevant when the workflow accesses high-value secrets such as `BWS_ACCESS_TOKEN`.
 
-**Analecta instance:** `socket-manual.yml` correctly uses dispatch-on-main + `ref` input, and `socket scan create . --json` (not `socket ci`). `deps-update.yml` also uses `workflow_dispatch` but accesses no high-value secrets directly — it uses only `github.token` with a scoped `pull-requests: write` grant. No finding on either.
+**Analecta instance:** `socket-manual.yml` correctly uses dispatch-on-main + `ref` input, and `socket scan create . --json --no-interactive --org Ezequiel` (not `socket ci`). `--no-interactive` is required: without it, the CLI falls into an org-discovery prompt in non-TTY environments and exits silently with code 0 without running any scan. `deps-update.yml` also uses `workflow_dispatch` but accesses no high-value secrets directly — it uses only `github.token` with a scoped `pull-requests: write` grant. No finding on either.
 
 Severity: **MEDIUM** (a branch that modifies the workflow could run with secret access when dispatched directly; mitigated if dispatch is manually supervised and restricted to write-access users)
 
