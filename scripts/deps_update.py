@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, cast
 
 REPO_ROOT = Path(__file__).parent.parent
-COOLDOWN_DAYS = 3
+COOLDOWN_DAYS = 10
 _REGISTRY_TIMEOUT = 15
 
 # ---------------------------------------------------------------------------
@@ -305,7 +305,7 @@ def main() -> None:
         type=int,
         default=COOLDOWN_DAYS,
         metavar="DAYS",
-        help="minimum age in days (default: 3)",
+        help="minimum age in days (default: 10)",
     )
     _ = parser.add_argument(
         "--pr-body-file",
