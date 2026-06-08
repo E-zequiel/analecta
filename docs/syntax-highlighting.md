@@ -1,0 +1,126 @@
+# Syntax Highlighting — Analecta
+
+Fenced code blocks in the markdown viewer are highlighted by
+[Shiki](https://shiki.style/) v4.1.0 using the **tokyo-night** theme.
+
+---
+
+## Package choice
+
+Shiki was chosen over highlight.js and Prism because it uses TextMate grammars
+(the same engine as VS Code), producing accurate token boundaries for complex
+languages. The fine-grained `@shikijs/*` bundle lets the app import only the 12
+needed language grammars instead of the full multi-MB registry.
+
+The **JavaScript RegExp engine** (`shiki/engine/javascript`) is used instead of
+the default WASM engine. This keeps the Electron bundle simpler — no `.wasm`
+asset to package or load asynchronously — and the JS engine is fast enough for
+the document sizes the viewer handles.
+
+The highlighter is created once at module load with `createHighlighterCoreSync`
+(no async init, no loading spinner).
+
+---
+
+## Supported languages
+
+Python · Bash · Rust · TypeScript · JavaScript · HTML · CSS · Go · Java · C ·
+SQL · YAML
+
+---
+
+## CSP constraint and the HAST transformer
+
+Shiki's default output places token colors in `style=""` attributes on every
+`<span>` and `<pre>`. The app's Content Security Policy has
+`style-src-attr 'none'` (applied in packaged builds), which would silently strip
+all token colors in production while appearing to work in dev.
+
+The solution is a two-part pattern:
+
+### 1. Custom HAST transformer (`shiki-style-to-class.ts`)
+
+A transformer runs at render time and replaces every inline `style=` attribute
+with a deterministic CSS class name derived from a `cyrb53` hash of the style
+string. Classes look like `.__s_<hex>`.
+
+The HAST `span()` and `pre()` hooks are used — **not** the `tokens()` hook.
+This distinction matters: see the [sync API limitation](#sync-api-limitation)
+section below.
+
+### 2. Pre-generated static CSS (`shiki-classes.css`)
+
+A build-time script (`frontend/scripts/gen-shiki-css.mjs`) runs the same
+transformer over representative code samples, collects every style → class
+mapping into a registry, and writes `frontend/src/lib/markdown/shiki-classes.css`
+as a committed static file.
+
+Because `cyrb53` is a pure function of the style string, the classes emitted at
+render time and the selectors in the static CSS file are always identical.
+
+The CSS file is loaded via `import '$lib/markdown/shiki-classes.css'` in the
+viewer and editor pages — covered by `style-src-elem 'self' app:`.
+
+---
+
+## Sync API limitation — why `transformerStyleToClass` is not used
+
+`@shikijs/transformers` ships `transformerStyleToClass`, which is the intended
+upstream solution to the same problem. It does not work with
+`createHighlighterCoreSync`.
+
+The transformer's `tokens()` hook checks `token.htmlStyle`, which is only
+populated on the async code path. With the sync API, tokens expose only
+`token.color` and `token.fontStyle`. The transformer silently produces zero
+class mappings for all token spans.
+
+The custom `shiki-style-to-class.ts` reimplements the same logic using the
+`span()` and `pre()` HAST hooks, where `t.properties.style` is correctly
+populated regardless of sync vs async. The `cyrb53` hash implementation is
+identical to the one inside `@shikijs/transformers` — class names are
+inter-compatible if the upstream transformer is ever fixed.
+
+---
+
+## File map
+
+| File | Role |
+|------|------|
+| `frontend/src/lib/markdown/renderer.ts` | Markdown-it instance; loads Shiki highlighter + transformer |
+| `frontend/src/lib/markdown/shiki-style-to-class.ts` | Runtime HAST transformer (cyrb53 hash) |
+| `frontend/src/lib/markdown/shiki-classes.css` | Pre-generated token CSS — committed, do not edit manually |
+| `frontend/scripts/gen-shiki-css.mjs` | Generator script — run at upgrade time |
+
+---
+
+## Upgrading Shiki
+
+`shiki-classes.css` is regenerated automatically before every production build.
+The frontend `build` script is `node scripts/gen-shiki-css.mjs && vite build`
+in `frontend/package.json` — the generator runs inline, independent of pnpm's
+`enable-pre-post-scripts` setting.
+
+When upgrading `shiki`, `@shikijs/themes`, or `@shikijs/langs`, the new CSS is
+produced during the next `pnpm build` (step 10 of `check.sh`). Commit the
+updated `shiki-classes.css` alongside the package changes.
+
+To regenerate manually without a full build:
+
+```bash
+mise exec -- pnpm --filter frontend run gen-shiki-css
+```
+
+> **Package version policy:** observe the 10-day minimum cooldown from the
+> release date before adopting a new Shiki version.
+
+---
+
+## Adding a language
+
+1. Import the grammar in `frontend/scripts/gen-shiki-css.mjs` and add a
+   representative code sample to `SAMPLES`.
+2. Import the same grammar in `frontend/src/lib/markdown/renderer.ts` and add
+   it to the `langs` array.
+3. Run `check.sh` — the `prebuild` step regenerates `shiki-classes.css` before
+   the Vite build.
+4. Commit `renderer.ts`, `gen-shiki-css.mjs`, and the updated `shiki-classes.css`.
