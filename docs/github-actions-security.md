@@ -147,7 +147,7 @@ The job-level guard cannot distinguish Dependabot PRs from regular internal PRs.
 
 - name: Socket dependency scan
   if: github.event.pull_request.user.login != 'dependabot[bot]'
-  run: mise exec -- pnpm exec socket ci
+  run: mise exec -- pnpm exec socket ci --org Ezequiel --no-interactive
   ...
 ```
 
