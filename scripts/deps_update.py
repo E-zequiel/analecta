@@ -66,6 +66,13 @@ def _parse_iso(s: str) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
+def _run_check(repo_root: Path) -> bool:
+    """Run check.sh and stream its output. Returns True on success."""
+    print("\n==> Verifying with check.sh …")
+    result = subprocess.run(["bash", "scripts/check.sh"], cwd=repo_root)
+    return result.returncode == 0
+
+
 # ---------------------------------------------------------------------------
 # Python / uv
 # ---------------------------------------------------------------------------
@@ -344,9 +351,21 @@ def main() -> None:
         metavar="PATH",
         help="write PR body markdown to this file",
     )
+    _ = parser.add_argument(
+        "--verify",
+        action="store_true",
+        default=False,
+        help="run check.sh after updating and revert lockfiles on failure",
+    )
     args = parser.parse_args()
     cooldown: int = cast(int, args.cooldown)
     pr_body_file: Path | None = cast(Path | None, args.pr_body_file)
+    verify: bool = cast(bool, args.verify)
+
+    uv_lock_path = REPO_ROOT / "backend" / "uv.lock"
+    pnpm_lock_path = REPO_ROOT / "pnpm-lock.yaml"
+    uv_snap: bytes | None = uv_lock_path.read_bytes() if verify else None
+    pnpm_snap: bytes | None = pnpm_lock_path.read_bytes() if verify else None
 
     py_up, py_sk, py_err = update_python(cooldown)
     nd_up, nd_sk, nd_err = update_node(cooldown)
@@ -360,7 +379,17 @@ def main() -> None:
         _ = pr_body_file.write_text(body)
         print(f"    PR body written to {pr_body_file}")
 
-    if py_err or nd_err:
+    had_error = py_err or nd_err
+    if verify and total_up > 0 and not had_error:
+        if not _run_check(REPO_ROOT):
+            print("::error::check.sh failed — reverting lockfiles")
+            if uv_snap is not None:
+                uv_lock_path.write_bytes(uv_snap)
+            if pnpm_snap is not None:
+                pnpm_lock_path.write_bytes(pnpm_snap)
+            sys.exit(1)
+
+    if had_error:
         sys.exit(1)
 
 
