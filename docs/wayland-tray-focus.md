@@ -1,7 +1,17 @@
 # Wayland Tray Focus: Architecture and Constraints
 
-**Status:** Implemented  
-**Date:** 2026-06-04
+**Status:** Feature removed — replaced by `Ctrl+L` keyboard shortcut  
+**Date:** 2026-06-04 (research) · 2026-06-08 (decision)
+
+---
+
+## Decision
+
+The "Add URL from clipboard" tray menu item has been removed. The feature is now exposed exclusively as the `Ctrl+L` keyboard shortcut, which triggers a direct clipboard read and URL extraction without any modal.
+
+**Reason:** The Wayland protocol imposes two independent restrictions (documented below) that make tray-initiated clipboard access unreliable on the primary development platform (COSMIC / Pop!_OS 24.04 LTS). The notification-portal workaround that was implemented is fragile and compositor-dependent. The erratic behaviour under certain focus states is worse UX than the feature's absence. The functionality is preserved via a shortcut that operates within a focused window and therefore sidesteps both restrictions entirely.
+
+The investigation, workaround design, and alternatives are preserved below for reference. The feature may be reconsidered once the Wayland ecosystem (xdg-activation, SNI focus semantics, compositor support) matures further.
 
 ---
 
@@ -35,7 +45,7 @@ Tested on **cosmic-comp 1.0.15** (Pop!_OS 24.04 LTS, Wayland native).
 
 ---
 
-## Solution
+## Workaround That Was Implemented (removed 2026-06-08)
 
 ### Notification portal as activation source
 
@@ -43,7 +53,7 @@ When a user clicks an action on a desktop notification, that click is a genuine 
 
 Electron 42+ (PR [#50568](https://github.com/electron/electron/pull/50568), merged April 2026, backported to `42-x-y`) recovers this token from `libnotify` via `dlsym` and injects it using `base::nix::SetActivationToken()`. The subsequent `win.focus()` call then carries a valid token and succeeds.
 
-**Implementation** (`electron/main/tray.ts`):
+**Implementation flow** (`electron/main/tray.ts`):
 
 ```
 Tray click → silent persistent notification
@@ -53,13 +63,11 @@ Tray click → silent persistent notification
            → webContents.send('tray-paste-url')
 ```
 
-The notification uses `timeoutType: 'never'` so it remains visible until the user acts, distinguishing it from informational auto-dismiss notifications (e.g. "New entry saved.").
-
-A fallback path is retained for environments where `Notification.isSupported()` returns false.
+The notification used `timeoutType: 'never'` so it remained visible until the user acted, distinguishing it from informational auto-dismiss notifications. A fallback path was retained for environments where `Notification.isSupported()` returns false.
 
 ### Serialized clipboard read in the renderer
 
-Since Restriction 2 depends on focus being established before `clipboard.readText()` is called, the renderer defers the clipboard read until focus is confirmed (`frontend/src/lib/components/Sidebar.svelte`):
+Since Restriction 2 depends on focus being established before `clipboard.readText()` is called, the renderer deferred the clipboard read until focus was confirmed:
 
 ```
 tray-paste-url received
@@ -71,7 +79,22 @@ tray-paste-url received
               → on focus: read clipboard → fill input → focus input
 ```
 
-The `window focus` listener covers the residual case where focus arrives asynchronously (e.g. workspace switch latency). It is guarded with `get(urlInputActive)` to no-op if the modal is closed before focus arrives.
+### Why the workaround was insufficient
+
+The notification-portal path is compositor-agnostic in theory, but in practice:
+
+- Requires the user to perform **two separate actions** (tray click → notification click) to trigger what should be a single-click operation.
+- The notification `timeoutType: 'never'` leaves a persistent notification in the queue, which is visually disruptive.
+- On COSMIC, the panel implementation of `StatusNotifierItem` can suppress the initial tray click in certain focus states, making even the notification path unreachable.
+- `libnotify` must be present on the host system; its absence silently degrades to a direct `win.focus()` call that fails under the conditions described above.
+
+The net result is an interaction with erratic behaviour across focus states — acceptable as a workaround but not as a shipped feature.
+
+---
+
+## Current Implementation
+
+`Ctrl+L` (global keyboard shortcut, registered in `+layout.svelte`) increments the `pasteUrlSignal` store. `Sidebar.svelte` observes the signal and calls `pasteUrl()` directly — which reads the clipboard and submits the URL without a confirmation modal. Because the shortcut fires within an already-focused window, both Wayland restrictions are bypassed by construction.
 
 ---
 
@@ -88,8 +111,8 @@ The `window focus` listener covers the residual case where focus arrives asynchr
 
 ---
 
-## Dependencies and Constraints
+## Dependencies and Constraints (for future reference)
 
 - **Electron 42+** required for the activation token extraction from `libnotify` (PR #50568).
-- **`libnotify`** must be installed on the user's system. The symbol `notify_notification_get_activation_token` is resolved dynamically at runtime; absence of `libnotify` degrades gracefully to the fallback path.
-- The notification portal path is compositor-agnostic: the token is valid under GNOME Shell, cosmic-comp, KDE Plasma, and any compositor implementing `xdg_activation_v1`.
+- **`libnotify`** must be installed on the user's system. The symbol `notify_notification_get_activation_token` is resolved dynamically at runtime.
+- The notification portal path is compositor-agnostic on paper: the token is valid under GNOME Shell, cosmic-comp, KDE Plasma, and any compositor implementing `xdg_activation_v1`. The practical limitations described above apply regardless.

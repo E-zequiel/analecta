@@ -126,7 +126,7 @@ These are Wayland protocol constraints that cannot be resolved at the applicatio
 
 | # | Limitation | Impact on Analecta |
 |---|-----------|-------------------|
-| P10 | `win.focus()` without a valid xdg-activation token is ignored by the compositor (Wayland protocol restriction) | Deep-link handler may not foreground the window; the link is still processed and navigation occurs correctly. Tray activation solved via notification portal — see [`wayland-tray-focus.md`](wayland-tray-focus.md) |
+| P10 | `win.focus()` without a valid xdg-activation token is ignored by the compositor (Wayland protocol restriction) | Deep-link handler may not foreground the window; the link is still processed and navigation occurs correctly. Tray-initiated clipboard access removed — see [`wayland-tray-focus.md`](wayland-tray-focus.md) |
 | P12 | System tray icon requires AppIndicator support from the compositor panel | Tray icon visibility on COSMIC depends on the panel version; must be verified early in testing |
 | P15 | Multi-monitor window positioning bug in Electron ≥ 38.4 ([#48749](https://github.com/electron/electron/issues/48749)) | Window may open on the wrong monitor in multi-display setups; workaround: launch with `--ozone-platform=x11` |
 
@@ -153,7 +153,7 @@ The Python sidecar was always the location of all business logic. The SvelteKit 
 Implementation details for Wayland-specific behaviors are tracked in dedicated documents:
 
 - [`wayland-tiling-wm.md`](wayland-tiling-wm.md) — Unmaximize gap in COSMIC tiling (workaround in `electron/main/index.ts`)
-- [`wayland-tray-focus.md`](wayland-tray-focus.md) — Tray focus and clipboard restrictions; solution via notification portal
+- [`wayland-tray-focus.md`](wayland-tray-focus.md) — Tray focus and clipboard restrictions; research, workaround history, and removal rationale
 
 ---
 
