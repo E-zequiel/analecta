@@ -7,7 +7,7 @@ on:
     inputs:
       cooldown:
         description: 'Release cooldown in days (0 to bypass)'
-        default: '3'
+        default: '10'
         type: number
 
 permissions: {}
@@ -35,7 +35,7 @@ jobs:
 
       - name: Run age-gated dependency update
         run: |
-          COOLDOWN="${{ github.event.inputs.cooldown || '3' }}"
+          COOLDOWN="${{ github.event.inputs.cooldown || '10' }}"
           mise exec -- python scripts/deps_update.py --cooldown "$COOLDOWN" --pr-body-file /tmp/pr-body.md
 
       - name: Check for lock file changes
