@@ -333,6 +333,22 @@
 			await openUrl(href);
 		}
 	}
+
+	let hoveredHref = $state('');
+
+	function handleContentMouseOver(e: MouseEvent) {
+		const link = (e.target as HTMLElement).closest('a');
+		hoveredHref = link?.getAttribute('href') ?? '';
+	}
+
+	function handleContentFocus(e: FocusEvent) {
+		const link = (e.target as HTMLElement).closest('a');
+		hoveredHref = link?.getAttribute('href') ?? '';
+	}
+
+	function handleContentMouseLeave() {
+		hoveredHref = '';
+	}
 </script>
 
 {#if $viewerTagsOpen && entry}
@@ -414,6 +430,10 @@
 	</div>
 {/if}
 
+{#if hoveredHref}
+	<div class="link-status-bar" role="status" aria-live="polite">{hoveredHref}</div>
+{/if}
+
 <div class="viewer">
 	{#if error}
 		<div class="error-banner">{error}</div>
@@ -493,7 +513,14 @@
 			<div class="content-inner">
 				<h1 class="entry-title">{entry.title}</h1>
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-				<div class="markdown-body" onclick={handleContentClick}>
+				<div
+					class="markdown-body"
+					onclick={handleContentClick}
+					onmouseover={handleContentMouseOver}
+					onmouseleave={handleContentMouseLeave}
+					onfocus={handleContentFocus}
+					onblur={handleContentMouseLeave}
+				>
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -- markdown-it output, not raw user/network HTML -->
 					{@html html}
 				</div>
@@ -762,5 +789,25 @@
 		color: var(--fg);
 		background: var(--bg-highlight);
 		outline: none;
+	}
+
+	.link-status-bar {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		max-width: 60vw;
+		padding: 4px 12px;
+		background: var(--bg-alt);
+		border-top: 1px solid var(--border);
+		border-right: 1px solid var(--border);
+		border-top-right-radius: 4px;
+		font-size: 0.8rem;
+		color: var(--fg);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		z-index: 500;
+		pointer-events: none;
+		font-family: inherit;
 	}
 </style>
