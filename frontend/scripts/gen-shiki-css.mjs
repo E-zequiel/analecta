@@ -13,55 +13,52 @@
 
 // cyrb53: public-domain 53-bit hash — identical to the one inside @shikijs/transformers.
 function cyrb53(str, seed = 0) {
-  let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
-  for (let i = 0, ch; i < str.length; i++) {
-    ch = str.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 2654435761);
-    h2 = Math.imul(h2 ^ ch, 1597334677);
-  }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
-  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
-  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+	let h1 = 0xdeadbeef ^ seed,
+		h2 = 0x41c6ce57 ^ seed;
+	for (let i = 0, ch; i < str.length; i++) {
+		ch = str.charCodeAt(i);
+		h1 = Math.imul(h1 ^ ch, 2654435761);
+		h2 = Math.imul(h2 ^ ch, 1597334677);
+	}
+	h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+	h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+	h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+	h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+	return 4294967296 * (2097151 & h2) + (h1 >>> 0);
 }
 
 function createStyleToClassTransformer() {
-  const registry = new Map(); // style string → class name
+	const registry = new Map(); // style string → class name
 
-  function register(style) {
-    if (!style) return null;
-    const s = typeof style === 'string' ? style : String(style);
-    if (registry.has(s)) return registry.get(s);
-    const cls = `__s_${cyrb53(s).toString(16)}`;
-    registry.set(s, cls);
-    return cls;
-  }
+	function register(style) {
+		if (!style) return null;
+		const s = typeof style === 'string' ? style : String(style);
+		if (registry.has(s)) return registry.get(s);
+		const cls = `__s_${cyrb53(s).toString(16)}`;
+		registry.set(s, cls);
+		return cls;
+	}
 
-  return {
-    name: 'style-to-class',
-    pre(t) {
-      if (!t.properties?.style) return;
-      const cls = register(t.properties.style);
-      if (!cls) return;
-      delete t.properties.style;
-      this.addClassToHast(t, cls);
-    },
-    span(t) {
-      if (!t.properties?.style) return;
-      const cls = register(t.properties.style);
-      if (!cls) return;
-      delete t.properties.style;
-      t.properties.class = t.properties.class
-        ? `${t.properties.class} ${cls}`
-        : cls;
-    },
-    getCSS() {
-      return [...registry.entries()]
-        .map(([style, cls]) => `.${cls}{${style}}`)
-        .join('\n');
-    },
-  };
+	return {
+		name: 'style-to-class',
+		pre(t) {
+			if (!t.properties?.style) return;
+			const cls = register(t.properties.style);
+			if (!cls) return;
+			delete t.properties.style;
+			this.addClassToHast(t, cls);
+		},
+		span(t) {
+			if (!t.properties?.style) return;
+			const cls = register(t.properties.style);
+			if (!cls) return;
+			delete t.properties.style;
+			t.properties.class = t.properties.class ? `${t.properties.class} ${cls}` : cls;
+		},
+		getCSS() {
+			return [...registry.entries()].map(([style, cls]) => `.${cls}{${style}}`).join('\n');
+		},
+	};
 }
 
 import { createHighlighterCoreSync } from 'shiki/core';
@@ -88,13 +85,13 @@ const OUT = join(dirname(fileURLToPath(import.meta.url)), '../src/lib/markdown/s
 const transformer = createStyleToClassTransformer();
 
 const highlighter = createHighlighterCoreSync({
-  themes: [tokyoNight],
-  langs: [python, bash, rust, typescript, javascript, html, css, go, java, c, sql, yaml],
-  engine: createJavaScriptRegexEngine(),
+	themes: [tokyoNight],
+	langs: [python, bash, rust, typescript, javascript, html, css, go, java, c, sql, yaml],
+	engine: createJavaScriptRegexEngine(),
 });
 
 const SAMPLES = {
-  python: `\
+	python: `\
 import os
 from dataclasses import dataclass
 from typing import Optional
@@ -122,7 +119,7 @@ def fetch_data(url: str, timeout: Optional[float] = None) -> dict:
     return {}
 `,
 
-  typescript: `\
+	typescript: `\
 import { EventEmitter } from 'node:events';
 
 type Status = 'pending' | 'running' | 'done' | 'error';
@@ -155,7 +152,7 @@ export { TaskRunner };
 export type { Task, Status };
 `,
 
-  javascript: `\
+	javascript: `\
 'use strict';
 
 const BASE_URL = 'https://api.example.com/v1';
@@ -180,7 +177,7 @@ async function withRetry(fn, retries = 3) {
 module.exports = { withRetry, BASE_URL, TIMEOUT_MS };
 `,
 
-  rust: `\
+	rust: `\
 use std::collections::HashMap;
 use std::fmt;
 
@@ -211,7 +208,7 @@ impl fmt::Display for Value {
 }
 `,
 
-  bash: `\
+	bash: `\
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -247,7 +244,7 @@ check_deps
 deploy "\${1:-}"
 `,
 
-  go: `\
+	go: `\
 package main
 
 import (
@@ -287,7 +284,7 @@ func (s *Server) Run(ctx context.Context) error {
 }
 `,
 
-  java: `\
+	java: `\
 package com.example.app;
 
 import java.util.List;
@@ -325,7 +322,7 @@ public final class UserService {
 }
 `,
 
-  c: `\
+	c: `\
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -369,7 +366,7 @@ int main(int argc, char *argv[]) {
 }
 `,
 
-  html: `\
+	html: `\
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -402,7 +399,7 @@ int main(int argc, char *argv[]) {
 </html>
 `,
 
-  css: `\
+	css: `\
 /* Design tokens */
 :root {
   --color-bg: #1a1b26;
@@ -448,7 +445,7 @@ int main(int argc, char *argv[]) {
 }
 `,
 
-  sql: `\
+	sql: `\
 -- single-line comment
 /* block comment */
 SELECT u.id, u.name, COUNT(o.id) AS total
@@ -466,7 +463,7 @@ UPDATE settings SET value = 42 WHERE key = 'timeout';
 DELETE FROM sessions WHERE expires_at < NOW();
 `,
 
-  yaml: `\
+	yaml: `\
 # block comment
 defaults: &defaults
   timeout: 30
@@ -497,10 +494,13 @@ service:
 
 const opts = { theme: 'tokyo-night', transformers: [transformer] };
 for (const [lang, code] of Object.entries(SAMPLES)) {
-  highlighter.codeToHtml(code, { ...opts, lang });
+	highlighter.codeToHtml(code, { ...opts, lang });
 }
 
 const css_out = transformer.getCSS();
-writeFileSync(OUT, `/* Generated by scripts/gen-shiki-css.mjs — do not edit manually.\n   Re-run after upgrading shiki or @shikijs/themes. */\n\n${css_out}\n`);
+writeFileSync(
+	OUT,
+	`/* Generated by scripts/gen-shiki-css.mjs — do not edit manually.\n   Re-run after upgrading shiki or @shikijs/themes. */\n\n${css_out}\n`
+);
 
 console.log(`Written ${OUT} (${css_out.length} bytes, ${css_out.split('\n').length} rules)`);
