@@ -3,6 +3,6 @@ dist
 build
 .svelte-kit
 binaries
-scripts
+/scripts
 *.md
 pnpm-lock.yaml

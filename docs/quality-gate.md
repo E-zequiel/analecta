@@ -23,8 +23,8 @@ Steps in order:
 **TypeScript / Svelte:**
 
 5. `pnpm --filter frontend exec svelte-kit sync` — generates `.svelte-kit/tsconfig.json` (required before ESLint type-checked rules)
-6. `pnpm exec prettier --check "electron/**/*.ts" "frontend/src/**/*.{ts,svelte}"` — formatting
-7. `pnpm exec eslint electron/main electron/preload frontend/src` — linting
+6. `pnpm exec prettier --check "electron/**/*.ts" "frontend/src/**/*.{ts,svelte}" "frontend/scripts/**/*.mjs"` — formatting
+7. `pnpm exec eslint electron/main electron/preload frontend/src frontend/scripts` — linting
 8. `cd electron && pnpm exec tsc --noEmit` — Electron type-checking
 9. `pnpm --filter frontend check --fail-on-warnings` — SvelteKit type-checking (`svelte-check`)
 10. `pnpm --filter frontend build` — Vite production build
@@ -190,7 +190,8 @@ Config at `.prettierrc` (repo root):
 | `plugins` | `["prettier-plugin-svelte"]` | Svelte parser support |
 
 `.prettierignore` excludes: `node_modules`, `dist`, `build`, `.svelte-kit`, `binaries`,
-`scripts`, `*.md`, `pnpm-lock.yaml`.
+`/scripts` (root Python scripts only — anchored with `/` so `frontend/scripts/` is covered),
+`*.md`, `pnpm-lock.yaml`.
 
 `pnpm exec prettier --write` is the fix command. `--check` is what `check.sh` runs.
 
@@ -214,6 +215,12 @@ type-check project. Key rules enabled by this tier:
 Same `recommendedTypeChecked` tier with `frontend/tsconfig.json`. Additional rule:
 
 - `@typescript-eslint/no-unused-vars`: `['error', { argsIgnorePattern: '^_' }]` — allows intentionally unused parameters prefixed with `_`
+
+### Build scripts (`frontend/scripts/**/*.mjs`)
+
+Uses `tseslint.configs.recommended` without a TypeScript project (plain JS). Rule:
+
+- `@typescript-eslint/no-unused-vars`: `['error', { argsIgnorePattern: '^_' }]`
 
 ### Svelte components (`frontend/src/**/*.svelte`)
 
