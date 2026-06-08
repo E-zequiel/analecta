@@ -16,6 +16,15 @@ export default tseslint.config(
     ],
   },
 
+  // ── frontend/scripts: plain JS (.mjs) — no TypeScript project needed ────────
+  {
+    files: ['frontend/scripts/**/*.mjs'],
+    extends: tseslint.configs.recommended,
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
+  },
+
   // ── Electron: TypeScript — type-checked rules ─────────────────────────────
   {
     files: ['electron/**/*.ts'],
