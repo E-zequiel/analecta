@@ -10,3 +10,5 @@ allowBuilds:
 # tmp is dead code in Analecta (no Flatpak target), but pinned for hygiene.
 overrides:
   tmp: '0.2.7'
+  # CVE-2024-47764 (accept-splitting) — transitive via @sveltejs/kit; 0.7.0 is the fix.
+  cookie: '0.7.0'
