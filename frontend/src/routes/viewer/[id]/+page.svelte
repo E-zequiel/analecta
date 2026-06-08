@@ -557,9 +557,9 @@
 	}
 
 	.content-inner {
-		max-width: 720px;
+		max-width: 900px;
 		margin: 0 auto;
-		padding: 2rem;
+		padding: 2rem clamp(1rem, 4%, 2.5rem);
 	}
 
 	.entry-title {
