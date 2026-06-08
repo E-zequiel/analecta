@@ -15,6 +15,7 @@
 	import { createRenderer } from '$lib/markdown/renderer';
 	import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
 	import '$lib/markdown/tokyo-night.css';
+	import '$lib/markdown/shiki-classes.css';
 
 	const entryId = $derived(parseInt($page.params['id'] as string));
 

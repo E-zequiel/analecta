@@ -68,7 +68,6 @@
 }
 
 .markdown-body pre {
-	background: var(--bg-dark);
 	border: 1px solid var(--border);
 	border-radius: 6px;
 	padding: 1rem;
@@ -76,10 +75,16 @@
 	margin: 1rem 0;
 }
 
+/* Shiki sets background via generated class; fallback for unlighted blocks */
+.markdown-body pre:not(.shiki) {
+	background: var(--bg-dark);
+}
+
 .markdown-body pre code {
 	background: none;
 	border: none;
 	padding: 0;
+	/* Fallback for token combos not covered by shiki-classes.css */
 	color: var(--fg);
 	font-size: 13px;
 }
