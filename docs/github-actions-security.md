@@ -73,7 +73,7 @@ jobs:
 
 `contents: write` is required because the release job uses `gh release create` to create the release and upload `.deb`, `.AppImage`, and `.rpm` assets via the GitHub Releases API.
 
-`pull-requests: write` is required in `deps-update.yml` so that `gh pr create` (run with `github.token`) can open a PR for the weekly dependency update branch. This permission is declared at the job level only for that job; the release job does not hold it.
+`pull-requests: write` (plus `contents: write`) is required in the `commit-and-pr` job of `deps-update.yml` so that `git push` and `gh pr create` can open a PR for the weekly dependency update branch. These permissions are scoped to the `commit-and-pr` job only. The preceding `update` job — which executes new package code via `check.sh` — runs with `permissions: {}` and `persist-credentials: false` so no `GITHUB_TOKEN` is present in `.git/config` while untrusted code runs. See Control 7 for the full privilege-split rationale.
 
 `contents: read` is required for every job that uses `actions/checkout` to clone a private repository. This includes the `socket` job — without it, `actions/checkout` cannot authenticate and the clone fails with "Repository not found". On a public repository this permission is redundant (checkout requires no token), but it is harmless and kept for consistency.
 
@@ -186,21 +186,29 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 
 ## Control 7: Age-Gated Dependency Updates
 
-`.github/workflows/deps-update.yml` runs on a weekly schedule (Mondays 06:00 UTC) and via `workflow_dispatch` (repo write-access users only). It updates Python and Node lock files, but applies a **cooldown gate** before touching any package:
+`.github/workflows/deps-update.yml` runs on a weekly schedule (Thursdays at 12:00 UTC) and via `workflow_dispatch` (repo write-access users only). It updates Python and Node lock files, but applies a **cooldown gate** before touching any package:
 
 1. Detect outdated packages via `uv` and `pnpm outdated`.
 2. Query the upstream registry for the new version's release date (PyPI JSON API, npm registry `time` map).
-3. **Skip** any package released fewer than 3 days ago — this prevents "day-zero supply chain" attacks where a malicious release is injected before the community has time to detect and report it.
+3. **Skip** any package released fewer than 10 days ago — this prevents "day-zero supply chain" attacks where a malicious release is injected before the community has time to detect and report it.
 4. Apply updates selectively via `uv lock --upgrade-package` and `pnpm update --filter`.
-5. Open a pull request summarising what was updated and what was held back (with eligibility dates).
+5. Run `check.sh` (`--verify` flag) to confirm all 356 tests and static checks still pass; revert lockfiles if they fail.
+6. Open a pull request summarising what was updated and what was held back (with eligibility dates).
 
-**Bypass via `workflow_dispatch`:** The `cooldown` input (default `3`) can be set to `0` to bypass the gate. `workflow_dispatch` requires repository write access, so this bypass is not available to external contributors.
+**Privilege split (two-job design):** The workflow uses two jobs to prevent new package code from executing inside a job that holds write credentials.
 
-**`--ignore-scripts` in the install step:** `deps-update.yml` installs the *current* (pre-update) lockfile with `pnpm install --frozen-lockfile --ignore-scripts` before running `deps_update.py`. Lifecycle scripts (notably `electron`'s binary download) are blocked for this install because the job only needs `pnpm outdated` / `pnpm update` tooling — it does not execute the Electron app. This closes the window where the highest-privilege job in the repo (`contents: write` + `pull-requests: write`) would run `allowBuilds`-gated scripts unnecessarily. See Control 12 for the full scan-ordering rationale.
+- `update` job: `permissions: {}`, `persist-credentials: false`. Runs the cooldown check, updates lockfiles, executes `check.sh` (which runs `pytest` and `vite build` against the new packages). No `GITHUB_TOKEN` is present in `.git/config` during execution.
+- `commit-and-pr` job: `permissions: contents: write, pull-requests: write`. Downloads the verified lockfiles as a GitHub Actions artifact and commits them. Never executes package code.
+
+This ensures that if a package that cleared the 10-day cooldown contains a malicious install or runtime payload, it cannot read or use the repository write token.
+
+**Bypass via `workflow_dispatch`:** The `cooldown` input (default `10`) can be set to `0` to bypass the gate. `workflow_dispatch` requires repository write access, so this bypass is not available to external contributors.
+
+**`--ignore-scripts` in the install step:** `deps-update.yml` installs the *current* (pre-update) lockfile with `pnpm install --frozen-lockfile --ignore-scripts` before running `deps_update.py`. Lifecycle scripts (notably `electron`'s binary download) are blocked because the `update` job only needs `pnpm outdated` / `pnpm update` tooling. The `update` job has no write token anyway (`permissions: {}`), so the blast radius of any lifecycle script is limited to the runner itself.
 
 **Provenance note:** Lock file hashes provide **integrity** (package content matches the recorded hash). SLSA provenance attestation for npm packages is implemented in the `verify-provenance` CI job (see Control 10). Python provenance remains unimplemented — PyPI-side ecosystem support is still immature. This is a known gap, not an oversight.
 
-**Dependabot PR caveat:** This automated cooldown applies only to packages updated by `deps-update.yml`. Dependabot has no native minimum-age setting and can open a PR for a version published hours earlier — the `schedule.interval: weekly` raises the average buffer but does not guarantee a 3-day minimum. The cooldown must be verified manually before merging any Dependabot package-version PR (see Maintenance Checklist).
+**Dependabot PR caveat:** This automated cooldown applies only to packages updated by `deps-update.yml`. Dependabot has no native minimum-age setting and can open a PR for a version published hours earlier — the `schedule.interval: weekly` raises the average buffer but does not guarantee a 10-day minimum. The cooldown must be verified manually before merging any Dependabot package-version PR (see Maintenance Checklist).
 
 ---
 
@@ -482,9 +490,14 @@ Key details:
 
 The `needs:` coupling above prevents wasting runner minutes, but the actual merge gate is the **branch protection rule** in GitHub → Settings → Branches → `main`. Add `socket` to the required status checks list there. A skipped required check is treated as "not passed" by GitHub — this is the hard block on merging when socket fails.
 
-### CI: `deps-update.yml` also uses `--ignore-scripts`
+### CI: `deps-update.yml` — privilege split + `--ignore-scripts`
 
-`deps-update.yml`'s Node install step (`pnpm install --frozen-lockfile --ignore-scripts`) applies the same restriction. This matters because `deps-update.yml` holds the highest-privilege token in the repo (`contents: write` + `pull-requests: write`). The job only needs `pnpm outdated` / `pnpm update` tooling — the Electron binary is not needed. Blocking scripts there limits the blast radius if the pre-update lockfile ever contained a compromised package.
+`deps-update.yml` uses two jobs to isolate the privilege boundary:
+
+- The `update` job runs with `permissions: {}` and `persist-credentials: false`. It installs the current lockfile with `pnpm install --frozen-lockfile --ignore-scripts` (lifecycle scripts blocked), applies cooldown-gated updates, and executes `check.sh` against the new packages. No `GITHUB_TOKEN` is in `.git/config` while package code runs.
+- The `commit-and-pr` job holds `contents: write` + `pull-requests: write` but only downloads the pre-verified lockfile artifact and commits it — it never installs or executes package code.
+
+This split means that even if a package that cleared the 10-day cooldown contains a malicious payload, it cannot access or exfiltrate the repository write token. The blast radius of a compromise in the `update` job is limited to the runner instance itself.
 
 ### Local: advisory workflow (no equivalent of `--ignore-scripts` for `pnpm update`)
 
