@@ -7,7 +7,8 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "gen-shiki-css": "node scripts/gen-shiki-css.mjs"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3",
@@ -27,12 +28,17 @@
     "@codemirror/state": "^6",
     "@codemirror/view": "^6",
     "@lucide/svelte": "^0.511.0",
+    "@shikijs/langs": "4.1.0",
+    "@shikijs/markdown-it": "4.1.0",
+    "@shikijs/themes": "4.1.0",
+    "@shikijs/transformers": "4.1.0",
     "@uiw/codemirror-theme-tokyo-night": "^4",
     "graphology": "^0.26.0",
     "graphology-layout-forceatlas2": "^0.10.1",
     "markdown-it": "^14",
     "markdown-it-footnote": "^4",
     "markdown-it-task-lists": "^2",
+    "shiki": "4.1.0",
     "sigma": "^3.0.3"
   }
 }

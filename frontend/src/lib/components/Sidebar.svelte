@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { page } from '$app/state';
 	import {
@@ -20,7 +20,7 @@
 		Trash2,
 		Archive,
 	} from '@lucide/svelte';
-	import { writable, get } from 'svelte/store';
+	import { writable } from 'svelte/store';
 	import { SvelteMap } from 'svelte/reactivity';
 	import { clipboardReadText } from '$lib/platform';
 	import {
@@ -203,34 +203,6 @@
 			pasteUrl();
 		}
 	});
-
-	async function focusAndFillInput() {
-		try {
-			const text = (await clipboardReadText()).trim();
-			if (text.startsWith('http://') || text.startsWith('https://')) {
-				urlInputValue = text;
-			}
-		} catch {
-			// leave input empty if clipboard is unavailable
-		}
-		urlInputEl?.focus();
-	}
-
-	async function openUrlInput() {
-		urlInputActive.set(true);
-		urlInputValue = '';
-		await tick();
-		if (document.hasFocus()) {
-			await focusAndFillInput();
-		} else {
-			const onFocus = () => {
-				window.removeEventListener('focus', onFocus);
-				if (!get(urlInputActive)) return;
-				focusAndFillInput();
-			};
-			window.addEventListener('focus', onFocus);
-		}
-	}
 
 	async function submitUrl() {
 		const url = urlInputValue.trim();

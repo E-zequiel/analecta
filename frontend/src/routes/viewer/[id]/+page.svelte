@@ -13,6 +13,7 @@
 	} from '$lib/api/client';
 	import { createRenderer } from '$lib/markdown/renderer';
 	import '$lib/markdown/tokyo-night.css';
+	import '$lib/markdown/shiki-classes.css';
 	import { lastViewedId } from '$lib/stores/ui';
 	import { ensureEntryTab, closeTab } from '$lib/stores/tabs';
 	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
