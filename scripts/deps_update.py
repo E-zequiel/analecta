@@ -17,6 +17,7 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 import tomllib
 import urllib.error
 import urllib.request
@@ -93,7 +94,7 @@ def _pypi_release_date(
         return None
 
 
-def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
+def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], bool]:
     """Check and apply Python dependency updates via uv."""
     print("\n=== Python (uv) ===")
     backend = REPO_ROOT / "backend"
@@ -118,11 +119,16 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
 
     updated: list[Updated] = []
     skipped: list[Skipped] = []
+    had_error = False
+    fetch_attempted = 0
+    fetch_ok = 0
 
     for name in names:
+        fetch_attempted += 1
         data = _fetch_json(f"https://pypi.org/pypi/{name}/json")
         if data is None:
             continue
+        fetch_ok += 1
         info = cast(dict[str, Any], data.get("info", {}))
         latest: str = cast(str, info.get("version", ""))
         current = current_versions.get(name, "")
@@ -143,12 +149,19 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
 
         result = _run(["uv", "lock", "--upgrade-package", name], cwd=backend)
         if result.returncode != 0:
-            print(f"    [error] {result.stderr.strip()}")
+            print(f"::error::{name}: uv lock failed — {result.stderr.strip()}")
+            had_error = True
         else:
             print("    [ok] updated")
             updated.append((name, current, latest))
 
-    return updated, skipped
+    if fetch_attempted > 0 and fetch_ok == 0:
+        print(
+            "::error::All PyPI registry fetches failed — no packages could be checked"
+        )
+        had_error = True
+
+    return updated, skipped, had_error
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +201,7 @@ def _npm_release_date(name: str, version: str) -> datetime | None:
         return None
 
 
-def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
+def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped], bool]:
     """Check and apply Node dependency updates via pnpm."""
     print("\n=== Node (pnpm) ===")
 
@@ -197,10 +210,17 @@ def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
         ["pnpm", "outdated", "--json", "--filter", "frontend"],
         cwd=REPO_ROOT,
     )
+    if result.returncode not in {0, 1}:
+        print(
+            f"::error::pnpm outdated failed (exit {result.returncode}):"
+            f" {result.stderr.strip()}"
+        )
+        return [], [], True
+
     raw = result.stdout.strip()
     if not raw:
         print("  nothing outdated")
-        return [], []
+        return [], [], False
 
     try:
         outdated = _parse_pnpm_outdated(raw)
@@ -209,11 +229,14 @@ def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         if not m:
             print("  [warn] could not parse pnpm outdated output")
-            return [], []
+            return [], [], False
         outdated = _parse_pnpm_outdated(m.group())
 
     updated: list[Updated] = []
     skipped: list[Skipped] = []
+    had_error = False
+    fetch_attempted = 0
+    fetch_ok = 0
 
     for name, info in sorted(outdated.items()):
         current: str = cast(str, info.get("current", ""))
@@ -222,10 +245,12 @@ def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
             continue
         print(f"  {name}: {current} -> {wanted}")
 
+        fetch_attempted += 1
         release_dt = _npm_release_date(name, wanted)
         if release_dt is None:
             print("    [warn] release date unavailable, skipping")
             continue
+        fetch_ok += 1
         if not _age_ok(release_dt, cooldown):
             days_old = (datetime.now(UTC) - release_dt).days
             print(f"    [skip] {days_old}d old (cooldown: {cooldown}d)")
@@ -234,12 +259,17 @@ def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped]]:
 
         result = _run(["pnpm", "update", name, "--filter", "frontend"], cwd=REPO_ROOT)
         if result.returncode != 0:
-            print(f"    [error] {result.stderr.strip()}")
+            print(f"::error::{name}: pnpm update failed — {result.stderr.strip()}")
+            had_error = True
         else:
             print("    [ok] updated")
             updated.append((name, current, wanted))
 
-    return updated, skipped
+    if fetch_attempted > 0 and fetch_ok == 0:
+        print("::error::All npm registry fetches failed — no packages could be checked")
+        had_error = True
+
+    return updated, skipped, had_error
 
 
 # ---------------------------------------------------------------------------
@@ -318,8 +348,8 @@ def main() -> None:
     cooldown: int = cast(int, args.cooldown)
     pr_body_file: Path | None = cast(Path | None, args.pr_body_file)
 
-    py_up, py_sk = update_python(cooldown)
-    nd_up, nd_sk = update_node(cooldown)
+    py_up, py_sk, py_err = update_python(cooldown)
+    nd_up, nd_sk, nd_err = update_node(cooldown)
 
     total_up = len(py_up) + len(nd_up)
     total_sk = len(py_sk) + len(nd_sk)
@@ -329,6 +359,9 @@ def main() -> None:
         body = _pr_body(py_up, py_sk, nd_up, nd_sk, cooldown)
         _ = pr_body_file.write_text(body)
         print(f"    PR body written to {pr_body_file}")
+
+    if py_err or nd_err:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
