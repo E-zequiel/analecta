@@ -197,8 +197,8 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 
 **Privilege split (two-job design):** The workflow uses two jobs to prevent new package code from executing inside a job that holds write credentials.
 
-- `update` job: `permissions: {}`, `persist-credentials: false`. Runs the cooldown check, updates lockfiles, executes `check.sh` (which runs `pytest` and `vite build` against the new packages). No `GITHUB_TOKEN` is present in `.git/config` during execution.
-- `commit-and-pr` job: `permissions: contents: write, pull-requests: write`. Downloads the verified lockfiles as a GitHub Actions artifact and commits them. Never executes package code.
+- `update` job: `permissions: { contents: read }` + `persist-credentials: false`. `contents: read` is required for `actions/checkout` on a private repo; `persist-credentials: false` removes the token from `.git/config` immediately after clone, before any package code runs. Even if a package reads `$GITHUB_TOKEN` from the environment, it only has read-only access.
+- `commit-and-pr` job: `permissions: { contents: write, pull-requests: write }`. Downloads the verified lockfiles as a GitHub Actions artifact and commits them. Never executes package code.
 
 This ensures that if a package that cleared the 10-day cooldown contains a malicious install or runtime payload, it cannot read or use the repository write token.
 
@@ -494,7 +494,7 @@ The `needs:` coupling above prevents wasting runner minutes, but the actual merg
 
 `deps-update.yml` uses two jobs to isolate the privilege boundary:
 
-- The `update` job runs with `permissions: {}` and `persist-credentials: false`. It installs the current lockfile with `pnpm install --frozen-lockfile --ignore-scripts` (lifecycle scripts blocked), applies cooldown-gated updates, and executes `check.sh` against the new packages. No `GITHUB_TOKEN` is in `.git/config` while package code runs.
+- The `update` job runs with `permissions: { contents: read }` and `persist-credentials: false`. `contents: read` is the minimum for `actions/checkout` on a private repo. `persist-credentials: false` removes the token from `.git/config` immediately after clone, before new package code executes (via `check.sh`). Even if a package reads `$GITHUB_TOKEN` from the environment, it has read-only access — it cannot push or create PRs.
 - The `commit-and-pr` job holds `contents: write` + `pull-requests: write` but only downloads the pre-verified lockfile artifact and commits it — it never installs or executes package code.
 
 This split means that even if a package that cleared the 10-day cooldown contains a malicious payload, it cannot access or exfiltrate the repository write token. The blast radius of a compromise in the `update` job is limited to the runner instance itself.
