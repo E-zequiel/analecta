@@ -292,7 +292,7 @@ grep -n "head.repo.full_name\|sm-action\|secrets\." .github/workflows/*.yml
 
 **`[bot]` spoofability:** The `[bot]` suffix is reserved for GitHub App accounts and cannot be registered as a regular user. This condition cannot be spoofed.
 
-**Analecta instance:** `ci.yml` → `socket` job. The `bitwarden/sm-action` and `socket ci` steps carry `if: github.event.pull_request.user.login != 'dependabot[bot]'`. The Socket GitHub App (native integration) provides scan coverage for Dependabot PRs independently of `BWS_ACCESS_TOKEN`. For CLI-level enforcement before merging a Dependabot PR, use `socket-manual.yml` (see check 2l).
+**Analecta instance:** `ci.yml` → `socket` job. The `bitwarden/sm-action` and `socket ci --org Ezequiel --no-interactive` steps carry `if: github.event.pull_request.user.login != 'dependabot[bot]'`. `--org Ezequiel` is required: without it the CLI calls the org-list endpoint on every run, which can timeout and fail the scan before any files are analysed. `--no-interactive` ensures any future prompt fails fast with a non-zero exit. The Socket GitHub App (native integration) provides scan coverage for Dependabot PRs independently of `BWS_ACCESS_TOKEN`. For CLI-level enforcement before merging a Dependabot PR, use `socket-manual.yml` (see check 2l).
 
 Severity: **MEDIUM** (Dependabot PRs cause required-check failures; fails CI without compromising secrets)
 
