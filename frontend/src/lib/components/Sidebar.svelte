@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, tick, untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { page } from '$app/state';
 	import {
@@ -22,7 +22,7 @@
 	} from '@lucide/svelte';
 	import { writable, get } from 'svelte/store';
 	import { SvelteMap } from 'svelte/reactivity';
-	import { clipboardReadText, onTrayPasteUrl } from '$lib/platform';
+	import { clipboardReadText } from '$lib/platform';
 	import {
 		entries as entriesApi,
 		tags as tagsApi,
@@ -38,6 +38,7 @@
 		selectedTag,
 		lastViewedId,
 		expandAllSignal,
+		pasteUrlSignal,
 	} from '$lib/stores/ui';
 	import { viewerEntry } from '$lib/stores/toolbar';
 	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
@@ -194,7 +195,14 @@
 		}
 	});
 
-	onMount(() => onTrayPasteUrl(() => openUrlInput()));
+	let prevPasteUrlSignal = 0;
+	$effect(() => {
+		const n = $pasteUrlSignal;
+		if (n > prevPasteUrlSignal) {
+			prevPasteUrlSignal = n;
+			pasteUrl();
+		}
+	});
 
 	async function focusAndFillInput() {
 		try {

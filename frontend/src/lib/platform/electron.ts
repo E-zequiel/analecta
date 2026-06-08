@@ -141,7 +141,3 @@ export async function windowIsMaximized(): Promise<boolean> {
 export function onWindowMaximized(cb: (maximized: boolean) => void): () => void {
 	return window.electronAPI.on('window-maximized', (...args: unknown[]) => cb(args[0] as boolean));
 }
-
-export function onTrayPasteUrl(cb: () => void): () => void {
-	return window.electronAPI.on('tray-paste-url', () => cb());
-}

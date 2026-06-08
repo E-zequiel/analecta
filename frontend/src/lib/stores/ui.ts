@@ -23,6 +23,7 @@ export const searchOpen = writable(false);
 export const shortcutsOpen = writable(false);
 export const lastViewedId = writable<number | null>(null);
 export const expandAllSignal = writable(0);
+export const pasteUrlSignal = writable(0);
 
 export const rightSidebarOpen = persisted('right-sidebar-open', true);
 export const rightSidebarWidth = persisted('right-sidebar-width', 240);

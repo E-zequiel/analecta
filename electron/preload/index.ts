@@ -32,7 +32,6 @@ const ALLOWED_PUSH_CHANNELS = new Set([
 	'deep-link',
 	'update-available',
 	'window-maximized',
-	'tray-paste-url',
 ]);
 
 const api = {

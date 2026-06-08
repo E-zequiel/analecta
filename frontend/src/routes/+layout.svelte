@@ -25,6 +25,7 @@
 		shortcutsOpen,
 		rightSidebarOpen,
 		rightSidebarWidth,
+		pasteUrlSignal,
 	} from '$lib/stores/ui';
 	import {
 		tabs,
@@ -143,6 +144,10 @@
 			}
 			if (e.ctrlKey && e.key === 'k') {
 				searchOpen.set(true);
+				e.preventDefault();
+			}
+			if (e.ctrlKey && e.key === 'l') {
+				pasteUrlSignal.update((n) => n + 1);
 				e.preventDefault();
 			}
 			if (e.ctrlKey && e.key === 'Tab') {
