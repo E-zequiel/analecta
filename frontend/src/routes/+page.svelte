@@ -9,6 +9,8 @@
 		config as configApi,
 		type Entry,
 		type Tag,
+		type GraphNode,
+		type GraphEdge,
 	} from '$lib/api/client';
 	import { activeSection, selectedTag, lastViewedId } from '$lib/stores/ui';
 	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
@@ -16,6 +18,7 @@
 	import EntryList from '$lib/components/EntryList.svelte';
 	import SortBar from '$lib/components/SortBar.svelte';
 	import VaultGraph from '$lib/components/VaultGraph.svelte';
+	import LocalGraph from '$lib/components/LocalGraph.svelte';
 	import { tooltip } from '$lib/actions/tooltip';
 
 	let entryList = $state<Entry[]>([]);
@@ -49,6 +52,10 @@
 	let collectaTagExpanded = $state<string | null>(null);
 	let collectaTagEntries = $state<Entry[]>([]);
 
+	// Graph data for section and tags dashboards
+	let vaultGraphNodes = $state<GraphNode[]>([]);
+	let vaultGraphEdges = $state<GraphEdge[]>([]);
+
 	const FLAG_SECTIONS = new Set(['bookmark', 'gem', 'archive']);
 
 	const COLLECTA_GRID: Array<{ id: string; label: string }> = [
@@ -73,6 +80,37 @@
 		// unread / read
 		return { status: section, exclude_flag: 'archive', tag, ...sort };
 	}
+
+	// Fetch vault graph for non-collecta dashboards
+	$effect(() => {
+		if ($activeSection === 'collecta') return;
+		let cancelled = false;
+		entriesApi
+			.getGraph()
+			.then((data) => {
+				if (!cancelled) {
+					vaultGraphNodes = data.nodes;
+					vaultGraphEdges = data.edges;
+				}
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	// Section graph: filter vault graph to entries visible in the current section
+	const sectionGraphData = $derived.by(() => {
+		if (entryList.length === 0 || vaultGraphEdges.length === 0) {
+			return { nodes: [] as GraphNode[], edges: [] as GraphEdge[] };
+		}
+		const entryIds = new Set(entryList.map((e) => `entry:${e.id}`));
+		const edges = vaultGraphEdges.filter((e) => entryIds.has(e.source));
+		if (edges.length === 0) return { nodes: [] as GraphNode[], edges: [] as GraphEdge[] };
+		const referencedIds = new Set(edges.flatMap((e) => [e.source, e.target]));
+		const nodes = vaultGraphNodes.filter((n) => referencedIds.has(n.node_id));
+		return { nodes, edges };
+	});
 
 	// Main list — active for all sections except tags and collecta
 	$effect(() => {
@@ -600,6 +638,17 @@
 					{/if}
 				</div>
 			{/if}
+
+			{#if vaultGraphEdges.length > 0}
+				<div class="section-graph">
+					<LocalGraph
+						nodes={vaultGraphNodes}
+						edges={vaultGraphEdges}
+						height={220}
+						onopen={(id, title, sourceType) => navigateInTab(id, title, sourceType ?? 'article')}
+					/>
+				</div>
+			{/if}
 		</div>
 
 		{#if tagContextMenu}
@@ -644,6 +693,16 @@
 			<div class="list-wrap">
 				<EntryList entries={entryList} {loading} />
 			</div>
+			{#if sectionGraphData.edges.length > 0}
+				<div class="section-graph">
+					<LocalGraph
+						nodes={sectionGraphData.nodes}
+						edges={sectionGraphData.edges}
+						height={200}
+						onopen={(id, title, sourceType) => navigateInTab(id, title, sourceType ?? 'article')}
+					/>
+				</div>
+			{/if}
 		</div>
 	{/if}
 {/if}
@@ -657,7 +716,13 @@
 
 	.list-wrap {
 		flex: 1;
+		min-height: 0;
 		overflow-y: auto;
+	}
+
+	.section-graph {
+		flex-shrink: 0;
+		border-top: 1px solid var(--border);
 	}
 
 	/* Tags dashboard */
@@ -872,8 +937,8 @@
 	}
 
 	.collecta-graph {
-		flex: 1;
-		min-height: 320px;
+		height: 380px;
+		flex-shrink: 0;
 		border-top: 1px solid var(--border);
 		padding-top: 0.5rem;
 	}

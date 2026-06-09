@@ -4,18 +4,18 @@
 	import type { SimulationLinkDatum, SimulationNodeDatum } from 'd3-force';
 	import type { GraphEdge, GraphNode } from '$lib/api/client';
 
-	const HEIGHT = 180;
-
 	const {
 		nodes,
 		edges,
-		focusNodeId,
+		focusNodeId = undefined,
+		height = 180,
 		onopen,
 	}: {
 		nodes: GraphNode[];
 		edges: GraphEdge[];
-		focusNodeId: string;
-		onopen?: (id: number, title: string) => void;
+		focusNodeId?: string;
+		height?: number;
+		onopen?: (id: number, title: string, sourceType?: string) => void;
 	} = $props();
 
 	type SimNode = SimulationNodeDatum & GraphNode;
@@ -31,19 +31,20 @@
 		const _nodes = nodes;
 		const _edges = edges;
 
-		if (_nodes.length === 0) {
+		if (_edges.length === 0) {
 			nodePositions = [];
 			edgePositions = [];
 			return;
 		}
 
 		const w = untrack(() => width);
+		const h = untrack(() => height);
 		const fid = focusNodeId;
 
 		const simNodes: SimNode[] = _nodes.map((n) => ({
 			...n,
 			x: w / 2 + (Math.random() - 0.5) * 60,
-			y: HEIGHT / 2 + (Math.random() - 0.5) * 60,
+			y: h / 2 + (Math.random() - 0.5) * 60,
 		}));
 		const simLinks: SimLink[] = _edges.map((e) => ({
 			source: e.source,
@@ -58,7 +59,7 @@
 					.distance(65)
 			)
 			.force('charge', forceManyBody<SimNode>().strength(-120))
-			.force('center', forceCenter<SimNode>(w / 2, HEIGHT / 2))
+			.force('center', forceCenter<SimNode>(w / 2, h / 2))
 			.force(
 				'collide',
 				forceCollide<SimNode>().radius((d) => (d.node_id === fid ? 16 : 12))
@@ -88,15 +89,15 @@
 
 	function handleClick(node: GraphNode) {
 		const id = parseInt(node.node_id.slice(6));
-		if (!isNaN(id)) onopen?.(id, node.label);
+		if (!isNaN(id)) onopen?.(id, node.label, node.source_type ?? undefined);
 	}
 </script>
 
 <div class="graph-wrap" bind:clientWidth={width}>
-	{#if nodes.length <= 1}
+	{#if edges.length === 0}
 		<p class="graph-empty">No connections.</p>
 	{:else}
-		<svg {width} height={HEIGHT}>
+		<svg {width} {height}>
 			{#each edgePositions as ep, i (i)}
 				<line class="edge" x1={ep.x1} y1={ep.y1} x2={ep.x2} y2={ep.y2} />
 			{/each}
