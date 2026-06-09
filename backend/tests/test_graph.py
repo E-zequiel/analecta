@@ -452,3 +452,90 @@ async def test_api_subgraph_with_neighbors(tmp_path: Path) -> None:
     edge = data["edges"][0]
     assert edge["source"] == f"entry:{focus_id}"
     assert edge["target"] == f"entry:{nbr_id}"
+
+
+# ---------------------------------------------------------------------------
+# Tag-hub topology — get_graph() via entry_tags
+# ---------------------------------------------------------------------------
+
+
+def test_entry_tag_creates_hub_edge(tmp_path: Path) -> None:
+    md = tmp_path / "note.md"
+    md.write_text("Content.", encoding="utf-8")
+    with VaultIndex(tmp_path / "db.sqlite") as idx:
+        eid = _seed(idx, title="Tagged Entry", file_path=str(md))
+        idx.update_tags(eid, ["python"])
+        nodes, edges = idx.get_graph()
+    tag_nodes = [n for n in nodes if n.kind == "tag"]
+    entry_nodes = [n for n in nodes if n.kind == "entry"]
+    assert len(tag_nodes) == 1
+    assert tag_nodes[0].node_id == "tag:python"
+    assert len(entry_nodes) == 1
+    assert entry_nodes[0].node_id == f"entry:{eid}"
+    assert len(edges) == 1
+    assert edges[0].source == f"entry:{eid}"
+    assert edges[0].target == "tag:python"
+
+
+def test_shared_tag_connects_entries_via_hub(tmp_path: Path) -> None:
+    md_a = tmp_path / "a.md"
+    md_a.write_text("A content.", encoding="utf-8")
+    md_b = tmp_path / "b.md"
+    md_b.write_text("B content.", encoding="utf-8")
+    with VaultIndex(tmp_path / "db.sqlite") as idx:
+        a_id = _seed(idx, n=1, title="Article A", file_path=str(md_a))
+        b_id = _seed(idx, n=2, title="Article B", file_path=str(md_b))
+        idx.update_tags(a_id, ["python"])
+        idx.update_tags(b_id, ["python"])
+        nodes, edges = idx.get_graph()
+    node_ids = {n.node_id for n in nodes}
+    assert f"entry:{a_id}" in node_ids
+    assert f"entry:{b_id}" in node_ids
+    assert "tag:python" in node_ids
+    edge_pairs = {(e.source, e.target) for e in edges}
+    assert (f"entry:{a_id}", "tag:python") in edge_pairs
+    assert (f"entry:{b_id}", "tag:python") in edge_pairs
+
+
+# ---------------------------------------------------------------------------
+# Tag-hub topology — get_subgraph() via entry_tags
+# ---------------------------------------------------------------------------
+
+
+def test_subgraph_includes_own_structured_tags(tmp_path: Path) -> None:
+    md = tmp_path / "focus.md"
+    md.write_text("Content.", encoding="utf-8")
+    with VaultIndex(tmp_path / "db.sqlite") as idx:
+        eid = _seed(idx, title="Focus", file_path=str(md))
+        idx.update_tags(eid, ["python", "ml"])
+        result = idx.get_subgraph(eid)
+    assert result is not None
+    nodes, edges = result
+    node_ids = {n.node_id for n in nodes}
+    assert "tag:python" in node_ids
+    assert "tag:ml" in node_ids
+    edge_pairs = {(e.source, e.target) for e in edges}
+    assert (f"entry:{eid}", "tag:python") in edge_pairs
+    assert (f"entry:{eid}", "tag:ml") in edge_pairs
+
+
+def test_subgraph_tag_neighbors_included(tmp_path: Path) -> None:
+    md_focus = tmp_path / "focus.md"
+    md_focus.write_text("Focus content.", encoding="utf-8")
+    md_nbr = tmp_path / "nbr.md"
+    md_nbr.write_text("Neighbor content.", encoding="utf-8")
+    with VaultIndex(tmp_path / "db.sqlite") as idx:
+        focus_id = _seed(idx, n=1, title="Focus", file_path=str(md_focus))
+        nbr_id = _seed(idx, n=2, title="Neighbor", file_path=str(md_nbr))
+        idx.update_tags(focus_id, ["python"])
+        idx.update_tags(nbr_id, ["python"])
+        result = idx.get_subgraph(focus_id)
+    assert result is not None
+    nodes, edges = result
+    node_ids = {n.node_id for n in nodes}
+    assert f"entry:{focus_id}" in node_ids
+    assert f"entry:{nbr_id}" in node_ids
+    assert "tag:python" in node_ids
+    edge_pairs = {(e.source, e.target) for e in edges}
+    assert (f"entry:{focus_id}", "tag:python") in edge_pairs
+    assert (f"entry:{nbr_id}", "tag:python") in edge_pairs
