@@ -1,13 +1,7 @@
 <script lang="ts">
-	import { X, Cable, ChevronRight } from '@lucide/svelte';
-	import {
-		entries as entriesApi,
-		type Backlink,
-		type Entry,
-		type SubgraphResult,
-	} from '$lib/api/client';
+	import { X, Cable } from '@lucide/svelte';
+	import { entries as entriesApi, type Backlink, type Entry } from '$lib/api/client';
 	import { selectedTag } from '$lib/stores/ui';
-	import LocalGraph from './LocalGraph.svelte';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { tooltip } from '$lib/actions/tooltip';
 
@@ -89,8 +83,6 @@
 
 	let backlinks = $state<Backlink[]>([]);
 	let tagEntries = $state<Entry[]>([]);
-	let subgraph = $state<SubgraphResult | null>(null);
-	let graphCollapsed = $state(true);
 
 	$effect(() => {
 		const tag = $selectedTag;
@@ -103,23 +95,6 @@
 			.list({ tag })
 			.then((result) => {
 				if (!cancelled) tagEntries = result.filter((e) => e.id !== id);
-			})
-			.catch(() => {});
-		return () => {
-			cancelled = true;
-		};
-	});
-
-	$effect(() => {
-		const id = activeEntryId;
-		subgraph = null;
-		if (id === null) return;
-
-		let cancelled = false;
-		entriesApi
-			.getSubgraph(id)
-			.then((result) => {
-				if (!cancelled) subgraph = result;
 			})
 			.catch(() => {});
 		return () => {
@@ -202,38 +177,18 @@
 	</div>
 
 	{#if activeEntryId !== null}
-		<div class="graph-section">
-			<button
-				class="section-header"
-				onclick={() => (graphCollapsed = !graphCollapsed)}
-				aria-expanded={!graphCollapsed}
-			>
-				<span class="chevron" class:rotated={!graphCollapsed}>
-					<ChevronRight size={13} />
-				</span>
-				<span class="section-label">LOCAL GRAPH</span>
-			</button>
-			{#if !graphCollapsed && subgraph}
-				<LocalGraph
-					nodes={subgraph.nodes}
-					edges={subgraph.edges}
-					focusNodeId={subgraph.focus_node_id}
-					onopen={onbacklinksopen}
-				/>
-			{/if}
-		</div>
-	{/if}
-
-	{#if activeEntryId !== null}
 		<div class="backlinks-section">
-			{#if $selectedTag}
-				<div class="bl-row">
-					<div class="bl-header">
-						<span class="bl-tag-name">#{$selectedTag}</span>
-						{#if tagEntries.length > 0}
-							<span class="bl-count">{tagEntries.length}</span>
-						{/if}
-					</div>
+			<div class="bl-row">
+				<div class="bl-header">
+					<Cable size={15} />
+					<span class="bl-label">BACKLINKS</span>
+					{#if !$selectedTag && backlinks.length > 0}
+						<span class="bl-count">{backlinks.length}</span>
+					{:else if $selectedTag && tagEntries.length > 0}
+						<span class="bl-count">{tagEntries.length}</span>
+					{/if}
+				</div>
+				{#if $selectedTag}
 					<button
 						class="bl-clear-btn"
 						onclick={() => selectedTag.set(null)}
@@ -242,8 +197,11 @@
 					>
 						<X size={13} />
 					</button>
-				</div>
+				{/if}
+			</div>
 
+			{#if $selectedTag}
+				<p class="bl-tag-label">#{$selectedTag}</p>
 				{#if tagEntries.length === 0}
 					<p class="bl-empty">No entries.</p>
 				{:else}
@@ -256,16 +214,6 @@
 					</div>
 				{/if}
 			{:else}
-				<div class="bl-row">
-					<div class="bl-header">
-						<Cable size={15} />
-						<span class="bl-label">BACKLINKS</span>
-						{#if backlinks.length > 0}
-							<span class="bl-count">{backlinks.length}</span>
-						{/if}
-					</div>
-				</div>
-
 				{#if backlinks.length === 0}
 					<p class="bl-empty">No backlinks.</p>
 				{:else}
@@ -412,49 +360,6 @@
 		margin: 0;
 	}
 
-	/* ── Local graph section ── */
-	.graph-section {
-		flex-shrink: 0;
-		border-top: 1px solid var(--border);
-	}
-
-	.section-header {
-		display: flex;
-		align-items: center;
-		gap: 5px;
-		width: 100%;
-		padding: 6px 4px;
-		background: none;
-		border: none;
-		cursor: pointer;
-		color: var(--fg-muted);
-		font-family: inherit;
-		font-size: 0.7rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		transition: color 0.12s;
-	}
-
-	.section-header:hover {
-		color: var(--fg);
-	}
-
-	.section-label {
-		flex: 1;
-		text-align: left;
-	}
-
-	.chevron {
-		display: flex;
-		flex-shrink: 0;
-		transition: transform 0.15s;
-	}
-
-	.chevron.rotated {
-		transform: rotate(90deg);
-	}
-
 	/* ── Backlinks section ── */
 	.backlinks-section {
 		flex-shrink: 0;
@@ -486,12 +391,13 @@
 		flex: 1;
 	}
 
-	.bl-tag-name {
-		flex: 1;
-		font-size: 0.7rem;
+	.bl-tag-label {
+		padding: 2px 10px 4px 26px;
+		font-size: 0.72rem;
 		font-weight: 700;
 		color: var(--accent);
 		letter-spacing: 0.06em;
+		margin: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;

@@ -39,7 +39,7 @@
 					graph.addNode(node.node_id, {
 						label: node.label,
 						size: isEntry ? 8 : 5,
-						color: isEntry ? nodeColor(node) : 'var(--accent-dark)',
+						color: nodeColor(node),
 						x: Math.random() * 100,
 						y: Math.random() * 100,
 						kind: node.kind,
@@ -98,7 +98,8 @@
 
 				loading = false;
 			})
-			.catch(() => {
+			.catch((e: unknown) => {
+				console.error('[VaultGraph]', e);
 				error = true;
 				loading = false;
 			});
@@ -110,6 +111,7 @@
 	});
 
 	function nodeColor(node: GraphNode): string {
+		if (node.kind === 'tag') return '#565f89';
 		switch (node.source_type) {
 			case 'youtube':
 				return '#f7768e';
@@ -160,14 +162,16 @@
 	}
 
 	.graph-canvas.hidden {
-		display: none;
+		visibility: hidden;
+		pointer-events: none;
 	}
 
 	.graph-state {
+		position: absolute;
+		inset: 0;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		height: 100%;
 	}
 
 	.hint {
