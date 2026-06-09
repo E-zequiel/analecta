@@ -26,6 +26,9 @@
 		rightSidebarOpen,
 		rightSidebarWidth,
 		pasteUrlSignal,
+		selectedTag,
+		graphPreviewEntryId,
+		sidebarTagPreview,
 	} from '$lib/stores/ui';
 	import {
 		tabs,
@@ -64,6 +67,20 @@
 			return tab?.kind === 'viewer' ? (tab.entryId ?? null) : null;
 		})()
 	);
+
+	const resolvedEntryId = $derived(activeViewerEntryId ?? $graphPreviewEntryId);
+
+	$effect(() => {
+		if (activeViewerEntryId !== null) {
+			graphPreviewEntryId.set(null);
+			sidebarTagPreview.set(null);
+			selectedTag.set(null);
+		}
+	});
+
+	$effect(() => {
+		if ($selectedTag !== null) sidebarTagPreview.set(null);
+	});
 
 	let timedOut = $state(false);
 	let isFirstRun = $state(true);
@@ -291,7 +308,7 @@
 					onselect={(id) => activateTab(id)}
 					onclose={(id) => closeTab(id)}
 					onwidthchange={(w) => rightSidebarWidth.set(w)}
-					activeEntryId={activeViewerEntryId}
+					activeEntryId={resolvedEntryId}
 					onbacklinksopen={(id, name) => openEntryTab(id, name)}
 				/>
 			{/if}

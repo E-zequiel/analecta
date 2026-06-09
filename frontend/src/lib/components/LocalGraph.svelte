@@ -1,6 +1,14 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force';
+	import {
+		forceCenter,
+		forceCollide,
+		forceLink,
+		forceManyBody,
+		forceSimulation,
+		forceX,
+		forceY,
+	} from 'd3-force';
 	import type { SimulationLinkDatum, SimulationNodeDatum } from 'd3-force';
 	import type { GraphEdge, GraphNode } from '$lib/api/client';
 
@@ -10,12 +18,14 @@
 		focusNodeId = undefined,
 		height = 180,
 		onopen,
+		ontagclick,
 	}: {
 		nodes: GraphNode[];
 		edges: GraphEdge[];
 		focusNodeId?: string;
 		height?: number;
 		onopen?: (id: number, title: string, sourceType?: string) => void;
+		ontagclick?: (tagName: string) => void;
 	} = $props();
 
 	type SimNode = SimulationNodeDatum & GraphNode;
@@ -58,14 +68,21 @@
 					.id((d) => d.node_id)
 					.distance(65)
 			)
-			.force('charge', forceManyBody<SimNode>().strength(-120))
+			.force('charge', forceManyBody<SimNode>().strength(-140))
 			.force('center', forceCenter<SimNode>(w / 2, h / 2))
 			.force(
 				'collide',
-				forceCollide<SimNode>().radius((d) => (d.node_id === fid ? 16 : 12))
-			);
+				forceCollide<SimNode>().radius((d) => (d.node_id === fid ? 18 : d.kind === 'tag' ? 9 : 12))
+			)
+			.force('x', forceX<SimNode>(w / 2).strength(0.05))
+			.force('y', forceY<SimNode>(h / 2).strength(0.05));
 
 		sim.on('tick', () => {
+			for (const n of simNodes) {
+				const r = n.node_id === fid ? 16 : n.kind === 'tag' ? 7 : 10;
+				n.x = Math.max(r + 4, Math.min(n.x ?? 0, w - r - 4));
+				n.y = Math.max(r + 4, Math.min(n.y ?? 0, h - r - 4));
+			}
 			nodePositions = simNodes.map((n) => ({ id: n.node_id, x: n.x ?? 0, y: n.y ?? 0 }));
 			edgePositions = simLinks.map((link) => {
 				const s = link.source as SimNode;
@@ -88,8 +105,13 @@
 	}
 
 	function handleClick(node: GraphNode) {
-		const id = parseInt(node.node_id.slice(6));
-		if (!isNaN(id)) onopen?.(id, node.label, node.source_type ?? undefined);
+		if (node.kind === 'tag') {
+			const tagName = node.node_id.startsWith('tag:') ? node.node_id.slice(4) : node.label;
+			ontagclick?.(tagName);
+		} else if (node.kind === 'entry') {
+			const id = parseInt(node.node_id.slice(6));
+			if (!isNaN(id)) onopen?.(id, node.label, node.source_type ?? undefined);
+		}
 	}
 </script>
 
@@ -105,8 +127,8 @@
 				{@const node = nodeById.get(pos.id)}
 				{#if node}
 					{@const isFocus = pos.id === focusNodeId}
-					{@const r = isFocus ? 12 : node.kind === 'tag' ? 5 : 8}
-					{@const isClickable = node.kind === 'entry' && !isFocus}
+					{@const r = isFocus ? 12 : node.kind === 'tag' ? 6 : 9}
+					{@const isClickable = (node.kind === 'entry' && !isFocus) || node.kind === 'tag'}
 					{#if isClickable}
 						<g
 							class="node-group clickable"
@@ -121,15 +143,15 @@
 							}}
 						>
 							<circle class={nodeClass(node, false)} cx={pos.x} cy={pos.y} {r} />
-							<text class="label" x={pos.x} y={pos.y + r + 11}>
-								{truncate(node.label, 14)}
+							<text class="label" x={pos.x} y={pos.y + r + 13}>
+								{truncate(node.label, 16)}
 							</text>
 						</g>
 					{:else}
 						<g class="node-group">
 							<circle class={nodeClass(node, isFocus)} cx={pos.x} cy={pos.y} {r} />
-							<text class="label" class:label-focus={isFocus} x={pos.x} y={pos.y + r + 11}>
-								{truncate(node.label, 14)}
+							<text class="label label-focus" x={pos.x} y={pos.y + r + 13}>
+								{truncate(node.label, 16)}
 							</text>
 						</g>
 					{/if}
@@ -142,6 +164,7 @@
 <style>
 	.graph-wrap {
 		width: 100%;
+		overflow: hidden;
 	}
 
 	.graph-empty {
@@ -154,7 +177,7 @@
 
 	svg {
 		display: block;
-		overflow: visible;
+		overflow: hidden;
 	}
 
 	.edge {
@@ -194,7 +217,7 @@
 
 	.node-tag {
 		fill: var(--fg-muted);
-		cursor: default;
+		cursor: pointer;
 	}
 
 	.node-default {
@@ -207,11 +230,16 @@
 
 	.label {
 		fill: var(--fg-muted);
-		font-size: 10px;
+		font-size: 12px;
 		text-anchor: middle;
 		font-family: inherit;
 		pointer-events: none;
 		user-select: none;
+		opacity: 1;
+	}
+
+	.node-group:hover .label {
+		fill: var(--fg);
 	}
 
 	.label-focus {

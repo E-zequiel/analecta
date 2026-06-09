@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { X, Cable } from '@lucide/svelte';
 	import { entries as entriesApi, type Backlink, type Entry } from '$lib/api/client';
-	import { selectedTag } from '$lib/stores/ui';
+	import { selectedTag, sidebarTagPreview } from '$lib/stores/ui';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { tooltip } from '$lib/actions/tooltip';
 
@@ -84,17 +84,18 @@
 	let backlinks = $state<Backlink[]>([]);
 	let tagEntries = $state<Entry[]>([]);
 
+	const activeTag = $derived($sidebarTagPreview ?? $selectedTag);
+
 	$effect(() => {
-		const tag = $selectedTag;
-		const id = activeEntryId;
+		const tag = activeTag;
 		tagEntries = [];
-		if (!tag || id === null) return;
+		if (!tag) return;
 
 		let cancelled = false;
 		entriesApi
 			.list({ tag })
 			.then((result) => {
-				if (!cancelled) tagEntries = result.filter((e) => e.id !== id);
+				if (!cancelled) tagEntries = result;
 			})
 			.catch(() => {});
 		return () => {
@@ -105,7 +106,6 @@
 	$effect(() => {
 		const id = activeEntryId;
 		backlinks = [];
-		selectedTag.set(null);
 		if (id === null) return;
 
 		let cancelled = false;
@@ -176,22 +176,25 @@
 		{/if}
 	</div>
 
-	{#if activeEntryId !== null}
+	{#if activeEntryId !== null || activeTag !== null}
 		<div class="backlinks-section">
 			<div class="bl-row">
 				<div class="bl-header">
 					<Cable size={15} />
 					<span class="bl-label">BACKLINKS</span>
-					{#if !$selectedTag && backlinks.length > 0}
+					{#if !activeTag && backlinks.length > 0}
 						<span class="bl-count">{backlinks.length}</span>
-					{:else if $selectedTag && tagEntries.length > 0}
+					{:else if activeTag && tagEntries.length > 0}
 						<span class="bl-count">{tagEntries.length}</span>
 					{/if}
 				</div>
-				{#if $selectedTag}
+				{#if activeTag}
 					<button
 						class="bl-clear-btn"
-						onclick={() => selectedTag.set(null)}
+						onclick={() => {
+							sidebarTagPreview.set(null);
+							selectedTag.set(null);
+						}}
 						use:tooltip={'Back to backlinks'}
 						aria-label="Back to backlinks"
 					>
@@ -200,8 +203,8 @@
 				{/if}
 			</div>
 
-			{#if $selectedTag}
-				<p class="bl-tag-label">#{$selectedTag}</p>
+			{#if activeTag}
+				<p class="bl-tag-label">#{activeTag}</p>
 				{#if tagEntries.length === 0}
 					<p class="bl-empty">No entries.</p>
 				{:else}

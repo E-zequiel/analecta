@@ -7,9 +7,10 @@
 
 	interface Props {
 		onentryopen?: (id: number, title: string, sourceType: string) => void;
+		ontagopen?: (tagName: string) => void;
 	}
 
-	const { onentryopen }: Props = $props();
+	const { onentryopen, ontagopen }: Props = $props();
 
 	let container = $state<HTMLDivElement | undefined>(undefined);
 	let nodeCount = $state(0);
@@ -60,7 +61,7 @@
 					renderEdgeLabels: false,
 					defaultEdgeColor: '#3a3a4a',
 					labelColor: { color: '#c0caf5' },
-					labelSize: 11,
+					labelSize: 14,
 					labelFont: 'JetBrains Mono, monospace',
 					minCameraRatio: 0.05,
 					maxCameraRatio: 10,
@@ -68,6 +69,11 @@
 
 				sigma.on('clickNode', ({ node }: { node: string }) => {
 					const attrs = graph.getNodeAttributes(node);
+					if (attrs['kind'] === 'tag') {
+						const tagName = node.startsWith('tag:') ? node.slice(4) : (attrs['label'] as string);
+						ontagopen?.(tagName);
+						return;
+					}
 					if (attrs['kind'] !== 'entry') return;
 					const rawId = node.replace('entry:', '');
 					const id = parseInt(rawId, 10);
@@ -192,12 +198,12 @@
 	}
 
 	.meta-item {
-		font-size: 11px;
+		font-size: 13px;
 		color: var(--fg-muted);
 	}
 
 	.meta-sep {
-		font-size: 11px;
+		font-size: 13px;
 		color: var(--border);
 	}
 </style>
