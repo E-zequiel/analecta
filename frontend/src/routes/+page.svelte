@@ -12,7 +12,14 @@
 		type GraphNode,
 		type GraphEdge,
 	} from '$lib/api/client';
-	import { activeSection, selectedTag, lastViewedId } from '$lib/stores/ui';
+	import {
+		activeSection,
+		selectedTag,
+		lastViewedId,
+		graphPreviewEntryId,
+		sidebarTagPreview,
+		rightSidebarOpen,
+	} from '$lib/stores/ui';
 	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
 	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
 	import EntryList from '$lib/components/EntryList.svelte';
@@ -51,6 +58,8 @@
 	let collectaLoading = $state(false);
 	let collectaTagExpanded = $state<string | null>(null);
 	let collectaTagEntries = $state<Entry[]>([]);
+
+	let graphColumnHeight = $state(200);
 
 	// Graph data for section and tags dashboards
 	let vaultGraphNodes = $state<GraphNode[]>([]);
@@ -97,6 +106,13 @@
 		return () => {
 			cancelled = true;
 		};
+	});
+
+	// Clear graph preview when user navigates between sections
+	$effect(() => {
+		void $activeSection;
+		graphPreviewEntryId.set(null);
+		sidebarTagPreview.set(null);
 	});
 
 	// Section graph: filter vault graph to entries visible in the current section
@@ -570,82 +586,104 @@
 
 			<!-- Vault connection graph -->
 			<div class="collecta-graph">
-				<VaultGraph onentryopen={(id, title, sourceType) => navigateInTab(id, title, sourceType)} />
+				<VaultGraph
+					onentryopen={(id, _title, _sourceType) => {
+						sidebarTagPreview.set(null);
+						graphPreviewEntryId.set(id);
+						rightSidebarOpen.set(true);
+					}}
+					ontagopen={(tagName) => {
+						graphPreviewEntryId.set(null);
+						sidebarTagPreview.set(tagName);
+						rightSidebarOpen.set(true);
+					}}
+				/>
 			</div>
 		</div>
 	{:else if $activeSection === 'tags'}
 		<div class="tags-dashboard">
-			<div class="tag-grid">
-				{#if tagGrid.length === 0}
-					<p class="hint">No tags yet.</p>
-				{:else}
-					{#each tagGrid as tag (tag.name)}
-						{#if editingTagName === tag.name}
-							<input
-								class="tag-chip-edit"
-								type="text"
-								bind:value={editingTagValue}
-								use:focusAndSelect
-								onkeydown={(e) => {
-									if (e.key === 'Enter') {
-										e.preventDefault();
-										renameTagDashboard(tag.name, editingTagValue);
-									} else if (e.key === 'Escape') {
-										editingTagName = null;
-									}
-								}}
-								onblur={() => renameTagDashboard(tag.name, editingTagValue)}
-							/>
-						{:else}
-							<button
-								class="tag-chip"
-								class:active={expandedTag === tag.name}
-								onclick={() => toggleTagEntries(tag.name)}
-								oncontextmenu={(e) => {
-									e.preventDefault();
-									tagContextMenu = { x: e.clientX, y: e.clientY, tag: tag.name };
-								}}
-							>
-								<span class="tag-chip-name">#{tag.name}</span>
-								<span class="tag-chip-count">{tag.count}</span>
-							</button>
-						{/if}
-					{/each}
-				{/if}
-			</div>
-
-			{#if expandedTag}
-				<div class="tag-entry-list">
-					<p class="tag-entry-header">#{expandedTag}</p>
-					{#if tagEntriesLoading}
-						<p class="hint">Loading…</p>
-					{:else if tagEntries.length === 0}
-						<p class="hint">No entries.</p>
+			<div class="tags-top">
+				<div class="tag-grid">
+					{#if tagGrid.length === 0}
+						<p class="hint">No tags yet.</p>
 					{:else}
-						{#each tagEntries as entry (entry.id)}
-							<button
-								class="tag-entry-card"
-								onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
-							>
-								<span class="tag-entry-title">{entry.title}</span>
-								<div class="tag-entry-badges">
-									{#each entryBadges(entry) as badge (badge.cls)}
-										<span class="badge {badge.cls}">{badge.label}</span>
-									{/each}
-								</div>
-							</button>
+						{#each tagGrid as tag (tag.name)}
+							{#if editingTagName === tag.name}
+								<input
+									class="tag-chip-edit"
+									type="text"
+									bind:value={editingTagValue}
+									use:focusAndSelect
+									onkeydown={(e) => {
+										if (e.key === 'Enter') {
+											e.preventDefault();
+											renameTagDashboard(tag.name, editingTagValue);
+										} else if (e.key === 'Escape') {
+											editingTagName = null;
+										}
+									}}
+									onblur={() => renameTagDashboard(tag.name, editingTagValue)}
+								/>
+							{:else}
+								<button
+									class="tag-chip"
+									class:active={expandedTag === tag.name}
+									onclick={() => toggleTagEntries(tag.name)}
+									oncontextmenu={(e) => {
+										e.preventDefault();
+										tagContextMenu = { x: e.clientX, y: e.clientY, tag: tag.name };
+									}}
+								>
+									<span class="tag-chip-name">#{tag.name}</span>
+									<span class="tag-chip-count">{tag.count}</span>
+								</button>
+							{/if}
 						{/each}
 					{/if}
 				</div>
-			{/if}
 
-			{#if vaultGraphEdges.length > 0}
+				{#if expandedTag}
+					<div class="tag-entry-list">
+						<p class="tag-entry-header">#{expandedTag}</p>
+						{#if tagEntriesLoading}
+							<p class="hint">Loading…</p>
+						{:else if tagEntries.length === 0}
+							<p class="hint">No entries.</p>
+						{:else}
+							{#each tagEntries as entry (entry.id)}
+								<button
+									class="tag-entry-card"
+									onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
+								>
+									<span class="tag-entry-title">{entry.title}</span>
+									<div class="tag-entry-badges">
+										{#each entryBadges(entry) as badge (badge.cls)}
+											<span class="badge {badge.cls}">{badge.label}</span>
+										{/each}
+									</div>
+								</button>
+							{/each}
+						{/if}
+					</div>
+				{/if}
+			</div>
+
+			{#if vaultGraphEdges.length > 0 && vaultGraphNodes.length <= 80}
 				<div class="section-graph">
 					<LocalGraph
 						nodes={vaultGraphNodes}
 						edges={vaultGraphEdges}
 						height={220}
-						onopen={(id, title, sourceType) => navigateInTab(id, title, sourceType ?? 'article')}
+						onopen={(id, _title, _sourceType) => {
+							sidebarTagPreview.set(null);
+							graphPreviewEntryId.set(id);
+							rightSidebarOpen.set(true);
+						}}
+						ontagclick={(tagName) => {
+							graphPreviewEntryId.set(null);
+							sidebarTagPreview.set(tagName);
+							rightSidebarOpen.set(true);
+						}}
 					/>
 				</div>
 			{/if}
@@ -690,39 +728,64 @@
 					sortDir = dir;
 				}}
 			/>
-			<div class="list-wrap">
-				<EntryList entries={entryList} {loading} />
-			</div>
-			{#if sectionGraphData.edges.length > 0}
-				<div class="section-graph">
-					<LocalGraph
-						nodes={sectionGraphData.nodes}
-						edges={sectionGraphData.edges}
-						height={200}
-						onopen={(id, title, sourceType) => navigateInTab(id, title, sourceType ?? 'article')}
-					/>
+			<div class="dashboard-body">
+				<div class="list-column">
+					<EntryList entries={entryList} {loading} />
 				</div>
-			{/if}
+				{#if sectionGraphData.edges.length > 0 && sectionGraphData.nodes.length <= 80}
+					<div class="graph-column" bind:clientHeight={graphColumnHeight}>
+						<LocalGraph
+							nodes={sectionGraphData.nodes}
+							edges={sectionGraphData.edges}
+							height={graphColumnHeight || 200}
+							onopen={(id, _title, _sourceType) => {
+								sidebarTagPreview.set(null);
+								graphPreviewEntryId.set(id);
+								rightSidebarOpen.set(true);
+							}}
+							ontagclick={(tagName) => {
+								graphPreviewEntryId.set(null);
+								sidebarTagPreview.set(tagName);
+								rightSidebarOpen.set(true);
+							}}
+						/>
+					</div>
+				{/if}
+			</div>
 		</div>
 	{/if}
 {/if}
 
 <style>
+	/* Section dashboard — two-column layout */
 	.dashboard {
 		display: flex;
 		flex-direction: column;
 		height: 100%;
 	}
 
-	.list-wrap {
+	.dashboard-body {
 		flex: 1;
 		min-height: 0;
+		display: flex;
+		flex-wrap: wrap;
+		overflow: hidden;
+		align-content: stretch;
+	}
+
+	.list-column {
+		flex: 1 0 280px;
 		overflow-y: auto;
 	}
 
-	.section-graph {
-		flex-shrink: 0;
-		border-top: 1px solid var(--border);
+	.graph-column {
+		flex: 1 0 260px;
+		min-height: 240px;
+		border-left: 1px solid var(--border);
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
 	}
 
 	/* Tags dashboard */
@@ -730,9 +793,22 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
+		overflow: hidden;
+	}
+
+	.tags-top {
+		flex: 1;
+		min-height: 0;
 		overflow-y: auto;
 		padding: 1rem;
+		display: flex;
+		flex-direction: column;
 		gap: 1rem;
+	}
+
+	.section-graph {
+		flex-shrink: 0;
+		border-top: 1px solid var(--border);
 	}
 
 	.tag-grid {
