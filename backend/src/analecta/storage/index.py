@@ -786,6 +786,55 @@ class VaultIndex:
             key = (src_node_id, focus_node_id)
             edge_weights[key] = edge_weights.get(key, 0) + 1
 
+        # Tag-hub: structured entry_tags for the focus entry
+        focus_tag_rows = self._conn.execute(
+            """
+            SELECT t.name
+            FROM entry_tags et
+            JOIN tags t ON t.id = et.tag_id
+            WHERE et.entry_id = ?
+            """,
+            (focus_id,),
+        ).fetchall()
+        for ftag_row in focus_tag_rows:
+            ftag_name: str = ftag_row[0]
+            tag_node_id = f"tag:{ftag_name}"
+            if tag_node_id not in node_map:
+                node_map[tag_node_id] = GraphNodeRecord(
+                    node_id=tag_node_id,
+                    label=f"#{ftag_name}",
+                    kind="tag",
+                    source_type=None,
+                )
+            key = (focus_node_id, tag_node_id)
+            edge_weights[key] = edge_weights.get(key, 0) + 1
+
+            # Neighbors sharing this tag (1-hop via hub)
+            neighbor_rows = self._conn.execute(
+                """
+                SELECT et.entry_id
+                FROM entry_tags et
+                JOIN tags t ON t.id = et.tag_id
+                WHERE t.name = ? AND et.entry_id != ?
+                """,
+                (ftag_name, focus_id),
+            ).fetchall()
+            for nrow in neighbor_rows:
+                neighbor_id: int = nrow[0]
+                if neighbor_id not in entries:
+                    continue
+                neighbor_node_id = f"entry:{neighbor_id}"
+                if neighbor_node_id not in node_map:
+                    n_title, n_src_type = entries[neighbor_id]
+                    node_map[neighbor_node_id] = GraphNodeRecord(
+                        node_id=neighbor_node_id,
+                        label=n_title,
+                        kind="entry",
+                        source_type=n_src_type,
+                    )
+                nkey = (neighbor_node_id, tag_node_id)
+                edge_weights[nkey] = edge_weights.get(nkey, 0) + 1
+
         nodes = list(node_map.values())
         edges = [
             GraphEdgeRecord(source=s, target=t, weight=w)
@@ -867,6 +916,22 @@ class VaultIndex:
                     target_node = f"tag:{target_text}"
                     virtual_tags.add(target_text)
 
+            key = (source_node, target_node)
+            edge_weights[key] = edge_weights.get(key, 0) + 1
+
+        # Tag-hub edges from structured entry_tags (UI-assigned tags)
+        tag_ref_rows = self._conn.execute(
+            "SELECT et.entry_id, t.name"
+            " FROM entry_tags et JOIN tags t ON t.id = et.tag_id"
+        ).fetchall()
+        for tag_row in tag_ref_rows:
+            tagged_entry_id: int = tag_row[0]
+            tag_name: str = tag_row[1]
+            if tagged_entry_id not in entries:
+                continue
+            source_node = f"entry:{tagged_entry_id}"
+            target_node = f"tag:{tag_name}"
+            virtual_tags.add(tag_name)
             key = (source_node, target_node)
             edge_weights[key] = edge_weights.get(key, 0) + 1
 
