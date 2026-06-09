@@ -90,7 +90,7 @@
 	let backlinks = $state<Backlink[]>([]);
 	let tagEntries = $state<Entry[]>([]);
 	let subgraph = $state<SubgraphResult | null>(null);
-	let graphCollapsed = $state(false);
+	let graphCollapsed = $state(true);
 
 	$effect(() => {
 		const tag = $selectedTag;
@@ -130,6 +130,7 @@
 	$effect(() => {
 		const id = activeEntryId;
 		backlinks = [];
+		selectedTag.set(null);
 		if (id === null) return;
 
 		let cancelled = false;
