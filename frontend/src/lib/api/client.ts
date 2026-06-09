@@ -82,6 +82,12 @@ export interface GraphResult {
 	edges: GraphEdge[];
 }
 
+export interface SubgraphResult {
+	focus_node_id: string;
+	nodes: GraphNode[];
+	edges: GraphEdge[];
+}
+
 export interface AppConfig {
 	vault_path: string;
 	font_variant: 'regular' | 'nerd' | 'custom';
@@ -195,6 +201,10 @@ export const entries = {
 
 	getGraph(): Promise<GraphResult> {
 		return apiFetch<GraphResult>('/entries/graph');
+	},
+
+	getSubgraph(id: number): Promise<SubgraphResult> {
+		return apiFetch<SubgraphResult>(`/entries/${id}/subgraph`);
 	},
 };
 
