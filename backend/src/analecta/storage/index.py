@@ -659,6 +659,140 @@ class VaultIndex:
             for row in rows
         ]
 
+    def get_subgraph(
+        self, focus_id: int
+    ) -> tuple[list[GraphNodeRecord], list[GraphEdgeRecord]] | None:
+        """Return the 1-hop neighbourhood subgraph centred on *focus_id*.
+
+        Resolves both outlinks (entries that *focus_id* links to) and inlinks
+        (entries that link to *focus_id*) using the same title-matching rules
+        as :meth:`get_backlinks` and :meth:`get_graph`. The focus entry is
+        always present as a node even when it has no connections. Returns
+        ``None`` if *focus_id* does not exist.
+
+        Args:
+            focus_id: ID of the focal entry.
+
+        Returns:
+            Tuple ``(nodes, edges)`` or ``None`` if the entry is missing.
+        """
+        from analecta.markdown.hashtags import normalize_tag
+
+        focus_row = self._conn.execute(
+            "SELECT title, source_type FROM entries WHERE id = ?", (focus_id,)
+        ).fetchone()
+        if focus_row is None:
+            return None
+
+        focus_title: str = focus_row[0]
+        focus_source_type: str = focus_row[1]
+
+        entry_rows = self._conn.execute(
+            "SELECT id, title, source_type FROM entries"
+        ).fetchall()
+        entries: dict[int, tuple[str, str]] = {
+            row[0]: (row[1], row[2]) for row in entry_rows
+        }
+        lower_title_to_id: dict[str, int] = {
+            title.lower(): eid for eid, (title, _) in entries.items()
+        }
+        slug_to_id: dict[str, int] = {
+            normalize_tag(title): eid for eid, (title, _) in entries.items()
+        }
+
+        node_map: dict[str, GraphNodeRecord] = {}
+        edge_weights: dict[tuple[str, str], int] = {}
+
+        focus_node_id = f"entry:{focus_id}"
+        node_map[focus_node_id] = GraphNodeRecord(
+            node_id=focus_node_id,
+            label=focus_title,
+            kind="entry",
+            source_type=focus_source_type,
+        )
+
+        # Outlinks: refs where focus_id is the source
+        out_refs = self._conn.execute(
+            "SELECT target_text, is_hashtag FROM backlink_refs WHERE source_id = ?",
+            (focus_id,),
+        ).fetchall()
+        for ref in out_refs:
+            target_text: str = ref[0]
+            is_hashtag: bool = bool(ref[1])
+            if not is_hashtag:
+                target_id = lower_title_to_id.get(target_text)
+                if target_id is None or target_id == focus_id:
+                    continue
+                target_node_id = f"entry:{target_id}"
+                if target_node_id not in node_map:
+                    t_title, t_src_type = entries[target_id]
+                    node_map[target_node_id] = GraphNodeRecord(
+                        node_id=target_node_id,
+                        label=t_title,
+                        kind="entry",
+                        source_type=t_src_type,
+                    )
+            else:
+                target_entry_id = slug_to_id.get(target_text)
+                if target_entry_id is not None and target_entry_id != focus_id:
+                    target_node_id = f"entry:{target_entry_id}"
+                    if target_node_id not in node_map:
+                        t_title, t_src_type = entries[target_entry_id]
+                        node_map[target_node_id] = GraphNodeRecord(
+                            node_id=target_node_id,
+                            label=t_title,
+                            kind="entry",
+                            source_type=t_src_type,
+                        )
+                else:
+                    target_node_id = f"tag:{target_text}"
+                    if target_node_id not in node_map:
+                        node_map[target_node_id] = GraphNodeRecord(
+                            node_id=target_node_id,
+                            label=f"#{target_text}",
+                            kind="tag",
+                            source_type=None,
+                        )
+            key = (focus_node_id, target_node_id)
+            edge_weights[key] = edge_weights.get(key, 0) + 1
+
+        # Inlinks: entries whose backlink_refs resolve to focus_id
+        title_lower = focus_title.lower()
+        title_slug = normalize_tag(focus_title)
+        in_rows = self._conn.execute(
+            """
+            SELECT br.source_id
+            FROM backlink_refs br
+            JOIN entries e ON e.id = br.source_id
+            WHERE e.id != ?
+              AND (
+                (br.is_hashtag = 0 AND br.target_text = ?)
+                OR (br.is_hashtag = 1 AND br.target_text = ?)
+              )
+            """,
+            (focus_id, title_lower, title_slug),
+        ).fetchall()
+        for row in in_rows:
+            src_id: int = row[0]
+            src_node_id = f"entry:{src_id}"
+            if src_node_id not in node_map:
+                s_title, s_src_type = entries[src_id]
+                node_map[src_node_id] = GraphNodeRecord(
+                    node_id=src_node_id,
+                    label=s_title,
+                    kind="entry",
+                    source_type=s_src_type,
+                )
+            key = (src_node_id, focus_node_id)
+            edge_weights[key] = edge_weights.get(key, 0) + 1
+
+        nodes = list(node_map.values())
+        edges = [
+            GraphEdgeRecord(source=s, target=t, weight=w)
+            for (s, t), w in edge_weights.items()
+        ]
+        return nodes, edges
+
     def list_tags(self) -> list[tuple[str, int]]:
         """Return all tags sorted by entry count descending.
 
