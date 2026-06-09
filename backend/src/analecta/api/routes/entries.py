@@ -167,6 +167,20 @@ class GraphResultOut(BaseModel):
     edges: list[GraphEdgeOut]
 
 
+class SubgraphResultOut(BaseModel):
+    """Response body for GET /entries/{id}/subgraph.
+
+    Attributes:
+        focus_node_id: Node id of the focal entry (``entry:{int_id}``).
+        nodes: All nodes in the 1-hop neighbourhood including the focus node.
+        edges: All directed edges within the subgraph.
+    """
+
+    focus_node_id: str
+    nodes: list[GraphNodeOut]
+    edges: list[GraphEdgeOut]
+
+
 def graph_node_out(record: GraphNodeRecord) -> GraphNodeOut:
     """Convert a GraphNodeRecord to the API GraphNodeOut model.
 
@@ -448,6 +462,38 @@ async def get_entry_backlinks(
             )
             for r in records
         ]
+    )
+
+
+@router.get("/entries/{entry_id}/subgraph", response_model=SubgraphResultOut)
+async def get_entry_subgraph(
+    entry_id: int,
+    index: VaultIndex = Depends(get_index),
+) -> SubgraphResultOut:
+    """Return the 1-hop neighbourhood subgraph centred on a focal entry.
+
+    Includes the focus entry, all entries it links to (outlinks), and all
+    entries that link to it (inlinks). The focus entry is always present as
+    a node even when it has no connections.
+
+    Args:
+        entry_id: Focal entry id.
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        SubgraphResultOut with focus_node_id, nodes, and edges.
+
+    Raises:
+        HTTPException: 404 if the entry does not exist.
+    """
+    result = await asyncio.to_thread(index.get_subgraph, entry_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    nodes, edges = result
+    return SubgraphResultOut(
+        focus_node_id=f"entry:{entry_id}",
+        nodes=[graph_node_out(n) for n in nodes],
+        edges=[graph_edge_out(e) for e in edges],
     )
 
 

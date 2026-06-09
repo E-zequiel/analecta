@@ -1,7 +1,13 @@
 <script lang="ts">
-	import { X, Cable } from '@lucide/svelte';
-	import { entries as entriesApi, type Backlink, type Entry } from '$lib/api/client';
+	import { X, Cable, ChevronRight } from '@lucide/svelte';
+	import {
+		entries as entriesApi,
+		type Backlink,
+		type Entry,
+		type SubgraphResult,
+	} from '$lib/api/client';
 	import { selectedTag } from '$lib/stores/ui';
+	import LocalGraph from './LocalGraph.svelte';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { tooltip } from '$lib/actions/tooltip';
 
@@ -83,6 +89,8 @@
 
 	let backlinks = $state<Backlink[]>([]);
 	let tagEntries = $state<Entry[]>([]);
+	let subgraph = $state<SubgraphResult | null>(null);
+	let graphCollapsed = $state(false);
 
 	$effect(() => {
 		const tag = $selectedTag;
@@ -95,6 +103,23 @@
 			.list({ tag })
 			.then((result) => {
 				if (!cancelled) tagEntries = result.filter((e) => e.id !== id);
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	$effect(() => {
+		const id = activeEntryId;
+		subgraph = null;
+		if (id === null) return;
+
+		let cancelled = false;
+		entriesApi
+			.getSubgraph(id)
+			.then((result) => {
+				if (!cancelled) subgraph = result;
 			})
 			.catch(() => {});
 		return () => {
@@ -174,6 +199,29 @@
 			<p class="stack-empty">No entries open.</p>
 		{/if}
 	</div>
+
+	{#if activeEntryId !== null}
+		<div class="graph-section">
+			<button
+				class="section-header"
+				onclick={() => (graphCollapsed = !graphCollapsed)}
+				aria-expanded={!graphCollapsed}
+			>
+				<span class="chevron" class:rotated={!graphCollapsed}>
+					<ChevronRight size={13} />
+				</span>
+				<span class="section-label">LOCAL GRAPH</span>
+			</button>
+			{#if !graphCollapsed && subgraph}
+				<LocalGraph
+					nodes={subgraph.nodes}
+					edges={subgraph.edges}
+					focusNodeId={subgraph.focus_node_id}
+					onopen={onbacklinksopen}
+				/>
+			{/if}
+		</div>
+	{/if}
 
 	{#if activeEntryId !== null}
 		<div class="backlinks-section">
@@ -361,6 +409,49 @@
 		font-size: 12px;
 		color: var(--fg-muted);
 		margin: 0;
+	}
+
+	/* ── Local graph section ── */
+	.graph-section {
+		flex-shrink: 0;
+		border-top: 1px solid var(--border);
+	}
+
+	.section-header {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		width: 100%;
+		padding: 6px 4px;
+		background: none;
+		border: none;
+		cursor: pointer;
+		color: var(--fg-muted);
+		font-family: inherit;
+		font-size: 0.7rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		transition: color 0.12s;
+	}
+
+	.section-header:hover {
+		color: var(--fg);
+	}
+
+	.section-label {
+		flex: 1;
+		text-align: left;
+	}
+
+	.chevron {
+		display: flex;
+		flex-shrink: 0;
+		transition: transform 0.15s;
+	}
+
+	.chevron.rotated {
+		transform: rotate(90deg);
 	}
 
 	/* ── Backlinks section ── */
