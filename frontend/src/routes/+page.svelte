@@ -77,7 +77,7 @@
 	// Main list — active for all sections except tags and collecta
 	$effect(() => {
 		const section = $activeSection;
-		if (section === 'tags' || section === 'collecta' || section === 'backlinks') return;
+		if (section === 'tags' || section === 'collecta') return;
 		const tag = $selectedTag ?? undefined;
 		const params = sectionListParams(section, tag, sortBy, sortDir);
 
@@ -529,9 +529,12 @@
 					{/if}
 				</div>
 			{/if}
+
+			<!-- Vault connection graph -->
+			<div class="collecta-graph">
+				<VaultGraph onentryopen={(id, title, sourceType) => navigateInTab(id, title, sourceType)} />
+			</div>
 		</div>
-	{:else if $activeSection === 'backlinks'}
-		<VaultGraph onentryopen={(id, title, sourceType) => navigateInTab(id, title, sourceType)} />
 	{:else if $activeSection === 'tags'}
 		<div class="tags-dashboard">
 			<div class="tag-grid">
@@ -866,6 +869,13 @@
 		overflow-y: auto;
 		padding: 1rem;
 		gap: 1rem;
+	}
+
+	.collecta-graph {
+		flex: 1;
+		min-height: 320px;
+		border-top: 1px solid var(--border);
+		padding-top: 0.5rem;
 	}
 
 	.collecta-metrics {
