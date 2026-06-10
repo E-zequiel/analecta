@@ -129,6 +129,7 @@
 		}
 
 		const sigma = new Sigma<VaultNodeAttrs>(graph, el, {
+			allowInvalidContainer: true,
 			defaultNodeColor: colors.fallback,
 			defaultEdgeColor: colors.edge,
 			renderLabels: true,
@@ -151,7 +152,13 @@
 		});
 
 		sigmaInstance = sigma;
+
+		// $effect may run before the browser computes layout dimensions.
+		// A single rAF ensures offsetWidth/Height are non-zero before Sigma renders.
+		const rafId = requestAnimationFrame(() => sigma.refresh());
+
 		return () => {
+			cancelAnimationFrame(rafId);
 			sigma.kill();
 			sigmaInstance = null;
 		};
@@ -215,6 +222,8 @@
 		border-top: 1px solid var(--border);
 		display: flex;
 		flex-direction: column;
+		flex: 1;
+		min-height: 420px;
 	}
 
 	.vault-graph-wrap.fullscreen {
@@ -222,6 +231,8 @@
 		inset: 0;
 		z-index: 200;
 		background: var(--bg);
+		flex: unset;
+		min-height: unset;
 	}
 
 	.vault-graph-header {
@@ -260,17 +271,13 @@
 
 	.graph-toggle:hover {
 		color: var(--fg);
-		background: var(--hover);
+		background: var(--bg-highlight);
 	}
 
 	.graph-canvas-root {
 		position: relative;
-		height: 300px;
 		flex: 1;
-	}
-
-	.vault-graph-wrap.fullscreen .graph-canvas-root {
-		height: unset;
+		min-height: 0;
 	}
 
 	.graph-canvas {
