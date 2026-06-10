@@ -29,3 +29,4 @@ export const rightSidebarOpen = persisted('right-sidebar-open', true);
 export const rightSidebarWidth = persisted('right-sidebar-width', 240);
 
 export const sidebarTagPreview = writable<string | null>(null);
+export const dashboardPreviewEntryId = writable<number | null>(null);

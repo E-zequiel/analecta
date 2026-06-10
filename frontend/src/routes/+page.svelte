@@ -17,6 +17,7 @@
 		lastViewedId,
 		sidebarTagPreview,
 		rightSidebarOpen,
+		dashboardPreviewEntryId,
 	} from '$lib/stores/ui';
 	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
 	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
@@ -61,6 +62,13 @@
 	let dashboardSubgraph = $state<SubgraphResult | null>(null);
 	let dashboardSubgraphLoading = $state(false);
 	let graphColumnHeight = $state(200);
+	const graphHeight = $derived(Math.min(graphColumnHeight || 200, 360));
+
+	function selectDashboardEntry(id: number | null) {
+		dashboardSelectedId = id;
+		dashboardPreviewEntryId.set(id);
+		if (id !== null) rightSidebarOpen.set(true);
+	}
 
 	const FLAG_SECTIONS = new Set(['bookmark', 'gem', 'archive']);
 
@@ -113,7 +121,7 @@
 	// Clear graph state when user navigates between sections
 	$effect(() => {
 		void $activeSection;
-		dashboardSelectedId = null;
+		selectDashboardEntry(null);
 		dashboardSubgraph = null;
 		sidebarTagPreview.set(null);
 	});
@@ -630,12 +638,12 @@
 									role="button"
 									tabindex="0"
 									onclick={() => {
-										dashboardSelectedId = entry.id;
+										selectDashboardEntry(entry.id);
 									}}
 									onkeydown={(e) => {
 										if (e.key === 'Enter' || e.key === ' ') {
 											e.preventDefault();
-											dashboardSelectedId = entry.id;
+											selectDashboardEntry(entry.id);
 										}
 									}}
 								>
@@ -672,9 +680,9 @@
 							nodes={dashboardSubgraph.nodes}
 							edges={dashboardSubgraph.edges}
 							focusNodeId={dashboardSubgraph.focus_node_id}
-							height={graphColumnHeight || 200}
+							height={graphHeight}
 							onopen={(id) => {
-								dashboardSelectedId = id;
+								selectDashboardEntry(id);
 							}}
 							ontagclick={(tagName) => {
 								sidebarTagPreview.set(tagName);
@@ -731,7 +739,7 @@
 						entries={entryList}
 						{loading}
 						onitemclick={(entry) => {
-							dashboardSelectedId = entry.id;
+							selectDashboardEntry(entry.id);
 						}}
 					/>
 				</div>
@@ -744,9 +752,9 @@
 								nodes={dashboardSubgraph.nodes}
 								edges={dashboardSubgraph.edges}
 								focusNodeId={dashboardSubgraph.focus_node_id}
-								height={graphColumnHeight || 200}
+								height={graphHeight}
 								onopen={(id) => {
-									dashboardSelectedId = id;
+									selectDashboardEntry(id);
 								}}
 								ontagclick={(tagName) => {
 									sidebarTagPreview.set(tagName);
@@ -780,6 +788,7 @@
 
 	.list-column {
 		flex: 1 0 280px;
+		min-height: 0;
 		overflow-y: auto;
 	}
 
@@ -790,7 +799,7 @@
 		overflow: hidden;
 		display: flex;
 		flex-direction: column;
-		justify-content: center;
+		justify-content: flex-start;
 	}
 
 	.graph-hint {
