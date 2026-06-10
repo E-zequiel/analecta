@@ -129,7 +129,8 @@
 		};
 	});
 
-	// Rich connections — used in dashboard preview mode (tag groups + direct backlinks)
+	// Rich connections — used in dashboard preview mode (tag groups + direct backlinks).
+	// Sequential tag fetches avoid racing multiple connections to the sidecar.
 	$effect(() => {
 		const id = activeEntryId;
 		const preview = isDashboardPreview;
@@ -143,29 +144,31 @@
 		connLoading = true;
 		let cancelled = false;
 
-		entriesApi
-			.get(id)
-			.then(async (entry) => {
+		(async () => {
+			try {
+				const entry = await entriesApi.get(id);
 				if (cancelled) return;
-				const [groupResults, backlinkResult] = await Promise.all([
-					Promise.all(
-						entry.tags.map((t) =>
-							entriesApi
-								.list({ tag: t })
-								.then((es) => ({ tag: t, entries: es.filter((e) => e.id !== id) }))
-								.catch(() => ({ tag: t, entries: [] as Entry[] }))
-						)
-					),
-					entriesApi.getBacklinks(id).catch(() => ({ linked: [] as Backlink[] })),
-				]);
+
+				const groups: TagGroup[] = [];
+				for (const t of entry.tags) {
+					if (cancelled) return;
+					const es = await entriesApi.list({ tag: t }).catch(() => [] as Entry[]);
+					const filtered = es.filter((e) => e.id !== id);
+					if (filtered.length > 0) groups.push({ tag: t, entries: filtered });
+				}
+
 				if (cancelled) return;
-				tagGroups = groupResults.filter((g) => g.entries.length > 0);
-				directBacklinks = backlinkResult.linked;
-				connLoading = false;
-			})
-			.catch(() => {
+				const bl = await entriesApi.getBacklinks(id).catch(() => ({ linked: [] as Backlink[] }));
+
+				if (cancelled) return;
+				tagGroups = groups;
+				directBacklinks = bl.linked;
+			} catch {
+				// outer entry fetch failed — leave empty state
+			} finally {
 				if (!cancelled) connLoading = false;
-			});
+			}
+		})();
 
 		return () => {
 			cancelled = true;
