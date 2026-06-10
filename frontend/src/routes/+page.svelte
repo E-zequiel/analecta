@@ -24,6 +24,7 @@
 	import EntryList from '$lib/components/EntryList.svelte';
 	import SortBar from '$lib/components/SortBar.svelte';
 	import LocalGraph from '$lib/components/LocalGraph.svelte';
+	import VaultGraph from '$lib/components/VaultGraph.svelte';
 	import { tooltip } from '$lib/actions/tooltip';
 
 	let entryList = $state<Entry[]>([]);
@@ -67,7 +68,10 @@
 	function selectDashboardEntry(id: number | null) {
 		dashboardSelectedId = id;
 		dashboardPreviewEntryId.set(id);
-		if (id !== null) rightSidebarOpen.set(true);
+		if (id !== null) {
+			sidebarTagPreview.set(null);
+			rightSidebarOpen.set(true);
+		}
 	}
 
 	const FLAG_SECTIONS = new Set(['bookmark', 'gem', 'archive']);
@@ -582,6 +586,8 @@
 				</div>
 			{/if}
 		</div>
+
+		<VaultGraph onopen={(id, title, sourceType) => navigateInTab(id, title, sourceType)} />
 	{:else if $activeSection === 'tags'}
 		<div class="tags-dashboard">
 			<div class="tags-left">
@@ -679,7 +685,7 @@
 						<LocalGraph
 							nodes={dashboardSubgraph.nodes}
 							edges={dashboardSubgraph.edges}
-							focusNodeId={dashboardSubgraph.focus_node_id}
+							focusNodeId={$sidebarTagPreview ? undefined : dashboardSubgraph.focus_node_id}
 							height={graphHeight}
 							onopen={(id) => {
 								selectDashboardEntry(id);
@@ -751,7 +757,7 @@
 							<LocalGraph
 								nodes={dashboardSubgraph.nodes}
 								edges={dashboardSubgraph.edges}
-								focusNodeId={dashboardSubgraph.focus_node_id}
+								focusNodeId={$sidebarTagPreview ? undefined : dashboardSubgraph.focus_node_id}
 								height={graphHeight}
 								onopen={(id) => {
 									selectDashboardEntry(id);
@@ -793,7 +799,7 @@
 	}
 
 	.graph-column {
-		flex: 0 0 320px;
+		flex: 0 0 380px;
 		min-height: 0;
 		border-left: 1px solid var(--border);
 		overflow: hidden;

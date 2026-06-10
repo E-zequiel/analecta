@@ -46,6 +46,7 @@
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { entryAddedTick, entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
 	import { tooltip } from '$lib/actions/tooltip';
+	import { flash } from '$lib/actions/flash';
 
 	const SECTIONS = [
 		{ id: 'library', label: 'LIBRARY', icon: Library },
@@ -104,6 +105,30 @@
 	const displayTagList = $derived(
 		activeDisplayEntry ? tagList.filter((t) => currentEntryTagSet.has(t.name)) : tagList
 	);
+
+	// Sections the currently-previewed entry belongs to (for membership indicator)
+	const entryMatchSections = $derived.by(() => {
+		const e = dashboardEntry;
+		const ids = e ? SECTIONS.filter((s) => entryBelongsToSection(e, s.id)).map((s) => s.id) : [];
+		return new Set(ids);
+	});
+
+	// Auto-expand matching sections and fetch their entries when an entry is selected.
+	// untrack() is required: fetchSection reads fetchGen (SvelteMap) synchronously, which
+	// would otherwise be tracked as a reactive dependency and cause an infinite loop.
+	$effect(() => {
+		const matchIds = [...entryMatchSections];
+		if (matchIds.length === 0) return;
+		untrack(() => {
+			expandedSections.update((set) => {
+				// eslint-disable-next-line svelte/prefer-svelte-reactivity -- immutable-update pattern inside store updater, not reactive state
+				const next = new Set(set);
+				for (const id of matchIds) next.add(id);
+				return next;
+			});
+			for (const id of matchIds) fetchSection(id);
+		});
+	});
 
 	let newTagExpanded = $state(false);
 	let newTagName = $state('');
@@ -383,7 +408,8 @@
 		<nav class="nav" transition:slide={{ duration: 180 }}>
 			{#each SECTIONS as section (section.id)}
 				{@const SectionIcon = section.icon}
-				<div class="section-row">
+				{@const isEntrySection = entryMatchSections.has(section.id)}
+				<div class="section-row" class:entry-match={isEntrySection}>
 					<button
 						class="chevron-btn"
 						onclick={() => toggleSection(section.id)}
@@ -400,6 +426,7 @@
 						class="section-label"
 						class:active={$activeSection === section.id}
 						onclick={() => selectSection(section.id)}
+						use:flash={isEntrySection ? dashboardEntry?.id : undefined}
 					>
 						<SectionIcon size={18} />
 						<span class="label-text">{section.label}</span>
@@ -407,19 +434,40 @@
 							<span class="count">{counts[section.id]}</span>
 						{/if}
 					</button>
+					{#if isEntrySection}
+						<button
+							class="entry-open-btn"
+							onclick={() => {
+								if (dashboardEntry)
+									navigateInTab(
+										dashboardEntry.id,
+										dashboardEntry.title,
+										dashboardEntry.source_type
+									);
+							}}
+							use:tooltip={'Open in reading view'}
+							aria-label="Open in reading view">↗</button
+						>
+					{/if}
 				</div>
 
 				{#if $expandedSections.has(section.id)}
 					<div class="section-entries" transition:slide={{ duration: 140 }}>
 						{#each sectionEntries.get(section.id) ?? [] as entry (entry.id)}
+							{@const isMatchEntry = dashboardEntry?.id === entry.id}
 							<button
 								class="entry-item"
 								class:active-entry={page.params['id'] === String(entry.id)}
+								class:entry-match-item={isMatchEntry}
 								onclick={() => openEntry(entry.id, entry.title)}
 								oncontextmenu={(e) => showContextMenu(e, entry)}
 								use:tooltip={entry.title}
+								use:flash={isMatchEntry ? dashboardEntry?.id : undefined}
 							>
-								{entry.title}
+								<span class="entry-title-text">{entry.title}</span>
+								{#if isMatchEntry}
+									<span class="entry-indicator" aria-hidden="true">↗</span>
+								{/if}
 							</button>
 						{:else}
 							<span class="empty-section">No entries</span>
@@ -728,6 +776,31 @@
 		padding: 3px 4px;
 	}
 
+	.section-row.entry-match .section-label {
+		color: var(--accent);
+	}
+
+	.entry-open-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		padding: 0;
+		background: none;
+		border: none;
+		border-radius: 3px;
+		color: var(--accent);
+		font-size: 13px;
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: background 0.12s;
+	}
+
+	.entry-open-btn:hover {
+		background: color-mix(in srgb, var(--accent) 18%, transparent);
+	}
+
 	.chevron-btn {
 		display: flex;
 		align-items: center;
@@ -801,7 +874,7 @@
 	.entry-item {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
+		gap: 4px;
 		width: 100%;
 		padding: 3px 8px;
 		background: none;
@@ -812,9 +885,6 @@
 		font-size: var(--font-size-label);
 		cursor: pointer;
 		text-align: left;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
 		transition:
 			color 0.12s,
 			background 0.12s;
@@ -828,6 +898,24 @@
 	.entry-item.active-entry {
 		color: var(--accent);
 		background: var(--bg-highlight);
+	}
+
+	.entry-item.entry-match-item {
+		color: var(--accent);
+	}
+
+	.entry-title-text {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.entry-indicator {
+		flex-shrink: 0;
+		font-size: 11px;
+		color: var(--accent);
 	}
 
 	.tag-name {
