@@ -9,14 +9,12 @@
 		config as configApi,
 		type Entry,
 		type Tag,
-		type GraphNode,
-		type GraphEdge,
+		type SubgraphResult,
 	} from '$lib/api/client';
 	import {
 		activeSection,
 		selectedTag,
 		lastViewedId,
-		graphPreviewEntryId,
 		sidebarTagPreview,
 		rightSidebarOpen,
 	} from '$lib/stores/ui';
@@ -24,7 +22,6 @@
 	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
 	import EntryList from '$lib/components/EntryList.svelte';
 	import SortBar from '$lib/components/SortBar.svelte';
-	import VaultGraph from '$lib/components/VaultGraph.svelte';
 	import LocalGraph from '$lib/components/LocalGraph.svelte';
 	import { tooltip } from '$lib/actions/tooltip';
 
@@ -59,11 +56,11 @@
 	let collectaTagExpanded = $state<string | null>(null);
 	let collectaTagEntries = $state<Entry[]>([]);
 
+	// Dashboard graph state (shared across section + tags dashboards)
+	let dashboardSelectedId = $state<number | null>(null);
+	let dashboardSubgraph = $state<SubgraphResult | null>(null);
+	let dashboardSubgraphLoading = $state(false);
 	let graphColumnHeight = $state(200);
-
-	// Graph data for section and tags dashboards
-	let vaultGraphNodes = $state<GraphNode[]>([]);
-	let vaultGraphEdges = $state<GraphEdge[]>([]);
 
 	const FLAG_SECTIONS = new Set(['bookmark', 'gem', 'archive']);
 
@@ -90,42 +87,35 @@
 		return { status: section, exclude_flag: 'archive', tag, ...sort };
 	}
 
-	// Fetch vault graph for non-collecta dashboards
+	// Fetch subgraph when an entry is selected in a dashboard
 	$effect(() => {
-		if ($activeSection === 'collecta') return;
+		const id = dashboardSelectedId;
+		dashboardSubgraph = null;
+		if (id === null) return;
+		dashboardSubgraphLoading = true;
 		let cancelled = false;
 		entriesApi
-			.getGraph()
+			.getSubgraph(id)
 			.then((data) => {
 				if (!cancelled) {
-					vaultGraphNodes = data.nodes;
-					vaultGraphEdges = data.edges;
+					dashboardSubgraph = data;
+					dashboardSubgraphLoading = false;
 				}
 			})
-			.catch(() => {});
+			.catch(() => {
+				if (!cancelled) dashboardSubgraphLoading = false;
+			});
 		return () => {
 			cancelled = true;
 		};
 	});
 
-	// Clear graph preview when user navigates between sections
+	// Clear graph state when user navigates between sections
 	$effect(() => {
 		void $activeSection;
-		graphPreviewEntryId.set(null);
+		dashboardSelectedId = null;
+		dashboardSubgraph = null;
 		sidebarTagPreview.set(null);
-	});
-
-	// Section graph: filter vault graph to entries visible in the current section
-	const sectionGraphData = $derived.by(() => {
-		if (entryList.length === 0 || vaultGraphEdges.length === 0) {
-			return { nodes: [] as GraphNode[], edges: [] as GraphEdge[] };
-		}
-		const entryIds = new Set(entryList.map((e) => `entry:${e.id}`));
-		const edges = vaultGraphEdges.filter((e) => entryIds.has(e.source));
-		if (edges.length === 0) return { nodes: [] as GraphNode[], edges: [] as GraphEdge[] };
-		const referencedIds = new Set(edges.flatMap((e) => [e.source, e.target]));
-		const nodes = vaultGraphNodes.filter((n) => referencedIds.has(n.node_id));
-		return { nodes, edges };
 	});
 
 	// Main list — active for all sections except tags and collecta
@@ -583,26 +573,10 @@
 					{/if}
 				</div>
 			{/if}
-
-			<!-- Vault connection graph -->
-			<div class="collecta-graph">
-				<VaultGraph
-					onentryopen={(id, _title, _sourceType) => {
-						sidebarTagPreview.set(null);
-						graphPreviewEntryId.set(id);
-						rightSidebarOpen.set(true);
-					}}
-					ontagopen={(tagName) => {
-						graphPreviewEntryId.set(null);
-						sidebarTagPreview.set(tagName);
-						rightSidebarOpen.set(true);
-					}}
-				/>
-			</div>
 		</div>
 	{:else if $activeSection === 'tags'}
 		<div class="tags-dashboard">
-			<div class="tags-top">
+			<div class="tags-left">
 				<div class="tag-grid">
 					{#if tagGrid.length === 0}
 						<p class="hint">No tags yet.</p>
@@ -651,40 +625,63 @@
 							<p class="hint">No entries.</p>
 						{:else}
 							{#each tagEntries as entry (entry.id)}
-								<button
+								<div
 									class="tag-entry-card"
-									onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
+									role="button"
+									tabindex="0"
+									onclick={() => {
+										dashboardSelectedId = entry.id;
+									}}
+									onkeydown={(e) => {
+										if (e.key === 'Enter' || e.key === ' ') {
+											e.preventDefault();
+											dashboardSelectedId = entry.id;
+										}
+									}}
 								>
-									<span class="tag-entry-title">{entry.title}</span>
-									<div class="tag-entry-badges">
-										{#each entryBadges(entry) as badge (badge.cls)}
-											<span class="badge {badge.cls}">{badge.label}</span>
-										{/each}
+									<div class="tag-entry-body">
+										<span class="tag-entry-title">{entry.title}</span>
+										<div class="tag-entry-badges">
+											{#each entryBadges(entry) as badge (badge.cls)}
+												<span class="badge {badge.cls}">{badge.label}</span>
+											{/each}
+										</div>
 									</div>
-								</button>
+									<button
+										class="view-btn"
+										onclick={(e) => {
+											e.stopPropagation();
+											navigateInTab(entry.id, entry.title, entry.source_type);
+										}}
+									>
+										View ↗
+									</button>
+								</div>
 							{/each}
 						{/if}
 					</div>
 				{/if}
 			</div>
 
-			{#if vaultGraphEdges.length > 0 && vaultGraphNodes.length <= 80}
-				<div class="section-graph">
-					<LocalGraph
-						nodes={vaultGraphNodes}
-						edges={vaultGraphEdges}
-						height={220}
-						onopen={(id, _title, _sourceType) => {
-							sidebarTagPreview.set(null);
-							graphPreviewEntryId.set(id);
-							rightSidebarOpen.set(true);
-						}}
-						ontagclick={(tagName) => {
-							graphPreviewEntryId.set(null);
-							sidebarTagPreview.set(tagName);
-							rightSidebarOpen.set(true);
-						}}
-					/>
+			{#if dashboardSelectedId !== null}
+				<div class="graph-column" bind:clientHeight={graphColumnHeight}>
+					{#if dashboardSubgraphLoading}
+						<p class="graph-hint">Loading…</p>
+					{:else if dashboardSubgraph}
+						<LocalGraph
+							nodes={dashboardSubgraph.nodes}
+							edges={dashboardSubgraph.edges}
+							focusNodeId={dashboardSubgraph.focus_node_id}
+							height={graphColumnHeight || 200}
+							onopen={(id) => {
+								dashboardSelectedId = id;
+							}}
+							ontagclick={(tagName) => {
+								sidebarTagPreview.set(tagName);
+								rightSidebarOpen.set(true);
+							}}
+						/>
+					{/if}
 				</div>
 			{/if}
 		</div>
@@ -730,25 +727,33 @@
 			/>
 			<div class="dashboard-body">
 				<div class="list-column">
-					<EntryList entries={entryList} {loading} />
+					<EntryList
+						entries={entryList}
+						{loading}
+						onitemclick={(entry) => {
+							dashboardSelectedId = entry.id;
+						}}
+					/>
 				</div>
-				{#if sectionGraphData.edges.length > 0 && sectionGraphData.nodes.length <= 80}
+				{#if dashboardSelectedId !== null}
 					<div class="graph-column" bind:clientHeight={graphColumnHeight}>
-						<LocalGraph
-							nodes={sectionGraphData.nodes}
-							edges={sectionGraphData.edges}
-							height={graphColumnHeight || 200}
-							onopen={(id, _title, _sourceType) => {
-								sidebarTagPreview.set(null);
-								graphPreviewEntryId.set(id);
-								rightSidebarOpen.set(true);
-							}}
-							ontagclick={(tagName) => {
-								graphPreviewEntryId.set(null);
-								sidebarTagPreview.set(tagName);
-								rightSidebarOpen.set(true);
-							}}
-						/>
+						{#if dashboardSubgraphLoading}
+							<p class="graph-hint">Loading…</p>
+						{:else if dashboardSubgraph}
+							<LocalGraph
+								nodes={dashboardSubgraph.nodes}
+								edges={dashboardSubgraph.edges}
+								focusNodeId={dashboardSubgraph.focus_node_id}
+								height={graphColumnHeight || 200}
+								onopen={(id) => {
+									dashboardSelectedId = id;
+								}}
+								ontagclick={(tagName) => {
+									sidebarTagPreview.set(tagName);
+									rightSidebarOpen.set(true);
+								}}
+							/>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -788,27 +793,31 @@
 		justify-content: center;
 	}
 
+	.graph-hint {
+		padding: 1rem;
+		font-size: 12px;
+		color: var(--fg-muted);
+		font-style: italic;
+		text-align: center;
+		margin: 0;
+	}
+
 	/* Tags dashboard */
 	.tags-dashboard {
 		display: flex;
-		flex-direction: column;
+		flex-direction: row;
 		height: 100%;
 		overflow: hidden;
 	}
 
-	.tags-top {
+	.tags-left {
 		flex: 1;
-		min-height: 0;
+		min-width: 0;
 		overflow-y: auto;
 		padding: 1rem;
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
-	}
-
-	.section-graph {
-		flex-shrink: 0;
-		border-top: 1px solid var(--border);
 	}
 
 	.tag-grid {
@@ -937,8 +946,8 @@
 
 	.tag-entry-card {
 		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
+		align-items: center;
+		gap: 0.5rem;
 		width: 100%;
 		padding: 0.6rem 0.8rem;
 		background: var(--bg-alt);
@@ -955,6 +964,14 @@
 	.tag-entry-card:hover {
 		background: var(--bg-highlight);
 		border-color: var(--accent-dark);
+	}
+
+	.tag-entry-body {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
 	}
 
 	.tag-entry-title {
@@ -996,6 +1013,27 @@
 		color: var(--magenta);
 	}
 
+	.view-btn {
+		flex-shrink: 0;
+		padding: 3px 10px;
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		color: var(--fg-muted);
+		font-family: inherit;
+		font-size: 0.72rem;
+		cursor: pointer;
+		white-space: nowrap;
+		transition:
+			color 0.12s,
+			border-color 0.12s;
+	}
+
+	.view-btn:hover {
+		color: var(--accent);
+		border-color: var(--accent-dark);
+	}
+
 	.hint {
 		padding: 1rem 0;
 		color: var(--fg-muted);
@@ -1010,13 +1048,6 @@
 		overflow-y: auto;
 		padding: 1rem;
 		gap: 1rem;
-	}
-
-	.collecta-graph {
-		height: 380px;
-		flex-shrink: 0;
-		border-top: 1px solid var(--border);
-		padding-top: 0.5rem;
 	}
 
 	.collecta-metrics {
