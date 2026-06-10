@@ -3,7 +3,15 @@
 	import { navigateInTab, openEntryTab } from '$lib/stores/tabs';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 
-	const { entries, loading = false }: { entries: Entry[]; loading?: boolean } = $props();
+	const {
+		entries,
+		loading = false,
+		onitemclick,
+	}: {
+		entries: Entry[];
+		loading?: boolean;
+		onitemclick?: (entry: Entry) => void;
+	} = $props();
 
 	const sourceColors: Record<string, string> = {
 		article: 'var(--accent)',
@@ -28,37 +36,82 @@
 		<p class="hint">No entries found.</p>
 	{:else}
 		{#each entries as entry (entry.id)}
-			<button
-				class="entry-row"
-				onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
-				onmousedown={(e) => {
-					if (e.button === 1) {
-						e.preventDefault();
-						openEntryTab(entry.id, entry.title, true, entry.source_type);
-					}
-				}}
-				oncontextmenu={(e) => showContextMenu(e, entry)}
-			>
-				<div class="entry-body">
-					<div class="entry-top">
-						<span class="entry-title">{entry.title}</span>
-						<span
-							class="entry-source"
-							style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
-							>{entry.source_type}</span
-						>
+			{#if onitemclick}
+				<div
+					class="entry-row selectable"
+					role="button"
+					tabindex="0"
+					onclick={() => onitemclick!(entry)}
+					onkeydown={(e) => {
+						if (e.key === 'Enter' || e.key === ' ') {
+							e.preventDefault();
+							onitemclick!(entry);
+						}
+					}}
+					oncontextmenu={(e) => showContextMenu(e, entry)}
+				>
+					<div class="entry-body">
+						<div class="entry-top">
+							<span class="entry-title">{entry.title}</span>
+							<span
+								class="entry-source"
+								style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
+								>{entry.source_type}</span
+							>
+						</div>
+						<div class="entry-meta">
+							<span class="entry-date">{formatDate(entry.created_at)}</span>
+							{#if entry.status !== 'unread'}
+								<span class="entry-status">{entry.status}</span>
+							{/if}
+							{#each entry.tags as tag (tag)}
+								<span class="entry-tag">#{tag}</span>
+							{/each}
+						</div>
 					</div>
-					<div class="entry-meta">
-						<span class="entry-date">{formatDate(entry.created_at)}</span>
-						{#if entry.status !== 'unread'}
-							<span class="entry-status">{entry.status}</span>
-						{/if}
-						{#each entry.tags as tag (tag)}
-							<span class="entry-tag">#{tag}</span>
-						{/each}
-					</div>
+					<button
+						class="view-btn"
+						onclick={(e) => {
+							e.stopPropagation();
+							navigateInTab(entry.id, entry.title, entry.source_type);
+						}}
+					>
+						View ↗
+					</button>
 				</div>
-			</button>
+			{:else}
+				<button
+					class="entry-row"
+					onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
+					onmousedown={(e) => {
+						if (e.button === 1) {
+							e.preventDefault();
+							openEntryTab(entry.id, entry.title, true, entry.source_type);
+						}
+					}}
+					oncontextmenu={(e) => showContextMenu(e, entry)}
+				>
+					<div class="entry-body">
+						<div class="entry-top">
+							<span class="entry-title">{entry.title}</span>
+							<span
+								class="entry-source"
+								style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
+								>{entry.source_type}</span
+							>
+						</div>
+						<div class="entry-meta">
+							<span class="entry-date">{formatDate(entry.created_at)}</span>
+							{#if entry.status !== 'unread'}
+								<span class="entry-status">{entry.status}</span>
+							{/if}
+							{#each entry.tags as tag (tag)}
+								<span class="entry-tag">#{tag}</span>
+							{/each}
+						</div>
+					</div>
+				</button>
+			{/if}
 		{/each}
 	{/if}
 </div>
@@ -78,7 +131,7 @@
 
 	.entry-row {
 		display: flex;
-		align-items: flex-start;
+		align-items: center;
 		width: 100%;
 		padding: 12px 20px;
 		border: none;
@@ -148,5 +201,27 @@
 		border-radius: 3px;
 		background: var(--bg-alt);
 		border: 1px solid var(--border);
+	}
+
+	.view-btn {
+		flex-shrink: 0;
+		margin-left: 8px;
+		padding: 3px 10px;
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		color: var(--fg-muted);
+		font-family: inherit;
+		font-size: 0.72rem;
+		cursor: pointer;
+		white-space: nowrap;
+		transition:
+			color 0.12s,
+			border-color 0.12s;
+	}
+
+	.view-btn:hover {
+		color: var(--accent);
+		border-color: var(--accent-dark);
 	}
 </style>

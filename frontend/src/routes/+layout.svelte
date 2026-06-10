@@ -27,7 +27,6 @@
 		rightSidebarWidth,
 		pasteUrlSignal,
 		selectedTag,
-		graphPreviewEntryId,
 		sidebarTagPreview,
 	} from '$lib/stores/ui';
 	import {
@@ -68,11 +67,8 @@
 		})()
 	);
 
-	const resolvedEntryId = $derived(activeViewerEntryId ?? $graphPreviewEntryId);
-
 	$effect(() => {
 		if (activeViewerEntryId !== null) {
-			graphPreviewEntryId.set(null);
 			sidebarTagPreview.set(null);
 			selectedTag.set(null);
 		}
@@ -308,7 +304,7 @@
 					onselect={(id) => activateTab(id)}
 					onclose={(id) => closeTab(id)}
 					onwidthchange={(w) => rightSidebarWidth.set(w)}
-					activeEntryId={resolvedEntryId}
+					activeEntryId={activeViewerEntryId}
 					onbacklinksopen={(id, name) => openEntryTab(id, name)}
 				/>
 			{/if}
