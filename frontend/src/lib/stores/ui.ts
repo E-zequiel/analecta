@@ -28,5 +28,4 @@ export const pasteUrlSignal = writable(0);
 export const rightSidebarOpen = persisted('right-sidebar-open', true);
 export const rightSidebarWidth = persisted('right-sidebar-width', 240);
 
-export const graphPreviewEntryId = writable<number | null>(null);
 export const sidebarTagPreview = writable<string | null>(null);

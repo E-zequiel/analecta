@@ -35,12 +35,9 @@
     "@types/d3-force": "^3.0.10",
     "@uiw/codemirror-theme-tokyo-night": "^4",
     "d3-force": "^3.0.0",
-    "graphology": "^0.26.0",
-    "graphology-layout-forceatlas2": "^0.10.1",
     "markdown-it": "^14",
     "markdown-it-footnote": "^4",
     "markdown-it-task-lists": "^2",
-    "shiki": "4.1.0",
-    "sigma": "^3.0.3"
+    "shiki": "4.1.0"
   }
 }
