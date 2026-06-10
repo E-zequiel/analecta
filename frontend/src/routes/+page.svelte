@@ -781,20 +781,20 @@
 		flex: 1;
 		min-height: 0;
 		display: flex;
-		flex-wrap: wrap;
+		flex-wrap: nowrap;
 		overflow: hidden;
-		align-content: stretch;
 	}
 
 	.list-column {
-		flex: 1 0 280px;
+		flex: 1 1 0;
+		min-width: 0;
 		min-height: 0;
 		overflow-y: auto;
 	}
 
 	.graph-column {
-		flex: 1 0 260px;
-		min-height: 240px;
+		flex: 0 0 320px;
+		min-height: 0;
 		border-left: 1px solid var(--border);
 		overflow: hidden;
 		display: flex;
