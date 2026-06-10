@@ -62,7 +62,7 @@
 	let dashboardSubgraph = $state<SubgraphResult | null>(null);
 	let dashboardSubgraphLoading = $state(false);
 	let graphColumnHeight = $state(200);
-	const graphHeight = $derived(Math.min(graphColumnHeight || 200, 360));
+	const graphHeight = $derived(graphColumnHeight || 200);
 
 	function selectDashboardEntry(id: number | null) {
 		dashboardSelectedId = id;

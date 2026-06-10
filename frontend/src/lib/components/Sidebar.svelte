@@ -39,6 +39,7 @@
 		lastViewedId,
 		expandAllSignal,
 		pasteUrlSignal,
+		dashboardPreviewEntryId,
 	} from '$lib/stores/ui';
 	import { viewerEntry } from '$lib/stores/toolbar';
 	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
@@ -76,9 +77,32 @@
 	let urlInputValue = $state('');
 	let urlInputEl = $state<HTMLInputElement | null>(null);
 
-	const currentEntryTagSet = $derived(new Set($viewerEntry?.tags ?? []));
+	// When a dashboard entry is selected, show only its tags; reading view uses viewerEntry
+	let dashboardEntry = $state<Entry | null>(null);
+
+	$effect(() => {
+		const id = $dashboardPreviewEntryId;
+		dashboardEntry = null;
+		if (id === null) return;
+		let cancelled = false;
+		entriesApi
+			.get(id)
+			.then((e) => {
+				if (!cancelled) dashboardEntry = e;
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	// Dashboard selection takes priority; fall back to viewer entry in reading view
+	const activeDisplayEntry = $derived(
+		$dashboardPreviewEntryId !== null ? dashboardEntry : $viewerEntry
+	);
+	const currentEntryTagSet = $derived(new Set(activeDisplayEntry?.tags ?? []));
 	const displayTagList = $derived(
-		$viewerEntry ? tagList.filter((t) => currentEntryTagSet.has(t.name)) : tagList
+		activeDisplayEntry ? tagList.filter((t) => currentEntryTagSet.has(t.name)) : tagList
 	);
 
 	let newTagExpanded = $state(false);
