@@ -57,7 +57,8 @@
 
 		const w = untrack(() => width);
 		const h = untrack(() => height);
-		const fid = focusNodeId;
+		// Untracked so that clearing focus (on tag click) doesn't rebuild the sim
+		const fid = untrack(() => focusNodeId);
 
 		// Scale forces with available area so nodes spread proportionally
 		const area = Math.sqrt(w * h);
