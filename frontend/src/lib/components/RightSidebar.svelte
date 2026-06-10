@@ -20,6 +20,7 @@
 		onclose,
 		onwidthchange,
 		activeEntryId = null,
+		isDashboardPreview = false,
 		onbacklinksopen,
 	}: {
 		entries?: StackEntry[];
@@ -29,6 +30,7 @@
 		onclose?: (id: string) => void;
 		onwidthchange?: (w: number) => void;
 		activeEntryId?: number | null;
+		isDashboardPreview?: boolean;
 		onbacklinksopen?: (id: number, name: string) => void;
 	} = $props();
 
@@ -81,8 +83,13 @@
 		e.preventDefault();
 	}
 
+	type TagGroup = { tag: string; entries: Entry[] };
+
 	let backlinks = $state<Backlink[]>([]);
 	let tagEntries = $state<Entry[]>([]);
+	let tagGroups = $state<TagGroup[]>([]);
+	let directBacklinks = $state<Backlink[]>([]);
+	let connLoading = $state(false);
 
 	const activeTag = $derived($sidebarTagPreview ?? $selectedTag);
 
@@ -103,10 +110,12 @@
 		};
 	});
 
+	// Flat backlinks — used only in reading view (not dashboard preview)
 	$effect(() => {
 		const id = activeEntryId;
+		const preview = isDashboardPreview;
 		backlinks = [];
-		if (id === null) return;
+		if (id === null || preview) return;
 
 		let cancelled = false;
 		entriesApi
@@ -115,6 +124,49 @@
 				if (!cancelled) backlinks = result.linked;
 			})
 			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	// Rich connections — used in dashboard preview mode (tag groups + direct backlinks)
+	$effect(() => {
+		const id = activeEntryId;
+		const preview = isDashboardPreview;
+		const tag = activeTag;
+
+		tagGroups = [];
+		directBacklinks = [];
+
+		if (!preview || id === null || tag !== null) return;
+
+		connLoading = true;
+		let cancelled = false;
+
+		entriesApi
+			.get(id)
+			.then(async (entry) => {
+				if (cancelled) return;
+				const [groupResults, backlinkResult] = await Promise.all([
+					Promise.all(
+						entry.tags.map((t) =>
+							entriesApi
+								.list({ tag: t })
+								.then((es) => ({ tag: t, entries: es.filter((e) => e.id !== id) }))
+								.catch(() => ({ tag: t, entries: [] as Entry[] }))
+						)
+					),
+					entriesApi.getBacklinks(id).catch(() => ({ linked: [] as Backlink[] })),
+				]);
+				if (cancelled) return;
+				tagGroups = groupResults.filter((g) => g.entries.length > 0);
+				directBacklinks = backlinkResult.linked;
+				connLoading = false;
+			})
+			.catch(() => {
+				if (!cancelled) connLoading = false;
+			});
+
 		return () => {
 			cancelled = true;
 		};
@@ -182,10 +234,16 @@
 				<div class="bl-header">
 					<Cable size={15} />
 					<span class="bl-label">BACKLINKS</span>
-					{#if !activeTag && backlinks.length > 0}
-						<span class="bl-count">{backlinks.length}</span>
-					{:else if activeTag && tagEntries.length > 0}
+					{#if activeTag && tagEntries.length > 0}
 						<span class="bl-count">{tagEntries.length}</span>
+					{:else if isDashboardPreview && !activeTag && !connLoading}
+						{@const total =
+							tagGroups.reduce((s, g) => s + g.entries.length, 0) + directBacklinks.length}
+						{#if total > 0}
+							<span class="bl-count">{total}</span>
+						{/if}
+					{:else if !activeTag && !isDashboardPreview && backlinks.length > 0}
+						<span class="bl-count">{backlinks.length}</span>
 					{/if}
 				</div>
 				{#if activeTag}
@@ -214,6 +272,44 @@
 								<span class="bl-item-name">{entry.title}</span>
 							</button>
 						{/each}
+					</div>
+				{/if}
+			{:else if isDashboardPreview}
+				{#if connLoading}
+					<p class="bl-empty">Loading…</p>
+				{:else if tagGroups.length === 0 && directBacklinks.length === 0}
+					<p class="bl-empty">No connections.</p>
+				{:else}
+					<div class="bl-rich-scroll">
+						{#each tagGroups as group (group.tag)}
+							<div class="bl-group-header">
+								<span class="bl-group-tag">#{group.tag}</span>
+								<span class="bl-count">{group.entries.length}</span>
+							</div>
+							<div class="bl-group-list">
+								{#each group.entries as entry (entry.id)}
+									<button class="bl-item" onclick={() => onbacklinksopen?.(entry.id, entry.title)}>
+										<span class="bl-item-name">{entry.title}</span>
+									</button>
+								{/each}
+							</div>
+						{/each}
+						{#if directBacklinks.length > 0}
+							<div class="bl-group-header">
+								<span class="bl-group-direct">Direct</span>
+								<span class="bl-count">{directBacklinks.length}</span>
+							</div>
+							<div class="bl-group-list">
+								{#each directBacklinks as item, i (`${item.id}-${i}`)}
+									<button class="bl-item" onclick={() => onbacklinksopen?.(item.id, item.name)}>
+										<span class="bl-item-name">{item.name}</span>
+										{#if item.context?.heading}
+											<span class="bl-item-heading">{item.context.heading}</span>
+										{/if}
+									</button>
+								{/each}
+							</div>
+						{/if}
 					</div>
 				{/if}
 			{:else}
@@ -439,6 +535,39 @@
 	.bl-list {
 		max-height: 160px;
 		overflow-y: auto;
+		padding: 2px 0 4px;
+	}
+
+	.bl-rich-scroll {
+		max-height: 320px;
+		overflow-y: auto;
+	}
+
+	.bl-group-header {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 8px 3px 10px;
+		font-size: 0.68rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.07em;
+	}
+
+	.bl-group-tag {
+		color: #9ece6a;
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.bl-group-direct {
+		color: var(--cyan);
+		flex: 1;
+	}
+
+	.bl-group-list {
 		padding: 2px 0 4px;
 	}
 
