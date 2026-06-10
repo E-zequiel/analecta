@@ -1,0 +1,292 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
+	import Sigma from 'sigma';
+	import { UndirectedGraph } from 'graphology';
+	import forceAtlas2 from 'graphology-layout-forceatlas2';
+	import { Maximize2, X } from '@lucide/svelte';
+	import { entries as entriesApi, type GraphResult } from '$lib/api/client';
+
+	type VaultNodeAttrs = {
+		label: string;
+		color: string;
+		size: number;
+		x: number;
+		y: number;
+		kind: 'entry' | 'tag';
+		source_type: string | null;
+	};
+
+	const {
+		onopen,
+	}: {
+		onopen?: (id: number, title: string, sourceType?: string) => void;
+	} = $props();
+
+	let sigmaEl = $state<HTMLElement | undefined>(undefined);
+	let expanded = $state(false);
+	let graphData = $state<GraphResult | null>(null);
+	let loading = $state(true);
+	let error = $state<string | null>(null);
+
+	// Non-reactive handle so we can call refresh() on fullscreen toggle
+	// without triggering a Sigma teardown/rebuild.
+	let sigmaInstance: InstanceType<typeof Sigma<VaultNodeAttrs>> | null = null;
+
+	const nodeCount = $derived(graphData?.nodes.length ?? 0);
+	const edgeCount = $derived(graphData?.edges.length ?? 0);
+
+	onMount(() => {
+		entriesApi
+			.getGraph()
+			.then((data) => {
+				graphData = data;
+				loading = false;
+			})
+			.catch((e: unknown) => {
+				error = String(e);
+				loading = false;
+			});
+	});
+
+	function resolveColors(): {
+		article: string;
+		youtube: string;
+		substack: string;
+		tag: string;
+		fallback: string;
+		edge: string;
+		label: string;
+	} {
+		const s = getComputedStyle(document.documentElement);
+		const get = (v: string, fb: string) => s.getPropertyValue(v).trim() || fb;
+		return {
+			article: get('--cyan', '#7dcfff'),
+			youtube: get('--red', '#f7768e'),
+			substack: get('--accent-warm', '#ff9e64'),
+			tag: '#9ece6a',
+			fallback: get('--fg-muted', '#565f89'),
+			edge: get('--border', '#292e42'),
+			label: get('--fg-muted', '#565f89'),
+		};
+	}
+
+	function nodeColor(
+		kind: string,
+		sourceType: string | null,
+		colors: ReturnType<typeof resolveColors>
+	): string {
+		if (kind === 'tag') return colors.tag;
+		if (sourceType === 'youtube') return colors.youtube;
+		if (sourceType === 'substack') return colors.substack;
+		return colors.article;
+	}
+
+	// Build the Sigma instance whenever the container element and data are both ready.
+	// Does NOT track `expanded` — fullscreen toggle repositions via CSS without rebuilding.
+	$effect(() => {
+		const el = sigmaEl;
+		const data = graphData;
+		if (!el || !data) return;
+
+		const colors = untrack(() => resolveColors());
+
+		const graph = new UndirectedGraph<VaultNodeAttrs>();
+
+		for (const node of data.nodes) {
+			graph.addNode(node.node_id, {
+				label: node.label,
+				color: nodeColor(node.kind, node.source_type, colors),
+				size: node.kind === 'tag' ? 5 : 8,
+				x: Math.random(),
+				y: Math.random(),
+				kind: node.kind,
+				source_type: node.source_type,
+			});
+		}
+
+		for (const edge of data.edges) {
+			try {
+				graph.addEdge(edge.source, edge.target, {
+					color: colors.edge,
+					size: 1,
+				});
+			} catch {
+				// skip edges referencing nodes not in the graph
+			}
+		}
+
+		// Synchronous FA2 layout — no Web Worker, CSP-safe in packaged builds.
+		if (graph.order > 0) {
+			forceAtlas2.assign(graph, {
+				iterations: 300,
+				settings: {
+					gravity: 1,
+					scalingRatio: 2,
+					barnesHutOptimize: graph.order > 150,
+				},
+			});
+		}
+
+		const sigma = new Sigma<VaultNodeAttrs>(graph, el, {
+			defaultNodeColor: colors.fallback,
+			defaultEdgeColor: colors.edge,
+			renderLabels: true,
+			labelColor: { color: colors.label },
+			labelSize: 12,
+			labelWeight: 'normal',
+			minCameraRatio: 0.02,
+			maxCameraRatio: 10,
+		});
+
+		sigma.on('clickNode', ({ node }) => {
+			const attrs = graph.getNodeAttributes(node);
+			if (attrs.kind === 'entry') {
+				const rawId = node.startsWith('entry:') ? node.slice(6) : node;
+				const id = parseInt(rawId, 10);
+				if (!isNaN(id)) {
+					onopen?.(id, attrs.label, attrs.source_type ?? undefined);
+				}
+			}
+		});
+
+		sigmaInstance = sigma;
+		return () => {
+			sigma.kill();
+			sigmaInstance = null;
+		};
+	});
+
+	// Refresh Sigma dimensions after fullscreen toggle — the container resizes via CSS
+	// and Sigma's internal ResizeObserver may lag behind the frame.
+	$effect(() => {
+		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
+		expanded;
+		untrack(() => {
+			sigmaInstance?.refresh({ schedule: true });
+		});
+	});
+
+	// Escape closes fullscreen.
+	$effect(() => {
+		if (!expanded) return;
+		function onKey(e: KeyboardEvent) {
+			if (e.key === 'Escape') expanded = false;
+		}
+		window.addEventListener('keydown', onKey);
+		return () => window.removeEventListener('keydown', onKey);
+	});
+</script>
+
+<div class="vault-graph-wrap" class:fullscreen={expanded}>
+	<div class="vault-graph-header">
+		<span class="graph-title">Vault Graph</span>
+		{#if !loading && !error}
+			<span class="graph-stats">{nodeCount} nodes · {edgeCount} edges</span>
+		{/if}
+		<button
+			class="graph-toggle"
+			onclick={() => (expanded = !expanded)}
+			title={expanded ? 'Collapse' : 'Expand graph'}
+		>
+			{#if expanded}
+				<X size={14} />
+			{:else}
+				<Maximize2 size={14} />
+			{/if}
+		</button>
+	</div>
+
+	<div class="graph-canvas-root">
+		{#if loading}
+			<p class="graph-status">Loading…</p>
+		{:else if error}
+			<p class="graph-status graph-error">Failed to load graph.</p>
+		{:else if nodeCount === 0}
+			<p class="graph-status">No connections yet.</p>
+		{:else}
+			<div bind:this={sigmaEl} class="graph-canvas"></div>
+		{/if}
+	</div>
+</div>
+
+<style>
+	.vault-graph-wrap {
+		border-top: 1px solid var(--border);
+		display: flex;
+		flex-direction: column;
+	}
+
+	.vault-graph-wrap.fullscreen {
+		position: fixed;
+		inset: 0;
+		z-index: 200;
+		background: var(--bg);
+	}
+
+	.vault-graph-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 10px;
+		flex-shrink: 0;
+	}
+
+	.graph-title {
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--fg-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.graph-stats {
+		font-size: 11px;
+		color: var(--fg-muted);
+		opacity: 0.7;
+		flex: 1;
+	}
+
+	.graph-toggle {
+		background: none;
+		border: none;
+		cursor: pointer;
+		color: var(--fg-muted);
+		padding: 2px;
+		display: flex;
+		align-items: center;
+		border-radius: 3px;
+	}
+
+	.graph-toggle:hover {
+		color: var(--fg);
+		background: var(--hover);
+	}
+
+	.graph-canvas-root {
+		position: relative;
+		height: 300px;
+		flex: 1;
+	}
+
+	.vault-graph-wrap.fullscreen .graph-canvas-root {
+		height: unset;
+	}
+
+	.graph-canvas {
+		position: absolute;
+		inset: 0;
+	}
+
+	.graph-status {
+		padding: 10px;
+		font-size: 12px;
+		color: var(--fg-muted);
+		font-style: italic;
+		margin: 0;
+	}
+
+	.graph-error {
+		color: var(--red);
+	}
+</style>
