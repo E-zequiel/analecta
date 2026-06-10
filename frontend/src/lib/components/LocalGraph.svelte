@@ -11,6 +11,7 @@
 	} from 'd3-force';
 	import type { SimulationLinkDatum, SimulationNodeDatum } from 'd3-force';
 	import type { GraphEdge, GraphNode } from '$lib/api/client';
+	import { tooltip } from '$lib/actions/tooltip';
 
 	const {
 		nodes,
@@ -58,6 +59,11 @@
 		const h = untrack(() => height);
 		const fid = focusNodeId;
 
+		// Scale forces with available area so nodes spread proportionally
+		const area = Math.sqrt(w * h);
+		const linkDist = Math.min(area * 0.28, 220);
+		const chargeStr = -Math.min(area * 1.1, 600);
+
 		const simNodes: SimNode[] = _nodes.map((n) => ({
 			...n,
 			x: w / 2 + (Math.random() - 0.5) * 80,
@@ -73,16 +79,16 @@
 				'link',
 				forceLink<SimNode, SimLink>(simLinks)
 					.id((d) => d.node_id)
-					.distance(120)
+					.distance(linkDist)
 			)
-			.force('charge', forceManyBody<SimNode>().strength(-280))
+			.force('charge', forceManyBody<SimNode>().strength(chargeStr))
 			.force('center', forceCenter<SimNode>(w / 2, h / 2))
 			.force(
 				'collide',
-				forceCollide<SimNode>().radius((d) => (d.node_id === fid ? 22 : d.kind === 'tag' ? 14 : 16))
+				forceCollide<SimNode>().radius((d) => (d.node_id === fid ? 24 : d.kind === 'tag' ? 15 : 18))
 			)
-			.force('x', forceX<SimNode>(w / 2).strength(0.04))
-			.force('y', forceY<SimNode>(h / 2).strength(0.04));
+			.force('x', forceX<SimNode>(w / 2).strength(0.05))
+			.force('y', forceY<SimNode>(h / 2).strength(0.05));
 
 		currentSim = sim;
 		currentSimNodes = simNodes;
@@ -90,8 +96,9 @@
 		sim.on('tick', () => {
 			for (const n of simNodes) {
 				const r = n.node_id === fid ? 14 : n.kind === 'tag' ? 7 : 10;
-				n.x = Math.max(r + 8, Math.min(n.x ?? 0, w - r - 8));
-				n.y = Math.max(r + 8, Math.min(n.y ?? 0, h - r - 8));
+				n.x = Math.max(r + 10, Math.min(n.x ?? 0, w - r - 10));
+				// extra bottom margin keeps labels (rendered 13–25px below center) inside the SVG
+				n.y = Math.max(r + 10, Math.min(n.y ?? 0, h - r - 26));
 			}
 			nodePositions = simNodes.map((n) => ({ id: n.node_id, x: n.x ?? 0, y: n.y ?? 0 }));
 			edgePositions = simLinks.map((link) => {
@@ -116,7 +123,7 @@
 		return `node node-${node.source_type ?? 'default'}`;
 	}
 
-	function truncate(s: string, max: number): string {
+	function truncate(s: string, max: number = 24): string {
 		return s.length > max ? s.slice(0, max - 1) + '…' : s;
 	}
 
@@ -193,6 +200,7 @@
 						class:clickable={!isFocus}
 						role="button"
 						tabindex={0}
+						use:tooltip={node.label}
 						onpointerdown={(e) => handlePointerDown(e, node)}
 						onkeydown={(e) => {
 							if (e.key === 'Enter' || e.key === ' ') {
@@ -203,7 +211,7 @@
 					>
 						<circle class={nodeClass(node, isFocus)} cx={pos.x} cy={pos.y} {r} />
 						<text class="label" class:label-focus={isFocus} x={pos.x} y={pos.y + r + 13}>
-							{truncate(node.label, 18)}
+							{truncate(node.label)}
 						</text>
 					</g>
 				{/if}

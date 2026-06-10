@@ -2,7 +2,7 @@ const SHOW_DELAY_MS = 300;
 const GAP_PX = 6;
 
 let tooltipEl: HTMLDivElement | null = null;
-let activeNode: HTMLElement | null = null;
+let activeNode: Element | null = null;
 let showTimer: ReturnType<typeof setTimeout> | null = null;
 
 function ensureEl(): HTMLDivElement {
@@ -14,7 +14,7 @@ function ensureEl(): HTMLDivElement {
 	return tooltipEl;
 }
 
-function show(node: HTMLElement, label: string): void {
+function show(node: Element, label: string): void {
 	if (!label) return;
 	const el = ensureEl();
 	el.textContent = label;
@@ -50,7 +50,7 @@ function hide(): void {
 	if (tooltipEl) tooltipEl.classList.remove('visible');
 }
 
-export function tooltip(node: HTMLElement, label: string) {
+export function tooltip(node: Element, label: string) {
 	let currentLabel = label;
 
 	function onEnter(): void {
