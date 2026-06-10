@@ -508,6 +508,8 @@
 				</div>
 			</div>
 
+			<VaultGraph onopen={(id, title, sourceType) => navigateInTab(id, title, sourceType)} />
+
 			<!-- Subdashboard grid -->
 			<div class="collecta-grid">
 				{#each COLLECTA_GRID as card (card.id)}
@@ -586,8 +588,6 @@
 				</div>
 			{/if}
 		</div>
-
-		<VaultGraph onopen={(id, title, sourceType) => navigateInTab(id, title, sourceType)} />
 	{:else if $activeSection === 'tags'}
 		<div class="tags-dashboard">
 			<div class="tags-left">
