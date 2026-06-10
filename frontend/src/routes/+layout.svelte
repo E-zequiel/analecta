@@ -28,6 +28,7 @@
 		pasteUrlSignal,
 		selectedTag,
 		sidebarTagPreview,
+		dashboardPreviewEntryId,
 	} from '$lib/stores/ui';
 	import {
 		tabs,
@@ -67,10 +68,13 @@
 		})()
 	);
 
+	const resolvedEntryId = $derived(activeViewerEntryId ?? $dashboardPreviewEntryId);
+
 	$effect(() => {
 		if (activeViewerEntryId !== null) {
 			sidebarTagPreview.set(null);
 			selectedTag.set(null);
+			dashboardPreviewEntryId.set(null);
 		}
 	});
 
@@ -304,7 +308,7 @@
 					onselect={(id) => activateTab(id)}
 					onclose={(id) => closeTab(id)}
 					onwidthchange={(w) => rightSidebarWidth.set(w)}
-					activeEntryId={activeViewerEntryId}
+					activeEntryId={resolvedEntryId}
 					onbacklinksopen={(id, name) => openEntryTab(id, name)}
 				/>
 			{/if}

@@ -16,7 +16,7 @@
 		nodes,
 		edges,
 		focusNodeId = undefined,
-		height = 180,
+		height = 200,
 		onopen,
 		ontagclick,
 	}: {
@@ -28,12 +28,17 @@
 		ontagclick?: (tagName: string) => void;
 	} = $props();
 
-	type SimNode = SimulationNodeDatum & GraphNode;
+	type SimNode = SimulationNodeDatum & GraphNode & { fx?: number | null; fy?: number | null };
 	type SimLink = SimulationLinkDatum<SimNode>;
 
 	let width = $state(200);
 	let nodePositions = $state<{ id: string; x: number; y: number }[]>([]);
 	let edgePositions = $state<{ x1: number; y1: number; x2: number; y2: number }[]>([]);
+	let svgEl = $state<SVGSVGElement | undefined>(undefined);
+
+	// Live refs for drag interaction (not reactive — updated by $effect)
+	let currentSim: ReturnType<typeof forceSimulation<SimNode>> | null = null;
+	let currentSimNodes: SimNode[] = [];
 
 	const nodeById = $derived(new Map(nodes.map((n) => [n.node_id, n])));
 
@@ -44,6 +49,8 @@
 		if (_edges.length === 0) {
 			nodePositions = [];
 			edgePositions = [];
+			currentSim = null;
+			currentSimNodes = [];
 			return;
 		}
 
@@ -53,8 +60,8 @@
 
 		const simNodes: SimNode[] = _nodes.map((n) => ({
 			...n,
-			x: w / 2 + (Math.random() - 0.5) * 60,
-			y: h / 2 + (Math.random() - 0.5) * 60,
+			x: w / 2 + (Math.random() - 0.5) * 80,
+			y: h / 2 + (Math.random() - 0.5) * 80,
 		}));
 		const simLinks: SimLink[] = _edges.map((e) => ({
 			source: e.source,
@@ -66,22 +73,25 @@
 				'link',
 				forceLink<SimNode, SimLink>(simLinks)
 					.id((d) => d.node_id)
-					.distance(65)
+					.distance(120)
 			)
-			.force('charge', forceManyBody<SimNode>().strength(-140))
+			.force('charge', forceManyBody<SimNode>().strength(-280))
 			.force('center', forceCenter<SimNode>(w / 2, h / 2))
 			.force(
 				'collide',
-				forceCollide<SimNode>().radius((d) => (d.node_id === fid ? 18 : d.kind === 'tag' ? 9 : 12))
+				forceCollide<SimNode>().radius((d) => (d.node_id === fid ? 22 : d.kind === 'tag' ? 14 : 16))
 			)
-			.force('x', forceX<SimNode>(w / 2).strength(0.05))
-			.force('y', forceY<SimNode>(h / 2).strength(0.05));
+			.force('x', forceX<SimNode>(w / 2).strength(0.04))
+			.force('y', forceY<SimNode>(h / 2).strength(0.04));
+
+		currentSim = sim;
+		currentSimNodes = simNodes;
 
 		sim.on('tick', () => {
 			for (const n of simNodes) {
-				const r = n.node_id === fid ? 16 : n.kind === 'tag' ? 7 : 10;
-				n.x = Math.max(r + 4, Math.min(n.x ?? 0, w - r - 4));
-				n.y = Math.max(r + 4, Math.min(n.y ?? 0, h - r - 4));
+				const r = n.node_id === fid ? 14 : n.kind === 'tag' ? 7 : 10;
+				n.x = Math.max(r + 8, Math.min(n.x ?? 0, w - r - 8));
+				n.y = Math.max(r + 8, Math.min(n.y ?? 0, h - r - 8));
 			}
 			nodePositions = simNodes.map((n) => ({ id: n.node_id, x: n.x ?? 0, y: n.y ?? 0 }));
 			edgePositions = simLinks.map((link) => {
@@ -91,7 +101,13 @@
 			});
 		});
 
-		return () => sim.stop();
+		return () => {
+			sim.stop();
+			if (currentSim === sim) {
+				currentSim = null;
+				currentSimNodes = [];
+			}
+		};
 	});
 
 	function nodeClass(node: GraphNode, isFocus: boolean): string {
@@ -105,6 +121,7 @@
 	}
 
 	function handleClick(node: GraphNode) {
+		if (node.node_id === focusNodeId) return;
 		if (node.kind === 'tag') {
 			const tagName = node.node_id.startsWith('tag:') ? node.node_id.slice(4) : node.label;
 			ontagclick?.(tagName);
@@ -113,13 +130,56 @@
 			if (!isNaN(id)) onopen?.(id, node.label, node.source_type ?? undefined);
 		}
 	}
+
+	function handlePointerDown(e: PointerEvent, node: GraphNode) {
+		const found = currentSimNodes.find((n) => n.node_id === node.node_id);
+		if (!svgEl || !found || !currentSim) return;
+
+		e.preventDefault();
+
+		// Typed aliases so TypeScript tracks non-nullability inside closures
+		const sn: SimNode = found;
+		const sim = currentSim;
+
+		// Fix at current simulated position — do NOT snap to cursor
+		sn.fx = sn.x ?? 0;
+		sn.fy = sn.y ?? 0;
+		sim.alphaTarget(0.3).restart();
+
+		let moved = false;
+		const startX = e.clientX;
+		const startY = e.clientY;
+		const rect = svgEl.getBoundingClientRect();
+		const svgW = svgEl.clientWidth;
+		const svgH = svgEl.clientHeight;
+
+		function onMove(ev: PointerEvent) {
+			const dx = ev.clientX - startX;
+			const dy = ev.clientY - startY;
+			if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+			sn.fx = Math.max(12, Math.min(ev.clientX - rect.left, svgW - 12));
+			sn.fy = Math.max(12, Math.min(ev.clientY - rect.top, svgH - 12));
+		}
+
+		function onUp() {
+			sn.fx = null;
+			sn.fy = null;
+			sim.alphaTarget(0);
+			window.removeEventListener('pointermove', onMove);
+			window.removeEventListener('pointerup', onUp);
+			if (!moved) handleClick(node);
+		}
+
+		window.addEventListener('pointermove', onMove);
+		window.addEventListener('pointerup', onUp);
+	}
 </script>
 
 <div class="graph-wrap" bind:clientWidth={width}>
 	{#if edges.length === 0}
 		<p class="graph-empty">No connections.</p>
 	{:else}
-		<svg {width} {height}>
+		<svg bind:this={svgEl} {width} {height}>
 			{#each edgePositions as ep, i (i)}
 				<line class="edge" x1={ep.x1} y1={ep.y1} x2={ep.x2} y2={ep.y2} />
 			{/each}
@@ -127,34 +187,25 @@
 				{@const node = nodeById.get(pos.id)}
 				{#if node}
 					{@const isFocus = pos.id === focusNodeId}
-					{@const r = isFocus ? 12 : node.kind === 'tag' ? 6 : 9}
-					{@const isClickable = (node.kind === 'entry' && !isFocus) || node.kind === 'tag'}
-					{#if isClickable}
-						<g
-							class="node-group clickable"
-							role="button"
-							tabindex={0}
-							onclick={() => handleClick(node)}
-							onkeydown={(e) => {
-								if (e.key === 'Enter' || e.key === ' ') {
-									e.preventDefault();
-									handleClick(node);
-								}
-							}}
-						>
-							<circle class={nodeClass(node, false)} cx={pos.x} cy={pos.y} {r} />
-							<text class="label" x={pos.x} y={pos.y + r + 13}>
-								{truncate(node.label, 16)}
-							</text>
-						</g>
-					{:else}
-						<g class="node-group">
-							<circle class={nodeClass(node, isFocus)} cx={pos.x} cy={pos.y} {r} />
-							<text class="label label-focus" x={pos.x} y={pos.y + r + 13}>
-								{truncate(node.label, 16)}
-							</text>
-						</g>
-					{/if}
+					{@const r = isFocus ? 14 : node.kind === 'tag' ? 7 : 10}
+					<g
+						class="node-group"
+						class:clickable={!isFocus}
+						role="button"
+						tabindex={0}
+						onpointerdown={(e) => handlePointerDown(e, node)}
+						onkeydown={(e) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault();
+								handleClick(node);
+							}
+						}}
+					>
+						<circle class={nodeClass(node, isFocus)} cx={pos.x} cy={pos.y} {r} />
+						<text class="label" class:label-focus={isFocus} x={pos.x} y={pos.y + r + 13}>
+							{truncate(node.label, 18)}
+						</text>
+					</g>
 				{/if}
 			{/each}
 		</svg>
@@ -165,6 +216,7 @@
 	.graph-wrap {
 		width: 100%;
 		overflow: hidden;
+		touch-action: none;
 	}
 
 	.graph-empty {
@@ -189,11 +241,23 @@
 		outline: none;
 	}
 
+	.node-group.clickable {
+		cursor: pointer;
+	}
+
+	.node-group:not(.clickable) {
+		cursor: grab;
+	}
+
+	.node-group:not(.clickable):active {
+		cursor: grabbing;
+	}
+
 	.node {
 		transition: opacity 0.15s;
 	}
 
-	.node:hover {
+	.node-group:hover .node {
 		opacity: 0.75;
 	}
 
@@ -216,16 +280,12 @@
 	}
 
 	.node-tag {
-		fill: var(--fg-muted);
+		fill: #9ece6a;
 		cursor: pointer;
 	}
 
 	.node-default {
 		fill: var(--fg-muted);
-	}
-
-	.clickable {
-		cursor: pointer;
 	}
 
 	.label {
