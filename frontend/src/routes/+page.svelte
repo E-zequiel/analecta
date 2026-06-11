@@ -799,10 +799,6 @@
 		overflow-y: auto;
 	}
 
-	.list-column::-webkit-scrollbar-track {
-		margin: 6px 0;
-	}
-
 	.graph-column {
 		flex: 0 0 380px;
 		min-height: 0;
@@ -856,10 +852,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
-	}
-
-	.tags-left::-webkit-scrollbar-track {
-		margin: 6px 0;
 	}
 
 	/* Responsive stacking: graph above list when main is narrow.
@@ -1110,10 +1102,6 @@
 		overflow-y: auto;
 		padding: 1rem;
 		gap: 1rem;
-	}
-
-	.collecta-dashboard::-webkit-scrollbar-track {
-		margin: 6px 0;
 	}
 
 	.collecta-metrics {
