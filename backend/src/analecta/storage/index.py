@@ -991,6 +991,109 @@ class VaultIndex:
         ).fetchall()
         return [_row_to_entry(r) for r in rows]
 
+    def get_linked_entries(self, entry_id: int) -> list[EntryRecord]:
+        """Return entries explicitly listed in *entry_id*'s frontmatter ``linked`` field.
+
+        Reads the entry's Markdown file, parses the ``linked:`` YAML list, and
+        looks up each title in the DB (case-insensitive).
+
+        Args:
+            entry_id: ID of the entry whose file to inspect.
+
+        Returns:
+            List of :class:`EntryRecord` objects for each matched linked title,
+            in frontmatter order. Titles that do not match any entry are skipped.
+        """
+        import yaml
+
+        entry = self.get_entry(entry_id)
+        if entry is None:
+            return []
+
+        file_path = Path(entry.file_path)
+        if not file_path.exists():
+            return []
+
+        import re as _re
+
+        markdown = file_path.read_text(encoding="utf-8")
+        m = _re.match(r"^---\n([\s\S]*?)\n---\n", markdown)
+        if not m:
+            return []
+
+        try:
+            fm_data: dict[str, object] = yaml.safe_load(m.group(1)) or {}
+            linked_titles = [str(t) for t in (fm_data.get("linked") or [])]
+        except Exception:  # noqa: BLE001
+            return []
+
+        result: list[EntryRecord] = []
+        for title in linked_titles:
+            row = self._conn.execute(
+                "SELECT * FROM entries WHERE LOWER(title) = LOWER(?)", (title,)
+            ).fetchone()
+            if row:
+                result.append(_row_to_entry(row))
+        return result
+
+    def add_link(self, source_id: int, target_id: int) -> None:
+        """Create a bidirectional explicit link between two entries.
+
+        Writes the target's title into the source's frontmatter ``linked`` field
+        and vice versa, then re-indexes backlinks for both entries.
+
+        Args:
+            source_id: ID of the first entry.
+            target_id: ID of the second entry.
+        """
+        from analecta.markdown.frontmatter import update_linked
+
+        source = self.get_entry(source_id)
+        target = self.get_entry(target_id)
+        if source is None or target is None:
+            return
+
+        for entry, other_title in ((source, target.title), (target, source.title)):
+            fp = Path(entry.file_path)
+            if not fp.exists():
+                continue
+            md = fp.read_text(encoding="utf-8")
+            updated = update_linked(md, add=other_title)
+            if updated != md:
+                fp.write_text(updated, encoding="utf-8")
+
+        self.index_backlinks(source_id)
+        self.index_backlinks(target_id)
+
+    def remove_link(self, source_id: int, target_id: int) -> None:
+        """Remove the bidirectional explicit link between two entries.
+
+        Removes the target's title from the source's frontmatter ``linked``
+        field and vice versa, then re-indexes backlinks for both entries.
+
+        Args:
+            source_id: ID of the first entry.
+            target_id: ID of the second entry.
+        """
+        from analecta.markdown.frontmatter import update_linked
+
+        source = self.get_entry(source_id)
+        target = self.get_entry(target_id)
+        if source is None or target is None:
+            return
+
+        for entry, other_title in ((source, target.title), (target, source.title)):
+            fp = Path(entry.file_path)
+            if not fp.exists():
+                continue
+            md = fp.read_text(encoding="utf-8")
+            updated = update_linked(md, remove=other_title)
+            if updated != md:
+                fp.write_text(updated, encoding="utf-8")
+
+        self.index_backlinks(source_id)
+        self.index_backlinks(target_id)
+
 
 # ------------------------------------------------------------------
 # Helpers

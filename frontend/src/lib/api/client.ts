@@ -206,6 +206,18 @@ export const entries = {
 	getSubgraph(id: number): Promise<SubgraphResult> {
 		return apiFetch<SubgraphResult>(`/entries/${id}/subgraph`);
 	},
+
+	getLinked(id: number): Promise<Entry[]> {
+		return apiFetch<Entry[]>(`/entries/${id}/linked`);
+	},
+
+	link(sourceId: number, targetId: number): Promise<void> {
+		return apiFetch<void>(`/entries/${sourceId}/link/${targetId}`, { method: 'POST' });
+	},
+
+	unlink(sourceId: number, targetId: number): Promise<void> {
+		return apiFetch<void>(`/entries/${sourceId}/link/${targetId}`, { method: 'DELETE' });
+	},
 };
 
 export const tags = {

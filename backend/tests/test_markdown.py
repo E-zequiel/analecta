@@ -3,7 +3,7 @@ import yaml
 
 from analecta.extraction.core import ExtractedContent
 from analecta.markdown.converter import MarkdownConverter
-from analecta.markdown.frontmatter import build_frontmatter, build_template_block
+from analecta.markdown.frontmatter import build_frontmatter, build_template_block, update_linked
 from analecta.markdown.hashtags import append_tags, find_heading_hashtags, normalize_tag
 
 _CREATED_AT = "2024-01-15T10:00:00"
@@ -266,3 +266,61 @@ def test_find_heading_hashtags_multiple():
     md = "##First\n## OK heading\n##Second"
     found = find_heading_hashtags(md)
     assert len(found) == 2
+
+
+# ---------------------------------------------------------------------------
+# update_linked
+# ---------------------------------------------------------------------------
+
+_FM_BASE = "---\ntitle: Alpha\nurl: https://example.com\nstatus: unread\n---\n\nBody.\n"
+
+
+def test_update_linked_add_first():
+    result = update_linked(_FM_BASE, add="Beta")
+    data = yaml.safe_load(result.split("---\n", 2)[1])
+    assert data["linked"] == ["Beta"]
+
+
+def test_update_linked_add_appends():
+    md = "---\ntitle: A\nlinked:\n- Beta\n---\n\nBody.\n"
+    result = update_linked(md, add="Gamma")
+    data = yaml.safe_load(result.split("---\n", 2)[1])
+    assert data["linked"] == ["Beta", "Gamma"]
+
+
+def test_update_linked_add_idempotent():
+    md = "---\ntitle: A\nlinked:\n- Beta\n---\n\nBody.\n"
+    result = update_linked(md, add="Beta")
+    data = yaml.safe_load(result.split("---\n", 2)[1])
+    assert data["linked"] == ["Beta"]
+
+
+def test_update_linked_remove_present():
+    md = "---\ntitle: A\nlinked:\n- Beta\n- Gamma\n---\n\nBody.\n"
+    result = update_linked(md, remove="Beta")
+    data = yaml.safe_load(result.split("---\n", 2)[1])
+    assert data["linked"] == ["Gamma"]
+
+
+def test_update_linked_remove_last_drops_field():
+    md = "---\ntitle: A\nlinked:\n- Beta\n---\n\nBody.\n"
+    result = update_linked(md, remove="Beta")
+    data = yaml.safe_load(result.split("---\n", 2)[1])
+    assert "linked" not in data
+
+
+def test_update_linked_remove_absent_is_noop():
+    md = "---\ntitle: A\nlinked:\n- Beta\n---\n\nBody.\n"
+    result = update_linked(md, remove="Missing")
+    data = yaml.safe_load(result.split("---\n", 2)[1])
+    assert data["linked"] == ["Beta"]
+
+
+def test_update_linked_no_frontmatter_returns_unchanged():
+    md = "No frontmatter here.\n"
+    assert update_linked(md, add="Beta") == md
+
+
+def test_update_linked_preserves_body():
+    result = update_linked(_FM_BASE, add="Beta")
+    assert result.endswith("\nBody.\n")

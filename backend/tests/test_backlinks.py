@@ -405,3 +405,266 @@ class TestBacklinksEndpoint:
         assert all(item["id"] == src_id for item in linked)
         headings = {item["context"]["heading"] for item in linked}
         assert headings == {"Intro", "Details"}
+
+
+# ---------------------------------------------------------------------------
+# parse_refs — frontmatter linked: field
+# ---------------------------------------------------------------------------
+
+
+class TestParseRefsLinked:
+    def test_linked_frontmatter_parsed(self) -> None:
+        md = "---\ntitle: A\nlinked:\n- Beta\n- Gamma\n---\n\nBody.\n"
+        refs = parse_refs(md)
+        linked_refs = [r for r in refs if r.target_text in ("beta", "gamma")]
+        assert len(linked_refs) == 2
+
+    def test_linked_refs_come_first(self) -> None:
+        md = (
+            "---\ntitle: A\nlinked:\n- Beta\n---\n\n"
+            "See [[Alpha]].\n"
+        )
+        refs = parse_refs(md)
+        assert refs[0].target_text == "beta"
+        assert refs[1].target_text == "alpha"
+
+    def test_linked_refs_not_hashtags(self) -> None:
+        md = "---\ntitle: A\nlinked:\n- Beta\n---\n\nBody.\n"
+        refs = parse_refs(md)
+        linked = [r for r in refs if r.target_text == "beta"]
+        assert linked[0].is_hashtag is False
+
+    def test_linked_highlight_is_wikilink_format(self) -> None:
+        md = "---\ntitle: A\nlinked:\n- Beta Article\n---\n\nBody.\n"
+        refs = parse_refs(md)
+        linked = [r for r in refs if r.target_text == "beta article"]
+        assert linked[0].highlight == "[[Beta Article]]"
+
+    def test_no_linked_field_no_extra_refs(self) -> None:
+        md = "---\ntitle: A\nurl: https://x.com\n---\n\nSee [[Alpha]].\n"
+        refs = parse_refs(md)
+        assert len(refs) == 1
+        assert refs[0].target_text == "alpha"
+
+    def test_empty_linked_field_no_extra_refs(self) -> None:
+        md = "---\ntitle: A\nlinked: []\n---\n\nSee [[Alpha]].\n"
+        refs = parse_refs(md)
+        assert len(refs) == 1
+
+
+# ---------------------------------------------------------------------------
+# VaultIndex.get_linked_entries / add_link / remove_link
+# ---------------------------------------------------------------------------
+
+
+def _make_file(vault: Path, n: int, linked: list[str] | None = None) -> Path:
+    parts = ["---\n", f"title: Article {n}\n", "url: https://example.com\n"]
+    if linked:
+        parts.append("linked:\n")
+        for t in linked:
+            parts.append(f"- {t}\n")
+    parts.append("---\n\nBody.\n")
+    fp = vault / f"article-{n}.md"
+    fp.write_text("".join(parts), encoding="utf-8")
+    return fp
+
+
+class TestLinkedStorage:
+    def test_get_linked_entries_basic(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        id_b = _seed(db, n=2, title="Article 2")
+        fp_a = _make_file(vault, 1, linked=["Article 2"])
+        id_a = _seed(db, n=1, file_path=str(fp_a))
+
+        result = db.get_linked_entries(id_a)
+        assert len(result) == 1
+        assert result[0].id == id_b
+        db.close()
+
+    def test_get_linked_entries_empty(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        fp_a = _make_file(vault, 1)
+        id_a = _seed(db, n=1, file_path=str(fp_a))
+
+        assert db.get_linked_entries(id_a) == []
+        db.close()
+
+    def test_get_linked_entries_unknown_title_skipped(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        fp_a = _make_file(vault, 1, linked=["Nonexistent Title"])
+        id_a = _seed(db, n=1, file_path=str(fp_a))
+
+        assert db.get_linked_entries(id_a) == []
+        db.close()
+
+    def test_add_link_bidirectional(self, tmp_path: Path) -> None:
+        import yaml as _yaml
+
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        fp_a = _make_file(vault, 1)
+        fp_b = _make_file(vault, 2)
+        id_a = _seed(db, n=1, title="Article 1", file_path=str(fp_a))
+        id_b = _seed(db, n=2, title="Article 2", file_path=str(fp_b))
+
+        db.add_link(id_a, id_b)
+
+        # Both files should list each other
+        fm_a = _yaml.safe_load(fp_a.read_text().split("---\n", 2)[1])
+        fm_b = _yaml.safe_load(fp_b.read_text().split("---\n", 2)[1])
+        assert "Article 2" in fm_a.get("linked", [])
+        assert "Article 1" in fm_b.get("linked", [])
+        db.close()
+
+    def test_add_link_idempotent(self, tmp_path: Path) -> None:
+        import yaml as _yaml
+
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        fp_a = _make_file(vault, 1)
+        fp_b = _make_file(vault, 2)
+        id_a = _seed(db, n=1, title="Article 1", file_path=str(fp_a))
+        id_b = _seed(db, n=2, title="Article 2", file_path=str(fp_b))
+
+        db.add_link(id_a, id_b)
+        db.add_link(id_a, id_b)
+
+        fm_a = _yaml.safe_load(fp_a.read_text().split("---\n", 2)[1])
+        assert fm_a["linked"].count("Article 2") == 1
+        db.close()
+
+    def test_remove_link_bidirectional(self, tmp_path: Path) -> None:
+        import yaml as _yaml
+
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        fp_a = _make_file(vault, 1, linked=["Article 2"])
+        fp_b = _make_file(vault, 2, linked=["Article 1"])
+        id_a = _seed(db, n=1, title="Article 1", file_path=str(fp_a))
+        id_b = _seed(db, n=2, title="Article 2", file_path=str(fp_b))
+
+        db.remove_link(id_a, id_b)
+
+        fm_a = _yaml.safe_load(fp_a.read_text().split("---\n", 2)[1])
+        fm_b = _yaml.safe_load(fp_b.read_text().split("---\n", 2)[1])
+        assert "linked" not in fm_a
+        assert "linked" not in fm_b
+        db.close()
+
+    def test_add_link_reindexes_backlinks(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        fp_a = _make_file(vault, 1)
+        fp_b = _make_file(vault, 2)
+        id_a = _seed(db, n=1, title="Article 1", file_path=str(fp_a))
+        id_b = _seed(db, n=2, title="Article 2", file_path=str(fp_b))
+
+        db.add_link(id_a, id_b)
+
+        # Article 2 should appear in backlinks of Article 1 (via frontmatter linked)
+        bl = db.get_backlinks(id_a)
+        source_ids = {r.source_id for r in bl}
+        assert id_b in source_ids
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# API endpoints — linked
+# ---------------------------------------------------------------------------
+
+
+class TestLinkedEndpoints:
+    @pytest.fixture
+    def client(self, tmp_path: Path) -> Generator[TestClient]:
+        with TestClient(_make_app(tmp_path)) as c:
+            yield c
+
+    def test_get_linked_404_unknown(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/entries/9999/linked")
+        assert resp.status_code == 404
+
+    def test_get_linked_empty(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        app = _make_app(tmp_path)
+        config = AppConfig(vault_path=tmp_path / "vault")
+        with VaultIndex(config.vault_path / "analecta.db") as index:
+            fp = _make_file(vault, 1)
+            id_a = _seed(index, n=1, file_path=str(fp))
+        with TestClient(app) as c:
+            resp = c.get(f"/api/v1/entries/{id_a}/linked")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_post_link_creates_connection(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        app = _make_app(tmp_path)
+        config = AppConfig(vault_path=tmp_path / "vault")
+        with VaultIndex(config.vault_path / "analecta.db") as index:
+            fp_a = _make_file(vault, 1)
+            fp_b = _make_file(vault, 2)
+            id_a = _seed(index, n=1, title="Article 1", file_path=str(fp_a))
+            id_b = _seed(index, n=2, title="Article 2", file_path=str(fp_b))
+        with TestClient(app) as c:
+            resp = c.post(f"/api/v1/entries/{id_a}/link/{id_b}")
+            assert resp.status_code == 204
+            linked = c.get(f"/api/v1/entries/{id_a}/linked").json()
+        assert any(e["id"] == id_b for e in linked)
+
+    def test_post_link_404_source(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        app = _make_app(tmp_path)
+        config = AppConfig(vault_path=tmp_path / "vault")
+        with VaultIndex(config.vault_path / "analecta.db") as index:
+            fp_b = _make_file(vault, 2)
+            id_b = _seed(index, n=2, title="Article 2", file_path=str(fp_b))
+        with TestClient(app) as c:
+            resp = c.post(f"/api/v1/entries/9999/link/{id_b}")
+        assert resp.status_code == 404
+
+    def test_post_link_404_target(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        app = _make_app(tmp_path)
+        config = AppConfig(vault_path=tmp_path / "vault")
+        with VaultIndex(config.vault_path / "analecta.db") as index:
+            fp_a = _make_file(vault, 1)
+            id_a = _seed(index, n=1, title="Article 1", file_path=str(fp_a))
+        with TestClient(app) as c:
+            resp = c.post(f"/api/v1/entries/{id_a}/link/9999")
+        assert resp.status_code == 404
+
+    def test_delete_link_removes_connection(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        app = _make_app(tmp_path)
+        config = AppConfig(vault_path=tmp_path / "vault")
+        with VaultIndex(config.vault_path / "analecta.db") as index:
+            fp_a = _make_file(vault, 1, linked=["Article 2"])
+            fp_b = _make_file(vault, 2, linked=["Article 1"])
+            id_a = _seed(index, n=1, title="Article 1", file_path=str(fp_a))
+            id_b = _seed(index, n=2, title="Article 2", file_path=str(fp_b))
+        with TestClient(app) as c:
+            resp = c.delete(f"/api/v1/entries/{id_a}/link/{id_b}")
+            assert resp.status_code == 204
+            linked = c.get(f"/api/v1/entries/{id_a}/linked").json()
+        assert linked == []

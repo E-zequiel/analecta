@@ -6,6 +6,7 @@ import type { Entry } from '$lib/api/client';
 export const viewerEntry = writable<Entry | null>(null);
 export const viewerFontSize = writable<number>(17);
 export const viewerTagsOpen = writable<boolean>(false);
+export const viewerBacklinksOpen = writable<boolean>(false);
 
 export type ViewerActions = {
 	setStatus: (s: string) => Promise<void>;

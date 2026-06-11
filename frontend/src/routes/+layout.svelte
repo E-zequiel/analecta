@@ -370,5 +370,6 @@
 		flex: 1;
 		overflow-y: auto;
 		background: var(--bg);
+		container-type: inline-size;
 	}
 </style>
