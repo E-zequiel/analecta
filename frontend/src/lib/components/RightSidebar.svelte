@@ -115,7 +115,7 @@
 	$effect(() => {
 		const id = activeEntryId;
 		const preview = isDashboardPreview;
-		$entryChangedTick;
+		void $entryChangedTick;
 		backlinks = [];
 		if (id === null || preview) return;
 
@@ -156,7 +156,7 @@
 					if (cancelled) return;
 					const es = await entriesApi.list({ tag: t }).catch(() => [] as Entry[]);
 					const filtered = es.filter((e) => e.id !== id);
-					if (filtered.length > 0) groups.push({ tag: t, entries: filtered });
+					groups.push({ tag: t, entries: filtered });
 				}
 
 				if (cancelled) return;
@@ -611,17 +611,5 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-	}
-
-	.bl-item-ctx {
-		font-size: 13px;
-		color: var(--fg-muted);
-		line-height: 1.3;
-		word-break: break-word;
-	}
-
-	.bl-em {
-		color: var(--fg);
-		font-style: normal;
 	}
 </style>

@@ -1,6 +1,7 @@
 """YAML frontmatter builder — M4 pipeline."""
 
 import re
+from typing import Any
 
 import yaml
 
@@ -9,7 +10,9 @@ from analecta.extraction.core import ExtractedContent
 _FM_BLOCK = re.compile(r"^(---\n)([\s\S]*?)(\n---\n)", re.MULTILINE)
 
 
-def update_linked(markdown: str, *, add: str | None = None, remove: str | None = None) -> str:
+def update_linked(
+    markdown: str, *, add: str | None = None, remove: str | None = None
+) -> str:
     """Add or remove a title from the ``linked`` frontmatter field.
 
     Creates the field when adding to a file that lacks it. Removes the field
@@ -31,7 +34,7 @@ def update_linked(markdown: str, *, add: str | None = None, remove: str | None =
     rest = markdown[m.end() :]
 
     try:
-        data: dict[str, object] = yaml.safe_load(yaml_str) or {}
+        data: dict[str, Any] = yaml.safe_load(yaml_str) or {}
     except yaml.YAMLError:
         return markdown
 

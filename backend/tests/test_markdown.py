@@ -3,7 +3,11 @@ import yaml
 
 from analecta.extraction.core import ExtractedContent
 from analecta.markdown.converter import MarkdownConverter
-from analecta.markdown.frontmatter import build_frontmatter, build_template_block, update_linked
+from analecta.markdown.frontmatter import (
+    build_frontmatter,
+    build_template_block,
+    update_linked,
+)
 from analecta.markdown.hashtags import append_tags, find_heading_hashtags, normalize_tag
 
 _CREATED_AT = "2024-01-15T10:00:00"

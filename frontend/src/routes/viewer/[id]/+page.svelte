@@ -173,9 +173,7 @@
 				const results = await entriesApi.list({ q });
 				const linkedIds = new Set(linkedEntries.map((e) => e.id));
 				const currentId = untrack(() => entry?.id);
-				connResults = results
-					.filter((e) => !linkedIds.has(e.id) && e.id !== currentId)
-					.slice(0, 8);
+				connResults = results.filter((e) => !linkedIds.has(e.id) && e.id !== currentId).slice(0, 8);
 			} catch {
 				connResults = [];
 			}
