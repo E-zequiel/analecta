@@ -508,7 +508,13 @@
 				</div>
 			</div>
 
-			<VaultGraph onopen={(id, title, sourceType) => navigateInTab(id, title, sourceType)} />
+			<VaultGraph
+				onopen={(id) => selectDashboardEntry(id)}
+				ontagclick={(tagName) => {
+					sidebarTagPreview.set(tagName);
+					rightSidebarOpen.set(true);
+				}}
+			/>
 
 			<!-- Subdashboard grid -->
 			<div class="collecta-grid">
