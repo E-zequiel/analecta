@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { slide } from 'svelte/transition';
+	import { slide, fade } from 'svelte/transition';
 	import { page } from '$app/state';
 	import {
 		ClipboardPaste,
@@ -451,7 +451,7 @@
 				</div>
 
 				{#if $expandedSections.has(section.id)}
-					<div class="section-entries" transition:slide={{ duration: 140 }}>
+					<div class="section-entries" transition:fade={{ duration: 120 }}>
 						{#each sectionEntries.get(section.id) ?? [] as entry (entry.id)}
 							{@const isMatchEntry = dashboardEntry?.id === entry.id}
 							<button
