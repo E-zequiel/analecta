@@ -815,7 +815,7 @@
 		}
 
 		.graph-column {
-			flex: 0 0 325px;
+			flex: 0 0 470px;
 			width: 100%;
 			border-left: none;
 			border-bottom: 1px solid var(--border);
@@ -862,7 +862,7 @@
 		}
 
 		.tags-dashboard .graph-column {
-			flex: 0 0 325px;
+			flex: 0 0 470px;
 			width: 100%;
 			border-left: none;
 			border-bottom: 1px solid var(--border);
