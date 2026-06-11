@@ -10,8 +10,10 @@
 		forceY,
 	} from 'd3-force';
 	import type { SimulationLinkDatum, SimulationNodeDatum } from 'd3-force';
-	import type { GraphEdge, GraphNode } from '$lib/api/client';
+	import { entries as entriesApi, type GraphEdge, type GraphNode } from '$lib/api/client';
 	import { tooltip } from '$lib/actions/tooltip';
+	import { showContextMenu } from '$lib/stores/contextMenu';
+	import { openEntryTab } from '$lib/stores/tabs';
 
 	const {
 		nodes,
@@ -139,7 +141,35 @@
 		}
 	}
 
+	function handleMiddleClick(e: MouseEvent, node: GraphNode) {
+		if (e.button !== 1 || node.kind !== 'entry') return;
+		e.preventDefault();
+		const id = parseInt(node.node_id.slice(6));
+		if (!isNaN(id)) openEntryTab(id, node.label, true, node.source_type ?? undefined);
+	}
+
+	async function handleContextMenu(e: MouseEvent, node: GraphNode) {
+		e.preventDefault();
+		if (node.kind !== 'entry') return;
+		const id = parseInt(node.node_id.slice(6));
+		if (isNaN(id)) return;
+		try {
+			const entry = await entriesApi.get(id);
+			showContextMenu(e, {
+				id: entry.id,
+				title: entry.title,
+				url: entry.url,
+				file_path: entry.file_path,
+				status: entry.status,
+				flags: entry.flags,
+			});
+		} catch {
+			// entry deleted or sidecar not ready
+		}
+	}
+
 	function handlePointerDown(e: PointerEvent, node: GraphNode) {
+		if (e.button !== 0) return;
 		const found = currentSimNodes.find((n) => n.node_id === node.node_id);
 		if (!svgEl || !found || !currentSim) return;
 
@@ -203,6 +233,8 @@
 						tabindex={0}
 						use:tooltip={node.label}
 						onpointerdown={(e) => handlePointerDown(e, node)}
+						onmousedown={(e) => handleMiddleClick(e, node)}
+						oncontextmenu={(e) => void handleContextMenu(e, node)}
 						onkeydown={(e) => {
 							if (e.key === 'Enter' || e.key === ' ') {
 								e.preventDefault();

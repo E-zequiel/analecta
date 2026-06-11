@@ -6,6 +6,8 @@
 	import forceAtlas2 from 'graphology-layout-forceatlas2';
 	import { Focus, Maximize2, Waypoints, X } from '@lucide/svelte';
 	import { entries as entriesApi, type GraphResult } from '$lib/api/client';
+	import { showContextMenu } from '$lib/stores/contextMenu';
+	import { openEntryTab } from '$lib/stores/tabs';
 
 	type VaultNodeAttrs = {
 		label: string;
@@ -119,6 +121,22 @@
 		});
 	}
 
+	async function handleNodeContextMenu(id: number, e: MouseEvent) {
+		try {
+			const entry = await entriesApi.get(id);
+			showContextMenu(e, {
+				id: entry.id,
+				title: entry.title,
+				url: entry.url,
+				file_path: entry.file_path,
+				status: entry.status,
+				flags: entry.flags,
+			});
+		} catch {
+			// entry deleted or sidecar not ready
+		}
+	}
+
 	// Build the Sigma instance whenever the container element and data are both ready.
 	// Does NOT track `expanded` — fullscreen toggle repositions via CSS without rebuilding.
 	$effect(() => {
@@ -212,10 +230,31 @@
 		let isDragging = false;
 		let draggedNode: string | null = null;
 
-		sigma.on('downNode', ({ node }) => {
+		sigma.on('downNode', ({ node, event }) => {
+			const origEvent = event.original as MouseEvent;
+			if (origEvent.button === 1) {
+				origEvent.preventDefault();
+				const attrs = graph.getNodeAttributes(node);
+				if (attrs.kind === 'entry') {
+					const rawId = node.startsWith('entry:') ? node.slice(6) : node;
+					const id = parseInt(rawId, 10);
+					if (!isNaN(id)) openEntryTab(id, attrs.fullLabel, true, attrs.source_type ?? undefined);
+				}
+				return;
+			}
+			if (origEvent.button !== 0) return;
 			isDragging = true;
 			draggedNode = node;
 			el.style.cursor = 'grabbing';
+		});
+
+		sigma.on('rightClickNode', ({ node, event }) => {
+			const origEvent = event.original as MouseEvent;
+			const attrs = graph.getNodeAttributes(node);
+			if (attrs.kind !== 'entry') return;
+			const rawId = node.startsWith('entry:') ? node.slice(6) : node;
+			const id = parseInt(rawId, 10);
+			if (!isNaN(id)) void handleNodeContextMenu(id, origEvent);
 		});
 
 		sigma.on('moveBody', ({ preventSigmaDefault, event }) => {
