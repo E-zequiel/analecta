@@ -20,8 +20,10 @@
 
 	const {
 		onopen,
+		ontagclick,
 	}: {
 		onopen?: (id: number, title: string, sourceType?: string) => void;
+		ontagclick?: (tagName: string) => void;
 	} = $props();
 
 	let sigmaEl = $state<HTMLElement | undefined>(undefined);
@@ -162,16 +164,27 @@
 			document.getElementById('analecta-tooltip')?.classList.remove('visible');
 		});
 
-		// Node click — open entry.
+		// Node click — preview entry connections or filter by tag.
 		sigma.on('clickNode', ({ node }) => {
 			const attrs = graph.getNodeAttributes(node);
-			if (attrs.kind === 'entry') {
+			if (attrs.kind === 'tag') {
+				const tagName = node.startsWith('tag:') ? node.slice(4) : attrs.fullLabel;
+				ontagclick?.(tagName);
+			} else if (attrs.kind === 'entry') {
 				const rawId = node.startsWith('entry:') ? node.slice(6) : node;
 				const id = parseInt(rawId, 10);
 				if (!isNaN(id)) {
 					onopen?.(id, attrs.fullLabel, attrs.source_type ?? undefined);
 				}
 			}
+		});
+
+		// Cursor management — mirrors LocalGraph behaviour.
+		sigma.on('enterNode', () => {
+			el.style.cursor = 'pointer';
+		});
+		sigma.on('leaveNode', () => {
+			if (!isDragging) el.style.cursor = '';
 		});
 
 		// Drag — move nodes by mouse.
@@ -181,6 +194,7 @@
 		sigma.on('downNode', ({ node }) => {
 			isDragging = true;
 			draggedNode = node;
+			el.style.cursor = 'grabbing';
 		});
 
 		sigma.on('moveBody', ({ preventSigmaDefault, event }) => {
@@ -194,6 +208,7 @@
 		const endDrag = () => {
 			isDragging = false;
 			draggedNode = null;
+			el.style.cursor = '';
 		};
 		window.addEventListener('mouseup', endDrag);
 
