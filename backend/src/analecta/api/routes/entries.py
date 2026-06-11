@@ -497,6 +497,81 @@ async def get_entry_subgraph(
     )
 
 
+@router.get("/entries/{entry_id}/linked", response_model=list[EntryOut])
+async def get_linked_entries(
+    entry_id: int,
+    index: VaultIndex = Depends(get_index),
+) -> list[EntryOut]:
+    """Return entries explicitly linked via *entry_id*'s frontmatter ``linked`` field.
+
+    Args:
+        entry_id: Source entry id.
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        List of linked entries in frontmatter order.
+
+    Raises:
+        HTTPException: 404 if the entry does not exist.
+    """
+    if await asyncio.to_thread(index.get_entry, entry_id) is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    records = await asyncio.to_thread(index.get_linked_entries, entry_id)
+    return [entry_out(r) for r in records]
+
+
+@router.post("/entries/{source_id}/link/{target_id}", status_code=204)
+async def link_entries(
+    source_id: int,
+    target_id: int,
+    index: VaultIndex = Depends(get_index),
+) -> None:
+    """Create a bidirectional explicit link between two entries.
+
+    Writes the target's title into the source's frontmatter ``linked`` list
+    and vice versa, then re-indexes backlinks for both.
+
+    Args:
+        source_id: ID of the first entry.
+        target_id: ID of the second entry.
+        index: Injected VaultIndex singleton.
+
+    Raises:
+        HTTPException: 404 if either entry does not exist.
+    """
+    if await asyncio.to_thread(index.get_entry, source_id) is None:
+        raise HTTPException(status_code=404, detail="Source entry not found")
+    if await asyncio.to_thread(index.get_entry, target_id) is None:
+        raise HTTPException(status_code=404, detail="Target entry not found")
+    await asyncio.to_thread(index.add_link, source_id, target_id)
+
+
+@router.delete("/entries/{source_id}/link/{target_id}", status_code=204)
+async def unlink_entries(
+    source_id: int,
+    target_id: int,
+    index: VaultIndex = Depends(get_index),
+) -> None:
+    """Remove the bidirectional explicit link between two entries.
+
+    Removes the target's title from the source's frontmatter ``linked`` list
+    and vice versa, then re-indexes backlinks for both.
+
+    Args:
+        source_id: ID of the first entry.
+        target_id: ID of the second entry.
+        index: Injected VaultIndex singleton.
+
+    Raises:
+        HTTPException: 404 if either entry does not exist.
+    """
+    if await asyncio.to_thread(index.get_entry, source_id) is None:
+        raise HTTPException(status_code=404, detail="Source entry not found")
+    if await asyncio.to_thread(index.get_entry, target_id) is None:
+        raise HTTPException(status_code=404, detail="Target entry not found")
+    await asyncio.to_thread(index.remove_link, source_id, target_id)
+
+
 @router.delete("/entries/{entry_id}", status_code=204)
 async def delete_entry(
     entry_id: int,

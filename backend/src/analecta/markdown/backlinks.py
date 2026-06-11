@@ -1,7 +1,8 @@
 """Backlink reference extraction from Markdown.
 
-Parses ``[[wikilinks]]`` and inline ``#hashtag`` references, capturing the
-nearest preceding heading and a ±60-character context snippet per occurrence.
+Parses ``[[wikilinks]]``, inline ``#hashtag`` references, and the ``linked:``
+YAML frontmatter field, capturing the nearest preceding heading and a
+±60-character context snippet per occurrence.
 """
 
 import re
@@ -38,17 +39,42 @@ class ParsedRef:
 
 
 def parse_refs(markdown: str) -> list[ParsedRef]:
-    """Extract all wikilink and hashtag references from *markdown*.
+    """Extract all wikilink, hashtag, and frontmatter-linked references from *markdown*.
 
-    Skips YAML frontmatter, code-fence blocks, and heading lines.
+    Reads the ``linked:`` list from YAML frontmatter (if present), then
+    skips frontmatter and parses ``[[wikilinks]]`` and ``#hashtags`` from
+    the body. Skips code-fence blocks and heading lines.
 
     Args:
         markdown: Raw Markdown text to parse.
 
     Returns:
-        List of :class:`ParsedRef` objects in document order.
+        List of :class:`ParsedRef` objects. Frontmatter-linked entries come
+        first, followed by body references in document order.
     """
+    import yaml
+
     from analecta.markdown.hashtags import normalize_tag
+
+    # Collect refs declared in frontmatter ``linked: [...]``.
+    fm_refs: list[ParsedRef] = []
+    fm_match = re.match(r"^---\n([\s\S]*?)\n---\n", markdown)
+    if fm_match:
+        try:
+            fm_data: dict[str, object] = yaml.safe_load(fm_match.group(1)) or {}
+            for title in fm_data.get("linked") or []:
+                fm_refs.append(
+                    ParsedRef(
+                        target_text=str(title).lower(),
+                        is_hashtag=False,
+                        heading=None,
+                        pre="",
+                        highlight=f"[[{title}]]",
+                        post="",
+                    )
+                )
+        except Exception:  # noqa: BLE001
+            pass
 
     # Strip YAML frontmatter
     body = _FRONTMATTER_RE.sub("", markdown, count=1)
@@ -99,4 +125,4 @@ def parse_refs(markdown: str) -> list[ParsedRef]:
                 )
             )
 
-    return refs
+    return fm_refs + refs

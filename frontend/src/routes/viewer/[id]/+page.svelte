@@ -18,7 +18,13 @@
 	import { ensureEntryTab, closeTab } from '$lib/stores/tabs';
 	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
 	import { showContextMenu } from '$lib/stores/contextMenu';
-	import { viewerEntry, viewerFontSize, viewerTagsOpen, viewerActions } from '$lib/stores/toolbar';
+	import {
+		viewerEntry,
+		viewerFontSize,
+		viewerTagsOpen,
+		viewerBacklinksOpen,
+		viewerActions,
+	} from '$lib/stores/toolbar';
 	import { tooltip } from '$lib/actions/tooltip';
 
 	const entryId = $derived(parseInt($page.params['id'] as string));
@@ -113,6 +119,12 @@
 	let tagAddInputEl = $state<HTMLInputElement | null>(null);
 	let showAllSuggestions = $state(false);
 
+	// Connections state
+	let linkedEntries = $state<Entry[]>([]);
+	let connSearch = $state('');
+	let connResults = $state<Entry[]>([]);
+	let connInputEl = $state<HTMLInputElement | null>(null);
+
 	const tagSuggestions = $derived(
 		newTagInput.length > 0
 			? allTags
@@ -135,6 +147,39 @@
 		} else {
 			showAllSuggestions = false;
 		}
+	});
+
+	$effect(() => {
+		if ($viewerBacklinksOpen) {
+			fetchLinked();
+			setTimeout(() => connInputEl?.focus(), 0);
+		} else {
+			connSearch = '';
+			connResults = [];
+		}
+	});
+
+	// Debounced connection search.
+	let _connSearchTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		const q = connSearch;
+		if (_connSearchTimer) clearTimeout(_connSearchTimer);
+		if (!q.trim()) {
+			connResults = [];
+			return;
+		}
+		_connSearchTimer = setTimeout(async () => {
+			try {
+				const results = await entriesApi.list({ q });
+				const linkedIds = new Set(linkedEntries.map((e) => e.id));
+				const currentId = untrack(() => entry?.id);
+				connResults = results
+					.filter((e) => !linkedIds.has(e.id) && e.id !== currentId)
+					.slice(0, 8);
+			} catch {
+				connResults = [];
+			}
+		}, 200);
 	});
 
 	function navigateSuggestion(direction: 1 | -1, from: HTMLElement) {
@@ -186,6 +231,7 @@
 			viewerEntry.set(null);
 			viewerFontSize.set(17);
 			viewerTagsOpen.set(false);
+			viewerBacklinksOpen.set(false);
 		};
 	});
 
@@ -205,7 +251,9 @@
 		entry = null;
 		html = '';
 		error = '';
+		linkedEntries = [];
 		viewerTagsOpen.set(false);
+		viewerBacklinksOpen.set(false);
 
 		let cancelled = false;
 
@@ -311,6 +359,30 @@
 		entry = removedEntry;
 		lastChangedEntry.set(removedEntry);
 		entryChangedTick.update((n) => n + 1);
+	}
+
+	async function fetchLinked() {
+		if (!entry) return;
+		try {
+			linkedEntries = await entriesApi.getLinked(entry.id);
+		} catch {
+			linkedEntries = [];
+		}
+	}
+
+	async function connectEntry(target: Entry) {
+		if (!entry) return;
+		await entriesApi.link(entry.id, target.id);
+		linkedEntries = [...linkedEntries, target];
+		connSearch = '';
+		connResults = [];
+		setTimeout(() => connInputEl?.focus(), 0);
+	}
+
+	async function disconnectEntry(target: Entry) {
+		if (!entry) return;
+		await entriesApi.unlink(entry.id, target.id);
+		linkedEntries = linkedEntries.filter((e) => e.id !== target.id);
 	}
 
 	function handleRightClick(e: MouseEvent) {
@@ -431,6 +503,64 @@
 	</div>
 {/if}
 
+{#if $viewerBacklinksOpen && entry}
+	<div
+		class="tags-backdrop"
+		onclick={() => viewerBacklinksOpen.set(false)}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') viewerBacklinksOpen.set(false);
+		}}
+		role="button"
+		tabindex="-1"
+	>
+		<div
+			class="tags-dialog conn-dialog"
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => {
+				if (e.key === 'Escape') viewerBacklinksOpen.set(false);
+			}}
+		>
+			{#if linkedEntries.length > 0}
+				<div class="conn-linked">
+					{#each linkedEntries as linked (linked.id)}
+						<div class="conn-chip">
+							<span class="conn-chip-title">{linked.title}</span>
+							<button
+								class="chip-remove"
+								onclick={() => disconnectEntry(linked)}
+								use:tooltip={'Remove'}
+								aria-label="Remove connection">×</button
+							>
+						</div>
+					{/each}
+				</div>
+			{/if}
+			<input
+				class="tag-add-input"
+				type="text"
+				placeholder="Search to connect…"
+				bind:value={connSearch}
+				bind:this={connInputEl}
+				onkeydown={(e) => {
+					if (e.key === 'Escape') viewerBacklinksOpen.set(false);
+				}}
+			/>
+			{#if connResults.length > 0}
+				<div class="tag-suggestions">
+					{#each connResults as result (result.id)}
+						<button class="suggestion-item" onclick={() => connectEntry(result)}
+							>{result.title}</button
+						>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	</div>
+{/if}
+
 {#if hoveredHref}
 	<div class="link-status-bar" role="status" aria-live="polite">{hoveredHref}</div>
 {/if}
@@ -439,7 +569,13 @@
 	{#if error}
 		<div class="error-banner">{error}</div>
 	{:else if entry && html}
-		<button class="props-bar" onclick={() => (propertiesOpen = !propertiesOpen)}>
+		<button
+			class="props-bar"
+			onclick={() => {
+				propertiesOpen = !propertiesOpen;
+				if (propertiesOpen && entry) fetchLinked();
+			}}
+		>
 			<span class="status-badge">{entry.status}</span>
 			<span class="props-url">{entry.url}</span>
 			<span class="props-meta">{formatDate(entry.created_at)}</span>
@@ -493,7 +629,7 @@
 							<span class="props-value">{charCount.toLocaleString()}</span>
 						</div>
 					</div>
-					<!-- Col3 (1fr): Tags -->
+					<!-- Col3 (1fr): Tags + Connections -->
 					<div class="props-col">
 						{#if entry.tags.length > 0}
 							<div class="props-field">
@@ -501,6 +637,16 @@
 								<div class="props-tags">
 									{#each entry.tags as tag (tag)}
 										<span class="prop-tag">#{tag}</span>
+									{/each}
+								</div>
+							</div>
+						{/if}
+						{#if linkedEntries.length > 0}
+							<div class="props-field">
+								<div class="props-label">Connections</div>
+								<div class="props-tags">
+									{#each linkedEntries as linked (linked.id)}
+										<span class="prop-tag prop-conn">{linked.title}</span>
 									{/each}
 								</div>
 							</div>
@@ -790,6 +936,41 @@
 		color: var(--fg);
 		background: var(--bg-highlight);
 		outline: none;
+	}
+
+	.conn-dialog {
+		width: 360px;
+	}
+
+	.conn-linked {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.conn-chip {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 3px 4px 3px 8px;
+		background: var(--bg-alt);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		font-size: var(--font-size-sublabel);
+	}
+
+	.conn-chip-title {
+		color: var(--fg);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.prop-conn {
+		color: var(--cyan);
+		border-color: color-mix(in srgb, var(--cyan) 30%, transparent);
 	}
 
 	.link-status-bar {
