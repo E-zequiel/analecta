@@ -2,6 +2,7 @@
 	import { X, Cable } from '@lucide/svelte';
 	import { entries as entriesApi, type Backlink, type Entry } from '$lib/api/client';
 	import { selectedTag, sidebarTagPreview } from '$lib/stores/ui';
+	import { entryChangedTick } from '$lib/stores/sse';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { tooltip } from '$lib/actions/tooltip';
 
@@ -114,6 +115,7 @@
 	$effect(() => {
 		const id = activeEntryId;
 		const preview = isDashboardPreview;
+		$entryChangedTick;
 		backlinks = [];
 		if (id === null || preview) return;
 
@@ -325,12 +327,6 @@
 								<span class="bl-item-name">{item.name}</span>
 								{#if item.context?.heading}
 									<span class="bl-item-heading">{item.context.heading}</span>
-								{/if}
-								{#if item.context}
-									<span class="bl-item-ctx"
-										>…{item.context.pre}<em class="bl-em">{item.context.highlight}</em>{item.context
-											.post}…</span
-									>
 								{/if}
 							</button>
 						{/each}
