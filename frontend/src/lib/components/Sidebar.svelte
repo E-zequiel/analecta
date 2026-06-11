@@ -364,7 +364,6 @@
 
 	function selectSection(id: SectionId) {
 		selectedTag.set(null);
-		toggleSection(id);
 		navigateInSectionTab(id);
 	}
 
