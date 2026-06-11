@@ -420,10 +420,7 @@ class TestParseRefsLinked:
         assert len(linked_refs) == 2
 
     def test_linked_refs_come_first(self) -> None:
-        md = (
-            "---\ntitle: A\nlinked:\n- Beta\n---\n\n"
-            "See [[Alpha]].\n"
-        )
+        md = "---\ntitle: A\nlinked:\n- Beta\n---\n\nSee [[Alpha]].\n"
         refs = parse_refs(md)
         assert refs[0].target_text == "beta"
         assert refs[1].target_text == "alpha"
