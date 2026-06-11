@@ -992,7 +992,7 @@ class VaultIndex:
         return [_row_to_entry(r) for r in rows]
 
     def get_linked_entries(self, entry_id: int) -> list[EntryRecord]:
-        """Return entries explicitly listed in *entry_id*'s frontmatter ``linked`` field.
+        """Return entries listed in *entry_id*'s frontmatter ``linked`` field.
 
         Reads the entry's Markdown file, parses the ``linked:`` YAML list, and
         looks up each title in the DB (case-insensitive).
@@ -1022,9 +1022,9 @@ class VaultIndex:
             return []
 
         try:
-            fm_data: dict[str, object] = yaml.safe_load(m.group(1)) or {}
+            fm_data: dict[str, Any] = yaml.safe_load(m.group(1)) or {}
             linked_titles = [str(t) for t in (fm_data.get("linked") or [])]
-        except Exception:  # noqa: BLE001
+        except Exception:
             return []
 
         result: list[EntryRecord] = []

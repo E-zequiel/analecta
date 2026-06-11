@@ -7,6 +7,7 @@ YAML frontmatter field, capturing the nearest preceding heading and a
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
 _WIKILINK_RE = re.compile(r"\[\[([^\[\]|]+?)(?:\|[^\[\]]+?)?\]\]")
 _HASHTAG_RE = re.compile(r"(?<!\S)#([A-Za-z][A-Za-z0-9_]*)(?![A-Za-z0-9_])")
@@ -61,7 +62,7 @@ def parse_refs(markdown: str) -> list[ParsedRef]:
     fm_match = re.match(r"^---\n([\s\S]*?)\n---\n", markdown)
     if fm_match:
         try:
-            fm_data: dict[str, object] = yaml.safe_load(fm_match.group(1)) or {}
+            fm_data: dict[str, Any] = yaml.safe_load(fm_match.group(1)) or {}
             for title in fm_data.get("linked") or []:
                 fm_refs.append(
                     ParsedRef(
@@ -73,7 +74,7 @@ def parse_refs(markdown: str) -> list[ParsedRef]:
                         post="",
                     )
                 )
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     # Strip YAML frontmatter
