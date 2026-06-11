@@ -800,7 +800,7 @@
 	}
 
 	.graph-column {
-		flex: 0 0 380px;
+		flex: 0 0 570px;
 		min-height: 0;
 		border-left: 1px solid var(--border);
 		overflow: hidden;
