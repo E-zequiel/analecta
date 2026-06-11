@@ -374,6 +374,7 @@
 		if (!entry) return;
 		await entriesApi.link(entry.id, target.id);
 		linkedEntries = [...linkedEntries, target];
+		entryChangedTick.update((n) => n + 1);
 		connSearch = '';
 		connResults = [];
 		setTimeout(() => connInputEl?.focus(), 0);
@@ -383,6 +384,7 @@
 		if (!entry) return;
 		await entriesApi.unlink(entry.id, target.id);
 		linkedEntries = linkedEntries.filter((e) => e.id !== target.id);
+		entryChangedTick.update((n) => n + 1);
 	}
 
 	function handleRightClick(e: MouseEvent) {
