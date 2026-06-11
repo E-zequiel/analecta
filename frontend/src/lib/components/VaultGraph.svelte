@@ -4,7 +4,7 @@
 	import Sigma from 'sigma';
 	import { UndirectedGraph } from 'graphology';
 	import forceAtlas2 from 'graphology-layout-forceatlas2';
-	import { Maximize2, X } from '@lucide/svelte';
+	import { Focus, Maximize2, Waypoints, X } from '@lucide/svelte';
 	import { entries as entriesApi, type GraphResult } from '$lib/api/client';
 
 	type VaultNodeAttrs = {
@@ -32,9 +32,9 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
-	// Non-reactive handle so we can call refresh() on fullscreen toggle
-	// without triggering a Sigma teardown/rebuild.
+	// Non-reactive handles — updated by $effect, never tracked.
 	let sigmaInstance: InstanceType<typeof Sigma<VaultNodeAttrs>> | null = null;
+	let sigmaGraph: UndirectedGraph<VaultNodeAttrs> | null = null;
 
 	const nodeCount = $derived(graphData?.nodes.length ?? 0);
 	const edgeCount = $derived(graphData?.edges.length ?? 0);
@@ -89,6 +89,36 @@
 		return s.length > max ? s.slice(0, max - 1) + '…' : s;
 	}
 
+	// Adaptive FA2 layout — uses inferred settings (scalingRatio≈10, gravity≈0.05,
+	// strongGravityMode) that spread nodes proportionally to graph order and density.
+	function runLayout(graph: UndirectedGraph<VaultNodeAttrs>) {
+		const n = graph.order;
+		if (n === 0) return;
+		graph.forEachNode((node) => {
+			graph.setNodeAttribute(node, 'x', Math.random() * 2 - 1);
+			graph.setNodeAttribute(node, 'y', Math.random() * 2 - 1);
+		});
+		forceAtlas2.assign(graph, {
+			iterations: Math.min(500, Math.max(300, 200 + n * 2)),
+			settings: {
+				...forceAtlas2.inferSettings(graph),
+				barnesHutOptimize: n > 150,
+			},
+		});
+	}
+
+	// Re-run layout from random positions, then fit camera.
+	function resetLayout() {
+		const sigma = sigmaInstance;
+		const graph = sigmaGraph;
+		if (!sigma || !graph) return;
+		runLayout(graph);
+		sigma.refresh();
+		requestAnimationFrame(() => {
+			sigma.getCamera().setState({ x: 0.5, y: 0.5, angle: 0, ratio: 1 });
+		});
+	}
+
 	// Build the Sigma instance whenever the container element and data are both ready.
 	// Does NOT track `expanded` — fullscreen toggle repositions via CSS without rebuilding.
 	$effect(() => {
@@ -124,17 +154,8 @@
 			}
 		}
 
-		// Synchronous FA2 layout — no Web Worker, CSP-safe in packaged builds.
-		if (graph.order > 0) {
-			forceAtlas2.assign(graph, {
-				iterations: 300,
-				settings: {
-					gravity: 1,
-					scalingRatio: 2,
-					barnesHutOptimize: graph.order > 150,
-				},
-			});
-		}
+		// Adaptive FA2 layout — no Web Worker (CSP-safe in packaged builds).
+		runLayout(graph);
 
 		const sigma = new Sigma<VaultNodeAttrs>(graph, el, {
 			allowInvalidContainer: true,
@@ -213,10 +234,14 @@
 		window.addEventListener('mouseup', endDrag);
 
 		sigmaInstance = sigma;
+		sigmaGraph = graph;
 
 		// $effect may run before the browser computes layout dimensions.
 		// A single rAF ensures offsetWidth/Height are non-zero before Sigma renders.
-		const rafId = requestAnimationFrame(() => sigma.refresh());
+		const rafId = requestAnimationFrame(() => {
+			sigma.refresh();
+			sigma.getCamera().setState({ x: 0.5, y: 0.5, angle: 0, ratio: 1 });
+		});
 
 		return () => {
 			cancelAnimationFrame(rafId);
@@ -224,16 +249,24 @@
 			document.getElementById('analecta-tooltip')?.classList.remove('visible');
 			sigma.kill();
 			sigmaInstance = null;
+			sigmaGraph = null;
 		};
 	});
 
-	// Refresh Sigma dimensions after fullscreen toggle — the container resizes via CSS
-	// and Sigma's internal ResizeObserver may lag behind the frame.
+	// Refresh Sigma dimensions after fullscreen toggle, then re-fit camera to the
+	// new container size. The double-rAF ensures normalization is recomputed first.
 	$effect(() => {
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		expanded;
 		untrack(() => {
-			sigmaInstance?.refresh({ schedule: true });
+			const sigma = sigmaInstance;
+			if (!sigma) return;
+			sigma.refresh({ schedule: true });
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => {
+					sigma.getCamera().setState({ x: 0.5, y: 0.5, angle: 0, ratio: 1 });
+				});
+			});
 		});
 	});
 
@@ -253,6 +286,18 @@
 		<span class="graph-title">Vault Graph</span>
 		{#if !loading && !error}
 			<span class="graph-stats">{nodeCount} nodes · {edgeCount} edges</span>
+		{/if}
+		{#if !loading && !error && nodeCount > 0}
+			<button class="graph-toggle" onclick={resetLayout} title="Reset layout">
+				<Waypoints size={14} />
+			</button>
+			<button
+				class="graph-toggle"
+				onclick={() => sigmaInstance?.getCamera().animatedReset()}
+				title="Fit to viewport"
+			>
+				<Focus size={14} />
+			</button>
 		{/if}
 		<button
 			class="graph-toggle"
