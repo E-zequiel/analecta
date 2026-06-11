@@ -21,6 +21,7 @@
 		Bookmark,
 		Gem,
 		BrainCircuit,
+		Cable,
 		RotateCcw,
 		Save,
 		BookOpenText,
@@ -54,6 +55,7 @@
 		viewerEntry,
 		viewerFontSize,
 		viewerTagsOpen,
+		viewerBacklinksOpen,
 		viewerActions,
 		editorSaving,
 		editorSaved,
@@ -277,6 +279,15 @@
 						aria-label="Tags"
 					>
 						<BrainCircuit size={18} />
+					</button>
+					<button
+						class="btn-icon"
+						class:active={$viewerBacklinksOpen}
+						onclick={() => viewerBacklinksOpen.update((v) => !v)}
+						use:tooltip={'Connections'}
+						aria-label="Connections"
+					>
+						<Cable size={18} />
 					</button>
 				</div>
 			{/if}

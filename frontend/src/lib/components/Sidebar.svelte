@@ -758,6 +758,10 @@
 		min-height: 0;
 	}
 
+	.nav::-webkit-scrollbar-track {
+		margin: 6px 0;
+	}
+
 	.tags-section {
 		flex-shrink: 0;
 		border-top: 1px solid var(--border);
@@ -767,6 +771,10 @@
 		max-height: 160px;
 		overflow-y: auto;
 		padding-left: 4px;
+	}
+
+	.tags-section-entries::-webkit-scrollbar-track {
+		margin: 6px 0;
 	}
 
 	.section-row {

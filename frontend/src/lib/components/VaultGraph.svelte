@@ -9,6 +9,7 @@
 
 	type VaultNodeAttrs = {
 		label: string;
+		fullLabel: string;
 		color: string;
 		size: number;
 		x: number;
@@ -82,6 +83,10 @@
 		return colors.article;
 	}
 
+	function truncate(s: string, max = 24): string {
+		return s.length > max ? s.slice(0, max - 1) + '…' : s;
+	}
+
 	// Build the Sigma instance whenever the container element and data are both ready.
 	// Does NOT track `expanded` — fullscreen toggle repositions via CSS without rebuilding.
 	$effect(() => {
@@ -95,7 +100,8 @@
 
 		for (const node of data.nodes) {
 			graph.addNode(node.node_id, {
-				label: node.label,
+				label: truncate(node.label),
+				fullLabel: node.label,
 				color: nodeColor(node.kind, node.source_type, colors),
 				size: node.kind === 'tag' ? 5 : 8,
 				x: Math.random(),
@@ -140,16 +146,56 @@
 			maxCameraRatio: 10,
 		});
 
+		// Hover tooltip — show full label when truncated.
+		sigma.on('enterNode', ({ node, event }) => {
+			const attrs = graph.getNodeAttributes(node);
+			const tooltipEl = document.getElementById('analecta-tooltip');
+			if (!tooltipEl) return;
+			tooltipEl.textContent = attrs.fullLabel;
+			const orig = event.original as MouseEvent;
+			tooltipEl.style.left = `${orig.clientX + 14}px`;
+			tooltipEl.style.top = `${orig.clientY - 6}px`;
+			tooltipEl.classList.add('visible');
+		});
+
+		sigma.on('leaveNode', () => {
+			document.getElementById('analecta-tooltip')?.classList.remove('visible');
+		});
+
+		// Node click — open entry.
 		sigma.on('clickNode', ({ node }) => {
 			const attrs = graph.getNodeAttributes(node);
 			if (attrs.kind === 'entry') {
 				const rawId = node.startsWith('entry:') ? node.slice(6) : node;
 				const id = parseInt(rawId, 10);
 				if (!isNaN(id)) {
-					onopen?.(id, attrs.label, attrs.source_type ?? undefined);
+					onopen?.(id, attrs.fullLabel, attrs.source_type ?? undefined);
 				}
 			}
 		});
+
+		// Drag — move nodes by mouse.
+		let isDragging = false;
+		let draggedNode: string | null = null;
+
+		sigma.on('downNode', ({ node }) => {
+			isDragging = true;
+			draggedNode = node;
+		});
+
+		sigma.on('moveBody', ({ preventSigmaDefault, event }) => {
+			if (!isDragging || !draggedNode) return;
+			preventSigmaDefault();
+			const pos = sigma.viewportToGraph(event);
+			graph.setNodeAttribute(draggedNode, 'x', pos.x);
+			graph.setNodeAttribute(draggedNode, 'y', pos.y);
+		});
+
+		const endDrag = () => {
+			isDragging = false;
+			draggedNode = null;
+		};
+		window.addEventListener('mouseup', endDrag);
 
 		sigmaInstance = sigma;
 
@@ -159,6 +205,8 @@
 
 		return () => {
 			cancelAnimationFrame(rafId);
+			window.removeEventListener('mouseup', endDrag);
+			document.getElementById('analecta-tooltip')?.classList.remove('visible');
 			sigma.kill();
 			sigmaInstance = null;
 		};

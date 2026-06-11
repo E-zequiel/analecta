@@ -781,6 +781,7 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
+		container-type: inline-size;
 	}
 
 	.dashboard-body {
@@ -798,6 +799,10 @@
 		overflow-y: auto;
 	}
 
+	.list-column::-webkit-scrollbar-track {
+		margin: 6px 0;
+	}
+
 	.graph-column {
 		flex: 0 0 380px;
 		min-height: 0;
@@ -806,6 +811,24 @@
 		display: flex;
 		flex-direction: column;
 		justify-content: flex-start;
+	}
+
+	@container (max-width: 620px) {
+		.dashboard-body {
+			flex-direction: column-reverse;
+		}
+
+		.graph-column {
+			flex: 0 0 220px;
+			width: 100%;
+			border-left: none;
+			border-bottom: 1px solid var(--border);
+		}
+
+		.list-column {
+			flex: 1 1 0;
+			width: 100%;
+		}
 	}
 
 	.graph-hint {
@@ -833,6 +856,30 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
+	}
+
+	.tags-left::-webkit-scrollbar-track {
+		margin: 6px 0;
+	}
+
+	/* Responsive stacking: graph above list when main is narrow.
+	   Uses <main container-type: inline-size> as the query container. */
+	@container (max-width: 620px) {
+		.tags-dashboard {
+			flex-direction: column-reverse;
+		}
+
+		.tags-dashboard .graph-column {
+			flex: 0 0 220px;
+			width: 100%;
+			border-left: none;
+			border-bottom: 1px solid var(--border);
+		}
+
+		.tags-left {
+			flex: 1 1 0;
+			width: 100%;
+		}
 	}
 
 	.tag-grid {
@@ -1063,6 +1110,10 @@
 		overflow-y: auto;
 		padding: 1rem;
 		gap: 1rem;
+	}
+
+	.collecta-dashboard::-webkit-scrollbar-track {
+		margin: 6px 0;
 	}
 
 	.collecta-metrics {
