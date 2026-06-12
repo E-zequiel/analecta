@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { untrack } from 'svelte';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import Sigma from 'sigma';
 	import { UndirectedGraph } from 'graphology';
 	import forceAtlas2 from 'graphology-layout-forceatlas2';
@@ -91,25 +92,114 @@
 		return s.length > max ? s.slice(0, max - 1) + '…' : s;
 	}
 
-	// Adaptive FA2 layout. Base settings inferred from graph topology, then overridden
-	// to increase repulsion and prevent overlap (adjustSizes = FA2's forceCollide equiv).
+	// Run FA2 in isolation per connected component, then place components on a circle.
+	// Isolation prevents gravity from pulling disconnected clusters into the same center.
+	function positionByComponent(graph: UndirectedGraph<VaultNodeAttrs>, iterations: number) {
+		const visited = new SvelteSet<string>();
+		const components: string[][] = [];
+		for (const node of graph.nodes()) {
+			if (visited.has(node)) continue;
+			const component: string[] = [];
+			const queue = [node];
+			visited.add(node);
+			while (queue.length > 0) {
+				const current = queue.shift()!;
+				component.push(current);
+				for (const neighbor of graph.neighbors(current)) {
+					if (!visited.has(neighbor)) {
+						visited.add(neighbor);
+						queue.push(neighbor);
+					}
+				}
+			}
+			components.push(component);
+		}
+
+		components.sort((a, b) => b.length - a.length);
+
+		const positions = new SvelteMap<string, { x: number; y: number }>();
+
+		for (const component of components) {
+			const nodeSet = new Set(component);
+			const subGraph = new UndirectedGraph<VaultNodeAttrs>();
+			for (const node of component) {
+				subGraph.addNode(node, {
+					...graph.getNodeAttributes(node),
+					x: Math.random() * 2 - 1,
+					y: Math.random() * 2 - 1,
+				});
+			}
+			for (const node of component) {
+				graph.forEachEdge(node, (key, attrs, source, target) => {
+					if (nodeSet.has(source) && nodeSet.has(target) && !subGraph.hasEdge(key)) {
+						subGraph.addEdgeWithKey(key, source, target, attrs);
+					}
+				});
+			}
+			if (subGraph.order > 1) {
+				forceAtlas2.assign(subGraph, {
+					iterations,
+					settings: {
+						...forceAtlas2.inferSettings(subGraph),
+						barnesHutOptimize: subGraph.order > 150,
+						scalingRatio: 25,
+						gravity: 0.065,
+						adjustSizes: true,
+					},
+				});
+			}
+			for (const node of component) {
+				const { x, y } = subGraph.getNodeAttributes(node);
+				positions.set(node, { x, y });
+			}
+		}
+
+		if (components.length === 1) {
+			for (const [node, pos] of positions) {
+				graph.setNodeAttribute(node, 'x', pos.x);
+				graph.setNodeAttribute(node, 'y', pos.y);
+			}
+			return;
+		}
+
+		const k = components.length;
+		const infos = components.map((component) => {
+			let sumX = 0,
+				sumY = 0;
+			for (const node of component) {
+				const { x, y } = positions.get(node)!;
+				sumX += x;
+				sumY += y;
+			}
+			const cx = sumX / component.length;
+			const cy = sumY / component.length;
+			let maxR = 0;
+			for (const node of component) {
+				const { x, y } = positions.get(node)!;
+				maxR = Math.max(maxR, Math.hypot(x - cx, y - cy));
+			}
+			return { cx, cy, r: Math.max(maxR, 2) };
+		});
+
+		const circleR = (infos[0].r + infos[1].r + 4) * Math.max(2, Math.sqrt(k));
+
+		components.forEach((component, i) => {
+			const angle = (2 * Math.PI * i) / k;
+			const targetX = circleR * Math.cos(angle);
+			const targetY = circleR * Math.sin(angle);
+			const { cx, cy } = infos[i];
+			for (const node of component) {
+				const { x, y } = positions.get(node)!;
+				graph.setNodeAttribute(node, 'x', x - cx + targetX);
+				graph.setNodeAttribute(node, 'y', y - cy + targetY);
+			}
+		});
+	}
+
 	function runLayout(graph: UndirectedGraph<VaultNodeAttrs>, iterations?: number) {
 		const n = graph.order;
 		if (n === 0) return;
-		graph.forEachNode((node) => {
-			graph.setNodeAttribute(node, 'x', Math.random() * 2 - 1);
-			graph.setNodeAttribute(node, 'y', Math.random() * 2 - 1);
-		});
-		forceAtlas2.assign(graph, {
-			iterations: iterations ?? Math.min(600, Math.max(300, 200 + n * 2)),
-			settings: {
-				...forceAtlas2.inferSettings(graph),
-				barnesHutOptimize: n > 150,
-				scalingRatio: 25,
-				gravity: 0.5,
-				adjustSizes: true,
-			},
-		});
+		positionByComponent(graph, iterations ?? Math.min(600, Math.max(300, 200 + n * 2)));
 	}
 
 	// Re-run layout from random positions, then fit camera.
@@ -197,7 +287,7 @@
 			...forceAtlas2.inferSettings(graph),
 			barnesHutOptimize: data.nodes.length > 150,
 			scalingRatio: 15,
-			gravity: 0.5,
+			gravity: 0.065,
 			adjustSizes: true,
 		};
 		let liveTicksLeft = 0;
