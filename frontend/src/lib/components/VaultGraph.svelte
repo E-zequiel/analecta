@@ -457,7 +457,12 @@
 			<span class="graph-stats">{nodeCount} nodes · {edgeCount} edges</span>
 		{/if}
 		{#if !loading && !error && nodeCount > 0}
-			<button class="graph-toggle" onclick={resetLayout} use:tooltip={'Reset layout'} aria-label="Reset layout">
+			<button
+				class="graph-toggle"
+				onclick={resetLayout}
+				use:tooltip={'Reset layout'}
+				aria-label="Reset layout"
+			>
 				<Waypoints size={14} />
 			</button>
 			<button
