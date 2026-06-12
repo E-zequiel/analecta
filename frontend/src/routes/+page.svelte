@@ -511,6 +511,7 @@
 			<VaultGraph
 				onopen={(id) => selectDashboardEntry(id)}
 				ontagclick={(tagName) => {
+					selectedTag.set(tagName);
 					sidebarTagPreview.set(tagName);
 					rightSidebarOpen.set(true);
 				}}
