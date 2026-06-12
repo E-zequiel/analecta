@@ -521,6 +521,7 @@
 
 <style>
 	.settings-page {
+		container-type: inline-size;
 		display: flex;
 		flex-wrap: wrap;
 		align-items: flex-start;
@@ -546,6 +547,15 @@
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		padding: 1rem 1.1rem;
+	}
+
+	/* Narrow layout: shortcuts float to the top */
+	@container (max-width: 670px) {
+		.shortcuts-panel {
+			order: -1;
+			position: static;
+			width: 100%;
+		}
 	}
 
 	.sp-group {
