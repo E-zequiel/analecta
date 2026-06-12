@@ -5,7 +5,7 @@
 	import Sigma from 'sigma';
 	import { UndirectedGraph } from 'graphology';
 	import forceAtlas2 from 'graphology-layout-forceatlas2';
-	import { Focus, Maximize2, Waypoints, X } from '@lucide/svelte';
+	import { BowArrow, Focus, Maximize2, Waypoints, X } from '@lucide/svelte';
 	import { entries as entriesApi, type GraphResult } from '$lib/api/client';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { openEntryTab } from '$lib/stores/tabs';
@@ -35,6 +35,10 @@
 	let graphData = $state<GraphResult | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let searchOpen = $state(false);
+	let searchQuery = $state('');
+	let searchInputEl = $state<HTMLInputElement | undefined>(undefined);
+	let matchedNodeKeys = $state<SvelteSet<string> | null>(null);
 
 	// Non-reactive handles — updated by $effect, never tracked.
 	let sigmaInstance: InstanceType<typeof Sigma<VaultNodeAttrs>> | null = null;
@@ -42,6 +46,7 @@
 
 	const nodeCount = $derived(graphData?.nodes.length ?? 0);
 	const edgeCount = $derived(graphData?.edges.length ?? 0);
+	const matchedCount = $derived(matchedNodeKeys?.size ?? 0);
 
 	onMount(() => {
 		entriesApi
@@ -439,11 +444,85 @@
 		});
 	});
 
-	// Escape closes fullscreen.
+	// Node search — filters graphData client-side, drives Sigma nodeReducer + camera.
 	$effect(() => {
-		if (!expanded) return;
+		const q = searchQuery.trim().toLowerCase();
+		const data = graphData;
+		untrack(() => {
+			const sigma = sigmaInstance;
+			if (!sigma) return;
+
+			if (!q || !data) {
+				matchedNodeKeys = null;
+				sigma.setSetting('nodeReducer', null);
+				sigma.refresh();
+				return;
+			}
+
+			const s = getComputedStyle(document.documentElement);
+			const accentColor = s.getPropertyValue('--accent').trim() || '#ff757f';
+			const dimColor = s.getPropertyValue('--border').trim() || '#292e42';
+
+			const keys = new SvelteSet<string>();
+			let firstKey: string | null = null;
+			for (const node of data.nodes) {
+				if (node.label.toLowerCase().includes(q)) {
+					keys.add(node.node_id);
+					if (!firstKey) firstKey = node.node_id;
+				}
+			}
+
+			matchedNodeKeys = keys.size > 0 ? keys : null;
+
+			if (keys.size === 0) {
+				sigma.setSetting('nodeReducer', null);
+				sigma.refresh();
+				return;
+			}
+
+			sigma.setSetting('nodeReducer', (nodeKey: string, nodeData: VaultNodeAttrs) => {
+				const { x, y } = nodeData;
+				if (keys.has(nodeKey)) {
+					return { x, y, color: accentColor, size: 14 };
+				}
+				return { x, y, color: dimColor, size: 4, label: '' };
+			});
+			sigma.refresh();
+
+			if (firstKey && keys.size <= 5) {
+				const displayData = sigma.getNodeDisplayData(firstKey);
+				if (displayData) {
+					sigma.getCamera().animate(
+						{ x: displayData.x, y: displayData.y, ratio: 0.35 },
+						{ duration: 600 }
+					);
+				}
+			}
+		});
+	});
+
+	// Focus search input when opened.
+	$effect(() => {
+		if (searchOpen) {
+			requestAnimationFrame(() => searchInputEl?.focus());
+		}
+	});
+
+	// Escape closes search first; then closes fullscreen. Ctrl+F opens search when fullscreen.
+	$effect(() => {
+		if (!expanded && !searchOpen) return;
 		function onKey(e: KeyboardEvent) {
-			if (e.key === 'Escape') expanded = false;
+			if (e.key === 'Escape') {
+				if (searchOpen) {
+					searchOpen = false;
+					searchQuery = '';
+				} else {
+					expanded = false;
+				}
+			} else if (e.key === 'f' && (e.ctrlKey || e.metaKey) && expanded && !searchOpen) {
+				e.preventDefault();
+				searchOpen = true;
+			}
 		}
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
@@ -453,10 +532,35 @@
 <div class="vault-graph-wrap" class:fullscreen={expanded}>
 	<div class="vault-graph-header">
 		<span class="graph-title">Vault Graph</span>
-		{#if !loading && !error}
-			<span class="graph-stats">{nodeCount} nodes · {edgeCount} edges</span>
-		{/if}
 		{#if !loading && !error && nodeCount > 0}
+			{#if searchOpen}
+				<input
+					bind:this={searchInputEl}
+					bind:value={searchQuery}
+					class="graph-search-input"
+					placeholder="Search nodes…"
+					onkeydown={(e) => {
+						if (e.key === 'Escape') {
+							searchOpen = false;
+							searchQuery = '';
+							e.stopPropagation();
+						}
+					}}
+				/>
+				{#if searchQuery.trim()}
+					<span class="search-match-count">{matchedCount}</span>
+				{/if}
+			{:else}
+				<span class="graph-stats">{nodeCount} nodes · {edgeCount} edges</span>
+				<button
+					class="graph-toggle"
+					onclick={() => (searchOpen = true)}
+					use:tooltip={'Search nodes'}
+					aria-label="Search nodes"
+				>
+					<BowArrow size={14} />
+				</button>
+			{/if}
 			<button
 				class="graph-toggle"
 				onclick={resetLayout}
@@ -473,6 +577,8 @@
 			>
 				<Focus size={14} />
 			</button>
+		{:else if !loading && !error}
+			<span class="graph-stats">{nodeCount} nodes · {edgeCount} edges</span>
 		{/if}
 		<button
 			class="graph-toggle"
@@ -564,6 +670,36 @@
 	.graph-toggle:hover {
 		color: var(--fg);
 		background: var(--bg-highlight);
+	}
+
+	.graph-search-input {
+		flex: 1;
+		min-width: 0;
+		background: var(--bg-highlight);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		color: var(--fg);
+		font-size: 11px;
+		font-family: inherit;
+		padding: 3px 8px;
+		outline: none;
+	}
+
+	.graph-search-input:focus {
+		border-color: var(--accent);
+	}
+
+	.graph-search-input::placeholder {
+		color: var(--fg-muted);
+		opacity: 0.6;
+	}
+
+	.search-match-count {
+		font-size: 11px;
+		color: var(--fg-muted);
+		opacity: 0.7;
+		flex-shrink: 0;
+		white-space: nowrap;
 	}
 
 	.graph-canvas-root {
