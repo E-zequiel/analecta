@@ -103,7 +103,9 @@
 	);
 	const currentEntryTagSet = $derived(new Set(activeDisplayEntry?.tags ?? []));
 	const displayTagList = $derived(
-		activeDisplayEntry ? tagList.filter((t) => currentEntryTagSet.has(t.name)) : tagList
+		activeDisplayEntry && $activeSection !== 'collecta'
+			? tagList.filter((t) => currentEntryTagSet.has(t.name))
+			: tagList
 	);
 
 	// Sections the currently-previewed entry belongs to (for membership indicator)
@@ -547,6 +549,8 @@
 							<button
 								class="tag-item-label"
 								class:active-entry={$selectedTag === tag.name}
+								class:entry-match-tag={activeDisplayEntry !== null &&
+									currentEntryTagSet.has(tag.name)}
 								onclick={() => selectTag(tag.name)}
 								use:tooltip={tag.name}
 							>
@@ -900,6 +904,10 @@
 	}
 
 	.entry-item.entry-match-item {
+		color: var(--accent);
+	}
+
+	.tag-item-label.entry-match-tag {
 		color: var(--accent);
 	}
 

@@ -69,6 +69,7 @@
 		dashboardSelectedId = id;
 		dashboardPreviewEntryId.set(id);
 		if (id !== null) {
+			selectedTag.set(null);
 			sidebarTagPreview.set(null);
 			rightSidebarOpen.set(true);
 		}
@@ -511,6 +512,7 @@
 			<VaultGraph
 				onopen={(id) => selectDashboardEntry(id)}
 				ontagclick={(tagName) => {
+					selectDashboardEntry(null);
 					selectedTag.set(tagName);
 					sidebarTagPreview.set(tagName);
 					rightSidebarOpen.set(true);
@@ -698,6 +700,7 @@
 								selectDashboardEntry(id);
 							}}
 							ontagclick={(tagName) => {
+								selectDashboardEntry(null);
 								sidebarTagPreview.set(tagName);
 								rightSidebarOpen.set(true);
 							}}
@@ -770,6 +773,7 @@
 									selectDashboardEntry(id);
 								}}
 								ontagclick={(tagName) => {
+									selectDashboardEntry(null);
 									sidebarTagPreview.set(tagName);
 									rightSidebarOpen.set(true);
 								}}
