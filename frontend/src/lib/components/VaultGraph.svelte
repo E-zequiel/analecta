@@ -9,6 +9,7 @@
 	import { entries as entriesApi, type GraphResult } from '$lib/api/client';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { openEntryTab } from '$lib/stores/tabs';
+	import { tooltip } from '$lib/actions/tooltip';
 
 	type VaultNodeAttrs = {
 		label: string;
@@ -456,13 +457,14 @@
 			<span class="graph-stats">{nodeCount} nodes · {edgeCount} edges</span>
 		{/if}
 		{#if !loading && !error && nodeCount > 0}
-			<button class="graph-toggle" onclick={resetLayout} title="Reset layout">
+			<button class="graph-toggle" onclick={resetLayout} use:tooltip={'Reset layout'} aria-label="Reset layout">
 				<Waypoints size={14} />
 			</button>
 			<button
 				class="graph-toggle"
 				onclick={() => sigmaInstance?.getCamera().animatedReset()}
-				title="Fit to viewport"
+				use:tooltip={'Fit to viewport'}
+				aria-label="Fit to viewport"
 			>
 				<Focus size={14} />
 			</button>
@@ -470,7 +472,8 @@
 		<button
 			class="graph-toggle"
 			onclick={() => (expanded = !expanded)}
-			title={expanded ? 'Collapse' : 'Expand graph'}
+			use:tooltip={expanded ? 'Collapse' : 'Expand graph'}
+			aria-label={expanded ? 'Collapse' : 'Expand graph'}
 		>
 			{#if expanded}
 				<X size={14} />
@@ -535,14 +538,22 @@
 	}
 
 	.graph-toggle {
-		background: none;
-		border: none;
-		cursor: pointer;
-		color: var(--fg-muted);
-		padding: 2px;
 		display: flex;
 		align-items: center;
-		border-radius: 3px;
+		justify-content: center;
+		width: 26px;
+		height: 26px;
+		padding: 0;
+		background: none;
+		border: 1px solid transparent;
+		border-radius: 4px;
+		cursor: pointer;
+		color: var(--fg-muted);
+		transition:
+			color 0.15s,
+			background 0.15s,
+			border-color 0.15s;
+		flex-shrink: 0;
 	}
 
 	.graph-toggle:hover {
