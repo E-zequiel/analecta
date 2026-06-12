@@ -143,7 +143,7 @@
 						...forceAtlas2.inferSettings(subGraph),
 						barnesHutOptimize: subGraph.order > 150,
 						scalingRatio: 25,
-						gravity: 0.065,
+						gravity: 0.0575,
 						adjustSizes: true,
 					},
 				});
@@ -274,6 +274,7 @@
 			defaultNodeColor: colors.fallback,
 			defaultEdgeColor: colors.edge,
 			renderLabels: true,
+			defaultDrawNodeHover: () => {},
 			labelColor: { color: colors.label },
 			labelSize: 12,
 			labelWeight: 'normal',
@@ -287,7 +288,7 @@
 			...forceAtlas2.inferSettings(graph),
 			barnesHutOptimize: data.nodes.length > 150,
 			scalingRatio: 15,
-			gravity: 0.065,
+			gravity: 0.0575,
 			adjustSizes: true,
 		};
 		let liveTicksLeft = 0;
