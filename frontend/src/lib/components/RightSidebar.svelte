@@ -237,7 +237,7 @@
 		<div class="backlinks-section">
 			<div class="bl-row">
 				<div class="bl-header">
-					<Cable size={15} />
+					<Cable size={18} />
 					<span class="bl-label">BACKLINKS</span>
 					{#if activeTag && tagEntries.length > 0}
 						<span class="bl-count">{tagEntries.length}</span>
@@ -476,13 +476,13 @@
 		gap: 5px;
 		flex: 1;
 		min-width: 0;
-		padding: 6px 4px;
-		color: var(--fg-muted);
+		padding: 3px 6px;
+		color: var(--fg-dark);
 		font-family: inherit;
-		font-size: 0.7rem;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		text-transform: uppercase;
-		letter-spacing: 0.08em;
+		letter-spacing: 0.05em;
 	}
 
 	.bl-label {
