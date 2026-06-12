@@ -91,8 +91,8 @@
 		return s.length > max ? s.slice(0, max - 1) + '…' : s;
 	}
 
-	// Adaptive FA2 layout — uses inferred settings (scalingRatio≈10, gravity≈0.05,
-	// strongGravityMode) that spread nodes proportionally to graph order and density.
+	// Adaptive FA2 layout. Base settings inferred from graph topology, then overridden
+	// to increase repulsion and prevent overlap (adjustSizes = FA2's forceCollide equiv).
 	function runLayout(graph: UndirectedGraph<VaultNodeAttrs>) {
 		const n = graph.order;
 		if (n === 0) return;
@@ -101,10 +101,13 @@
 			graph.setNodeAttribute(node, 'y', Math.random() * 2 - 1);
 		});
 		forceAtlas2.assign(graph, {
-			iterations: Math.min(500, Math.max(300, 200 + n * 2)),
+			iterations: Math.min(600, Math.max(300, 200 + n * 2)),
 			settings: {
 				...forceAtlas2.inferSettings(graph),
 				barnesHutOptimize: n > 150,
+				scalingRatio: 25,
+				gravity: 0.5,
+				adjustSizes: true,
 			},
 		});
 	}
@@ -153,7 +156,7 @@
 				label: truncate(node.label),
 				fullLabel: node.label,
 				color: nodeColor(node.kind, node.source_type, colors),
-				size: node.kind === 'tag' ? 5 : 8,
+				size: node.kind === 'tag' ? 7 : 10,
 				x: Math.random(),
 				y: Math.random(),
 				kind: node.kind,
@@ -172,7 +175,7 @@
 			}
 		}
 
-		// Adaptive FA2 layout — no Web Worker (CSP-safe in packaged builds).
+		// Initial batch layout — no Web Worker (CSP-safe in packaged builds).
 		runLayout(graph);
 
 		const sigma = new Sigma<VaultNodeAttrs>(graph, el, {
@@ -186,6 +189,32 @@
 			minCameraRatio: 0.02,
 			maxCameraRatio: 10,
 		});
+
+		// Live simulation — gentle FA2 ticks on the main thread, triggered by interaction.
+		// Runs without a Web Worker to stay within CSP constraints (no blob: URLs).
+		const liveSettings = {
+			...forceAtlas2.inferSettings(graph),
+			barnesHutOptimize: data.nodes.length > 150,
+			scalingRatio: 15,
+			gravity: 0.5,
+			adjustSizes: true,
+		};
+		let liveTicksLeft = 0;
+		let liveRafId = 0;
+
+		function tick() {
+			liveRafId = 0;
+			if (liveTicksLeft <= 0) return;
+			forceAtlas2.assign(graph, { iterations: 1, settings: liveSettings });
+			sigma.refresh();
+			liveTicksLeft--;
+			liveRafId = requestAnimationFrame(tick);
+		}
+
+		function heat(ticks = 150) {
+			liveTicksLeft = ticks;
+			if (liveRafId === 0) liveRafId = requestAnimationFrame(tick);
+		}
 
 		// Hover tooltip — show full label when truncated.
 		sigma.on('enterNode', ({ node, event }) => {
@@ -258,11 +287,16 @@
 		});
 
 		sigma.on('moveBody', ({ preventSigmaDefault, event }) => {
-			if (!isDragging || !draggedNode) return;
-			preventSigmaDefault();
-			const pos = sigma.viewportToGraph(event);
-			graph.setNodeAttribute(draggedNode, 'x', pos.x);
-			graph.setNodeAttribute(draggedNode, 'y', pos.y);
+			if (isDragging && draggedNode) {
+				preventSigmaDefault();
+				const pos = sigma.viewportToGraph(event);
+				graph.setNodeAttribute(draggedNode, 'x', pos.x);
+				graph.setNodeAttribute(draggedNode, 'y', pos.y);
+				heat(80);
+			} else {
+				// Canvas pan — heat up so nodes responsively settle around the new viewport.
+				heat(150);
+			}
 		});
 
 		const endDrag = () => {
@@ -284,6 +318,7 @@
 
 		return () => {
 			cancelAnimationFrame(rafId);
+			cancelAnimationFrame(liveRafId);
 			window.removeEventListener('mouseup', endDrag);
 			document.getElementById('analecta-tooltip')?.classList.remove('visible');
 			sigma.kill();
