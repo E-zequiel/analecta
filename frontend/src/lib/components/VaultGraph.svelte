@@ -93,7 +93,7 @@
 
 	// Adaptive FA2 layout. Base settings inferred from graph topology, then overridden
 	// to increase repulsion and prevent overlap (adjustSizes = FA2's forceCollide equiv).
-	function runLayout(graph: UndirectedGraph<VaultNodeAttrs>) {
+	function runLayout(graph: UndirectedGraph<VaultNodeAttrs>, iterations?: number) {
 		const n = graph.order;
 		if (n === 0) return;
 		graph.forEachNode((node) => {
@@ -101,7 +101,7 @@
 			graph.setNodeAttribute(node, 'y', Math.random() * 2 - 1);
 		});
 		forceAtlas2.assign(graph, {
-			iterations: Math.min(600, Math.max(300, 200 + n * 2)),
+			iterations: iterations ?? Math.min(600, Math.max(300, 200 + n * 2)),
 			settings: {
 				...forceAtlas2.inferSettings(graph),
 				barnesHutOptimize: n > 150,
@@ -175,8 +175,9 @@
 			}
 		}
 
-		// Initial batch layout — no Web Worker (CSP-safe in packaged builds).
-		runLayout(graph);
+		// Partial layout before sigma creation — spreads nodes from the initial random
+		// cluster but stays under-converged so heat() animates the remaining settling.
+		runLayout(graph, Math.min(60, 20 + data.nodes.length));
 
 		const sigma = new Sigma<VaultNodeAttrs>(graph, el, {
 			allowInvalidContainer: true,
@@ -311,9 +312,11 @@
 
 		// $effect may run before the browser computes layout dimensions.
 		// A single rAF ensures offsetWidth/Height are non-zero before Sigma renders.
+		// heat() continues the under-converged layout with 1 FA2 iter/frame (~5s settle).
 		const rafId = requestAnimationFrame(() => {
 			sigma.refresh();
 			sigma.getCamera().setState({ x: 0.5, y: 0.5, angle: 0, ratio: 1 });
+			heat(300);
 		});
 
 		return () => {
