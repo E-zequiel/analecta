@@ -293,10 +293,10 @@
 				const pos = sigma.viewportToGraph(event);
 				graph.setNodeAttribute(draggedNode, 'x', pos.x);
 				graph.setNodeAttribute(draggedNode, 'y', pos.y);
-				heat(80);
+				heat(300);
 			} else {
 				// Canvas pan — heat up so nodes responsively settle around the new viewport.
-				heat(150);
+				heat(450);
 			}
 		});
 
@@ -312,11 +312,11 @@
 
 		// $effect may run before the browser computes layout dimensions.
 		// A single rAF ensures offsetWidth/Height are non-zero before Sigma renders.
-		// heat() continues the under-converged layout with 1 FA2 iter/frame (~5s settle).
+		// heat() continues the under-converged layout with 1 FA2 iter/frame (~15s settle).
 		const rafId = requestAnimationFrame(() => {
 			sigma.refresh();
 			sigma.getCamera().setState({ x: 0.5, y: 0.5, angle: 0, ratio: 1 });
-			heat(300);
+			heat(900);
 		});
 
 		return () => {
