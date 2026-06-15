@@ -59,23 +59,32 @@ analecta/
 ├── frontend/                       # SvelteKit
 │   ├── src/
 │   │   ├── lib/api/                # typed HTTP client
-│   │   ├── lib/stores/             # sidecar, sse, ui (selectedTag, sidebarCollapsed, libraryOpen,
-│   │   │                           #   expandedSections, activeSection, searchOpen)
+│   │   ├── lib/stores/             # sidecar, sse, ui, tabs, toolbar, contextMenu
 │   │   ├── lib/markdown/           # markdown-it config
 │   │   ├── lib/platform/           # platform shim (window.electronAPI wrappers)
 │   │   ├── lib/components/
 │   │   │   ├── Sidebar.svelte      # Obsidian-style navigator (collapsible rail, expandable sections)
+│   │   │   ├── RightSidebar.svelte # backlinks + local graph panel
+│   │   │   ├── TitleBar.svelte
 │   │   │   ├── SearchDialog.svelte # modal search (Ctrl+K)
+│   │   │   ├── SearchInput.svelte
+│   │   │   ├── ShortcutsDialog.svelte
 │   │   │   ├── EntryList.svelte
+│   │   │   ├── FilterBar.svelte
+│   │   │   ├── SortBar.svelte
 │   │   │   ├── MarkdownEditor.svelte
 │   │   │   ├── SidecarLoadingScreen.svelte
 │   │   │   ├── TagTree.svelte      # rendered inside Sidebar.svelte
-│   │   │   └── UpdateBanner.svelte
+│   │   │   ├── UpdateBanner.svelte
+│   │   │   ├── ContextMenu.svelte
+│   │   │   ├── ResizeHandles.svelte
+│   │   │   ├── LocalGraph.svelte   # per-entry subgraph (Sigma.js)
+│   │   │   └── VaultGraph.svelte   # full vault graph (Sigma.js + graphology)
 │   │   └── routes/                 # +page.svelte, viewer/[id], editor/[id], settings, first-run
 │   ├── static/fonts/               # JetBrainsMono bundled
 │   └── package.json
 ├── electron/                       # Electron shell
-│   ├── main/                       # index.ts, sidecar.ts, vault-state.ts, ipc.ts, protocols.ts, tray.ts, updater.ts
+│   ├── main/                       # index.ts, sidecar.ts, vault-state.ts, ipc.ts, protocols.ts, scraper.ts, tray.ts, updater.ts
 │   ├── preload/                    # index.ts — contextBridge, ALLOWED_CHANNELS whitelist
 │   ├── build-resources/            # icons/ (7 sizes + tray)
 │   ├── package.json
