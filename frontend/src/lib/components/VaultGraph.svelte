@@ -39,6 +39,7 @@
 	let searchQuery = $state('');
 	let searchInputEl = $state<HTMLInputElement | undefined>(undefined);
 	let matchedNodeKeys = $state<SvelteSet<string> | null>(null);
+	let selectedNodeKey = $state<string | null>(null);
 
 	// Non-reactive handles — updated by $effect, never tracked.
 	let sigmaInstance: InstanceType<typeof Sigma<VaultNodeAttrs>> | null = null;
@@ -331,7 +332,12 @@
 		});
 
 		// Node click — preview entry connections or filter by tag.
+		sigma.on('clickStage', () => {
+			selectedNodeKey = null;
+		});
+
 		sigma.on('clickNode', ({ node }) => {
+			selectedNodeKey = node;
 			const attrs = graph.getNodeAttributes(node);
 			if (attrs.kind === 'tag') {
 				const tagName = node.startsWith('tag:') ? node.slice(4) : attrs.fullLabel;
@@ -445,14 +451,17 @@
 	});
 
 	// Node search — filters graphData client-side, drives Sigma nodeReducer + camera.
+	// When search is closed but a node was clicked, keeps that node highlighted until
+	// the user clicks the canvas background (clickStage → selectedNodeKey = null).
 	$effect(() => {
 		const q = searchQuery.trim().toLowerCase();
 		const data = graphData;
+		const selected = selectedNodeKey;
 		untrack(() => {
 			const sigma = sigmaInstance;
 			if (!sigma) return;
 
-			if (!q || !data) {
+			if (!q && !selected) {
 				matchedNodeKeys = null;
 				sigma.setSetting('nodeReducer', null);
 				sigma.refresh();
@@ -463,40 +472,48 @@
 			const accentColor = s.getPropertyValue('--accent').trim() || '#ff757f';
 			const dimColor = s.getPropertyValue('--border').trim() || '#292e42';
 
-			const keys = new SvelteSet<string>();
-			let firstKey: string | null = null;
-			for (const node of data.nodes) {
-				if (node.label.toLowerCase().includes(q)) {
-					keys.add(node.node_id);
-					if (!firstKey) firstKey = node.node_id;
+			if (q && data) {
+				const keys = new SvelteSet<string>();
+				let firstKey: string | null = null;
+				for (const node of data.nodes) {
+					if (node.label.toLowerCase().includes(q)) {
+						keys.add(node.node_id);
+						if (!firstKey) firstKey = node.node_id;
+					}
 				}
-			}
 
-			matchedNodeKeys = keys.size > 0 ? keys : null;
+				matchedNodeKeys = keys.size > 0 ? keys : null;
 
-			if (keys.size === 0) {
-				sigma.setSetting('nodeReducer', null);
+				if (keys.size === 0) {
+					sigma.setSetting('nodeReducer', null);
+					sigma.refresh();
+					return;
+				}
+
+				sigma.setSetting('nodeReducer', (nodeKey: string, nodeData: VaultNodeAttrs) => {
+					const { x, y } = nodeData;
+					if (keys.has(nodeKey)) return { x, y, color: accentColor, size: 14 };
+					return { x, y, color: dimColor, size: 4, label: '' };
+				});
 				sigma.refresh();
-				return;
-			}
 
-			sigma.setSetting('nodeReducer', (nodeKey: string, nodeData: VaultNodeAttrs) => {
-				const { x, y } = nodeData;
-				if (keys.has(nodeKey)) {
-					return { x, y, color: accentColor, size: 14 };
+				if (firstKey && keys.size <= 5) {
+					const displayData = sigma.getNodeDisplayData(firstKey);
+					if (displayData) {
+						sigma.getCamera().animate(
+							{ x: displayData.x, y: displayData.y, ratio: 0.35 },
+							{ duration: 600 }
+						);
+					}
 				}
-				return { x, y, color: dimColor, size: 4, label: '' };
-			});
-			sigma.refresh();
-
-			if (firstKey && keys.size <= 5) {
-				const displayData = sigma.getNodeDisplayData(firstKey);
-				if (displayData) {
-					sigma.getCamera().animate(
-						{ x: displayData.x, y: displayData.y, ratio: 0.35 },
-						{ duration: 600 }
-					);
-				}
+			} else if (selected) {
+				matchedNodeKeys = null;
+				sigma.setSetting('nodeReducer', (nodeKey: string, nodeData: VaultNodeAttrs) => {
+					const { x, y, color, size, label } = nodeData;
+					if (nodeKey === selected) return { x, y, color: accentColor, size: 14 };
+					return { x, y, color, size, label };
+				});
+				sigma.refresh();
 			}
 		});
 	});
