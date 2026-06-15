@@ -89,7 +89,7 @@ analecta/
 ├── electron/                       # Electron shell
 │   ├── main/                       # index.ts, sidecar.ts, vault-state.ts, ipc.ts, protocols.ts, scraper.ts, tray.ts, updater.ts
 │   ├── preload/                    # index.ts — contextBridge, ALLOWED_CHANNELS whitelist
-│   ├── build-resources/            # icons/ (7 sizes + tray)
+│   ├── build-resources/            # icons/ (9 sizes: 16–1024) · tray-icon-dark.png · tray-icon-light.png
 │   ├── package.json
 │   └── tsconfig.json
 ├── binaries/                       # sidecar output — gitignored (PyInstaller --onedir)
