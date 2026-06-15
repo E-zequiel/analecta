@@ -43,7 +43,7 @@ analecta/
 │   │   ├── api/                    # FastAPI routes + deps + SSE bus
 │   │   │   ├── deps.py
 │   │   │   ├── events.py
-│   │   │   └── routes/             # entries, search, tags, extract, config, security, system, pkm
+│   │   │   └── routes/             # entries, search, tags, extract, config, system, pkm
 │   │   ├── server.py               # FastAPI + uvicorn entrypoint
 │   │   ├── config.py
 │   │   ├── extraction/
@@ -58,10 +58,13 @@ analecta/
 │   └── .python-version             # 3.14
 ├── frontend/                       # SvelteKit
 │   ├── src/
-│   │   ├── lib/api/                # typed HTTP client
+│   │   ├── lib/api/                # typed HTTP client (client.ts)
 │   │   ├── lib/stores/             # sidecar, sse, ui, tabs, toolbar, contextMenu
 │   │   ├── lib/markdown/           # markdown-it config
 │   │   ├── lib/platform/           # platform shim (window.electronAPI wrappers)
+│   │   ├── lib/actions/            # Svelte actions: flash.ts, tooltip.ts
+│   │   ├── lib/theme/              # palette.ts (accent + theme helpers)
+│   │   ├── lib/font.ts             # applyFont(): --font-family, accent, theme toggle
 │   │   ├── lib/components/
 │   │   │   ├── Sidebar.svelte      # Obsidian-style navigator (collapsible rail, expandable sections)
 │   │   │   ├── RightSidebar.svelte # backlinks + local graph panel
@@ -81,7 +84,7 @@ analecta/
 │   │   │   ├── LocalGraph.svelte   # per-entry subgraph (Sigma.js)
 │   │   │   └── VaultGraph.svelte   # full vault graph (Sigma.js + graphology)
 │   │   └── routes/                 # +page.svelte, viewer/[id], editor/[id], settings, first-run
-│   ├── static/fonts/               # JetBrainsMono bundled
+│   ├── static/fonts/               # JetBrains Mono, Bricolage Grotesque, Inconsolata NF (Nerd Font) bundled
 │   └── package.json
 ├── electron/                       # Electron shell
 │   ├── main/                       # index.ts, sidecar.ts, vault-state.ts, ipc.ts, protocols.ts, scraper.ts, tray.ts, updater.ts
@@ -92,7 +95,9 @@ analecta/
 ├── binaries/                       # sidecar output — gitignored (PyInstaller --onedir)
 ├── scripts/
 │   ├── build_sidecar.py            # PyInstaller build → binaries/
-│   ├── dev.py                      # sidecar standalone
+│   ├── check.sh                    # quality gate: Python + TS/Svelte + frontend scripts
+│   ├── deps_update.py              # dependency update helper
+│   ├── verify-provenance.py        # dependency provenance verification
 │   ├── socket-audit.sh             # local Socket dependency scan via BSM
 │   └── system_deps.sh
 ├── docs/
@@ -140,10 +145,14 @@ analecta/
 
 ### Frontend rules
 
-- **Palette** (Tokyo Night): `bg=#1a1b26` · `fg=#c0caf5` · `accent=#ff757f` (red). CSS variables only. Never hardcode hex — always use the CSS custom properties defined in `app.css`.
-- **Font**: JetBrains Mono. Bundled in `frontend/static/fonts/`. `@font-face` in `app.css`. Base font-size: **16.33px**.
+- **Palette** (Tokyo Night): `bg=#1a1b26` · `fg=#d9e0f2` · default `accent=#e0af68` (yellow; selectable: red `#ff757f`, yellow, green, cyan). CSS variables only. Never hardcode hex — always use the CSS custom properties defined in `app.css`.
+- **Fonts** (two-family split):
+  - `--font-ui-family`: `'Bricolage Grotesque'` (variable font) — UI chrome. Fixed; never user-selectable. `font.ts` does not touch this.
+  - `--font-family`: reading/content font — user-selectable. Variants: `'JetBrains Mono'` (default), `'Inconsolata NF', 'JetBrains Mono'` (nerd), or custom (loaded via `/api/v1/system/font` as a data-URL `@font-face`). `font.ts` sets this variable, along with `--accent`/`--accent-dark` and `.theme-light`.
+  - All three families (JetBrains Mono, Bricolage Grotesque, Inconsolata NF) are bundled in `frontend/static/fonts/` with `@font-face` declarations in `app.css`.
+  - Base font-size: **17px** (UI body). Reading font default: **17px**, user-adjustable via `applyFont()`.
 - **Icons**: `@lucide/svelte`. Import by PascalCase name (`import { Settings, SquareLibrary } from '@lucide/svelte'`). Always use the named exports — do not import raw SVG. Verify icon names against `node_modules/@lucide/svelte/dist/icons/index.d.ts`.
-- **Sidebar**: Obsidian-style file-explorer navigator. Collapsible (44px rail / 260px full, `Ctrl+B`). Sections: all, unread, read, favorite, recommend, Tags — each expandable with `ChevronRight`. Settings gear icon at bottom. Search opens via `ScanSearch` icon or `Ctrl+K`.
+- **Sidebar**: Obsidian-style file-explorer navigator. Collapsible (44px rail / 260px full, `Ctrl+B`). Sections: library, unread, read, bookmark, gem, archive, Tags — each expandable with `ChevronRight`. Settings gear icon at bottom. Search opens via `ScanSearch` icon or `Ctrl+K`.
 - **Markdown render**: `markdown-it` + plugins, client-side. No round-trips to the sidecar.
 - **Editor**: CodeMirror 6 with `@uiw/codemirror-theme-tokyo-night`.
 - **Sidecar bootstrap**: never render content before `sidecar-ready` event is received.
@@ -188,7 +197,9 @@ CREATE TABLE entries (
     created_at  TEXT    NOT NULL,  -- ISO 8601
     updated_at  TEXT    NOT NULL,
     status      TEXT    NOT NULL DEFAULT 'unread',
-    tags_json   TEXT    NOT NULL DEFAULT '[]'
+    tags_json   TEXT    NOT NULL DEFAULT '[]',
+    flags_json  TEXT    NOT NULL DEFAULT '[]',  -- bookmark, gem, archive
+    read_at     TEXT                            -- ISO 8601, NULL until first read
 );
 CREATE TABLE tags (
     id    INTEGER PRIMARY KEY,
@@ -203,6 +214,18 @@ CREATE TABLE entry_tags (
 CREATE VIRTUAL TABLE entries_fts USING fts5(
     title, content, tokenize='unicode61'
 );
+CREATE TABLE backlink_refs (
+    id          INTEGER PRIMARY KEY,
+    source_id   INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+    target_text TEXT    NOT NULL,
+    is_hashtag  INTEGER NOT NULL DEFAULT 0,
+    heading     TEXT,
+    pre         TEXT    NOT NULL DEFAULT '',
+    highlight   TEXT    NOT NULL DEFAULT '',
+    post        TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX idx_backlink_refs_source ON backlink_refs(source_id);
+CREATE INDEX idx_backlink_refs_target ON backlink_refs(target_text);
 ```
 
 Schema changes go in a new `backend/src/analecta/migrations/NNN_description.sql`. Never mutate existing migration files.
