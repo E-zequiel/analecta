@@ -500,10 +500,9 @@
 				if (firstKey && keys.size <= 5) {
 					const displayData = sigma.getNodeDisplayData(firstKey);
 					if (displayData) {
-						sigma.getCamera().animate(
-							{ x: displayData.x, y: displayData.y, ratio: 0.35 },
-							{ duration: 600 }
-						);
+						sigma
+							.getCamera()
+							.animate({ x: displayData.x, y: displayData.y, ratio: 0.35 }, { duration: 600 });
 					}
 				}
 			} else if (selected) {
@@ -569,7 +568,10 @@
 				{/if}
 				<button
 					class="graph-toggle"
-					onclick={() => { searchOpen = false; searchQuery = ''; }}
+					onclick={() => {
+						searchOpen = false;
+						searchQuery = '';
+					}}
 					use:tooltip={'Clear search'}
 					aria-label="Clear search"
 				>
