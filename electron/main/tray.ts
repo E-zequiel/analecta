@@ -1,18 +1,24 @@
-import { app, Menu, Tray, nativeImage } from 'electron';
+import { app, Menu, Tray, nativeImage, nativeTheme } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import type { BrowserWindow } from 'electron';
 
 let tray: Tray | null = null;
+let themeListener: (() => void) | null = null;
+
+function resolveIcon(variant: 'dark' | 'light'): Electron.NativeImage {
+	const filename = variant === 'dark' ? 'tray-icon-dark.png' : 'tray-icon-light.png';
+	const iconPath = path.join(__dirname, '..', '..', 'build-resources', filename);
+	return fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty();
+}
 
 export function createTray(win: BrowserWindow): void {
-	const iconPath = path.join(__dirname, '..', '..', 'build-resources', 'tray-icon.png');
-	// Fall back to an empty image in dev if the icon file is not yet present.
-	const icon = fs.existsSync(iconPath)
-		? nativeImage.createFromPath(iconPath)
-		: nativeImage.createEmpty();
+	tray = new Tray(resolveIcon(nativeTheme.shouldUseDarkColors ? 'dark' : 'light'));
 
-	tray = new Tray(icon);
+	themeListener = () => {
+		tray?.setImage(resolveIcon(nativeTheme.shouldUseDarkColors ? 'dark' : 'light'));
+	};
+	nativeTheme.on('updated', themeListener);
 	tray.setToolTip('Analecta');
 
 	const buildMenu = () =>
@@ -42,6 +48,10 @@ export function createTray(win: BrowserWindow): void {
 }
 
 export function destroyTray(): void {
+	if (themeListener) {
+		nativeTheme.off('updated', themeListener);
+		themeListener = null;
+	}
 	tray?.destroy();
 	tray = null;
 }
