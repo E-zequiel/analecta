@@ -491,8 +491,8 @@
 				}
 
 				sigma.setSetting('nodeReducer', (nodeKey: string, nodeData: VaultNodeAttrs) => {
-					const { x, y } = nodeData;
-					if (keys.has(nodeKey)) return { x, y, color: accentColor, size: 14 };
+					const { x, y, label } = nodeData;
+					if (keys.has(nodeKey)) return { x, y, color: accentColor, size: 14, label };
 					return { x, y, color: dimColor, size: 4, label: '' };
 				});
 				sigma.refresh();
