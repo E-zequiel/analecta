@@ -43,9 +43,9 @@ Adjusting `~/.config/fontconfig/fonts.conf` (hinting mode, LCD filter, antialias
 
 ## Decision
 
-**Migrate the application shell from Tauri 2.x to Electron 38.x.**
+**Migrate the application shell from Tauri 2.x to Electron 42.x.**
 
-The Python FastAPI sidecar and the SvelteKit frontend are unchanged in logic. Only the desktop shell layer (previously `src-tauri/`) is replaced by a TypeScript Electron main process (`electron/`). See the [migration plan](../CLAUDE.md) and [`electron-shell-security.md`](electron-shell-security.md) for implementation details.
+The Python FastAPI sidecar and the SvelteKit frontend are unchanged in logic. Only the desktop shell layer (previously `src-tauri/`) is replaced by a TypeScript Electron main process (`electron/`). See [`electron-shell-security.md`](electron-shell-security.md) for implementation details.
 
 ---
 
@@ -57,9 +57,9 @@ The Python FastAPI sidecar and the SvelteKit frontend are unchanged in logic. On
 
 ### Secondary benefits
 
-**G2 — Correct fractional scaling on Wayland.** Electron 38.2+ implements the `wp-fractional-scale-v1` protocol. Non-integer scale factors (1.25×, 1.5×) render at native pixel density without the bilinear rescaling imposed by XWayland.
+**G2 — Correct fractional scaling on Wayland.** Electron implements the `wp-fractional-scale-v1` protocol. Non-integer scale factors (1.25×, 1.5×) render at native pixel density without the bilinear rescaling imposed by XWayland.
 
-**G3 — Wayland native by default.** No `GDK_BACKEND=wayland`, no `--ozone-platform` flags, no environment variable workarounds. COSMIC (Smithay compositor) is fully compatible with Electron 38.x out of the box.
+**G3 — Wayland native by default.** No `GDK_BACKEND=wayland`, no `--ozone-platform` flags, no environment variable workarounds. COSMIC (Smithay compositor) is fully compatible with Electron 42.x out of the box.
 
 **G4 — Client-side window decorations on Wayland.** Electron 41+ supports CSD, enabling the window frame to be integrated with the application's visual design — the same approach used by VS Code and Obsidian.
 
