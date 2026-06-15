@@ -550,6 +550,14 @@
 				{#if searchQuery.trim()}
 					<span class="search-match-count">{matchedCount}</span>
 				{/if}
+				<button
+					class="graph-toggle"
+					onclick={() => { searchOpen = false; searchQuery = ''; }}
+					use:tooltip={'Clear search'}
+					aria-label="Clear search"
+				>
+					<X size={14} />
+				</button>
 			{:else}
 				<span class="graph-stats">{nodeCount} nodes · {edgeCount} edges</span>
 				<button
