@@ -563,8 +563,8 @@
 				<button
 					class="graph-toggle"
 					onclick={() => (searchOpen = true)}
-					use:tooltip={'Search nodes'}
-					aria-label="Search nodes"
+					use:tooltip={'Hunt nodes'}
+					aria-label="Hunt nodes"
 				>
 					<BowArrow size={14} />
 				</button>
