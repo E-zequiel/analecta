@@ -319,3 +319,57 @@ def test_delete_tag_removes_from_entries_json(index: VaultIndex):
 
 def test_delete_tag_nonexistent_noop(index: VaultIndex):
     index.delete_tag("nonexistent")  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# get_metrics — weekly window starts on Sunday
+# ---------------------------------------------------------------------------
+
+
+def _read_at(days_ago: int = 0) -> str:
+    from datetime import timedelta
+
+    return (datetime.now(tz=UTC) - timedelta(days=days_ago)).isoformat()
+
+
+def _days_since_sunday() -> int:
+    """Return how many days ago the most recent Sunday was (0 = today is Sunday)."""
+    return (datetime.now(tz=UTC).weekday() + 1) % 7
+
+
+def test_get_metrics_read_today_counts_in_week(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    index.update_status(entry_id, "read")
+    m = index.get_metrics()
+    assert m["reads_week"] == 1
+
+
+def test_get_metrics_read_since_sunday_counts_in_week(index: VaultIndex):
+    days = _days_since_sunday()
+    if days == 0:
+        pytest.skip("today is Sunday — boundary already covered by other test")
+    entry_id = index.add_entry(_entry())
+    index._conn.execute(
+        "UPDATE entries SET read_at = ?, status = 'read' WHERE id = ?",
+        (_read_at(days_ago=days - 1), entry_id),
+    )
+    index._conn.commit()
+    assert index.get_metrics()["reads_week"] == 1
+
+
+def test_get_metrics_read_before_sunday_excluded_from_week(index: VaultIndex):
+    days = _days_since_sunday()
+    entry_id = index.add_entry(_entry())
+    index._conn.execute(
+        "UPDATE entries SET read_at = ?, status = 'read' WHERE id = ?",
+        (_read_at(days_ago=days + 1), entry_id),
+    )
+    index._conn.commit()
+    assert index.get_metrics()["reads_week"] == 0
+
+
+def test_get_metrics_unread_not_counted(index: VaultIndex):
+    index.add_entry(_entry())
+    assert index.get_metrics()["reads_week"] == 0
+    assert index.get_metrics()["reads_month"] == 0
+    assert index.get_metrics()["reads_year"] == 0

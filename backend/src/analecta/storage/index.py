@@ -311,7 +311,7 @@ class VaultIndex:
         """Return read-activity metrics used by the Collecta dashboard.
 
         Counts entries whose ``read_at`` timestamp falls within the current
-        calendar week (Mon-Sun), month, and year respectively.
+        calendar week (Sun-Sat), month, and year respectively.
 
         Returns:
             Dict with keys ``reads_week``, ``reads_month``, ``reads_year``.
@@ -319,7 +319,7 @@ class VaultIndex:
         from datetime import timedelta
 
         now = datetime.now(tz=UTC)
-        week_start = (now - timedelta(days=now.weekday())).date().isoformat()
+        week_start = (now - timedelta(days=(now.weekday() + 1) % 7)).date().isoformat()
         month_start = now.strftime("%Y-%m-01")
         year_start = now.strftime("%Y-01-01")
         row = self._conn.execute(
