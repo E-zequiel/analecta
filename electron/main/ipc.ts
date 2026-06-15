@@ -105,9 +105,10 @@ export function registerIpcHandlers(): void {
 		await shell.openExternal(rawUrl);
 	});
 
-	// Opens the OS file manager at the given path.
+	// Opens the OS file manager at the given path; path must be within the vault directory.
 	ipcMain.handle('reveal-in-dir', (_event, rawPath: unknown) => {
 		if (typeof rawPath !== 'string' || !rawPath.trim()) throw new Error('invalid path');
+		assertVaultPath(rawPath);
 		shell.showItemInFolder(rawPath);
 	});
 

@@ -87,7 +87,7 @@ Every handler registered via `ipcMain.handle()` validates its arguments before a
 | `open-dialog` | Object with expected dialog properties; no arbitrary code paths |
 | `show-message-box` | Object with expected message box properties |
 | `open-url` | String, valid URL, protocol must be `http:` or `https:` only |
-| `reveal-in-dir` | String, non-empty |
+| `reveal-in-dir` | String, non-empty, within vault path (`assertVaultPath`) |
 | `notify` | Object with `title` (string) and `body` (string) |
 | `update-vault-scope` | String, non-empty |
 | `set-login-item` | Boolean |
