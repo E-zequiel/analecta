@@ -303,6 +303,7 @@ Single source of truth: **BSM** (Web App / `bws`).
 - Do not make architectural or design decisions autonomously. Stop and ask.
 - Do not use `requests`. Do not use PyQt6. Do not use PostgreSQL.
 - Do not use `npm`. Use `pnpm` exclusively for all Node.js package management.
-- For CVE-driven patches of transitive npm deps, use `pnpm.overrides` in root `package.json` with exact versions. Verify SHA-512 via `mise exec -- pnpm view <pkg>@<version> dist.integrity` before and after install. See memory `dep-security-upgrade-protocol`.
-- For CVE-driven patches of transitive Python deps, use `[tool.uv] constraint-dependencies` in `backend/pyproject.toml` with a version floor (e.g. `["starlette>=1.3.1"]`), then `uv lock`. See memory `dep-security-upgrade-protocol`.
+- Any new direct npm dependency is pinned to an exact version (never a range) and verified via `mise exec -- pnpm view <pkg>@<version> dist.integrity` before install, then cross-checked against `pnpm-lock.yaml` after. See `docs/dependency-verification.md`.
+- For CVE-driven patches of transitive npm deps, use `pnpm.overrides` in root `package.json` with exact versions, same SHA-512 verification. See `docs/dependency-verification.md`.
+- For CVE-driven patches of transitive Python deps, use `[tool.uv] constraint-dependencies` in `backend/pyproject.toml` with a version floor (e.g. `["starlette>=1.3.1"]`), then `uv lock` — no manual SHA step; `uv.lock` records and verifies hashes itself. See `docs/dependency-verification.md`.
 - Do not read `~/.config/analecta/config.toml` or any file matching the global deny rules in `~/.claude/settings.json`.
