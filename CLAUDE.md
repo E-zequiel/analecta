@@ -304,4 +304,5 @@ Single source of truth: **BSM** (Web App / `bws`).
 - Do not use `requests`. Do not use PyQt6. Do not use PostgreSQL.
 - Do not use `npm`. Use `pnpm` exclusively for all Node.js package management.
 - For CVE-driven patches of transitive npm deps, use `pnpm.overrides` in root `package.json` with exact versions. Verify SHA-512 via `mise exec -- pnpm view <pkg>@<version> dist.integrity` before and after install. See memory `dep-security-upgrade-protocol`.
+- For CVE-driven patches of transitive Python deps, use `[tool.uv] constraint-dependencies` in `backend/pyproject.toml` with a version floor (e.g. `["starlette>=1.3.1"]`), then `uv lock`. See memory `dep-security-upgrade-protocol`.
 - Do not read `~/.config/analecta/config.toml` or any file matching the global deny rules in `~/.claude/settings.json`.
