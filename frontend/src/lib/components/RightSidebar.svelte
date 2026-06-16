@@ -554,7 +554,7 @@
 	}
 
 	.bl-group-tag {
-		color: #9ece6a;
+		color: var(--green);
 		flex: 1;
 		overflow: hidden;
 		text-overflow: ellipsis;
