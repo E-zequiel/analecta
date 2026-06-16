@@ -113,15 +113,15 @@
 	--bg-highlight: #babbbf;
 	--fg: #343b58;
 	--fg-dark: #565a6e;
-	--fg-muted: #9699a3;
+	--fg-muted: #686b78;
 	--border: #b4b5ba;
 	--terminal: #9699a3;
-	--red: #c52f65;
-	--yellow: #a07025;
-	--green: #587539;
+	--red: #9e1e52;
+	--yellow: #7d5512;
+	--green: #3d5427;
 	--cyan: #0f4b6e;
 	--magenta: #7847bd;
-	--accent-warm: #cc7012;
+	--accent-warm: #7a4309;
 	color-scheme: light;
 }
 

@@ -4,9 +4,9 @@ import { port } from '$lib/stores/sidecar';
 type AccentKey = 'red' | 'yellow' | 'green' | 'cyan';
 
 const ACCENT_MAP: Record<AccentKey, { dark: [string, string]; light: [string, string] }> = {
-	red: { dark: ['#ff757f', '#db4b4b'], light: ['#c52f65', '#9e1e52'] },
-	yellow: { dark: ['#e0af68', '#c99a4b'], light: ['#a07025', '#7d5512'] },
-	green: { dark: ['#9ece6a', '#73a85a'], light: ['#587539', '#3d5427'] },
+	red: { dark: ['#ff757f', '#db4b4b'], light: ['#9e1e52', '#77173e'] },
+	yellow: { dark: ['#e0af68', '#c99a4b'], light: ['#7d5512', '#5e400e'] },
+	green: { dark: ['#9ece6a', '#73a85a'], light: ['#3d5427', '#2e3f1d'] },
 	cyan: { dark: ['#7dcfff', '#5aafc5'], light: ['#0f4b6e', '#08364f'] },
 };
 
