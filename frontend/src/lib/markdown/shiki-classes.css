@@ -25,3 +25,31 @@
 .__s_14f5ac21360db1{color:#BA3C97}
 .__s_1e49fee5886b27{color:#9AA5CE}
 .__s_1abf13068371bf{color:#9D7CD8}
+
+/* Light theme overrides — Tokyo Night Light (official) where no project
+   CSS variable applies; reused var(--xxx) where the dark hex matched one. */
+
+.theme-light .__s_332882bd406c5{color:var(--cyan)}
+.theme-light .__s_13fd1fe1849d00{color:var(--fg-dark)}
+.theme-light .__s_2e05bb2f7bdf2{color:var(--fg-muted);font-style:italic}
+.theme-light .__s_16ff25bbb072c1{color:var(--accent-warm)}
+.theme-light .__s_19a6a2beed140a{color:#363C4D}
+.theme-light .__s_31a4e29dc8a2a{color:#006C86}
+.theme-light .__s_19bb5f3684f9c7{color:#2959AA}
+.theme-light .__s_19dc14ba33c199{color:var(--magenta)}
+.theme-light .__s_13e03d69a3e422{color:var(--fg)}
+.theme-light .__s_1ba0f6d8f01b1e{color:#484C61}
+.theme-light .__s_6b3e13275bbb2{color:var(--yellow)}
+.theme-light .__s_25f1c41dccd15{color:var(--green)}
+.theme-light .__s_92420ee368e88{background-color:var(--bg);color:var(--fg-dark)}
+.theme-light .__s_18b41918ed29d3{color:#65359D;font-style:italic}
+.theme-light .__s_a3ad61a9c1a3{color:#33635C}
+.theme-light .__s_74d7865e62d9b{color:#8C4351}
+.theme-light .__s_1133347c661135{color:var(--magenta);font-style:italic}
+.theme-light .__s_1e944759908079{color:var(--fg-muted);font-style:italic}
+.theme-light .__s_1e1b89bc09e560{color:var(--fg-muted);font-style:italic}
+.theme-light .__s_2c36fa031d181{color:#363C4D;font-style:italic}
+.theme-light .__s_12b69ae366e99a{color:var(--yellow);font-style:italic}
+.theme-light .__s_14f5ac21360db1{color:#B05467}
+.theme-light .__s_1e49fee5886b27{color:#40434F}
+.theme-light .__s_1abf13068371bf{color:#65359D}
