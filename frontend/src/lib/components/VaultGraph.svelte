@@ -77,7 +77,7 @@
 			article: get('--cyan', '#7dcfff'),
 			youtube: get('--red', '#f7768e'),
 			substack: get('--accent-warm', '#ff9e64'),
-			tag: '#9ece6a',
+			tag: get('--green', '#9ece6a'),
 			fallback: get('--fg-muted', '#565f89'),
 			edge: get('--border', '#292e42'),
 			label: get('--fg-muted', '#565f89'),
