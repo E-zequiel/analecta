@@ -31,7 +31,7 @@ async function loadCustomFont(fontPath: string): Promise<string | null> {
 export async function applyFont(
 	variant: 'regular' | 'nerd' | 'custom',
 	customPath: string | null,
-	_uiFontSize: number = 16.0,
+	_uiFontSize: number = 17.0,
 	readingFontSize: number = 17.0,
 	theme: 'dark' | 'light' = 'dark',
 	accentColor: AccentKey = 'yellow'
