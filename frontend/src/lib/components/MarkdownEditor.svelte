@@ -1,13 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { get } from 'svelte/store';
 	import { Compartment, EditorState } from '@codemirror/state';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { defaultKeymap, historyKeymap, history } from '@codemirror/commands';
 	import { markdown } from '@codemirror/lang-markdown';
 	import { tokyoNightInit } from '@uiw/codemirror-theme-tokyo-night';
 	import { tokyoNightDay } from '@uiw/codemirror-theme-tokyo-night-day';
-	import { currentTheme } from '$lib/stores/ui';
 
 	const {
 		value,
@@ -26,12 +24,13 @@
 
 	const tokyoNightDark = tokyoNightInit({ settings: { foreground: '#a9b1d6' } });
 
-	function pickTheme(t: 'dark' | 'light') {
-		return t === 'light' ? tokyoNightDay : tokyoNightDark;
+	function pickTheme(isLight: boolean) {
+		return isLight ? tokyoNightDay : tokyoNightDark;
 	}
 
 	onMount(() => {
 		lastEmitted = value;
+		const root = document.documentElement;
 		const state = EditorState.create({
 			doc: value,
 			extensions: [
@@ -48,7 +47,7 @@
 					},
 				]),
 				markdown(),
-				themeCompartment.of(pickTheme(get(currentTheme))),
+				themeCompartment.of(pickTheme(root.classList.contains('theme-light'))),
 				EditorView.lineWrapping,
 				EditorView.theme({
 					'&': { height: '100%' },
@@ -71,12 +70,18 @@
 		});
 
 		view = new EditorView({ state, parent: container });
-		return () => view.destroy();
-	});
 
-	$effect(() => {
-		if (!view) return;
-		view.dispatch({ effects: themeCompartment.reconfigure(pickTheme($currentTheme)) });
+		const observer = new MutationObserver(() => {
+			view.dispatch({
+				effects: themeCompartment.reconfigure(pickTheme(root.classList.contains('theme-light'))),
+			});
+		});
+		observer.observe(root, { attributeFilter: ['class'] });
+
+		return () => {
+			observer.disconnect();
+			view.destroy();
+		};
 	});
 
 	$effect(() => {

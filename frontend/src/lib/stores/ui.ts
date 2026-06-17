@@ -30,5 +30,3 @@ export const rightSidebarWidth = persisted('right-sidebar-width', 240);
 
 export const sidebarTagPreview = writable<string | null>(null);
 export const dashboardPreviewEntryId = writable<number | null>(null);
-
-export const currentTheme = writable<'dark' | 'light'>('dark');
