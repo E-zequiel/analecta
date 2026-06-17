@@ -321,7 +321,7 @@
 	}
 
 	.node-tag {
-		fill: #9ece6a;
+		fill: var(--green);
 		cursor: pointer;
 	}
 
