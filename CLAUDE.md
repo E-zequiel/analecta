@@ -63,7 +63,6 @@ analecta/
 │   │   ├── lib/markdown/           # markdown-it config
 │   │   ├── lib/platform/           # platform shim (window.electronAPI wrappers)
 │   │   ├── lib/actions/            # Svelte actions: flash.ts, tooltip.ts
-│   │   ├── lib/theme/              # palette.ts (accent + theme helpers)
 │   │   ├── lib/font.ts             # applyFont(): --font-family, accent, theme toggle
 │   │   ├── lib/components/
 │   │   │   ├── Sidebar.svelte      # Obsidian-style navigator (collapsible rail, expandable sections)
