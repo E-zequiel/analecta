@@ -61,6 +61,33 @@ render time and the selectors in the static CSS file are always identical.
 The CSS file is loaded via `import '$lib/markdown/shiki-classes.css'` in the
 viewer and editor pages — covered by `style-src-elem 'self' app:`.
 
+### 3. Light-theme overrides (`DARK_TO_LIGHT` map)
+
+`gen-shiki-css.mjs` also emits a set of `.theme-light .__s_<hash>` override rules.
+For each entry in the dark CSS registry, `translateToLight()` replaces known
+dark-theme hex values using a hardcoded `DARK_TO_LIGHT` lookup table keyed on
+uppercase hex without `#`.
+
+Each replacement is one of two kinds:
+
+- **CSS variable reference** (`var(--xxx)`) — used when the dark hex is an exact
+  match for one of the project's existing CSS custom properties. The light value
+  of that variable is already contrast-checked in `app.css`.
+- **Literal hex** — sourced from the official
+  [Tokyo Night Light VS Code theme](https://github.com/enkia/tokyo-night-vscode-theme)
+  for colors that have no project variable equivalent.
+
+Exception: comment tokens use `var(--fg-muted)` instead of the official `#888B94`,
+which fails the 3:1 WCAG minimum against the light background.
+
+Entries with no matching key in `DARK_TO_LIGHT` are not emitted — the dark rule
+then applies in both themes (intentional for structural colors that need no
+light-mode override).
+
+The `shiki-classes.css` output has two sections: dark rules (byte-identical to
+before) followed by light overrides. Both sections are committed; neither is
+edited manually.
+
 ---
 
 ## Sync API limitation — why `transformerStyleToClass` is not used
@@ -88,8 +115,8 @@ inter-compatible if the upstream transformer is ever fixed.
 |------|------|
 | `frontend/src/lib/markdown/renderer.ts` | Markdown-it instance; loads Shiki highlighter + transformer |
 | `frontend/src/lib/markdown/shiki-style-to-class.ts` | Runtime HAST transformer (cyrb53 hash) |
-| `frontend/src/lib/markdown/shiki-classes.css` | Pre-generated token CSS — committed, do not edit manually |
-| `frontend/scripts/gen-shiki-css.mjs` | Generator script — run at upgrade time |
+| `frontend/src/lib/markdown/shiki-classes.css` | Pre-generated token CSS — committed, do not edit manually; two sections: dark rules + `.theme-light` overrides |
+| `frontend/scripts/gen-shiki-css.mjs` | Generator script — run at upgrade time; emits dark rules and `.theme-light .__s_*` overrides via `DARK_TO_LIGHT` map |
 
 ---
 
@@ -112,6 +139,12 @@ mise exec -- pnpm --filter frontend run gen-shiki-css
 
 > **Package version policy:** observe the 10-day minimum cooldown from the
 > release date before adopting a new Shiki version.
+
+After upgrading `shiki` or `@shikijs/themes`, diff the dark section of the
+regenerated `shiki-classes.css` against the previous version. If a hex value
+that was a key in `DARK_TO_LIGHT` no longer appears, its light override silently
+disappears (the dark rule then applies in both themes). Update `DARK_TO_LIGHT`
+in `gen-shiki-css.mjs` accordingly and regenerate.
 
 ---
 
