@@ -45,6 +45,10 @@
 	let sigmaInstance: InstanceType<typeof Sigma<VaultNodeAttrs>> | null = null;
 	let sigmaGraph: UndirectedGraph<VaultNodeAttrs> | null = null;
 
+	// Incremented by MutationObserver when .theme-light toggles, forcing a Sigma rebuild
+	// with colors re-read from the new computed styles.
+	let themeVersion = $state(0);
+
 	const nodeCount = $derived(graphData?.nodes.length ?? 0);
 	const edgeCount = $derived(graphData?.edges.length ?? 0);
 	const matchedCount = $derived(matchedNodeKeys?.size ?? 0);
@@ -60,6 +64,12 @@
 				error = String(e);
 				loading = false;
 			});
+
+		const observer = new MutationObserver(() => {
+			themeVersion++;
+		});
+		observer.observe(document.documentElement, { attributeFilter: ['class'] });
+		return () => observer.disconnect();
 	});
 
 	function resolveColors(): {
@@ -239,12 +249,14 @@
 
 	// Build the Sigma instance whenever the container element and data are both ready.
 	// Does NOT track `expanded` — fullscreen toggle repositions via CSS without rebuilding.
+	// Tracks `themeVersion` so a MutationObserver can force a rebuild on theme switch.
 	$effect(() => {
 		const el = sigmaEl;
 		const data = graphData;
+		void themeVersion;
 		if (!el || !data) return;
 
-		const colors = untrack(() => resolveColors());
+		const colors = resolveColors();
 
 		const graph = new UndirectedGraph<VaultNodeAttrs>();
 
