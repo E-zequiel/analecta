@@ -5,7 +5,7 @@
 	import { EditorView, keymap } from '@codemirror/view';
 	import { defaultKeymap, historyKeymap, history } from '@codemirror/commands';
 	import { markdown } from '@codemirror/lang-markdown';
-	import { tokyoNight } from '@uiw/codemirror-theme-tokyo-night';
+	import { tokyoNightInit } from '@uiw/codemirror-theme-tokyo-night';
 	import { tokyoNightDay } from '@uiw/codemirror-theme-tokyo-night-day';
 	import { currentTheme } from '$lib/stores/ui';
 
@@ -24,8 +24,10 @@
 	let lastEmitted: string;
 	const themeCompartment = new Compartment();
 
+	const tokyoNightDark = tokyoNightInit({ settings: { foreground: '#a9b1d6' } });
+
 	function pickTheme(t: 'dark' | 'light') {
-		return t === 'light' ? tokyoNightDay : tokyoNight;
+		return t === 'light' ? tokyoNightDay : tokyoNightDark;
 	}
 
 	onMount(() => {
