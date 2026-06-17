@@ -5,9 +5,9 @@ type AccentKey = 'red' | 'yellow' | 'green' | 'cyan';
 
 const ACCENT_MAP: Record<AccentKey, { dark: [string, string]; light: [string, string] }> = {
 	red: { dark: ['#ff757f', '#db4b4b'], light: ['#9e1e52', '#77173e'] },
-	yellow: { dark: ['#e0af68', '#c99a4b'], light: ['#b5841e', '#8a6318'] },
-	green: { dark: ['#9ece6a', '#73a85a'], light: ['#3d8b52', '#2a6b3d'] },
-	cyan: { dark: ['#7dcfff', '#5aafc5'], light: ['#1990cc', '#136e96'] },
+	yellow: { dark: ['#e0af68', '#c99a4b'], light: ['#785814', '#543e0e'] },
+	green: { dark: ['#9ece6a', '#73a85a'], light: ['#2e693e', '#204a2b'] },
+	cyan: { dark: ['#7dcfff', '#5aafc5'], light: ['#00619b', '#00446c'] },
 };
 
 async function loadCustomFont(fontPath: string): Promise<string | null> {
