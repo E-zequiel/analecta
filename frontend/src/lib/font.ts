@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
 import { port } from '$lib/stores/sidecar';
+import { currentTheme } from '$lib/stores/ui';
 
 type AccentKey = 'red' | 'yellow' | 'green' | 'cyan';
 
@@ -39,6 +40,7 @@ export async function applyFont(
 	const root = document.documentElement;
 
 	root.classList.toggle('theme-light', theme === 'light');
+	currentTheme.set(theme);
 
 	root.style.setProperty('--font-text-size', `${readingFontSize}px`);
 

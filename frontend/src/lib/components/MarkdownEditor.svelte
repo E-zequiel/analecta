@@ -1,10 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { EditorState } from '@codemirror/state';
+	import { get } from 'svelte/store';
+	import { Compartment, EditorState } from '@codemirror/state';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { defaultKeymap, historyKeymap, history } from '@codemirror/commands';
 	import { markdown } from '@codemirror/lang-markdown';
 	import { tokyoNight } from '@uiw/codemirror-theme-tokyo-night';
+	import { tokyoNightDay } from '@uiw/codemirror-theme-tokyo-night-day';
+	import { currentTheme } from '$lib/stores/ui';
 
 	const {
 		value,
@@ -19,6 +22,11 @@
 	let container: HTMLDivElement;
 	let view: EditorView;
 	let lastEmitted: string;
+	const themeCompartment = new Compartment();
+
+	function pickTheme(t: 'dark' | 'light') {
+		return t === 'light' ? tokyoNightDay : tokyoNight;
+	}
 
 	onMount(() => {
 		lastEmitted = value;
@@ -38,7 +46,7 @@
 					},
 				]),
 				markdown(),
-				tokyoNight,
+				themeCompartment.of(pickTheme(get(currentTheme))),
 				EditorView.lineWrapping,
 				EditorView.theme({
 					'&': { height: '100%' },
@@ -62,6 +70,11 @@
 
 		view = new EditorView({ state, parent: container });
 		return () => view.destroy();
+	});
+
+	$effect(() => {
+		if (!view) return;
+		view.dispatch({ effects: themeCompartment.reconfigure(pickTheme($currentTheme)) });
 	});
 
 	$effect(() => {
