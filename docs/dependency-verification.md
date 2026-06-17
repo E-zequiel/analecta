@@ -38,7 +38,8 @@ This queries the npm registry's metadata endpoint directly — not a web
 search, not `raw.githubusercontent.com` (rejected for the same reason given
 in `docs/github-actions-security.md` § "When auditing `allowBuilds` entries":
 it's GitHub's CDN for raw content, also widely used by malware as free
-hosting, so a hit there proves nothing). Record the `sha512-...` value.
+hosting, so a hit there proves nothing). Save this value; compare it against
+the lockfile entry in step 4.
 
 ### 2. Pin the exact version
 
@@ -55,7 +56,15 @@ catch in review. An exact pin forces that bump to show up as a one-line
 `package.json` diff, which is the more auditable failure mode.
 
 Before pinning a version that just published, check the **10-day minimum
-window** policy (`pnpm view <pkg> time --json`).
+window** policy:
+
+```bash
+mise exec -- pnpm view <pkg> time --json
+```
+
+The publish timestamp for `<version>` appears under the version key as an
+ISO 8601 date string. The version must have been published at least 10 days
+before the install date.
 
 If the package is one of a matched pair/family (e.g. a theme's light/dark
 siblings from the same publisher), pin both to the same exact version to avoid
@@ -86,10 +95,11 @@ from the actual bytes pnpm downloaded.
 grep -A 1 "'<pkg>@<version>'" pnpm-lock.yaml
 ```
 
-Confirm the `integrity:` line matches the hash recorded in step 1. This value
-is what pnpm verified the tarball against, written into a file that's
-committed and diffable — so the next person (or the next `pnpm install` on a
-different machine) gets the same guarantee without re-running this procedure.
+Confirm the `integrity:` line matches the value saved in step 1. If they
+differ, do not proceed — abort and investigate the discrepancy before merging.
+This value is what pnpm verified the tarball against, written into a file
+that's committed and diffable — so any subsequent `pnpm install` on a
+different machine gets the same guarantee without re-running this procedure.
 
 ## Worked example (npm / pnpm)
 
@@ -117,8 +127,8 @@ There is **no manual pre-install hash-fetch step here** — this is a deliberate
 difference from the npm/pnpm flow above, not an omission. `uv` resolves the
 dependency graph and writes the resolved version *and* its hashes (sdist +
 every wheel) into `backend/uv.lock` as part of `uv lock`. The verification
-moment isn't "a person fetches a hash and compares it before installing" —
-it's "the lockfile, which a person reviews in the PR diff, already contains
+moment isn't "fetch a hash and compare it before installing" —
+it's "the lockfile — visible in the PR diff — already contains
 the hash uv independently derived from PyPI." `uv sync` then verifies
 installed packages against `uv.lock`, the same way pnpm verifies against
 `pnpm-lock.yaml`.
