@@ -55,7 +55,7 @@
 					'&.cm-focused': { outline: 'none' },
 					'.cm-scroller': {
 						fontFamily: "'JetBrains Mono', monospace",
-						fontSize: '14px',
+						fontSize: 'var(--font-text-size)',
 						overflow: 'auto',
 					},
 					'.cm-content': { padding: '1rem 1.5rem', minHeight: '100%' },
