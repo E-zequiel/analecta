@@ -35,8 +35,10 @@ def _seed_entry(index: VaultIndex, url: str = "https://example.com/1") -> int:
 
 
 def _make_app(tmp_path: Path) -> FastAPI:
-    config = AppConfig(vault_path=tmp_path / "vault")
+    return _make_app_with_config(AppConfig(vault_path=tmp_path / "vault"))
 
+
+def _make_app_with_config(config: AppConfig) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         index = VaultIndex(config.vault_path / "analecta.db")
@@ -164,3 +166,78 @@ def test_parse_url_zero_id_null(client: TestClient) -> None:
     r = client.get("/api/v1/pkm/parse-url", params={"url": "analecta://open?id=0"})
     assert r.status_code == 200
     assert r.json() == {"entry_id": None}
+
+
+# ---------------------------------------------------------------------------
+# GET /system/font
+# ---------------------------------------------------------------------------
+
+
+def test_get_font_200(tmp_path: Path) -> None:
+    font_file = tmp_path / "myfont.ttf"
+    font_file.write_bytes(b"fake-ttf-data")
+    config = AppConfig(vault_path=tmp_path / "vault", custom_font_path=str(font_file))
+    with TestClient(_make_app_with_config(config)) as c:
+        r = c.get("/api/v1/system/font", params={"path": str(font_file)})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["mime"] == "font/ttf"
+    assert body["data"]
+
+
+def test_get_font_otf_mime(tmp_path: Path) -> None:
+    font_file = tmp_path / "myfont.otf"
+    font_file.write_bytes(b"fake-otf-data")
+    config = AppConfig(vault_path=tmp_path / "vault", custom_font_path=str(font_file))
+    with TestClient(_make_app_with_config(config)) as c:
+        r = c.get("/api/v1/system/font", params={"path": str(font_file)})
+    assert r.status_code == 200
+    assert r.json()["mime"] == "font/otf"
+
+
+def test_get_font_unconfigured_403(tmp_path: Path) -> None:
+    font_file = tmp_path / "myfont.ttf"
+    font_file.write_bytes(b"fake-ttf-data")
+    config = AppConfig(vault_path=tmp_path / "vault", custom_font_path=None)
+    with TestClient(_make_app_with_config(config)) as c:
+        r = c.get("/api/v1/system/font", params={"path": str(font_file)})
+    assert r.status_code == 403
+
+
+def test_get_font_path_mismatch_403(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed.ttf"
+    allowed.write_bytes(b"fake-ttf-data")
+    other = tmp_path / "other.ttf"
+    other.write_bytes(b"fake-ttf-data")
+    config = AppConfig(vault_path=tmp_path / "vault", custom_font_path=str(allowed))
+    with TestClient(_make_app_with_config(config)) as c:
+        r = c.get("/api/v1/system/font", params={"path": str(other)})
+    assert r.status_code == 403
+
+
+def test_get_font_traversal_200(tmp_path: Path) -> None:
+    font_file = tmp_path / "myfont.ttf"
+    font_file.write_bytes(b"fake-ttf-data")
+    config = AppConfig(vault_path=tmp_path / "vault", custom_font_path=str(font_file))
+    traversal = str(tmp_path / "subdir" / ".." / "myfont.ttf")
+    with TestClient(_make_app_with_config(config)) as c:
+        # resolve() on both sides means canonical paths match — traversal is fine
+        r = c.get("/api/v1/system/font", params={"path": traversal})
+    assert r.status_code == 200
+
+
+def test_get_font_not_found_404(tmp_path: Path) -> None:
+    font_file = tmp_path / "missing.ttf"
+    config = AppConfig(vault_path=tmp_path / "vault", custom_font_path=str(font_file))
+    with TestClient(_make_app_with_config(config)) as c:
+        r = c.get("/api/v1/system/font", params={"path": str(font_file)})
+    assert r.status_code == 404
+
+
+def test_get_font_bad_extension_400(tmp_path: Path) -> None:
+    font_file = tmp_path / "myfont.woff"
+    font_file.write_bytes(b"fake-woff-data")
+    config = AppConfig(vault_path=tmp_path / "vault", custom_font_path=str(font_file))
+    with TestClient(_make_app_with_config(config)) as c:
+        r = c.get("/api/v1/system/font", params={"path": str(font_file)})
+    assert r.status_code == 400
