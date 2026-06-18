@@ -14,7 +14,7 @@
 
 	let form = $state({
 		vault_path: '',
-		font_variant: 'regular' as 'regular' | 'nerd' | 'custom',
+		font_variant: 'regular' as 'regular' | 'bricolage',
 		ui_font_size: 17.0,
 		reading_font_size: 17.0,
 		update_channel: 'stable' as 'stable' | 'dev',
@@ -23,7 +23,6 @@
 		close_to_tray: true,
 	});
 	let initialVaultPath = $state('');
-	let customFontPath = $state('');
 	let error = $state('');
 
 	// Per-field saved indicators
@@ -52,10 +51,9 @@
 		node.select();
 	}
 
-	function applyCurrentFont(): Promise<void> {
-		return applyFont(
+	function applyCurrentFont(): void {
+		applyFont(
 			form.font_variant,
-			customFontPath || null,
 			form.ui_font_size,
 			form.reading_font_size,
 			form.theme,
@@ -107,7 +105,6 @@
 				close_to_tray: cfg.close_to_tray,
 			};
 			initialVaultPath = cfg.vault_path;
-			customFontPath = cfg.custom_font_path ?? '';
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		}
@@ -152,23 +149,10 @@
 	async function autoSaveFontVariant() {
 		try {
 			await applyCurrentFont();
-			await configApi.update({
-				font_variant: form.font_variant,
-				custom_font_path: customFontPath || null,
-			});
+			await configApi.update({ font_variant: form.font_variant });
 			flash((v) => (fontVariantSaved = v));
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
-		}
-	}
-
-	async function browseFont() {
-		const selected = await openDialog({
-			filters: [{ name: 'TrueType Font', extensions: ['ttf'] }],
-		});
-		if (typeof selected === 'string') {
-			customFontPath = selected;
-			await autoSaveFontVariant();
 		}
 	}
 
@@ -285,8 +269,7 @@
 				</label>
 				<select id="font-variant" bind:value={form.font_variant} onchange={autoSaveFontVariant}>
 					<option value="regular">JetBrains Mono</option>
-					<option value="nerd">Inconsolata Nerd Font</option>
-					<option value="custom">Custom…</option>
+					<option value="bricolage">Bricolage Grotesque</option>
 				</select>
 			</div>
 			<div class="field">
@@ -373,21 +356,6 @@
 					{/if}
 				</div>
 			</div>
-			{#if form.font_variant === 'custom'}
-				<div class="field">
-					<label for="custom-font-path">Font file (.ttf)</label>
-					<div class="path-row">
-						<input
-							id="custom-font-path"
-							type="text"
-							readonly
-							placeholder="No font selected"
-							value={customFontPath}
-						/>
-						<button onclick={browseFont}>Browse…</button>
-					</div>
-				</div>
-			{/if}
 		</section>
 
 		<section>

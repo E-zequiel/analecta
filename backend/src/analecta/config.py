@@ -15,11 +15,11 @@ class AppConfig(BaseModel):
 
     Attributes:
         vault_path: Root directory of the local vault.
-        font_variant: Font selection — ``regular``, ``nerd``, or ``custom``.
+        font_variant: Reading-font selection — ``regular`` (JetBrains Mono) or
+            ``bricolage`` (Bricolage Grotesque). The UI font is always Bricolage
+            Grotesque and is not user-selectable.
         ui_font_size: Font size for UI chrome (sidebar, toolbar) in pixels.
         reading_font_size: Font size for article reading area in pixels.
-        custom_font_path: Absolute path to a user-supplied ``.ttf`` file.
-            Only used when ``font_variant`` is ``custom``.
         update_channel: Release channel for the built-in updater.
         theme: UI colour theme — ``dark`` or ``light``.
         accent_color: Active accent colour drawn from the Tokyo Night palette.
@@ -27,10 +27,9 @@ class AppConfig(BaseModel):
 
     vault_path: Path = Path.home() / "Documents" / "Analecta"
     first_run: bool = False
-    font_variant: Literal["regular", "nerd", "custom"] = "regular"
+    font_variant: Literal["regular", "bricolage"] = "regular"
     ui_font_size: float = 17.0
     reading_font_size: float = 17.0
-    custom_font_path: str | None = None
     update_channel: Literal["stable", "dev"] = "stable"
     theme: Literal["dark", "light"] = "dark"
     accent_color: Literal["red", "yellow", "green", "cyan"] = "yellow"
@@ -82,8 +81,6 @@ def save_config(config: AppConfig, config_path: Path = CONFIG_PATH) -> None:
         "active_tab_id": config.active_tab_id,
         "close_to_tray": config.close_to_tray,
     }
-    if config.custom_font_path is not None:
-        data["custom_font_path"] = config.custom_font_path
     with config_path.open("wb") as fh:
         tomli_w.dump(data, fh)
 
