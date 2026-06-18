@@ -75,8 +75,9 @@ retroactively migrate every existing range in `frontend/package.json`; that
 would be a separate, larger decision.
 
 CVE-driven patches of *transitive* dependencies use a different mechanism
-(`pnpm.overrides` — see `CLAUDE.md`) but the same exact-pin-plus-hash-check
-principle.
+(`overrides:` in `pnpm-workspace.yaml` — see `CLAUDE.md`) but the same
+exact-pin-plus-hash-check principle. See the note on
+[two-mechanism split](#two-mechanism-split) below before editing overrides.
 
 ### 3. Install
 
@@ -210,11 +211,52 @@ person-in-the-loop check at the moment a *new* dependency enters the tree; the
 script is a broader, automatable check for packages that *publish*
 attestations (~40% of the ecosystem as of this writing).
 
+## Two-mechanism split — pnpm overrides {#two-mechanism-split}
+
+pnpm supports two override locations, and they behave differently:
+
+| Location | Reflected in lockfile `overrides:` | Triggers staleness re-resolution |
+|---|---|---|
+| `pnpm-workspace.yaml` → `overrides:` | Yes | Yes |
+| `package.json` → `pnpm.overrides` | No | No |
+
+**The canonical location for this repo is `pnpm-workspace.yaml`.** The lockfile's
+`overrides:` section mirrors only `pnpm-workspace.yaml`, and pnpm uses that
+section as the staleness checkpoint. Entries in `package.json#pnpm.overrides`
+are processed in some circumstances but do not trigger re-resolution on their
+own — bare `pnpm install` will return "Already up to date" even when they
+conflict with the currently locked versions, making the override silently
+ineffective.
+
+After editing `pnpm-workspace.yaml`, a plain `mise exec -- pnpm install` is
+sufficient to trigger re-resolution. No `--no-frozen-lockfile` or `pnpm update`
+invocation is needed.
+
+### Scoped overrides
+
+When the same package is pulled in at different major versions by different
+consumers (e.g. `@electron/get` requires `undici@^7.x` and `node-gyp` requires
+`undici@^6.x`), use the `parent>dep` scoped syntax to avoid forcing both to a
+version neither expects:
+
+```yaml
+# pnpm-workspace.yaml
+overrides:
+  '@electron/get>undici': '7.28.0'   # 7.x branch: CVE-2026-9678, CVE-2026-9697
+  'node-gyp>undici': '6.27.0'        # 6.x branch: GHSA-g8m3/vxpw/p88m/35p6
+```
+
+A single global `undici: '7.28.0'` override would force node-gyp's `^6.x`
+consumer to a major it never declared, risking a runtime breakage at build
+time. Document the two entries separately so a future reviewer doesn't
+"simplify" them into one.
+
 ## See also
 
-- `CLAUDE.md` → CVE-driven patch policy (`pnpm.overrides` for transitive deps,
-  `[tool.uv] constraint-dependencies` for Python) — same verification step,
-  different mechanism for *why* the version is being forced.
+- `CLAUDE.md` → CVE-driven patch policy (`overrides:` in `pnpm-workspace.yaml`
+  for transitive npm deps, `[tool.uv] constraint-dependencies` for Python) —
+  same verification step, different mechanism for *why* the version is being
+  forced.
 - `docs/syntax-highlighting.md` — documents the Shiki side of light-theme
   syntax highlighting (the markdown viewer). `@uiw/codemirror-theme-tokyo-night-day`,
   the package used as the worked example above, is the equivalent fix for the
