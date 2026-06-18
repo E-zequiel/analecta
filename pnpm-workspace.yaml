@@ -6,9 +6,22 @@ allowBuilds:
   electron: true
   electron-winstaller: false
 
-# Force tmp to the patched version. CVE-2026-44705 (path traversal) —
-# tmp is dead code in Analecta (no Flatpak target), but pinned for hygiene.
 overrides:
+  # CVE-2026-44705 (path traversal) — tmp is dead code in Analecta (no Flatpak target), but pinned for hygiene.
   tmp: '0.2.7'
   # CVE-2024-47764 (accept-splitting) — transitive via @sveltejs/kit; 0.7.0 is the fix.
   cookie: '0.7.0'
+  # Security patch — transitive via electron-builder.
+  js-yaml: '4.2.0'
+  # Security patch — transitive via electron-builder and friends.
+  form-data: '4.0.6'
+  # Security patch — transitive via node-gyp and electron-builder.
+  tar: '7.5.16'
+  # CVE-2026-9678 (shared-cache info disclosure, CVSS 5.9) + CVE-2026-9697 (TLS bypass via SOCKS5, CVSS 7.4).
+  # Scoped to @electron/get (7.x consumer). node-gyp uses a separate 6.x branch — see node-gyp>undici below.
+  '@electron/get>undici': '7.28.0'
+  # Opportunistic bump within ^12.2.0 (declared by @electron/rebuild@4.0.4). Released 2026-06-05.
+  node-gyp: '12.4.0'
+  # GHSA-g8m3-5g58-fq7m + GHSA-vxpw-j846-p89q + GHSA-p88m-4jfj-68fv + GHSA-35p6-xmwp-9g52.
+  # Scoped to node-gyp (6.x consumer). @electron/get uses a separate 7.x branch — see @electron/get>undici above.
+  'node-gyp>undici': '6.27.0'
