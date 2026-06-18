@@ -1,7 +1,6 @@
 import path from 'path';
 
 let vaultPath: string | null = null;
-const allowedFontPaths = new Set<string>();
 
 export function setVaultPath(p: string): void {
 	vaultPath = path.resolve(p);
@@ -28,13 +27,4 @@ export function assertExistsPath(filePath: string): void {
 	if (typeof filePath !== 'string' || !filePath.trim()) {
 		throw new Error('invalid path');
 	}
-}
-
-/** Tracks font files the user explicitly selected via open-dialog (outside vault scope). */
-export function addAllowedFontPath(p: string): void {
-	allowedFontPaths.add(path.resolve(p));
-}
-
-export function isAllowedFontPath(p: string): boolean {
-	return allowedFontPaths.has(path.resolve(p));
 }

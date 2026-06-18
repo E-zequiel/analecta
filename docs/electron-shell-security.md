@@ -226,7 +226,7 @@ In `electron/preload/index.ts`, add the new channel name to `ALLOWED_CHANNELS`. 
 Every argument received from the renderer is untrusted. Use `isObject()`, `typeof`, and range checks before any filesystem, shell, or system call. Never pass renderer-supplied strings directly to `fs`, `shell`, `dialog`, or `spawn` without validation.
 
 **3. Apply `assertVaultPath()` to any filesystem path.**  
-Any handler that reads or writes a file path supplied by the renderer must call `assertVaultPath(path)` or `assertExistsPath(path)`. The only exception is paths selected by the user through `dialog.showOpenDialog` — those are implicitly authorized by the user action and are tracked via `addAllowedFontPath()`.
+Any handler that reads or writes a file path supplied by the renderer must call `assertVaultPath(path)` or `assertExistsPath(path)`. The only exception is paths selected by the user through `dialog.showOpenDialog` — those are implicitly authorized by the user action. Custom font files are a concrete example: the user picks the file via a native dialog, which can resolve to anywhere on the filesystem (e.g. `~/.local/share/fonts/`). The font path's authorization is enforced by the Python sidecar (see §Sidecar API Security below), not by this layer.
 
 **4. Use the narrowest possible permission.**  
 If a handler only needs to read a file, do not also write. If a handler only needs a boolean existence check, use `assertExistsPath` (not `assertVaultPath`, which is more restrictive). Principle of least privilege applies within the main process too.
@@ -275,6 +275,40 @@ def _block_loopback_redirect(response: httpx.Response) -> None:
 ```
 
 This is not required today because the user is always the authorizing party for each URL. It becomes required the moment that assumption no longer holds.
+
+---
+
+---
+
+## Sidecar API Security
+
+The Python sidecar (`backend/`) exposes `GET /api/v1/system/font?path=` to serve a
+user-chosen custom font as a base64 data URL. Because the font may live anywhere on the
+filesystem (outside the vault), the `analecta-file://` extension allowlist does not
+protect this endpoint.
+
+### Font endpoint: config-path guard
+
+`GET /system/font` accepts a `path` query parameter. Before reading the file it checks:
+
+```python
+resolved = Path(path).resolve()
+if allowed_path is None or resolved != Path(allowed_path).resolve():
+    raise HTTPException(403, "Font path not authorised")
+```
+
+where `allowed_path` is `config.custom_font_path` — the path the user explicitly saved
+via the Settings file picker. Only that exact file (after symlink resolution on both
+sides) is served. Any other path, including path-traversal variants, returns HTTP 403
+before the extension or existence checks run.
+
+**Threat covered:** a compromised renderer cannot use the endpoint to read arbitrary
+`.ttf`/`.otf` files from the filesystem. It can only retrieve the file the user already
+chose and saved in their configuration.
+
+**Residual risk:** if an attacker can write to `~/.config/analecta/config.toml` directly
+they can change `custom_font_path` to any `.ttf`/`.otf` on disk. At that level of access
+the attacker already controls the machine; this is accepted.
 
 ---
 
