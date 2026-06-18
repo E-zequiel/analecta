@@ -90,10 +90,9 @@ export interface SubgraphResult {
 
 export interface AppConfig {
 	vault_path: string;
-	font_variant: 'regular' | 'nerd' | 'custom';
+	font_variant: 'regular' | 'bricolage';
 	ui_font_size: number;
 	reading_font_size: number;
-	custom_font_path: string | null;
 	update_channel: 'stable' | 'dev';
 	theme: 'dark' | 'light';
 	accent_color: 'red' | 'yellow' | 'green' | 'cyan';
@@ -105,10 +104,9 @@ export interface AppConfig {
 
 export interface AppConfigUpdate {
 	vault_path?: string;
-	font_variant?: 'regular' | 'nerd' | 'custom';
+	font_variant?: 'regular' | 'bricolage';
 	ui_font_size?: number;
 	reading_font_size?: number;
-	custom_font_path?: string | null;
 	update_channel?: 'stable' | 'dev';
 	theme?: 'dark' | 'light';
 	accent_color?: 'red' | 'yellow' | 'green' | 'cyan';

@@ -1,6 +1,3 @@
-import { get } from 'svelte/store';
-import { port } from '$lib/stores/sidecar';
-
 type AccentKey = 'red' | 'yellow' | 'green' | 'cyan';
 
 const ACCENT_MAP: Record<AccentKey, { dark: [string, string]; light: [string, string] }> = {
@@ -10,32 +7,13 @@ const ACCENT_MAP: Record<AccentKey, { dark: [string, string]; light: [string, st
 	cyan: { dark: ['#7dcfff', '#5aafc5'], light: ['#00619b', '#00446c'] },
 };
 
-async function loadCustomFont(fontPath: string): Promise<string | null> {
-	const p = get(port);
-	if (p === null) return null;
-	const res = await fetch(
-		`http://localhost:${p}/api/v1/system/font?path=${encodeURIComponent(fontPath)}`
-	);
-	if (!res.ok) return null;
-	const { data, mime } = (await res.json()) as { data: string; mime: string };
-	const dataUrl = `data:${mime};base64,${data}`;
-	const old = document.getElementById('__custom_font__');
-	if (old) old.remove();
-	const style = document.createElement('style');
-	style.id = '__custom_font__';
-	style.textContent = `@font-face { font-family: '__UserFont__'; src: url('${dataUrl}') format('truetype'); }`;
-	document.head.appendChild(style);
-	return "'__UserFont__', monospace";
-}
-
-export async function applyFont(
-	variant: 'regular' | 'nerd' | 'custom',
-	customPath: string | null,
+export function applyFont(
+	variant: 'regular' | 'bricolage',
 	_uiFontSize: number = 17.0,
 	readingFontSize: number = 17.0,
 	theme: 'dark' | 'light' = 'dark',
 	accentColor: AccentKey = 'yellow'
-): Promise<void> {
+): void {
 	const root = document.documentElement;
 
 	root.classList.toggle('theme-light', theme === 'light');
@@ -46,16 +24,9 @@ export async function applyFont(
 	root.style.setProperty('--accent', accent);
 	root.style.setProperty('--accent-dark', accentDark);
 
-	if (variant === 'custom' && customPath) {
-		const family = await loadCustomFont(customPath);
-		if (family) {
-			root.style.setProperty('--font-family', family);
-			return;
-		}
-	}
 	const family =
-		variant === 'nerd'
-			? "'Inconsolata NF', 'JetBrains Mono', monospace"
-			: "'JetBrains Mono', monospace";
+		variant === 'bricolage'
+			? "'Bricolage Grotesque', 'Symbols Nerd Font', sans-serif"
+			: "'JetBrains Mono', 'Symbols Nerd Font Mono', monospace";
 	root.style.setProperty('--font-family', family);
 }
