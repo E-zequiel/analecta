@@ -83,7 +83,7 @@ analecta/
 │   │   │   ├── LocalGraph.svelte   # per-entry subgraph (Sigma.js)
 │   │   │   └── VaultGraph.svelte   # full vault graph (Sigma.js + graphology)
 │   │   └── routes/                 # +page.svelte, viewer/[id], editor/[id], settings, first-run
-│   ├── static/fonts/               # JetBrains Mono, Bricolage Grotesque, Inconsolata NF (Nerd Font) bundled
+│   ├── static/fonts/               # JetBrains Mono, Bricolage Grotesque, Symbols Nerd Font + Symbols Nerd Font Mono bundled
 │   └── package.json
 ├── electron/                       # Electron shell
 │   ├── main/                       # index.ts, sidecar.ts, vault-state.ts, ipc.ts, protocols.ts, scraper.ts, tray.ts, updater.ts
@@ -147,8 +147,8 @@ analecta/
 - **Palette** (Tokyo Night): `bg=#1a1b26` · `fg=#d9e0f2` · default `accent=#e0af68` (yellow; selectable: red `#ff757f`, yellow, green, cyan). CSS variables only. Never hardcode hex — always use the CSS custom properties defined in `app.css`.
 - **Fonts** (two-family split):
   - `--font-ui-family`: `'Bricolage Grotesque'` (variable font) — UI chrome. Fixed; never user-selectable. `font.ts` does not touch this.
-  - `--font-family`: reading/content font — user-selectable. Variants: `'JetBrains Mono'` (default), `'Inconsolata NF', 'JetBrains Mono'` (nerd), or custom (loaded via `/api/v1/system/font` as a data-URL `@font-face`). `font.ts` sets this variable, along with `--accent`/`--accent-dark` and `.theme-light`.
-  - All three families (JetBrains Mono, Bricolage Grotesque, Inconsolata NF) are bundled in `frontend/static/fonts/` with `@font-face` declarations in `app.css`.
+  - `--font-family`: reading/content font — user-selectable. Variants: `'JetBrains Mono', 'Symbols Nerd Font Mono'` (default, `regular`) or `'Bricolage Grotesque', 'Symbols Nerd Font'` (`bricolage`). `font.ts` sets this variable, along with `--accent`/`--accent-dark` and `.theme-light`.
+  - Bundled in `frontend/static/fonts/`: JetBrains Mono, Bricolage Grotesque, SymbolsNerdFont-Regular.ttf, SymbolsNerdFontMono-Regular.ttf. `@font-face` declarations in `app.css`. Symbols Nerd Font provides PUA glyph coverage as a silent fallback for both reading-font stacks.
   - Base font-size: **17px** (UI body). Reading font default: **17px**, user-adjustable via `applyFont()`.
 - **Icons**: `@lucide/svelte`. Import by PascalCase name (`import { Settings, SquareLibrary } from '@lucide/svelte'`). Always use the named exports — do not import raw SVG. Verify icon names against `node_modules/@lucide/svelte/dist/icons/index.d.ts`.
 - **Sidebar**: Obsidian-style file-explorer navigator. Collapsible (44px rail / 260px full, `Ctrl+B`). Sections: library, unread, read, bookmark, gem, archive, Tags — each expandable with `ChevronRight`. Settings gear icon at bottom. Search opens via `ScanSearch` icon or `Ctrl+K`.
