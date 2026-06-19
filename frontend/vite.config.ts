@@ -20,8 +20,10 @@ function svelteVirtualCssFallback(): Plugin {
 export default defineConfig({
 	plugins: [sveltekit(), svelteVirtualCssFallback()],
 	clearScreen: false,
-	// CodeMirror bundles ~502 kB (minified) into the editor route chunk — expected, see docs/quality-gate.md
-	build: { chunkSizeWarningLimit: 600 },
+	// Two large shared chunks are expected — see docs/quality-gate.md:
+	// · Shiki ("shiki-classes", ~1077 kB) — shared between viewer and editor
+	// · CodeMirror (~500 kB) — editor route only
+	build: { chunkSizeWarningLimit: 1200 },
 	server: {
 		port: 5173,
 		strictPort: true,
