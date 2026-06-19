@@ -191,8 +191,8 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 1. Detect outdated packages via `uv` and `pnpm outdated`.
 2. Query the upstream registry for the new version's release date (PyPI JSON API, npm registry `time` map).
 3. **Skip** any package released fewer than 10 days ago — this prevents "day-zero supply chain" attacks where a malicious release is injected before the community has time to detect and report it.
-4. Apply updates selectively via `uv lock --upgrade-package` and `pnpm update --filter`.
-5. Run `check.sh` (`--verify` flag) to confirm all 356 tests and static checks still pass; revert lockfiles if they fail.
+4. Apply updates selectively: Python packages via `uv lock --upgrade-package <pkg>`; Node packages via `pnpm add <pkg>@<latest> --save-exact --filter <workspace>`. (`pnpm update` is a no-op for exact-pinned packages — it only moves within the declared range, but exact pins have no range to move within.)
+5. Run `check.sh` to confirm all tests and static checks still pass; revert lockfiles if they fail.
 6. Open a pull request summarising what was updated and what was held back (with eligibility dates).
 
 **Privilege split (two-job design):** The workflow uses two jobs to prevent new package code from executing inside a job that holds write credentials.
@@ -204,7 +204,9 @@ This ensures that if a package that cleared the 10-day cooldown contains a malic
 
 **Bypass via `workflow_dispatch`:** The `cooldown` input (default `10`) can be set to `0` to bypass the gate. `workflow_dispatch` requires repository write access, so this bypass is not available to external contributors.
 
-**`--ignore-scripts` in the install step:** `deps-update.yml` installs the *current* (pre-update) lockfile with `pnpm install --frozen-lockfile --ignore-scripts` before running `deps_update.py`. Lifecycle scripts (notably `electron`'s binary download) are blocked because the `update` job only needs `pnpm outdated` / `pnpm update` tooling. The `update` job has no write token anyway (`permissions: {}`), so the blast radius of any lifecycle script is limited to the runner itself.
+**Exception approval:** Any update that clears the cooldown gate early — whether by `cooldown=0` dispatch, by merging a Dependabot PR within its minimum-age window, or by any other means — requires explicit maintainer approval before merging. Do not self-certify an exception even when CVE urgency justifies a shorter window; surface it and get a confirmation first.
+
+**`--ignore-scripts` in the install step:** `deps-update.yml` installs the *current* (pre-update) lockfile with `pnpm install --frozen-lockfile --ignore-scripts` before running `deps_update.py`. Lifecycle scripts (notably `electron`'s binary download) are blocked because the `update` job only needs `pnpm outdated` and `pnpm add` (via `deps_update.py`) to enumerate and bump packages — the Electron binary is not required there. The `update` job has no write token anyway (`permissions: { contents: read }`), so the blast radius of any lifecycle script is limited to the runner itself.
 
 **Provenance note:** Lock file hashes provide **integrity** (package content matches the recorded hash). SLSA provenance attestation for npm packages is implemented in the `verify-provenance` CI job (see Control 10). Python provenance remains unimplemented — PyPI-side ecosystem support is still immature. This is a known gap, not an oversight.
 
@@ -267,7 +269,7 @@ The Socket CI job (`ci.yml`) only runs on PRs that change a lockfile. This means
 | After the weekly `deps-update.yml` PR lands | Run locally before merging (in addition to `check.sh`) |
 | Before opening a PR that touches `pnpm-lock.yaml` or `backend/uv.lock` | Run as a pre-PR gate |
 
-**Local limitation with `deps_update.py`:** `pnpm update` (called by the script for Node packages) has no `--lockfile-only` flag. It updates both `pnpm-lock.yaml` and `node_modules` in one step, meaning `electron`'s postinstall (the only lifecycle script permitted by `allowBuilds`) may run before `socket-audit.sh` can scan the updated lockfile. Running the scan immediately after — and not pushing until it is clean — is the correct compensating control. The hard enforcement gate is CI: the `socket` job in `ci.yml` runs with `--ignore-scripts` and its result gates `check-frontend` and `test-backend` via `needs:` (see Control 12).
+**Local limitation with `deps_update.py`:** `scripts/deps_update.py` calls `pnpm add <pkg>@<latest> --save-exact` for each outdated Node package. This command supports `--ignore-scripts` but the script does not pass it — `electron`'s postinstall (the only lifecycle script permitted by `allowBuilds`) may therefore run before `socket-audit.sh` can scan the updated lockfile. Running the scan immediately after — and not pushing until it is clean — is the correct compensating control. The hard enforcement gate is CI: the `socket` job in `ci.yml` runs with `--ignore-scripts` and its result gates `check-frontend` and `test-backend` via `needs:` (see Control 12).
 
 ### How to run
 
@@ -291,7 +293,7 @@ The script calls `pnpm exec socket` (lockfile-pinned, `socket@1.1.99`) — never
 ### Interpreting results
 
 - **No issues:** proceed.
-- **Known false positives:** check the false-positive catalog in `project_socket_security.md` before acting.
+- **Known false positives:** check the false-positive catalog in `docs/socket-security.md` before acting.
 - **New alert:** investigate before committing. If it is a confirmed false positive, add it to the catalog with a justification. If it is a real risk, do not merge.
 
 ### Quota
@@ -330,7 +332,7 @@ Steps 2 and 3 together provide an independent verification anchor: a registry-le
 | Package has no attestation (~60% of tree) | ❌ — covered only by Socket scan + lockfile integrity |
 | Rekor + Fulcio infrastructure compromise (state-level attack) | ❌ — no practical mitigation exists |
 | Write-time registry compromise for packages WITH attestation | ✅ (subject hash check catches it) |
-| Write-time registry compromise for packages WITHOUT attestation | ❌ — mitigated only by Socket scan + 3-day cooldown |
+| Write-time registry compromise for packages WITHOUT attestation | ❌ — mitigated only by Socket scan + minimum-age cooldown (10 days for routine updates; shorter minimum for active-CVE exceptions — see Maintenance Checklist) |
 
 ### Coverage
 
@@ -499,9 +501,9 @@ The `needs:` coupling above prevents wasting runner minutes, but the actual merg
 
 This split means that even if a package that cleared the 10-day cooldown contains a malicious payload, it cannot access or exfiltrate the repository write token. The blast radius of a compromise in the `update` job is limited to the runner instance itself.
 
-### Local: advisory workflow (no equivalent of `--ignore-scripts` for `pnpm update`)
+### Local: advisory workflow (`deps_update.py` does not pass `--ignore-scripts`)
 
-`pnpm update` (used by `scripts/deps_update.py`) has no `--lockfile-only` or `--ignore-scripts` flag. It updates `pnpm-lock.yaml` and installs to `node_modules` in a single step, meaning `electron`'s postinstall may run before `socket-audit.sh` can scan the result.
+`scripts/deps_update.py` calls `pnpm add <pkg>@<latest> --save-exact` for each outdated Node package. This command supports `--ignore-scripts` but the script does not pass it, so `electron`'s postinstall may run before `socket-audit.sh` can scan the result.
 
 The compensating control is sequencing discipline:
 
@@ -651,7 +653,7 @@ When the repository is made public, the **"Fork pull request workflows"** sectio
 
 1. Install with `pnpm add` or `uv add` as usual.
 2. **Immediately run** `./scripts/socket-audit.sh` — do not commit or push before the scan completes.
-3. Review any new alerts against the false-positive catalog in `project_socket_security.md`.
+3. Review any new alerts against the false-positive catalog in `docs/socket-security.md`.
 4. If the alert is a confirmed false positive, add it to the catalog before committing.
 5. If the alert indicates a real risk, do not install the package — find an alternative or escalate.
 6. For new npm packages: the `verify-provenance` CI job will automatically check whether the package has a SLSA provenance attestation. If it does, the attestation is verified against Sigstore on every PR. No manual action required unless the job fails (see Control 10).
@@ -674,7 +676,7 @@ Run this whenever `pnpm-workspace.yaml` `allowBuilds` changes or when upgrading 
 
 1. Run the script as usual: `mise exec -- python scripts/deps_update.py`.
 2. Immediately run `./scripts/socket-audit.sh` — do not commit or push before the scan completes.
-3. Review any new alerts. If clean, commit only `pnpm-lock.yaml` and `backend/uv.lock` (not `node_modules`).
+3. Review any new alerts. If clean, commit `pnpm-lock.yaml`, `backend/uv.lock`, and any updated `frontend/package.json` or `electron/package.json` (not `node_modules`). The script calls `pnpm add --save-exact` per package, which updates both the lockfile and the relevant `package.json`.
 4. The CI `socket` job will re-scan on the resulting PR as the hard enforcement gate.
 
 ### When the `deps-update.yml` weekly PR lands
