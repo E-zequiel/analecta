@@ -132,9 +132,10 @@ analecta/
 1. Electron calls `startRenderServer()` → binds a random loopback port, generates `ANALECTA_RENDER_TOKEN`.
 2. Electron spawns `binaries/analecta-sidecar` with `ANALECTA_RENDER_PORT` and `ANALECTA_RENDER_TOKEN` in env.
 3. Sidecar binds a dynamic port (`socket.bind(("", 0))`), prints `LISTENING_ON_PORT:<n>` to stdout.
-4. Electron parses stdout, caches the port, and emits `sidecar-ready` IPC event to the renderer.
-5. Frontend renders a loading screen until `sidecar-ready` is received (timeout: 10 s → error state).
-6. On window close, Electron kills the sidecar child process (`SIGTERM`, 3 s SIGKILL fallback) and closes the render server.
+4. Electron parses stdout and caches the port. Does **not** emit `sidecar-ready` yet — uvicorn has not started accepting connections at this point (100–500 ms gap). Resolving here causes ECONNREFUSED on the first API call, silently skipping first-run checks.
+5. Sidecar prints `SIDECAR_READY` once uvicorn is serving. Electron emits `sidecar-ready` IPC event to the renderer.
+6. Frontend renders a loading screen until `sidecar-ready` is received (timeout: 10 s → error state).
+7. On window close, Electron kills the sidecar child process (`SIGTERM`, 3 s SIGKILL fallback) and closes the render server.
 
 ### Sidecar packaging
 
@@ -166,7 +167,7 @@ analecta/
 ### OS integration notes
 
 - **Tray on GNOME/Wayland** (Pop!_OS 24.04): Electron tray uses `StatusNotifierItem` via Chromium. GNOME does not display these natively — requires the **AppIndicator and KStatusNotifierItem Support** GNOME extension. Document in README as a user-side dependency. KDE, i3, and Sway work out of the box.
-- **Wayland native**: Analecta runs Wayland-native by default (no `--ozone-platform=x11`). `dialog.showOpenDialog()` has an 8 s timeout + text-input fallback (FileChooser portal SIGSEGV on COSMIC — cosmic-epoch#3467). `win.focus()` is best-effort on Wayland; always call `show()` first.
+- **Wayland native**: Analecta runs Wayland-native by default (no `--ozone-platform=x11`). `dialog.showOpenDialog()` has a **30 s** timeout + text-input fallback (FileChooser portal SIGSEGV on COSMIC — cosmic-epoch#3467; GNOME/Pop!_OS XDG portal takes 10–20 s — 8 s silently dropped the selection). `win.focus()` is best-effort on Wayland; always call `show()` first.
 
 ---
 
@@ -252,6 +253,8 @@ Schema changes go in a new `backend/src/analecta/migrations/NNN_description.sql`
 - Asset downloader: validate `Content-Type` header before writing. Reject non-image MIME types.
 - playwright: headless only, no persistent profile, sandbox flag enabled.
 - No `.env` files anywhere in the project tree. Configuration is TOML only.
+- **CORS**: `CORSMiddleware` in `server.py` must include `"app://index.html"` in `allow_origins` for packaged builds — Electron's custom scheme sends this origin on CORS preflights. Without it, GETs succeed but POST/PATCH/PUT/DELETE silently return 400. The dev server is covered by `allow_origin_regex=r"http://localhost(:\d+)?"`. Do not add Tauri origins (`tauri://localhost`, `http://tauri.localhost`) — removed in E9.
+- **CSP**: Never write `'unsafe-inline'` in `style-src`, `style-src-elem`, or `style-src-attr`. Use the `style:property` Svelte directive instead of inline `style=""` attributes (the latter compiles to `setAttribute('style', ...)`, blocked by `style-src-attr 'none'`). Third-party libs that emit inline styles need a HAST transformer to convert them to pre-generated CSS classes. See global skill `/electron-svelte-csp`.
 
 ---
 
@@ -273,6 +276,8 @@ Single distribution channel: **Electron bundle** (`.deb` / `.rpm` / `.AppImage`)
 | `/dev` | `cd backend && mise exec -- uv run python -m analecta` (sidecar standalone) |
 | `/test` | `cd backend && mise exec -- uv run pytest -v` |
 | `/build` | `mise exec -- pnpm dist` |
+
+**Task workflow:** after completing each planned task, run `mise exec -- ./scripts/check.sh` to verify the quality gate, then suggest a conventional commit message. The user commits manually — never run git commands.
 
 ---
 
@@ -306,3 +311,4 @@ Single source of truth: **BSM** (Web App / `bws`).
 - For CVE-driven patches of transitive npm deps, use `overrides:` in `pnpm-workspace.yaml` with exact versions, same SHA-512 verification. Do **not** use `pnpm.overrides` in `package.json` — that field is not tracked by pnpm's staleness check and will be silently ignored. Use scoped syntax (`'parent>dep': 'version'`) when the same package is pulled in at different majors by different consumers. See `docs/dependency-verification.md`.
 - For CVE-driven patches of transitive Python deps, use `[tool.uv] constraint-dependencies` in `backend/pyproject.toml` with a version floor (e.g. `["starlette>=1.3.1"]`), then `uv lock` — no manual SHA step; `uv.lock` records and verifies hashes itself. See `docs/dependency-verification.md`.
 - Do not read `~/.config/analecta/config.toml` or any file matching the global deny rules in `~/.claude/settings.json`.
+- **Python tests**: every change to `backend/src/analecta/**` must include tests in `backend/tests/` in the same commit. A `check.sh` report showing 0% coverage on new code is a blocker — add tests before moving on. TypeScript and Electron code are excluded (manual QA only).
