@@ -42,14 +42,20 @@ implementation block is considered complete **only after this script passes clea
 warnings** — all previously known issues have been resolved. Any new warning must be
 investigated and resolved before considering a block complete.
 
-### vite build: accepted chunk size hint
+### vite build: accepted chunk size hints
 
-`vite build` may emit a `(!) Some chunks are larger than 500 kB` hint for the editor
-route (`/editor/[id]`). The chunk contains the full CodeMirror 6 ecosystem
-(`@codemirror/*`, `@lezer/*`, `@uiw/codemirror-theme-tokyo-night`) which is a monolith
-by design. It loads only on navigation to the editor, never on initial app launch.
-Network latency is irrelevant in an Electron desktop app. `build.chunkSizeWarningLimit`
-is set to `600` in `vite.config.ts` to suppress this hint.
+Two chunks exceed Vite's default 600 kB threshold. Both are expected and suppressed via
+`build.chunkSizeWarningLimit: 1200` in `vite.config.ts`. Network latency is irrelevant
+in an Electron desktop app — all assets are served locally.
+
+| Chunk | Size (minified) | Gzip | Routes | Contents |
+|-------|----------------|------|--------|----------|
+| `shiki-classes` | ~1077 kB | ~208 kB | `viewer/[id]`, `editor/[id]` | Shiki runtime + `@shikijs/langs` (all languages), `markdown-it`, Sigma.js |
+| CodeMirror | ~500 kB | — | `editor/[id]` only | `@codemirror/*`, `@lezer/*`, `@uiw/codemirror-theme-tokyo-night` |
+
+The Shiki chunk is large because `@shikijs/langs` bundles every supported language. The
+CodeMirror chunk is a monolith by design. Neither loads on the initial app launch — they
+are deferred until the user navigates to the relevant route.
 
 ---
 
