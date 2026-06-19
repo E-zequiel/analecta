@@ -231,7 +231,7 @@ person-in-the-loop check at the moment a *new* dependency enters the tree; the
 script is a broader, automatable check for packages that *publish*
 attestations (~40% of the ecosystem as of this writing).
 
-## Two-mechanism split — pnpm overrides {#two-mechanism-split}
+## Two-mechanism split
 
 pnpm supports two override locations, and they behave differently:
 
