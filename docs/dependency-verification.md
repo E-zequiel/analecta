@@ -70,9 +70,9 @@ If the package is one of a matched pair/family (e.g. a theme's light/dark
 siblings from the same publisher), pin both to the same exact version to avoid
 drift between them.
 
-This is about *new* dependencies going forward — it is not a proposal to
-retroactively migrate every existing range in `frontend/package.json`; that
-would be a separate, larger decision.
+`.npmrc` contains `save-exact=true`, which makes `pnpm add` write exact pins by
+default and prevents accidental range introduction. The weekly updater relies on
+this when bumping existing pins via `pnpm add <pkg>@<latest> --save-exact`.
 
 CVE-driven patches of *transitive* dependencies use a different mechanism
 (`overrides:` in `pnpm-workspace.yaml` — see `CLAUDE.md`) but the same
@@ -174,6 +174,26 @@ separately and comparing it to the diff.
 
 Both the npm/pnpm and Python/uv flows end the same way: `./scripts/check.sh`
 must pass before the change is considered done (see `docs/quality-gate.md`).
+
+### Why Python uses floors instead of exact pins
+
+`pyproject.toml` keeps lower-bound ranges (`>=`) for direct dependencies rather
+than exact pins (`==`). This is an intentional design decision, not an
+omission.
+
+npm/pnpm exact pins exist to recover a per-version audit trail in `package.json`
+diffs, because a range-plus-lockfile bump is visible only in `pnpm-lock.yaml`
+(no one-liner change to show the reviewer). `uv.lock` does not have this
+problem: it includes both the resolved version and its hashes, so the PR diff
+already provides the same audit signal that an exact pin in `package.json`
+would add. Pinning `==` in `pyproject.toml` would give a redundant one-liner on
+top of a diff you already have, while breaking `uv lock --upgrade-package`
+(the floor form lets uv move; the exact pin makes it a no-op, requiring a
+`pyproject.toml` edit before every upgrade).
+
+`constraint-dependencies` in `[tool.uv]` use floors (`>=`) regardless — they
+express CVE-fix minima for transitive deps and must remain flexible so uv can
+satisfy cross-package constraints.
 
 ## Worked example (Python / uv)
 

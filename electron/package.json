@@ -15,15 +15,15 @@
     "dist": "tsc && electron-builder --config ../electron-builder.yml"
   },
   "dependencies": {
-    "@electron-toolkit/preload": "^3.0.0",
-    "@electron-toolkit/utils": "^3.0.0",
+    "@electron-toolkit/preload": "3.0.2",
+    "@electron-toolkit/utils": "3.0.0",
     "defuddle": "0.18.1",
-    "electron-updater": "^6.0.0"
+    "electron-updater": "6.8.3"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "electron": "^42.0.0",
-    "electron-builder": "^26.0.0",
-    "typescript": "^6.0.0"
+    "@types/node": "24.12.4",
+    "electron": "42.1.0",
+    "electron-builder": "26.8.1",
+    "typescript": "6.0.3"
   }
 }

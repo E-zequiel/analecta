@@ -208,13 +208,15 @@ def _npm_release_date(name: str, version: str) -> datetime | None:
         return None
 
 
-def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped], bool]:
-    """Check and apply Node dependency updates via pnpm."""
-    print("\n=== Node (pnpm) ===")
+def update_node(
+    cooldown: int, workspace: str
+) -> tuple[list[Updated], list[Skipped], bool]:
+    """Check and apply Node dependency updates via pnpm for a given workspace."""
+    print(f"\n=== Node (pnpm) — {workspace} ===")
 
     # pnpm outdated exits 1 when packages are outdated — capture regardless
     result = _run(
-        ["pnpm", "outdated", "--json", "--filter", "frontend"],
+        ["pnpm", "outdated", "--json", "--filter", workspace],
         cwd=REPO_ROOT,
     )
     if result.returncode not in {0, 1}:
@@ -247,13 +249,13 @@ def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped], bool]:
 
     for name, info in sorted(outdated.items()):
         current: str = cast(str, info.get("current", ""))
-        wanted: str = cast(str, info.get("wanted", ""))
-        if not wanted or wanted == current:
+        latest: str = cast(str, info.get("latest", ""))
+        if not latest or latest == current:
             continue
-        print(f"  {name}: {current} -> {wanted}")
+        print(f"  {name}: {current} -> {latest}")
 
         fetch_attempted += 1
-        release_dt = _npm_release_date(name, wanted)
+        release_dt = _npm_release_date(name, latest)
         if release_dt is None:
             print("    [warn] release date unavailable, skipping")
             continue
@@ -261,16 +263,19 @@ def update_node(cooldown: int) -> tuple[list[Updated], list[Skipped], bool]:
         if not _age_ok(release_dt, cooldown):
             days_old = (datetime.now(UTC) - release_dt).days
             print(f"    [skip] {days_old}d old (cooldown: {cooldown}d)")
-            skipped.append((name, wanted, release_dt))
+            skipped.append((name, latest, release_dt))
             continue
 
-        result = _run(["pnpm", "update", name, "--filter", "frontend"], cwd=REPO_ROOT)
+        result = _run(
+            ["pnpm", "add", f"{name}@{latest}", "--save-exact", "--filter", workspace],
+            cwd=REPO_ROOT,
+        )
         if result.returncode != 0:
-            print(f"::error::{name}: pnpm update failed — {result.stderr.strip()}")
+            print(f"::error::{name}: pnpm add failed — {result.stderr.strip()}")
             had_error = True
         else:
             print("    [ok] updated")
-            updated.append((name, current, wanted))
+            updated.append((name, current, latest))
 
     if fetch_attempted > 0 and fetch_ok == 0:
         print("::error::All npm registry fetches failed — no packages could be checked")
@@ -368,7 +373,11 @@ def main() -> None:
     pnpm_snap: bytes | None = pnpm_lock_path.read_bytes() if verify else None
 
     py_up, py_sk, py_err = update_python(cooldown)
-    nd_up, nd_sk, nd_err = update_node(cooldown)
+    nd_up_fe, nd_sk_fe, nd_err_fe = update_node(cooldown, "frontend")
+    nd_up_el, nd_sk_el, nd_err_el = update_node(cooldown, "analecta-electron")
+    nd_up = nd_up_fe + nd_up_el
+    nd_sk = nd_sk_fe + nd_sk_el
+    nd_err = nd_err_fe or nd_err_el
 
     total_up = len(py_up) + len(nd_up)
     total_sk = len(py_sk) + len(nd_sk)

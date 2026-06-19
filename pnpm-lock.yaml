@@ -46,29 +46,29 @@ importers:
   electron:
     dependencies:
       '@electron-toolkit/preload':
-        specifier: ^3.0.0
+        specifier: 3.0.2
         version: 3.0.2(electron@42.1.0)
       '@electron-toolkit/utils':
-        specifier: ^3.0.0
+        specifier: 3.0.0
         version: 3.0.0(electron@42.1.0)
       defuddle:
         specifier: 0.18.1
         version: 0.18.1
       electron-updater:
-        specifier: ^6.0.0
+        specifier: 6.8.3
         version: 6.8.3
     devDependencies:
       '@types/node':
-        specifier: ^24.0.0
+        specifier: 24.12.4
         version: 24.12.4
       electron:
-        specifier: ^42.0.0
+        specifier: 42.1.0
         version: 42.1.0
       electron-builder:
-        specifier: ^26.0.0
+        specifier: 26.8.1
         version: 26.8.1(electron-builder-squirrel-windows@26.8.1)
       typescript:
-        specifier: ^6.0.0
+        specifier: 6.0.3
         version: 6.0.3
 
   frontend:
@@ -2653,7 +2653,7 @@ snapshots:
       fs-extra: 10.1.0
       isbinaryfile: 4.0.10
       minimist: 1.2.8
-      plist: 3.1.0
+      plist: 3.1.1
     transitivePeerDependencies:
       - supports-color
 
@@ -2676,7 +2676,7 @@ snapshots:
       dir-compare: 4.2.0
       fs-extra: 11.3.5
       minimatch: 9.0.9
-      plist: 3.1.0
+      plist: 3.1.1
     transitivePeerDependencies:
       - supports-color
 
@@ -3235,8 +3235,7 @@ snapshots:
 
   '@xmldom/xmldom@0.8.13': {}
 
-  '@xmldom/xmldom@0.9.10':
-    optional: true
+  '@xmldom/xmldom@0.9.10': {}
 
   abbrev@4.0.0: {}
 
@@ -4005,7 +4004,7 @@ snapshots:
       es6-error: 4.1.1
       matcher: 3.0.0
       roarr: 2.15.4
-      semver: 7.7.4
+      semver: 7.8.0
       serialize-error: 7.0.1
     optional: true
 
@@ -4414,14 +4413,14 @@ snapshots:
 
   node-abi@4.31.0:
     dependencies:
-      semver: 7.7.4
+      semver: 7.8.0
 
   node-addon-api@1.7.2:
     optional: true
 
   node-api-version@0.2.1:
     dependencies:
-      semver: 7.7.4
+      semver: 7.8.0
 
   node-gyp@12.4.0:
     dependencies:
@@ -4508,7 +4507,6 @@ snapshots:
       '@xmldom/xmldom': 0.9.10
       base64-js: 1.5.1
       xmlbuilder: 15.1.1
-    optional: true
 
   postcss-load-config@3.1.4(postcss@8.5.14):
     dependencies:
