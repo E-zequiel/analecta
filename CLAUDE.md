@@ -277,7 +277,7 @@ Single distribution channel: **Electron bundle** (`.deb` / `.rpm` / `.AppImage`)
 | `/test` | `cd backend && mise exec -- uv run pytest -v` |
 | `/build` | `mise exec -- pnpm dist` |
 
-**Task workflow:** after completing each planned task, run `mise exec -- ./scripts/check.sh` to verify the quality gate, then suggest a conventional commit message. The user commits manually — never run git commands.
+**Task workflow:** after completing each planned task, run `mise exec -- ./scripts/check.sh` to verify the quality gate, then suggest a conventional commit message.
 
 ---
 
@@ -310,5 +310,5 @@ Single source of truth: **BSM** (Web App / `bws`).
 - Every direct npm dependency is pinned to an exact version (never a range). `.npmrc` enforces this via `save-exact=true`. Verify with `mise exec -- pnpm view <pkg>@<version> dist.integrity` before install, then cross-check against `pnpm-lock.yaml` after. See `docs/dependency-verification.md`.
 - For CVE-driven patches of transitive npm deps, use `overrides:` in `pnpm-workspace.yaml` with exact versions, same SHA-512 verification. Do **not** use `pnpm.overrides` in `package.json` — that field is not tracked by pnpm's staleness check and will be silently ignored. Use scoped syntax (`'parent>dep': 'version'`) when the same package is pulled in at different majors by different consumers. See `docs/dependency-verification.md`.
 - For CVE-driven patches of transitive Python deps, use `[tool.uv] constraint-dependencies` in `backend/pyproject.toml` with a version floor (e.g. `["starlette>=1.3.1"]`), then `uv lock` — no manual SHA step; `uv.lock` records and verifies hashes itself. See `docs/dependency-verification.md`.
-- Do not read `~/.config/analecta/config.toml` or any file matching the global deny rules in `~/.claude/settings.json`.
+- Do not read `~/.config/analecta/config.toml`.
 - **Python tests**: every change to `backend/src/analecta/**` must include tests in `backend/tests/` in the same commit. A `check.sh` report showing 0% coverage on new code is a blocker — add tests before moving on. TypeScript and Electron code are excluded (manual QA only).
