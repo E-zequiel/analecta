@@ -1,7 +1,7 @@
 import re
 from urllib.parse import urljoin, urlparse
 
-import httpx
+import httpx2
 
 from analecta.extraction.core import ExtractedContent, ExtractionError, SourceExtractor
 
@@ -67,7 +67,7 @@ class SubstackExtractor(SourceExtractor):
             return url
 
         try:
-            async with httpx.AsyncClient(
+            async with httpx2.AsyncClient(
                 follow_redirects=False, timeout=_TIMEOUT
             ) as client:
                 resp = await client.head(url)

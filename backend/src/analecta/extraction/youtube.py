@@ -2,7 +2,7 @@ import asyncio
 import re
 from typing import Any
 
-import httpx
+import httpx2
 from youtube_transcript_api import (
     NoTranscriptFound,
     TranscriptsDisabled,
@@ -42,7 +42,7 @@ async def _fetch_video_title(video_id: str) -> tuple[str, str | None]:
     """
     watch_url = f"https://www.youtube.com/watch?v={video_id}"
     try:
-        async with httpx.AsyncClient(headers=_HEADERS, timeout=_TIMEOUT) as client:
+        async with httpx2.AsyncClient(headers=_HEADERS, timeout=_TIMEOUT) as client:
             resp = await client.get(
                 _OEMBED_URL, params={"url": watch_url, "format": "json"}
             )

@@ -4,7 +4,7 @@ import json
 import re
 from typing import TYPE_CHECKING, Any
 
-import httpx
+import httpx2
 import trafilatura
 from bs4 import BeautifulSoup, Tag
 from readability import Document
@@ -332,7 +332,7 @@ class ArticleExtractor(SourceExtractor):
 
         Raises:
             ExtractionError: If no extraction strategy succeeds.
-            httpx.HTTPStatusError: If the server returns a non-2xx response.
+            httpx2.HTTPStatusError: If the server returns a non-2xx response.
         """
         html = await self._fetch(url)
         result = self._parse(html, url)
@@ -352,7 +352,9 @@ class ArticleExtractor(SourceExtractor):
         return result
 
     async def _fetch(self, url: str) -> str:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=_TIMEOUT) as client:
+        async with httpx2.AsyncClient(
+            follow_redirects=True, timeout=_TIMEOUT
+        ) as client:
             response = await client.get(url, headers=_HEADERS)
             response.raise_for_status()
             return response.text

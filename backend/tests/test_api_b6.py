@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 import uvicorn
 from fastapi import FastAPI
@@ -118,7 +118,7 @@ async def test_sse_receives_entry_added(tmp_path: Path, mocker: MockerFixture) -
     got_event: asyncio.Event = asyncio.Event()
 
     async def _read_sse() -> None:
-        async with httpx.AsyncClient() as c:
+        async with httpx2.AsyncClient() as c:
             async with c.stream(
                 "GET", f"{base}/api/v1/system/events", timeout=10.0
             ) as r:
@@ -131,7 +131,7 @@ async def test_sse_receives_entry_added(tmp_path: Path, mocker: MockerFixture) -
     sse_task = loop.create_task(_read_sse())
     await asyncio.sleep(0.05)  # let SSE connection subscribe before extract fires
 
-    async with httpx.AsyncClient() as c:
+    async with httpx2.AsyncClient() as c:
         r = await c.post(
             f"{base}/api/v1/extract",
             json={"url": "https://example.com/test"},

@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-import httpx
+import httpx2
 from bs4 import BeautifulSoup
 
 _HEADERS = {"User-Agent": "analecta/0.1.0 (+https://github.com/E-zequiel/analecta)"}
@@ -160,7 +160,7 @@ class AssetDownloader:
         asset_dir.mkdir(parents=True, exist_ok=True)
 
         sem = asyncio.Semaphore(_MAX_CONCURRENT)
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             follow_redirects=True, timeout=_TIMEOUT, headers=_HEADERS
         ) as client:
             results = await asyncio.gather(
@@ -202,7 +202,7 @@ class AssetDownloader:
         self,
         url: str,
         asset_dir: Path,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         sem: asyncio.Semaphore,
     ) -> str | None:
         """Download *url*, validate MIME type, and save to *asset_dir*.
@@ -210,7 +210,7 @@ class AssetDownloader:
         Args:
             url: Remote image URL.
             asset_dir: Destination directory for the downloaded file.
-            client: Shared ``httpx.AsyncClient`` instance.
+            client: Shared ``httpx2.AsyncClient`` instance.
             sem: Semaphore controlling concurrency.
 
         Returns:
