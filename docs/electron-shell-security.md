@@ -247,17 +247,17 @@ The current extraction flow is single-URL and user-initiated: the user explicitl
 - Webhook-triggered or scheduled extraction
 - Any path where a URL enters the pipeline from an external or semi-trusted source without per-URL user confirmation
 
-In all such cases, URLs arrive from sources the user does not fully control. A URL crafted to redirect to a loopback address could cause the Python sidecar's `httpx` client to inadvertently fetch internal services, since `ArticleExtractor._fetch` uses `follow_redirects=True` without a post-redirect destination filter.
+In all such cases, URLs arrive from sources the user does not fully control. A URL crafted to redirect to a loopback address could cause the Python sidecar's `httpx2` client to inadvertently fetch internal services, since `ArticleExtractor._fetch` uses `follow_redirects=True` without a post-redirect destination filter.
 
 Before shipping any feature in the list above:
 
 1. **Validate the submitted URL** against the same blocklist used in `validateScrapeUrl` (loopback, link-local, RFC 1918) before it enters `ArticleExtractor.extract()`.
-2. **Add an `httpx` response event hook** in `_fetch` that inspects the resolved URL after redirects and raises `ExtractionError` if the final destination falls within a blocked range. Example skeleton:
+2. **Add an `httpx2` response event hook** in `_fetch` that inspects the resolved URL after redirects and raises `ExtractionError` if the final destination falls within a blocked range. Example skeleton:
 
 ```python
 import ipaddress
 
-def _block_loopback_redirect(response: httpx.Response) -> None:
+def _block_loopback_redirect(response: httpx2.Response) -> None:
     host = response.url.host.strip("[]")
     try:
         addr = ipaddress.ip_address(host)

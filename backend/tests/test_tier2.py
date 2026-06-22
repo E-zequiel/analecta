@@ -14,7 +14,7 @@ def _mock_httpx(mocker, json_body: dict) -> None:
     mock_client.__aexit__ = mocker.AsyncMock(return_value=False)
     mock_client.post = mocker.AsyncMock(return_value=mock_resp)
     mocker.patch(
-        "analecta.extraction.tier2.httpx.AsyncClient", return_value=mock_client
+        "analecta.extraction.tier2.httpx2.AsyncClient", return_value=mock_client
     )
 
 
