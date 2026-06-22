@@ -1,10 +1,11 @@
-# -*- mode: python ; coding: utf-8 -*-
+# -*- mode: python -*-
 # PyInstaller spec for the Analecta sidecar (FastAPI + uvicorn, onedir mode).
-# Build: cd backend && mise exec -- uv run pyinstaller backend.spec --distpath ../src-tauri/binaries
+# Build (from backend/):
+#   mise exec -- uv run pyinstaller backend.spec --distpath ../binaries
 
-from PyInstaller.utils.hooks import collect_data_files  # noqa: E402
+from PyInstaller.utils.hooks import collect_data_files
 
-a = Analysis(
+a = Analysis(  # pyright: ignore[reportUndefinedVariable]
     ['src/analecta/__main__.py'],
     pathex=['src'],
     binaries=[],
@@ -23,7 +24,11 @@ a = Analysis(
         'markdownify',
         'markdown_it',
         'youtube_transcript_api',
-        'httpx',
+        'httpx2',
+        'httpcore2',
+        # truststore selects _openssl/_macos/_windows at runtime via sys.platform;
+        # static analysis cannot see the conditional import.
+        'truststore',
         'sse_starlette',
         # uvicorn lazy-loads its protocol/loop implementations at startup
         'uvicorn.logging',
@@ -54,9 +59,9 @@ a = Analysis(
     optimize=0,
 )
 
-pyz = PYZ(a.pure)
+pyz = PYZ(a.pure)  # pyright: ignore[reportUndefinedVariable]
 
-exe = EXE(
+exe = EXE(  # pyright: ignore[reportUndefinedVariable]
     pyz,
     a.scripts,
     [],
@@ -74,7 +79,7 @@ exe = EXE(
     entitlements_file=None,
 )
 
-coll = COLLECT(
+coll = COLLECT(  # pyright: ignore[reportUndefinedVariable]
     exe,
     a.binaries,
     a.zipfiles,
