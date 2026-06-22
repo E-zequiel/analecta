@@ -565,7 +565,7 @@
 	}
 
 	kbd {
-		font-family: var(--font-family);
+		font-family: var(--font-ui-family);
 		font-size: 0.62rem;
 		background: var(--bg-highlight);
 		border: 1px solid var(--terminal);
