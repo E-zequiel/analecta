@@ -44,7 +44,7 @@ jobs:
       - name: Check for lock file changes
         id: changes
         run: |
-          git diff --quiet -- backend/uv.lock pnpm-lock.yaml \
+          git diff --quiet -- backend/uv.lock pnpm-lock.yaml frontend/package.json electron/package.json \
             && echo "changed=false" >> "$GITHUB_OUTPUT" \
             || echo "changed=true" >> "$GITHUB_OUTPUT"
 
@@ -60,6 +60,8 @@ jobs:
           path: |
             backend/uv.lock
             pnpm-lock.yaml
+            frontend/package.json
+            electron/package.json
             pr-body.md
           retention-days: 1
 
@@ -86,7 +88,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           BRANCH="deps-update/$(date -u +%Y-%m-%d)"
           git checkout -B "$BRANCH"
-          git add backend/uv.lock pnpm-lock.yaml
+          git add backend/uv.lock pnpm-lock.yaml frontend/package.json electron/package.json
           git commit -m "chore(deps): weekly dependency update $(date -u +%Y-%m-%d)"
           git push --force-with-lease origin "$BRANCH"
           gh pr create \

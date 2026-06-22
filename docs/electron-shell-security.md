@@ -226,7 +226,7 @@ In `electron/preload/index.ts`, add the new channel name to `ALLOWED_CHANNELS`. 
 Every argument received from the renderer is untrusted. Use `isObject()`, `typeof`, and range checks before any filesystem, shell, or system call. Never pass renderer-supplied strings directly to `fs`, `shell`, `dialog`, or `spawn` without validation.
 
 **3. Apply `assertVaultPath()` to any filesystem path.**  
-Any handler that reads or writes a file path supplied by the renderer must call `assertVaultPath(path)` or `assertExistsPath(path)`. The only exception is paths selected by the user through `dialog.showOpenDialog` — those are implicitly authorized by the user action and are tracked via `addAllowedFontPath()`.
+Any handler that reads or writes a file path supplied by the renderer must call `assertVaultPath(path)` or `assertExistsPath(path)`. The only exception is paths selected by the user through `dialog.showOpenDialog` — those are implicitly authorized by the user action.
 
 **4. Use the narrowest possible permission.**  
 If a handler only needs to read a file, do not also write. If a handler only needs a boolean existence check, use `assertExistsPath` (not `assertVaultPath`, which is more restrictive). Principle of least privilege applies within the main process too.

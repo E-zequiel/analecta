@@ -235,7 +235,6 @@
 					updateVaultScope(cfg.vault_path).catch(() => {});
 					applyFont(
 						cfg.font_variant,
-						cfg.custom_font_path,
 						cfg.ui_font_size,
 						cfg.reading_font_size,
 						cfg.theme,

@@ -31,7 +31,7 @@ List the files, then read each one.
 
 ### Step 2: Check each file for the following issues
 
-#### 2a. Unpinned CLI tool execution
+#### Unpinned CLI tool execution
 
 Grep for patterns that download and execute a package from the npm registry at run time:
 
@@ -51,9 +51,9 @@ curl -sL https://registry.npmjs.org/<pkg>/-/<pkg>-<version>.tgz \
 
 Only pin to a version that has a verified tag in the tool's GitHub repository. npm versions without a corresponding GitHub tag are unverifiable — use the last verified release instead.
 
-**Scope of this check:** the tarball comparison detects the case where a maintainer's npm account is compromised and they publish a malicious version to npm *without* creating a corresponding git tag — the npm tarball diverges from the source. It does **not** protect against a registry-level compromise where both the tarball and its hash are served consistently; verifying a tarball against the same registry that served it is circular. For that threat, npm provenance attestations (check 2h) are the correct control.
+**Scope of this check:** the tarball comparison detects the case where a maintainer's npm account is compromised and they publish a malicious version to npm *without* creating a corresponding git tag — the npm tarball diverges from the source. It does **not** protect against a registry-level compromise where both the tarball and its hash are served consistently; verifying a tarball against the same registry that served it is circular. For that threat, see the Provenance verification infrastructure check.
 
-#### 2b. Unpinned action references
+#### Unpinned action references
 
 ```bash
 grep -n "uses:" .github/workflows/*.yml | grep -v "@[0-9a-f]\{40\}"
@@ -80,7 +80,7 @@ curl -s "https://api.github.com/repos/{owner}/{repo}/git/tags/{sha}" \
 
 Severity: **MEDIUM** (becomes HIGH if the action has access to `secrets.*` and its maintainer account could be compromised).
 
-#### 2c. Missing workflow-level `permissions: {}`
+#### Missing workflow-level `permissions: {}`
 
 Check whether each workflow file has `permissions: {}` at the top level (before the `jobs:` key). Without it, GitHub defaults the `GITHUB_TOKEN` to `contents: write` in every job, giving any compromised step write access to repository code.
 
@@ -96,7 +96,7 @@ jobs:
 
 Severity: **MEDIUM**
 
-#### 2d. `id-token: write` without clear purpose
+#### Unnecessary `id-token: write`
 
 Flag any job that declares `id-token: write`. This grants the job an OIDC token that can be used to authenticate as the repository to cloud providers (AWS, GCP, Azure). If the workflow doesn't use Trusted Publishing or cloud OIDC authentication, it's unnecessary exposure.
 
@@ -104,7 +104,7 @@ Note it, explain what it enables, and ask the user whether it is intentional.
 
 Severity: **LOW–MEDIUM** depending on whether cloud credentials are in scope.
 
-#### 2e. Missing repository guard on sensitive jobs
+#### Missing repository guard on sensitive jobs
 
 Flag jobs that create GitHub Releases, push code or tags, comment on PRs with `GITHUB_TOKEN`, or access secrets via `sm-action` or similar — without an `if: github.repository == 'owner/repo'` guard.
 
@@ -112,7 +112,7 @@ Without this guard, a fork of the repository can trigger these jobs. Depending o
 
 Severity: **MEDIUM**
 
-#### 2f. `cancel-in-progress: true` on release workflows
+#### `cancel-in-progress: true` on release workflows
 
 Flag release workflows (those triggered by version tags) where `cancel-in-progress: true` is set. Cancelling a release job mid-run leaves the GitHub Release in a broken state — some assets uploaded, some missing — requiring manual cleanup.
 
@@ -120,7 +120,7 @@ Release jobs should use `cancel-in-progress: false`.
 
 Severity: **LOW**
 
-#### 2g. Missing `packageManager` field (pnpm projects)
+#### Missing `packageManager` field (pnpm projects)
 
 For repositories using pnpm, check whether `package.json` at the workspace root declares a `packageManager` field with a corepack SHA:
 
@@ -137,7 +137,7 @@ corepack use pnpm@<version>
 
 Severity: **LOW**
 
-#### 2h. Missing lifecycle script restriction (pnpm projects)
+#### Missing lifecycle script restriction (pnpm projects)
 
 Check whether `pnpm-workspace.yaml` restricts which packages are allowed to run install-time lifecycle scripts (`preinstall`, `install`, `postinstall`):
 
@@ -165,55 +165,34 @@ import json, os
 
 Severity: **MEDIUM** (install-time RCE vector for any package that runs an unrestricted postinstall)
 
-### Step 3: Cross-check lockfile coverage
+#### Provenance verification infrastructure
 
-For any `pnpm exec <tool>` or `npx --no-install <tool>` calls found (the already-correct patterns), verify the tool is actually present in the lockfile — a missing entry causes a silent runtime failure:
+Check that the npm SLSA provenance attestation verification setup (Control 10 in `docs/github-actions-security.md`) is intact:
 
 ```bash
-grep "^  <tool>@" pnpm-lock.yaml      # pnpm
-grep '"<tool>"' package-lock.json     # npm/yarn
+# requirements-provenance.lock must exist and be tracked in git
+git ls-files scripts/requirements-provenance.lock
+
+# .venv-provenance/ must be gitignored
+grep "\.venv-provenance" .gitignore
+
+# verify-provenance job must exist in CI
+grep "verify-provenance" .github/workflows/ci.yml
+
+# sigstore must be pinned in the lock file
+grep "^sigstore==" scripts/requirements-provenance.lock
 ```
 
-### Step 4: Report
+| Finding | Severity | Remediation |
+|---|---|---|
+| `requirements-provenance.lock` not committed | MEDIUM | Regenerate: `echo "sigstore==4.2.0" \| uv pip compile --generate-hashes - -o scripts/requirements-provenance.lock` |
+| `verify-provenance` job missing from `ci.yml` | MEDIUM | Re-add the job — see `docs/github-actions-security.md` Control 10 |
+| `.venv-provenance/` not in `.gitignore` | LOW | Add `.venv-provenance/` to `.gitignore` |
+| `sigstore` not pinned (version range instead of `==`) | LOW | Pin to exact version in lock file |
 
-Produce the findings table, clean file list, and summary.
+**Context:** `scripts/verify-provenance.py` verifies Sigstore provenance attestations for ~13% of installed npm packages (those that publish them). It cross-checks the attested subject SHA-512 against `pnpm-lock.yaml` (independent of registry) and verifies the Sigstore bundle against Rekor + Fulcio. See `docs/github-actions-security.md` Control 10 for the full threat model and residual gap table.
 
----
-
-## Output format
-
-```
-## CI Security Audit — <project>
-
-### Findings
-
-| Severity | File | Job | Step | Issue | Remediation |
-|----------|------|-----|------|-------|-------------|
-| HIGH     | ci.yml | socket | Socket scan | `pnpm dlx socket ci` runs with `SOCKET_SECURITY_API_TOKEN` in env | Pin `socket` as devDependency; replace with `pnpm exec socket ci` |
-| MEDIUM   | release.yml | build | checkout | `uses: actions/checkout@v4` (mutable tag) | Pin to full SHA: `actions/checkout@<sha>  # v4.x.y` |
-
-### Clean files
-- (workflow files with no findings)
-
-### Summary
-(One paragraph: overall posture, most critical issue, top recommendation.)
-```
-
-**Severity scale:**
-
-| Level | Meaning |
-|-------|---------|
-| HIGH | Unpinned CLI tool in a step that has secrets in environment scope |
-| MEDIUM | Unpinned action ref, missing permissions guard, missing repo guard on a job that writes or accesses secrets, missing lifecycle script restriction |
-| LOW | `cancel-in-progress: true` on release, `id-token: write` without apparent need, missing `packageManager` SHA field |
-
----
-
-## After the audit
-
-Once findings are reported, offer to remediate. Always confirm with the user before editing any workflow file. For `pnpm dlx` → `pnpm exec` migrations, follow the full pinning + hash-verification procedure in check 2a: install the devDependency, verify the SHA-512, then update the workflow.
-
-#### 2j. Scan ordering: scan before lifecycle scripts
+#### Scan ordering: scan before lifecycle scripts
 
 Check that the Socket scan job installs with `--ignore-scripts`, that downstream jobs are gated on socket approval, and that `deps-update.yml`'s install step also skips scripts.
 
@@ -253,9 +232,9 @@ The `|| 'skipped'` clause is required: on `push` to `main`, the `socket` job doe
 
 **Why `!cancelled()` and not `always()`:** `always()` fires the job even on a cancelled run. `!cancelled()` lets the job run normally (including when socket is skipped) but suppresses it on cancellation.
 
-**`--ignore-scripts` in `deps-update.yml`:** The update workflow holds the highest-privilege token (`contents: write` + `pull-requests: write`). Its initial `pnpm install --frozen-lockfile --ignore-scripts` step blocks `electron`'s binary download (the only script permitted by `allowBuilds`) because the job only needs `pnpm outdated`/`pnpm update` tooling — the Electron binary is not required there.
+**`--ignore-scripts` in `deps-update.yml`:** The update workflow holds the highest-privilege token (`contents: write` + `pull-requests: write`). Its initial `pnpm install --frozen-lockfile --ignore-scripts` step blocks `electron`'s binary download (the only script permitted by `allowBuilds`) because the job only needs `pnpm outdated` and the `pnpm add` calls in `deps_update.py` — the Electron binary is not required there.
 
-**Local limitation:** `pnpm update` (called by `scripts/deps_update.py` for Node updates) has no `--lockfile-only` flag — it updates both `pnpm-lock.yaml` and `node_modules` in one step. `electron`'s postinstall may therefore run before `socket-audit.sh` can scan the updated lockfile. The compensating control is to run `./scripts/socket-audit.sh` immediately after `deps_update.py`, before committing or pushing. CI is the hard enforcement gate; local is advisory.
+**Local limitation:** `scripts/deps_update.py` calls `pnpm add <pkg>@<latest> --save-exact` for each outdated Node package. This command supports `--ignore-scripts` but the script does not pass it — `electron`'s postinstall may therefore run before `socket-audit.sh` can scan the updated lockfile. The compensating control is to run `./scripts/socket-audit.sh` immediately after `deps_update.py`, before committing or pushing. CI is the hard enforcement gate; local is advisory.
 
 **Branch protection (manual):** For `needs: [socket]` to block merges, add `socket` as a required status check in GitHub → Settings → Branches → `main`. A skipped required check is treated as "not passed."
 
@@ -263,7 +242,7 @@ The `|| 'skipped'` clause is required: on `push` to `main`, the `socket` job doe
 
 Severity: **MEDIUM** (gap: a compromised `allowBuilds`-listed package's postinstall runs before the scan; `--ignore-scripts` closes this for CI, advisory workflow mitigates it locally)
 
-#### 2k. Dependabot PR secret-access pattern
+#### Dependabot PR secret-access pattern
 
 When a `pull_request`-triggered job passes a fork guard (`head.repo.full_name == github.repository`) but contains steps that access secrets — via `bitwarden/sm-action`, `secrets.*`, or a similar injector — check whether those steps have a step-level Dependabot guard:
 
@@ -292,11 +271,11 @@ grep -n "head.repo.full_name\|sm-action\|secrets\." .github/workflows/*.yml
 
 **`[bot]` spoofability:** The `[bot]` suffix is reserved for GitHub App accounts and cannot be registered as a regular user. This condition cannot be spoofed.
 
-**Analecta instance:** `ci.yml` → `socket` job. The `bitwarden/sm-action` and `socket ci --org Ezequiel --no-interactive` steps carry `if: github.event.pull_request.user.login != 'dependabot[bot]'`. `--org Ezequiel` is required: without it the CLI calls the org-list endpoint on every run, which can timeout and fail the scan before any files are analysed. `--no-interactive` ensures any future prompt fails fast with a non-zero exit. The Socket GitHub App (native integration) provides scan coverage for Dependabot PRs independently of `BWS_ACCESS_TOKEN`. For CLI-level enforcement before merging a Dependabot PR, use `socket-manual.yml` (see check 2l).
+**Analecta instance:** `ci.yml` → `socket` job. The `bitwarden/sm-action` and `socket ci --org Ezequiel --no-interactive` steps carry `if: github.event.pull_request.user.login != 'dependabot[bot]'`. `--org Ezequiel` is required: without it the CLI calls the org-list endpoint on every run, which can timeout and fail the scan before any files are analysed. `--no-interactive` ensures any future prompt fails fast with a non-zero exit. The Socket GitHub App (native integration) provides scan coverage for Dependabot PRs independently of `BWS_ACCESS_TOKEN`. For CLI-level enforcement before merging a Dependabot PR, use `socket-manual.yml` (see `workflow_dispatch` ref-trust check).
 
 Severity: **MEDIUM** (Dependabot PRs cause required-check failures; fails CI without compromising secrets)
 
-#### 2l. `workflow_dispatch` ref-trust
+#### `workflow_dispatch` ref-trust
 
 When a workflow triggered by `workflow_dispatch` accesses secrets and uses `actions/checkout` without `ref: ${{ inputs.<name> }}`:
 
@@ -339,35 +318,50 @@ With this pattern the user dispatches the workflow *on `main`*, not on the targe
 
 Severity: **MEDIUM** (a branch that modifies the workflow could run with secret access when dispatched directly; mitigated if dispatch is manually supervised and restricted to write-access users)
 
----
+### Step 3: Cross-check lockfile coverage
 
-## Analecta-specific checks (2i)
-
-Run these in addition to 2a–2h when auditing this repository.
-
-#### 2i. Provenance verification infrastructure
-
-Check that the npm provenance attestation verification setup (Control 10) is intact:
+For any `pnpm exec <tool>` or `npx --no-install <tool>` calls found (the already-correct patterns), verify the tool is actually present in the lockfile — a missing entry causes a silent runtime failure:
 
 ```bash
-# requirements-provenance.lock must exist and be tracked in git
-git ls-files scripts/requirements-provenance.lock
-
-# .venv-provenance/ must be gitignored
-grep "\.venv-provenance" .gitignore
-
-# verify-provenance job must exist in CI
-grep "verify-provenance" .github/workflows/ci.yml
-
-# sigstore must be pinned in the lock file
-grep "^sigstore==" scripts/requirements-provenance.lock
+grep "^  <tool>@" pnpm-lock.yaml      # pnpm
+grep '"<tool>"' package-lock.json     # npm/yarn
 ```
 
-| Finding | Severity | Remediation |
-|---|---|---|
-| `requirements-provenance.lock` not committed | MEDIUM | Regenerate: `echo "sigstore==4.2.0" \| uv pip compile --generate-hashes - -o scripts/requirements-provenance.lock` |
-| `verify-provenance` job missing from `ci.yml` | MEDIUM | Re-add the job — see `docs/github-actions-security.md` Control 10 |
-| `.venv-provenance/` not in `.gitignore` | LOW | Add `.venv-provenance/` to `.gitignore` |
-| `sigstore` not pinned (version range instead of `==`) | LOW | Pin to exact version in lock file |
+### Step 4: Report
 
-**Context:** `scripts/verify-provenance.py` verifies Sigstore provenance attestations for the 52/386 installed npm packages (13%) that publish them. It cross-checks the attested subject SHA-512 against `pnpm-lock.yaml` (independent of registry) and verifies the Sigstore bundle against Rekor + Fulcio. See `docs/github-actions-security.md` Control 10 for full threat model and residual gap documentation.
+Produce the findings table, clean file list, and summary.
+
+---
+
+## Output format
+
+```
+## CI Security Audit — <project>
+
+### Findings
+
+| Severity | File | Job | Step | Issue | Remediation |
+|----------|------|-----|------|-------|-------------|
+| HIGH     | ci.yml | socket | Socket scan | `pnpm dlx socket ci` runs with `SOCKET_SECURITY_API_TOKEN` in env | Pin `socket` as devDependency; replace with `pnpm exec socket ci` |
+| MEDIUM   | release.yml | build | checkout | `uses: actions/checkout@v4` (mutable tag) | Pin to full SHA: `actions/checkout@<sha>  # v4.x.y` |
+
+### Clean files
+- (workflow files with no findings)
+
+### Summary
+(One paragraph: overall posture, most critical issue, top recommendation.)
+```
+
+**Severity scale:**
+
+| Level | Meaning |
+|-------|---------|
+| HIGH | Unpinned CLI tool in a step that has secrets in environment scope |
+| MEDIUM | Unpinned action ref · missing permissions guard · missing repository guard on a sensitive job · missing lifecycle script restriction · scan ordering gap (`--ignore-scripts` absent) · Dependabot PR secret-access gap · `workflow_dispatch` ref-trust gap |
+| LOW | `cancel-in-progress: true` on release · unnecessary `id-token: write` · missing `packageManager` SHA field · provenance infrastructure issues |
+
+---
+
+## After the audit
+
+Once findings are reported, offer to remediate. Always confirm with the user before editing any workflow file. For `pnpm dlx` → `pnpm exec` migrations, follow the full pinning + hash-verification procedure in the Unpinned CLI tool execution check: install the devDependency, verify the SHA-512, then update the workflow.

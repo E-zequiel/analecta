@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from analecta.config import AppConfig, load_config
 
-VALID_FONT_VARIANTS = {"regular", "nerd", "custom"}
+VALID_FONT_VARIANTS = {"regular", "bricolage"}
 VALID_UPDATE_CHANNELS = {"stable", "dev"}
 
 

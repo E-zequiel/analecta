@@ -14,7 +14,7 @@
 	import { createRenderer } from '$lib/markdown/renderer';
 	import '$lib/markdown/tokyo-night.css';
 	import '$lib/markdown/shiki-classes.css';
-	import { lastViewedId } from '$lib/stores/ui';
+	import { lastViewedId, pendingScrollRestore } from '$lib/stores/ui';
 	import { ensureEntryTab, closeTab } from '$lib/stores/tabs';
 	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
 	import { showContextMenu } from '$lib/stores/contextMenu';
@@ -79,7 +79,7 @@
 	const charCount = $derived(source.replace(/^---[\s\S]*?---\n?/, '').trim().length);
 
 	let contentEl = $state<HTMLElement | null>(null);
-	let readingFontSize = $state(17);
+	let readingFontSize = $state(18);
 
 	$effect(() => {
 		function handleKeydown(e: KeyboardEvent) {
@@ -203,6 +203,16 @@
 		if (changed && changed.id === untrack(() => entryId)) {
 			entry = changed;
 		}
+	});
+
+	// Restore scroll position when returning from Settings.
+	$effect(() => {
+		const restore = $pendingScrollRestore;
+		if (restore === null || !html || !contentEl) return;
+		requestAnimationFrame(() => {
+			if (contentEl) contentEl.scrollTop = restore;
+			pendingScrollRestore.set(null);
+		});
 	});
 
 	// Config is stable across entries — fetch once on mount.

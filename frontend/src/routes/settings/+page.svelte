@@ -14,16 +14,15 @@
 
 	let form = $state({
 		vault_path: '',
-		font_variant: 'regular' as 'regular' | 'nerd' | 'custom',
+		font_variant: 'regular' as 'regular' | 'bricolage',
 		ui_font_size: 17.0,
-		reading_font_size: 17.0,
+		reading_font_size: 18.0,
 		update_channel: 'stable' as 'stable' | 'dev',
 		theme: 'dark' as 'dark' | 'light',
 		accent_color: 'yellow' as 'red' | 'yellow' | 'green' | 'cyan',
 		close_to_tray: true,
 	});
 	let initialVaultPath = $state('');
-	let customFontPath = $state('');
 	let error = $state('');
 
 	// Per-field saved indicators
@@ -52,10 +51,9 @@
 		node.select();
 	}
 
-	function applyCurrentFont(): Promise<void> {
-		return applyFont(
+	function applyCurrentFont(): void {
+		applyFont(
 			form.font_variant,
-			customFontPath || null,
 			form.ui_font_size,
 			form.reading_font_size,
 			form.theme,
@@ -107,7 +105,6 @@
 				close_to_tray: cfg.close_to_tray,
 			};
 			initialVaultPath = cfg.vault_path;
-			customFontPath = cfg.custom_font_path ?? '';
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		}
@@ -152,23 +149,10 @@
 	async function autoSaveFontVariant() {
 		try {
 			await applyCurrentFont();
-			await configApi.update({
-				font_variant: form.font_variant,
-				custom_font_path: customFontPath || null,
-			});
+			await configApi.update({ font_variant: form.font_variant });
 			flash((v) => (fontVariantSaved = v));
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
-		}
-	}
-
-	async function browseFont() {
-		const selected = await openDialog({
-			filters: [{ name: 'TrueType Font', extensions: ['ttf'] }],
-		});
-		if (typeof selected === 'string') {
-			customFontPath = selected;
-			await autoSaveFontVariant();
 		}
 	}
 
@@ -285,8 +269,7 @@
 				</label>
 				<select id="font-variant" bind:value={form.font_variant} onchange={autoSaveFontVariant}>
 					<option value="regular">JetBrains Mono</option>
-					<option value="nerd">Inconsolata Nerd Font</option>
-					<option value="custom">Custom…</option>
+					<option value="bricolage">Bricolage Grotesque</option>
 				</select>
 			</div>
 			<div class="field">
@@ -373,21 +356,6 @@
 					{/if}
 				</div>
 			</div>
-			{#if form.font_variant === 'custom'}
-				<div class="field">
-					<label for="custom-font-path">Font file (.ttf)</label>
-					<div class="path-row">
-						<input
-							id="custom-font-path"
-							type="text"
-							readonly
-							placeholder="No font selected"
-							value={customFontPath}
-						/>
-						<button onclick={browseFont}>Browse…</button>
-					</div>
-				</div>
-			{/if}
 		</section>
 
 		<section>
@@ -560,6 +528,11 @@
 
 	.sp-group {
 		margin-bottom: 1.1rem;
+		display: grid;
+		grid-template-columns: auto 1fr;
+		column-gap: 0.6rem;
+		row-gap: 4px;
+		align-items: center;
 	}
 
 	.sp-group:last-child {
@@ -567,22 +540,19 @@
 	}
 
 	.sp-group-label {
+		grid-column: 1 / -1;
 		font-size: 0.62rem;
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
 		color: var(--fg-muted);
-		margin: 0 0 0.4rem;
+		margin: 0 0 0.3rem;
 		padding-bottom: 3px;
 		border-bottom: 1px solid var(--border);
 	}
 
 	.sp-row {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		gap: 0.6rem;
-		align-items: center;
-		padding: 3px 0;
+		display: contents;
 	}
 
 	.sp-keys {
@@ -591,19 +561,25 @@
 		gap: 2px;
 	}
 
+	.sp-keys:has(> kbd:only-child) kbd {
+		flex: 1;
+		text-align: center;
+	}
+
 	.sp-desc {
 		font-size: 0.72rem;
 		color: var(--fg-dark);
 	}
 
 	kbd {
-		font-family: var(--font-family);
+		font-family: var(--font-ui-family);
 		font-size: 0.62rem;
+		letter-spacing: 0.05em;
 		background: var(--bg-highlight);
 		border: 1px solid var(--terminal);
 		border-bottom-width: 2px;
 		border-radius: 3px;
-		padding: 1px 5px;
+		padding: 1px 6px;
 		color: var(--fg-dark);
 		white-space: nowrap;
 		display: inline-block;
