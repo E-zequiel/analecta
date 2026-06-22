@@ -220,7 +220,7 @@ async def test_fetch_video_title_returns_title_and_author(mocker):
     mock_client = mocker.AsyncMock()
     mock_client.__aenter__.return_value.get = mocker.AsyncMock(return_value=mock_resp)
     mocker.patch(
-        "analecta.extraction.youtube.httpx.AsyncClient", return_value=mock_client
+        "analecta.extraction.youtube.httpx2.AsyncClient", return_value=mock_client
     )
     title, author = await _fetch_video_title("dQw4w9WgXcQ")
     assert title == "Never Gonna Give You Up"
@@ -229,14 +229,14 @@ async def test_fetch_video_title_returns_title_and_author(mocker):
 
 @pytest.mark.asyncio
 async def test_fetch_video_title_falls_back_on_http_error(mocker):
-    import httpx
+    import httpx2
 
     mock_client = mocker.AsyncMock()
     mock_client.__aenter__.return_value.get = mocker.AsyncMock(
-        side_effect=httpx.HTTPError("timeout")
+        side_effect=httpx2.HTTPError("timeout")
     )
     mocker.patch(
-        "analecta.extraction.youtube.httpx.AsyncClient", return_value=mock_client
+        "analecta.extraction.youtube.httpx2.AsyncClient", return_value=mock_client
     )
     title, author = await _fetch_video_title("dQw4w9WgXcQ")
     assert title == "YouTube: dQw4w9WgXcQ"
@@ -285,7 +285,7 @@ async def test_substack_extractor_resolves_inbox_url(mocker):
     mock_client = mocker.AsyncMock()
     mock_client.__aenter__.return_value.head = mocker.AsyncMock(return_value=mock_resp)
     mocker.patch(
-        "analecta.extraction.social.httpx.AsyncClient", return_value=mock_client
+        "analecta.extraction.social.httpx2.AsyncClient", return_value=mock_client
     )
     mocker.patch.object(ArticleExtractor, "_fetch", return_value=_ARTICLE_HTML)
 
@@ -297,7 +297,7 @@ async def test_substack_extractor_resolves_inbox_url(mocker):
 @pytest.mark.asyncio
 async def test_substack_extractor_canonical_url_skips_head_request(mocker):
     """Canonical *.substack.com URLs bypass the HEAD redirect step."""
-    mock_client_class = mocker.patch("analecta.extraction.social.httpx.AsyncClient")
+    mock_client_class = mocker.patch("analecta.extraction.social.httpx2.AsyncClient")
     mocker.patch.object(ArticleExtractor, "_fetch", return_value=_ARTICLE_HTML)
 
     await SubstackExtractor().extract("https://example.substack.com/p/test")
@@ -312,7 +312,7 @@ async def test_substack_extractor_inbox_head_failure_raises(mocker):
         side_effect=Exception("network error")
     )
     mocker.patch(
-        "analecta.extraction.social.httpx.AsyncClient", return_value=mock_client
+        "analecta.extraction.social.httpx2.AsyncClient", return_value=mock_client
     )
 
     with pytest.raises(ExtractionError, match="Could not resolve"):
@@ -328,7 +328,7 @@ async def test_substack_extractor_inbox_no_redirect_raises(mocker):
     mock_client = mocker.AsyncMock()
     mock_client.__aenter__.return_value.head = mocker.AsyncMock(return_value=mock_resp)
     mocker.patch(
-        "analecta.extraction.social.httpx.AsyncClient", return_value=mock_client
+        "analecta.extraction.social.httpx2.AsyncClient", return_value=mock_client
     )
 
     with pytest.raises(ExtractionError, match="did not redirect"):

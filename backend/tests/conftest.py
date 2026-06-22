@@ -2,7 +2,7 @@ from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 from fastapi import FastAPI
 
@@ -82,16 +82,16 @@ def _build_full_app(cfg: AppConfig) -> FastAPI:
 
 
 @pytest.fixture
-async def client(app_config: AppConfig) -> AsyncGenerator[httpx.AsyncClient]:
+async def client(app_config: AppConfig) -> AsyncGenerator[httpx2.AsyncClient]:
     """Async httpx client backed by a full in-process FastAPI app (all routes).
 
-    Uses httpx.ASGITransport — no real TCP sockets are opened.
+    Uses httpx2.ASGITransport — no real TCP sockets are opened.
     Do NOT use starlette.testclient.TestClient; it cannot handle streaming SSE
     responses.
     """
     app = _build_full_app(app_config)
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app),
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app),
         base_url="http://test",
     ) as c:
         yield c

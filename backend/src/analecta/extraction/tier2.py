@@ -1,7 +1,7 @@
 import os
 from dataclasses import dataclass
 
-import httpx
+import httpx2
 
 from analecta.extraction.core import ExtractionError
 
@@ -54,7 +54,7 @@ async def render_url(url: str) -> Tier2Result:
             "Electron render server not available (ANALECTA_RENDER_PORT not set)"
         )
 
-    async with httpx.AsyncClient(timeout=35.0) as client:
+    async with httpx2.AsyncClient(timeout=35.0) as client:
         resp = await client.post(
             f"http://127.0.0.1:{port}/render",
             json={"url": url},

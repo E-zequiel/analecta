@@ -24,7 +24,7 @@ Architecture: Electron shell (TypeScript) + Python sidecar (FastAPI) + SvelteKit
 | Editor | **CodeMirror 6** + `@uiw/codemirror-theme-tokyo-night` |
 | Backend sidecar | **Python 3.14 · FastAPI · uvicorn** |
 | Database | **SQLite** with FTS5. No ORM. No Alembic. |
-| HTTP client | **httpx** (async). `requests` is forbidden. |
+| HTTP client | **httpx2** (async). `requests` is forbidden. |
 | Package managers | Python: **uv** · Node: **pnpm** · Toolchain: **mise** |
 | Testing | **pytest** (backend) |
 | IDE | **Zed** |
