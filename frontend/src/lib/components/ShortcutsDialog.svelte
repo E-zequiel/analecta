@@ -126,6 +126,11 @@
 
 	.sp-group {
 		margin-bottom: 1rem;
+		display: grid;
+		grid-template-columns: auto 1fr;
+		column-gap: 0.6rem;
+		row-gap: 4px;
+		align-items: center;
 	}
 
 	.sp-group:last-child {
@@ -133,22 +138,19 @@
 	}
 
 	.sp-group-label {
+		grid-column: 1 / -1;
 		font-size: 0.62rem;
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
 		color: var(--fg-muted);
-		margin: 0 0 0.4rem;
+		margin: 0 0 0.3rem;
 		padding-bottom: 3px;
 		border-bottom: 1px solid var(--border);
 	}
 
 	.sp-row {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		gap: 0.6rem;
-		align-items: center;
-		padding: 3px 0;
+		display: contents;
 	}
 
 	.sp-keys {
@@ -157,19 +159,25 @@
 		gap: 2px;
 	}
 
+	.sp-keys:has(> kbd:only-child) kbd {
+		flex: 1;
+		text-align: center;
+	}
+
 	.sp-desc {
 		font-size: 0.72rem;
 		color: var(--fg-dark);
 	}
 
 	kbd {
-		font-family: var(--font-family);
+		font-family: var(--font-ui-family);
 		font-size: 0.62rem;
+		letter-spacing: 0.05em;
 		background: var(--bg-highlight);
 		border: 1px solid var(--terminal);
 		border-bottom-width: 2px;
 		border-radius: 3px;
-		padding: 1px 5px;
+		padding: 1px 6px;
 		color: var(--fg-dark);
 		white-space: nowrap;
 		display: inline-block;
