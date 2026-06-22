@@ -100,6 +100,7 @@
 	/* Typography */
 	--font-family: 'JetBrains Mono', monospace;
 	--font-ui-family: 'Bricolage Grotesque', sans-serif;
+	--font-ui-size: 17px;
 	--font-size-label:    0.78rem;
 	--font-size-sublabel: 0.72rem;
 	--font-size-count:    0.70rem;
@@ -139,7 +140,7 @@ body {
 	background-color: var(--bg);
 	color: var(--fg);
 	font-family: var(--font-ui-family);
-	font-size: 17px;
+	font-size: var(--font-ui-size);
 	font-weight: 400;
 	font-optical-sizing: auto;
 	text-rendering: geometricPrecision;
