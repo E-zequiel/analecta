@@ -97,6 +97,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D"]  # test files need no docstrings
+"backend.spec" = ["F821"]  # Analysis/PYZ/EXE/COLLECT are injected by PyInstaller at exec() time
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
