@@ -29,7 +29,7 @@ class AppConfig(BaseModel):
     first_run: bool = False
     font_variant: Literal["regular", "bricolage"] = "regular"
     ui_font_size: float = 17.0
-    reading_font_size: float = 17.0
+    reading_font_size: float = 18.0
     update_channel: Literal["stable", "dev"] = "stable"
     theme: Literal["dark", "light"] = "dark"
     accent_color: Literal["red", "yellow", "green", "cyan"] = "yellow"
