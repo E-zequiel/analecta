@@ -16,7 +16,7 @@
 		vault_path: '',
 		font_variant: 'regular' as 'regular' | 'bricolage',
 		ui_font_size: 17.0,
-		reading_font_size: 17.0,
+		reading_font_size: 18.0,
 		update_channel: 'stable' as 'stable' | 'dev',
 		theme: 'dark' as 'dark' | 'light',
 		accent_color: 'yellow' as 'red' | 'yellow' | 'green' | 'cyan',
