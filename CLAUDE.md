@@ -150,7 +150,7 @@ analecta/
   - `--font-ui-family`: `'Bricolage Grotesque'` (variable font) — UI chrome. Fixed; never user-selectable. `font.ts` does not touch this.
   - `--font-family`: reading/content font — user-selectable. Variants: `'JetBrains Mono', 'Symbols Nerd Font Mono'` (default, `regular`) or `'Bricolage Grotesque', 'Symbols Nerd Font'` (`bricolage`). `font.ts` sets this variable, along with `--accent`/`--accent-dark` and `.theme-light`.
   - Bundled in `frontend/static/fonts/`: JetBrains Mono, Bricolage Grotesque, SymbolsNerdFont-Regular.ttf, SymbolsNerdFontMono-Regular.ttf. `@font-face` declarations in `app.css`. Symbols Nerd Font provides PUA glyph coverage as a silent fallback for both reading-font stacks.
-  - Base font-size: **17px** (UI body). Reading font default: **17px**, user-adjustable via `applyFont()`.
+  - Base font-size: **17px** (UI body via `--font-ui-size` CSS variable, set by `applyFont()`). Reading font default: **18px**, user-adjustable.
 - **Icons**: `@lucide/svelte`. Import by PascalCase name (`import { Settings, SquareLibrary } from '@lucide/svelte'`). Always use the named exports — do not import raw SVG. Verify icon names against `node_modules/@lucide/svelte/dist/icons/index.d.ts`.
 - **Sidebar**: Obsidian-style file-explorer navigator. Collapsible (44px rail / 260px full, `Ctrl+B`). Sections: library, unread, read, bookmark, gem, archive, Tags — each expandable with `ChevronRight`. Settings gear icon at bottom. Search opens via `ScanSearch` icon or `Ctrl+K`.
 - **Markdown render**: `markdown-it` + plugins, client-side. No round-trips to the sidecar.
