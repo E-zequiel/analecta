@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { slide, fade } from 'svelte/transition';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import {
 		ClipboardPaste,
 		ChevronRight,
@@ -40,6 +41,8 @@
 		expandAllSignal,
 		pasteUrlSignal,
 		dashboardPreviewEntryId,
+		preSettingsState,
+		pendingScrollRestore,
 	} from '$lib/stores/ui';
 	import { viewerEntry } from '$lib/stores/toolbar';
 	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
@@ -387,6 +390,22 @@
 	}
 
 	const isSettingsActive = $derived(page.url.pathname.startsWith('/settings'));
+
+	function handleSettingsClick() {
+		if (isSettingsActive) {
+			const state = $preSettingsState;
+			preSettingsState.set(null);
+			const path = state?.path ?? '/';
+			if (state?.path.startsWith('/viewer/') && (state.scrollTop ?? 0) > 0) {
+				pendingScrollRestore.set(state.scrollTop);
+			}
+			void goto(path);
+		} else {
+			const scrollTop = document.querySelector<HTMLElement>('.content')?.scrollTop ?? 0;
+			preSettingsState.set({ path: page.url.pathname, scrollTop });
+			void goto('/settings');
+		}
+	}
 </script>
 
 <aside
@@ -654,15 +673,16 @@
 		>
 			<ClipboardPaste size={18} />
 		</button>
-		<a
-			href="/settings"
+		<button
+			type="button"
 			class="icon-btn settings-btn"
 			class:active={isSettingsActive}
+			onclick={handleSettingsClick}
 			use:tooltip={'Settings'}
 			aria-label="Settings"
 		>
 			<Settings size={18} />
-		</a>
+		</button>
 	</div>
 </aside>
 
