@@ -30,3 +30,6 @@ export const rightSidebarWidth = persisted('right-sidebar-width', 240);
 
 export const sidebarTagPreview = writable<string | null>(null);
 export const dashboardPreviewEntryId = writable<number | null>(null);
+
+export const preSettingsState = writable<{ path: string; scrollTop: number } | null>(null);
+export const pendingScrollRestore = writable<number | null>(null);
