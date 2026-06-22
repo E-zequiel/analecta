@@ -50,7 +50,15 @@
 		const _edges = edges;
 
 		if (_edges.length === 0) {
-			nodePositions = [];
+			if (_nodes.length > 0) {
+				const w = width; // tracked — recenters on resize
+				const h = untrack(() => height);
+				const fid = untrack(() => focusNodeId);
+				const focusNode = _nodes.find((n) => n.node_id === fid) ?? _nodes[0];
+				nodePositions = [{ id: focusNode.node_id, x: w / 2, y: h / 2 }];
+			} else {
+				nodePositions = [];
+			}
 			edgePositions = [];
 			currentSim = null;
 			currentSimNodes = [];
@@ -214,7 +222,7 @@
 </script>
 
 <div class="graph-wrap" bind:clientWidth={width}>
-	{#if edges.length === 0}
+	{#if nodes.length === 0}
 		<p class="graph-empty">No connections.</p>
 	{:else}
 		<svg bind:this={svgEl} {width} {height}>
@@ -249,6 +257,9 @@
 					</g>
 				{/if}
 			{/each}
+			{#if edges.length === 0}
+				<text class="caption" x={width / 2} y={height / 2 + 44}>No connections.</text>
+			{/if}
 		</svg>
 	{/if}
 </div>
@@ -337,6 +348,16 @@
 		pointer-events: none;
 		user-select: none;
 		opacity: 1;
+	}
+
+	.caption {
+		fill: var(--fg-muted);
+		font-size: 11px;
+		text-anchor: middle;
+		font-family: inherit;
+		font-style: italic;
+		pointer-events: none;
+		user-select: none;
 	}
 
 	.node-group:hover .label {
