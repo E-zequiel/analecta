@@ -79,7 +79,7 @@
 	const charCount = $derived(source.replace(/^---[\s\S]*?---\n?/, '').trim().length);
 
 	let contentEl = $state<HTMLElement | null>(null);
-	let readingFontSize = $state(17);
+	let readingFontSize = $state(18);
 
 	$effect(() => {
 		function handleKeydown(e: KeyboardEvent) {

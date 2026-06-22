@@ -10,7 +10,7 @@ const ACCENT_MAP: Record<AccentKey, { dark: [string, string]; light: [string, st
 export function applyFont(
 	variant: 'regular' | 'bricolage',
 	uiFontSize: number = 17.0,
-	readingFontSize: number = 17.0,
+	readingFontSize: number = 18.0,
 	theme: 'dark' | 'light' = 'dark',
 	accentColor: AccentKey = 'yellow'
 ): void {
