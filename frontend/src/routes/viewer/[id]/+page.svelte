@@ -14,7 +14,7 @@
 	import { createRenderer } from '$lib/markdown/renderer';
 	import '$lib/markdown/tokyo-night.css';
 	import '$lib/markdown/shiki-classes.css';
-	import { lastViewedId, pendingScrollRestore } from '$lib/stores/ui';
+	import { lastViewedId, pendingScrollRestore, scrollPositions } from '$lib/stores/ui';
 	import { ensureEntryTab, closeTab } from '$lib/stores/tabs';
 	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
 	import { showContextMenu } from '$lib/stores/contextMenu';
@@ -80,6 +80,7 @@
 
 	let contentEl = $state<HTMLElement | null>(null);
 	let readingFontSize = $state(18);
+	let _scrollSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 	$effect(() => {
 		function handleKeydown(e: KeyboardEvent) {
@@ -240,6 +241,7 @@
 			viewerFontSize.set(17);
 			viewerTagsOpen.set(false);
 			viewerBacklinksOpen.set(false);
+			if (_scrollSaveTimer) clearTimeout(_scrollSaveTimer);
 		};
 	});
 
@@ -286,8 +288,59 @@
 
 		return () => {
 			cancelled = true;
+			if (contentEl && !isNaN(id) && contentEl.scrollTop > 0) {
+				if (_scrollSaveTimer) {
+					clearTimeout(_scrollSaveTimer);
+					_scrollSaveTimer = null;
+				}
+				const top = contentEl.scrollTop;
+				scrollPositions.update((p) => ({ ...p, [String(id)]: top }));
+			}
 		};
 	});
+
+	// Restore scroll position when content for an entry finishes loading.
+	$effect(() => {
+		const id = entryId;
+		const h = html;
+		if (!h || isNaN(id) || !contentEl) return;
+		const saved = untrack(() => $scrollPositions[String(id)] ?? 0);
+		if (saved <= 0) return;
+		requestAnimationFrame(() => {
+			if (!contentEl) return;
+			contentEl.scrollTop = saved;
+			// Re-apply as images load and content height grows (cold-start case).
+			const inner = contentEl.firstElementChild;
+			if (!inner) return;
+			const ro = new ResizeObserver(() => {
+				if (contentEl && contentEl.scrollTop < saved) {
+					contentEl.scrollTop = saved;
+				} else {
+					ro.disconnect();
+				}
+			});
+			ro.observe(inner);
+			setTimeout(() => ro.disconnect(), 5000);
+		});
+	});
+
+	function handleContentScroll() {
+		if (!contentEl || isNaN(entryId)) return;
+		const id = entryId;
+		const top = contentEl.scrollTop;
+		if (_scrollSaveTimer) clearTimeout(_scrollSaveTimer);
+		_scrollSaveTimer = setTimeout(() => {
+			if (top > 0) {
+				scrollPositions.update((p) => ({ ...p, [String(id)]: top }));
+			} else {
+				scrollPositions.update((p) => {
+					const next = { ...p };
+					delete next[String(id)];
+					return next;
+				});
+			}
+		}, 300);
+	}
 
 	async function setStatus(status: string) {
 		if (!entry) return;
@@ -666,7 +719,12 @@
 			</div>
 		{/if}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="content" bind:this={contentEl} oncontextmenu={handleRightClick}>
+		<div
+			class="content"
+			bind:this={contentEl}
+			oncontextmenu={handleRightClick}
+			onscroll={handleContentScroll}
+		>
 			<div class="content-inner">
 				<h1 class="entry-title">{entry.title}</h1>
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->

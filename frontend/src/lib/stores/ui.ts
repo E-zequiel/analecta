@@ -33,3 +33,4 @@ export const dashboardPreviewEntryId = writable<number | null>(null);
 
 export const preSettingsState = writable<{ path: string; scrollTop: number } | null>(null);
 export const pendingScrollRestore = writable<number | null>(null);
+export const scrollPositions = persisted<Record<string, number>>('scroll-positions', {});
