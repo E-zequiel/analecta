@@ -59,6 +59,7 @@
 	let collectaTagEntries = $state<Entry[]>([]);
 
 	// Dashboard graph state (shared across section + tags dashboards)
+	let pendingTagNav = $state<string | null>(null);
 	let dashboardSelectedId = $state<number | null>(null);
 	let dashboardSubgraph = $state<SubgraphResult | null>(null);
 	let dashboardSubgraphLoading = $state(false);
@@ -123,9 +124,17 @@
 		};
 	});
 
-	// Clear graph state when user navigates between sections
+	// Clear graph state when user navigates between sections.
+	// When a tag-node click triggers the navigation, preserve the selected entry
+	// and subgraph so the LocalGraph remains visible in the TAGS dashboard.
 	$effect(() => {
 		void $activeSection;
+		if (pendingTagNav !== null) {
+			const tag = pendingTagNav;
+			pendingTagNav = null;
+			selectedTag.set(tag);
+			return;
+		}
 		selectDashboardEntry(null);
 		dashboardSubgraph = null;
 		sidebarTagPreview.set(null);
@@ -773,9 +782,8 @@
 									selectDashboardEntry(id);
 								}}
 								ontagclick={(tagName) => {
-									selectDashboardEntry(null);
-									sidebarTagPreview.set(tagName);
-									rightSidebarOpen.set(true);
+									pendingTagNav = tagName;
+									activeSection.set('tags');
 								}}
 							/>
 						{/if}
