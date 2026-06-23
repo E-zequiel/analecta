@@ -43,6 +43,9 @@
 	let currentSim: ReturnType<typeof forceSimulation<SimNode>> | null = null;
 	let currentSimNodes: SimNode[] = [];
 
+	// Mutable bounds read by the tick handler at tick time so resize updates clamp correctly
+	const bounds = { w: 200, h: 200 };
+
 	const nodeById = $derived(new Map(nodes.map((n) => [n.node_id, n])));
 
 	$effect(() => {
@@ -53,6 +56,8 @@
 			if (_nodes.length > 0) {
 				const w = width; // tracked — recenters on resize
 				const h = untrack(() => height);
+				bounds.w = w;
+				bounds.h = h;
 				const fid = untrack(() => focusNodeId);
 				const focusNode = _nodes.find((n) => n.node_id === fid) ?? _nodes[0];
 				nodePositions = [{ id: focusNode.node_id, x: w / 2, y: h / 2 }];
@@ -67,6 +72,8 @@
 
 		const w = untrack(() => width);
 		const h = untrack(() => height);
+		bounds.w = w;
+		bounds.h = h;
 		// Untracked so that clearing focus (on tag click) doesn't rebuild the sim
 		const fid = untrack(() => focusNodeId);
 
@@ -107,9 +114,9 @@
 		sim.on('tick', () => {
 			for (const n of simNodes) {
 				const r = n.node_id === fid ? 14 : n.kind === 'tag' ? 7 : 10;
-				n.x = Math.max(r + 10, Math.min(n.x ?? 0, w - r - 10));
+				n.x = Math.max(r + 10, Math.min(n.x ?? 0, bounds.w - r - 10));
 				// extra bottom margin keeps labels (rendered 13–25px below center) inside the SVG
-				n.y = Math.max(r + 10, Math.min(n.y ?? 0, h - r - 26));
+				n.y = Math.max(r + 10, Math.min(n.y ?? 0, bounds.h - r - 26));
 			}
 			nodePositions = simNodes.map((n) => ({ id: n.node_id, x: n.x ?? 0, y: n.y ?? 0 }));
 			edgePositions = simLinks.map((link) => {
@@ -126,6 +133,36 @@
 				currentSimNodes = [];
 			}
 		};
+	});
+
+	// Refit the graph when the container is resized (e.g., fullscreen toggle)
+	$effect(() => {
+		const w = width; // tracked
+		const h = height; // tracked
+
+		const timer = setTimeout(() => {
+			untrack(() => {
+				if (bounds.w === w && bounds.h === h) return;
+				bounds.w = w;
+				bounds.h = h;
+
+				const sim = currentSim;
+				if (sim) {
+					sim
+						.force('center', forceCenter<SimNode>(w / 2, h / 2))
+						.force('x', forceX<SimNode>(w / 2).strength(0.05))
+						.force('y', forceY<SimNode>(h / 2).strength(0.05))
+						.alpha(0.4)
+						.restart();
+				} else if (nodePositions.length > 0) {
+					// Single-node case: recenter
+					const pos = nodePositions[0];
+					nodePositions = [{ id: pos.id, x: w / 2, y: h / 2 }];
+				}
+			});
+		}, 50);
+
+		return () => clearTimeout(timer);
 	});
 
 	function nodeClass(node: GraphNode, isFocus: boolean): string {
