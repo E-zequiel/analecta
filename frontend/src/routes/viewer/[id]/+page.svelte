@@ -769,6 +769,7 @@
 		flex: 1;
 		overflow-y: auto;
 		min-width: 0;
+		overflow-anchor: none;
 	}
 
 	.content-inner {
