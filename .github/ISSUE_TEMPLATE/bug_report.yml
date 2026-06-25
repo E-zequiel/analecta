@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a bug in Analecta
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Which version of Analecta are you running? (visible in the title bar or Settings)
+      placeholder: "0.3.0"
+    validations:
+      required: true
+
+  - type: input
+    id: distro
+    attributes:
+      label: Linux distribution
+      placeholder: "Pop!_OS 24.04"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: display-server
+    attributes:
+      label: Display server
+      options:
+        - Wayland
+        - X11
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Include what you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or error messages
+      description: Paste any error output from the terminal or application.
+      render: shell
