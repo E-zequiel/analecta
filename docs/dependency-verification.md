@@ -75,7 +75,7 @@ default and prevents accidental range introduction. The weekly updater relies on
 this when bumping existing pins via `pnpm add <pkg>@<latest> --save-exact`.
 
 CVE-driven patches of *transitive* dependencies use a different mechanism
-(`overrides:` in `pnpm-workspace.yaml` — see `CLAUDE.md`) but the same
+(`overrides:` in `pnpm-workspace.yaml`) but the same
 exact-pin-plus-hash-check principle. See the note on
 [two-mechanism split](#two-mechanism-split) below before editing overrides.
 
@@ -273,10 +273,6 @@ time. Document the two entries separately so a future reviewer doesn't
 
 ## See also
 
-- `CLAUDE.md` → CVE-driven patch policy (`overrides:` in `pnpm-workspace.yaml`
-  for transitive npm deps, `[tool.uv] constraint-dependencies` for Python) —
-  same verification step, different mechanism for *why* the version is being
-  forced.
 - `docs/syntax-highlighting.md` — documents the Shiki side of light-theme
   syntax highlighting (the markdown viewer). `@uiw/codemirror-theme-tokyo-night-day`,
   the package used as the worked example above, is the equivalent fix for the

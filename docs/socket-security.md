@@ -2,7 +2,7 @@
 
 Catalog of triaged Socket alerts, false-positive patterns, dismissed Dependabot alerts, and resolved CVEs for the Analecta project.
 
-Referenced by `docs/github-actions-security.md` Controls 9 and 12 and by `.claude/skills/audit-ci/SKILL.md`.
+Referenced by `docs/github-actions-security.md` Controls 9 and 12.
 
 ---
 
