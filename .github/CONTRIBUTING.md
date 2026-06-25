@@ -2,6 +2,8 @@
 
 Analecta is primarily a personal project. Bug reports and small improvements are welcome. Before working on a significant change, open an issue first so we can discuss the approach — this avoids wasted effort on both sides.
 
+By participating in this project, you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Prerequisites
 
 A single tool manages the entire toolchain:
