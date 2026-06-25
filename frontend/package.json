@@ -28,10 +28,10 @@
     "@codemirror/state": "^6",
     "@codemirror/view": "^6",
     "@lucide/svelte": "^0.511.0",
-    "@shikijs/langs": "4.1.0",
-    "@shikijs/markdown-it": "4.1.0",
-    "@shikijs/themes": "4.1.0",
-    "@shikijs/transformers": "4.1.0",
+    "@shikijs/langs": "4.2.0",
+    "@shikijs/markdown-it": "4.2.0",
+    "@shikijs/themes": "4.2.0",
+    "@shikijs/transformers": "4.2.0",
     "@types/d3-force": "^3.0.10",
     "@uiw/codemirror-theme-tokyo-night": "4.25.10",
     "@uiw/codemirror-theme-tokyo-night-day": "4.25.10",
@@ -41,7 +41,7 @@
     "markdown-it": "^14.2.0",
     "markdown-it-footnote": "^4",
     "markdown-it-task-lists": "^2",
-    "shiki": "4.1.0",
+    "shiki": "4.2.0",
     "sigma": "^3.0.3"
   }
 }
