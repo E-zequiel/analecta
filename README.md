@@ -26,9 +26,9 @@ Analecta is a local Linux desktop application that turns any URL — article, Yo
 
 | Dashboard | Reading view |
 |----------|-------------|
-| ![](.github/assets/1-library.png) | ![](.github/assets/3-reading-view.png) |
+| ![Library dashboard](.github/assets/1-library.png) | ![Reading view](.github/assets/3-reading-view.png) |
 
-![](.github/assets/2-collecta.png)
+![COLLECTA dashboard](.github/assets/2-collecta.png)
 
 ## Download
 
