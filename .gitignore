@@ -18,6 +18,7 @@ env/
 # Claude Code / AI State
 # ========================
 .claude/settings.local.json
+CLAUDE.md
 
 
 # ========================

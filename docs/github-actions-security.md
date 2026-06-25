@@ -99,7 +99,7 @@ Both expressions resolve to the same auto-generated job token, but `${{ github.t
 | `BWS_ACCESS_TOKEN` | GitHub secret | `sm-action` | Read-only BSM machine account token |
 | `SOCKET_SECURITY_API_TOKEN` | BSM via `sm-action` | `pnpm exec socket` | Socket.dev dependency security scan |
 
-`SOCKET_SECURITY_API_TOKEN` is **not** stored as a GitHub secret. It lives in Bitwarden Secrets Manager and is injected at runtime by `bitwarden/sm-action`. See `docs/bitwarden-secrets-manager.md` for the full secret management architecture and blast radius ranking.
+`SOCKET_SECURITY_API_TOKEN` is **not** stored as a GitHub secret. It lives in Bitwarden Secrets Manager and is injected at runtime by `bitwarden/sm-action`. `BWS_ACCESS_TOKEN` is a read-only machine account token scoped to this project only; if compromised, it cannot create or modify secrets.
 
 `github.token` auto-expires when the job ends. `BWS_ACCESS_TOKEN` is low-blast-radius (read-only BSM access).
 
