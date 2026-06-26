@@ -67,17 +67,17 @@
 							{#if showStatusLabel}
 								<span class="entry-status entry-status-{entry.status}">
 									{#if entry.status === 'read'}
-										<Eye size={14} />
+										<Eye size={15} />
 									{:else}
-										<EyeClosed size={14} />
+										<EyeClosed size={15} />
 									{/if}
 								</span>
 							{/if}
 							{#if entry.flags.includes('bookmark')}
-								<span class="entry-badge entry-badge-bookmark"><Bookmark size={14} /></span>
+								<span class="entry-badge entry-badge-bookmark"><Bookmark size={15} /></span>
 							{/if}
 							{#if entry.flags.includes('gem')}
-								<span class="entry-badge entry-badge-gem"><Gem size={14} /></span>
+								<span class="entry-badge entry-badge-gem"><Gem size={15} /></span>
 							{/if}
 							{#each entry.tags as tag (tag)}
 								<span class="entry-tag">#{tag}</span>
@@ -120,17 +120,17 @@
 							{#if showStatusLabel}
 								<span class="entry-status entry-status-{entry.status}">
 									{#if entry.status === 'read'}
-										<Eye size={14} />
+										<Eye size={15} />
 									{:else}
-										<EyeClosed size={14} />
+										<EyeClosed size={15} />
 									{/if}
 								</span>
 							{/if}
 							{#if entry.flags.includes('bookmark')}
-								<span class="entry-badge entry-badge-bookmark"><Bookmark size={14} /></span>
+								<span class="entry-badge entry-badge-bookmark"><Bookmark size={15} /></span>
 							{/if}
 							{#if entry.flags.includes('gem')}
-								<span class="entry-badge entry-badge-gem"><Gem size={14} /></span>
+								<span class="entry-badge entry-badge-gem"><Gem size={15} /></span>
 							{/if}
 							{#each entry.tags as tag (tag)}
 								<span class="entry-tag">#{tag}</span>
@@ -152,7 +152,7 @@
 	.hint {
 		padding: 2rem 1.25rem;
 		color: var(--fg-muted);
-		font-size: 13px;
+		font-size: 13.25px;
 		font-style: italic;
 	}
 

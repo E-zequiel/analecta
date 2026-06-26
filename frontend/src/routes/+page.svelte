@@ -27,6 +27,7 @@
 	import LocalGraph from '$lib/components/LocalGraph.svelte';
 	import VaultGraph from '$lib/components/VaultGraph.svelte';
 	import { tooltip } from '$lib/actions/tooltip';
+	import { Eye, EyeClosed, Bookmark, Gem, Archive } from '@lucide/svelte';
 
 	let entryList = $state<Entry[]>([]);
 	let loading = $state(false);
@@ -332,16 +333,6 @@
 		}
 	}
 
-	function entryBadges(entry: Entry): Array<{ label: string; cls: string }> {
-		const badges: Array<{ label: string; cls: string }> = [];
-		if (entry.flags.includes('archive')) badges.push({ label: 'archived', cls: 'badge-archive' });
-		if (entry.status === 'read') badges.push({ label: 'read', cls: 'badge-read' });
-		if (entry.status === 'unread') badges.push({ label: 'unread', cls: 'badge-unread' });
-		if (entry.flags.includes('bookmark')) badges.push({ label: 'bookmark', cls: 'badge-bookmark' });
-		if (entry.flags.includes('gem')) badges.push({ label: 'gem', cls: 'badge-gem' });
-		return badges;
-	}
-
 	onMount(async () => {
 		try {
 			const cfg = await configApi.get();
@@ -594,9 +585,24 @@
 									>
 										<span class="tag-entry-title">{entry.title}</span>
 										<div class="tag-entry-badges">
-											{#each entryBadges(entry) as badge (badge.cls)}
-												<span class="badge {badge.cls}">{badge.label}</span>
-											{/each}
+											{#if entry.flags.includes('archive')}
+												<span class="entry-badge entry-badge-archive" title="archived"
+													><Archive size={15} /></span
+												>
+											{/if}
+											<span class="entry-badge entry-status-{entry.status}">
+												{#if entry.status === 'read'}
+													<Eye size={15} />
+												{:else}
+													<EyeClosed size={15} />
+												{/if}
+											</span>
+											{#if entry.flags.includes('bookmark')}
+												<span class="entry-badge entry-badge-bookmark"><Bookmark size={15} /></span>
+											{/if}
+											{#if entry.flags.includes('gem')}
+												<span class="entry-badge entry-badge-gem"><Gem size={15} /></span>
+											{/if}
 										</div>
 									</button>
 								{/each}
@@ -677,9 +683,24 @@
 									<div class="tag-entry-body">
 										<span class="tag-entry-title">{entry.title}</span>
 										<div class="tag-entry-badges">
-											{#each entryBadges(entry) as badge (badge.cls)}
-												<span class="badge {badge.cls}">{badge.label}</span>
-											{/each}
+											{#if entry.flags.includes('archive')}
+												<span class="entry-badge entry-badge-archive" title="archived"
+													><Archive size={15} /></span
+												>
+											{/if}
+											<span class="entry-badge entry-status-{entry.status}">
+												{#if entry.status === 'read'}
+													<Eye size={15} />
+												{:else}
+													<EyeClosed size={15} />
+												{/if}
+											</span>
+											{#if entry.flags.includes('bookmark')}
+												<span class="entry-badge entry-badge-bookmark"><Bookmark size={15} /></span>
+											{/if}
+											{#if entry.flags.includes('gem')}
+												<span class="entry-badge entry-badge-gem"><Gem size={15} /></span>
+											{/if}
 										</div>
 									</div>
 									<button
@@ -852,7 +873,7 @@
 
 	.graph-hint {
 		padding: 1rem;
-		font-size: 12px;
+		font-size: 13.25px;
 		color: var(--fg-muted);
 		font-style: italic;
 		text-align: center;
@@ -930,7 +951,7 @@
 	}
 
 	.tag-chip-name {
-		font-size: 12px;
+		font-size: 13.25px;
 		color: var(--fg);
 	}
 
@@ -947,13 +968,13 @@
 	.tag-chip-edit {
 		display: flex;
 		align-items: center;
-		padding: 0.3rem 0.7rem;
+		padding: 0.35rem 0.7rem;
 		background: var(--bg-alt);
 		border: 1px solid var(--accent);
 		border-radius: 20px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 12px;
+		font-size: 13px;
 		outline: none;
 		min-width: 80px;
 	}
@@ -1013,7 +1034,7 @@
 	}
 
 	.tag-entry-header {
-		font-size: 13px;
+		font-size: 13.25px;
 		font-weight: 700;
 		color: var(--accent);
 		padding: 0.25rem 0;
@@ -1052,7 +1073,7 @@
 	}
 
 	.tag-entry-title {
-		font-size: 13px;
+		font-size: 13.25px;
 		font-weight: 700;
 		color: var(--fg);
 		overflow: hidden;
@@ -1063,35 +1084,33 @@
 	.tag-entry-badges {
 		display: flex;
 		gap: 0.3rem;
+		align-items: center;
 		flex-wrap: wrap;
 	}
 
-	.badge {
-		font-size: 10px;
-		padding: 1px 6px;
-		border-radius: 10px;
-		font-weight: 700;
+	.entry-badge {
+		display: inline-flex;
+		align-items: center;
 	}
 
-	.badge-archive {
-		background: var(--bg-highlight);
-		color: var(--fg-muted);
-	}
-	.badge-read {
-		background: var(--bg-highlight);
+	.entry-status-read {
 		color: var(--yellow);
 	}
-	.badge-unread {
-		background: var(--bg-highlight);
+
+	.entry-status-unread {
 		color: var(--fg-muted);
 	}
-	.badge-bookmark {
-		background: var(--bg-highlight);
-		color: var(--cyan);
+
+	.entry-badge-archive {
+		color: var(--fg-muted);
 	}
-	.badge-gem {
-		background: var(--bg-highlight);
+
+	.entry-badge-bookmark {
 		color: var(--magenta);
+	}
+
+	.entry-badge-gem {
+		color: var(--cyan);
 	}
 
 	.view-btn {
@@ -1118,7 +1137,7 @@
 	.hint {
 		padding: 1rem 0;
 		color: var(--fg-muted);
-		font-size: 13px;
+		font-size: 13.25px;
 	}
 
 	/* Collecta dashboard */
@@ -1150,7 +1169,7 @@
 	}
 
 	.metric-label {
-		font-size: 13px;
+		font-size: 13.25px;
 		font-weight: 700;
 		color: var(--fg-muted);
 		text-transform: uppercase;
@@ -1160,12 +1179,12 @@
 	}
 
 	.metric-value {
-		font-size: 13px;
+		font-size: 13.25px;
 		color: var(--fg);
 	}
 
 	.metric-link {
-		font-size: 13px;
+		font-size: 13.25px;
 		color: var(--accent);
 		background: none;
 		border: none;
@@ -1224,7 +1243,7 @@
 	}
 
 	.collecta-card-label {
-		font-size: 12px;
+		font-size: 13.25px;
 		font-weight: 700;
 		color: var(--fg);
 		letter-spacing: 0.05em;
@@ -1255,14 +1274,14 @@
 	}
 
 	.collecta-expanded-title {
-		font-size: 12px;
+		font-size: 13.25px;
 		font-weight: 700;
 		color: var(--accent);
 		letter-spacing: 0.05em;
 	}
 
 	.collecta-nav-btn {
-		font-size: 13px;
+		font-size: 14px;
 		color: var(--fg-muted);
 		background: none;
 		border: none;
@@ -1284,7 +1303,7 @@
 	}
 
 	.collecta-tag-header {
-		font-size: 12px;
+		font-size: 13.25px;
 		font-weight: 700;
 		color: var(--accent);
 		padding: 0.2rem 0;
