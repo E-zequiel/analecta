@@ -142,6 +142,8 @@
 	let editingTag = $state<string | null>(null);
 	let editTagValue = $state('');
 	let editTagInputEl = $state<HTMLInputElement | null>(null);
+	let deletingTag = $state<string | null>(null);
+	let deleteRowEl = $state<HTMLElement | null>(null);
 
 	$effect(() => {
 		if (newTagExpanded && newTagInputEl) newTagInputEl.focus();
@@ -158,6 +160,22 @@
 		}
 		window.addEventListener('keydown', onKeyDown);
 		return () => window.removeEventListener('keydown', onKeyDown);
+	});
+
+	$effect(() => {
+		if (!deletingTag) return;
+		function onKeyDown(e: KeyboardEvent) {
+			if (e.key === 'Escape') deletingTag = null;
+		}
+		function onMouseDown(e: MouseEvent) {
+			if (deleteRowEl && !deleteRowEl.contains(e.target as Node)) deletingTag = null;
+		}
+		window.addEventListener('keydown', onKeyDown);
+		window.addEventListener('mousedown', onMouseDown);
+		return () => {
+			window.removeEventListener('keydown', onKeyDown);
+			window.removeEventListener('mousedown', onMouseDown);
+		};
 	});
 
 	async function fetchCounts() {
@@ -569,7 +587,25 @@
 
 			<div class="section-entries tags-section-entries">
 				{#each displayTagList as tag (tag.name)}
-					{#if editingTag === tag.name}
+					{#if deletingTag === tag.name}
+						<div class="tag-delete-row" bind:this={deleteRowEl}>
+							<span class="tag-delete-label">Delete <strong>{tag.name}</strong>?</span>
+							<button
+								class="tag-action-btn tag-delete-confirm"
+								onclick={() => deleteTag(tag.name)}
+								use:tooltip={'Confirm delete'}
+								aria-label="Confirm delete">✓</button
+							>
+							<button
+								class="tag-action-btn"
+								onclick={() => {
+									deletingTag = null;
+								}}
+								use:tooltip={'Cancel'}
+								aria-label="Cancel delete"><X size={13.25} /></button
+							>
+						</div>
+					{:else if editingTag === tag.name}
 						<div class="tag-edit-row">
 							<input
 								class="tag-input"
@@ -624,7 +660,9 @@
 								>
 								<button
 									class="tag-action-btn"
-									onclick={() => deleteTag(tag.name)}
+									onclick={() => {
+										deletingTag = tag.name;
+									}}
 									use:tooltip={'Delete tag'}
 									aria-label="Delete tag"><Trash2 size={13.25} /></button
 								>
@@ -1027,6 +1065,36 @@
 
 	.new-tag-row {
 		padding: 4px 8px 4px 26px;
+	}
+
+	.tag-delete-row {
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		padding: 2px 8px 2px 22px;
+	}
+
+	.tag-delete-label {
+		flex: 1;
+		min-width: 0;
+		font-size: var(--font-size-label);
+		color: var(--fg-muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.tag-delete-label strong {
+		color: var(--fg);
+		font-weight: 600;
+	}
+
+	.tag-delete-confirm {
+		color: #9ece6a;
+	}
+
+	.tag-delete-confirm:hover {
+		color: #b9ee8a;
 	}
 
 	.tag-edit-row {
