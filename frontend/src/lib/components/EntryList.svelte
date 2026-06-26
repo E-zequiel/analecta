@@ -2,6 +2,7 @@
 	import type { Entry } from '$lib/api/client';
 	import { navigateInTab, openEntryTab } from '$lib/stores/tabs';
 	import { showContextMenu } from '$lib/stores/contextMenu';
+	import { Eye, EyeClosed, Bookmark, Gem } from '@lucide/svelte';
 
 	const {
 		entries,
@@ -64,13 +65,19 @@
 						<div class="entry-meta">
 							<span class="entry-date">{formatDate(entry.created_at)}</span>
 							{#if showStatusLabel}
-								<span class="entry-status entry-status-{entry.status}">{entry.status}</span>
+								<span class="entry-status entry-status-{entry.status}">
+									{#if entry.status === 'read'}
+										<Eye size={14} />
+									{:else}
+										<EyeClosed size={14} />
+									{/if}
+								</span>
 							{/if}
 							{#if entry.flags.includes('bookmark')}
-								<span class="entry-badge entry-badge-bookmark">bookmark</span>
+								<span class="entry-badge entry-badge-bookmark"><Bookmark size={14} /></span>
 							{/if}
 							{#if entry.flags.includes('gem')}
-								<span class="entry-badge entry-badge-gem">gem</span>
+								<span class="entry-badge entry-badge-gem"><Gem size={14} /></span>
 							{/if}
 							{#each entry.tags as tag (tag)}
 								<span class="entry-tag">#{tag}</span>
@@ -111,13 +118,19 @@
 						<div class="entry-meta">
 							<span class="entry-date">{formatDate(entry.created_at)}</span>
 							{#if showStatusLabel}
-								<span class="entry-status entry-status-{entry.status}">{entry.status}</span>
+								<span class="entry-status entry-status-{entry.status}">
+									{#if entry.status === 'read'}
+										<Eye size={14} />
+									{:else}
+										<EyeClosed size={14} />
+									{/if}
+								</span>
 							{/if}
 							{#if entry.flags.includes('bookmark')}
-								<span class="entry-badge entry-badge-bookmark">bookmark</span>
+								<span class="entry-badge entry-badge-bookmark"><Bookmark size={14} /></span>
 							{/if}
 							{#if entry.flags.includes('gem')}
-								<span class="entry-badge entry-badge-gem">gem</span>
+								<span class="entry-badge entry-badge-gem"><Gem size={14} /></span>
 							{/if}
 							{#each entry.tags as tag (tag)}
 								<span class="entry-tag">#{tag}</span>
@@ -203,8 +216,10 @@
 		color: var(--fg-muted);
 	}
 
-	.entry-status {
-		font-size: 0.68rem;
+	.entry-status,
+	.entry-badge {
+		display: inline-flex;
+		align-items: center;
 	}
 
 	.entry-status-read {
@@ -215,16 +230,12 @@
 		color: var(--fg-muted);
 	}
 
-	.entry-badge {
-		font-size: 0.68rem;
-	}
-
 	.entry-badge-bookmark {
-		color: var(--cyan);
+		color: var(--magenta);
 	}
 
 	.entry-badge-gem {
-		color: var(--magenta);
+		color: var(--cyan);
 	}
 
 	.entry-tag {
