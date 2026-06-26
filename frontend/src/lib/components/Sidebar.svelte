@@ -20,6 +20,7 @@
 		Pencil,
 		Trash2,
 		Archive,
+		X,
 	} from '@lucide/svelte';
 	import { writable } from 'svelte/store';
 	import { SvelteMap } from 'svelte/reactivity';
@@ -140,9 +141,23 @@
 	let newTagInputEl = $state<HTMLInputElement | null>(null);
 	let editingTag = $state<string | null>(null);
 	let editTagValue = $state('');
+	let editTagInputEl = $state<HTMLInputElement | null>(null);
 
 	$effect(() => {
 		if (newTagExpanded && newTagInputEl) newTagInputEl.focus();
+	});
+
+	$effect(() => {
+		if (editingTag && editTagInputEl) editTagInputEl.focus();
+	});
+
+	$effect(() => {
+		if (!editingTag) return;
+		function onKeyDown(e: KeyboardEvent) {
+			if (e.key === 'Escape') editingTag = null;
+		}
+		window.addEventListener('keydown', onKeyDown);
+		return () => window.removeEventListener('keydown', onKeyDown);
 	});
 
 	async function fetchCounts() {
@@ -527,7 +542,7 @@
 					use:tooltip={'Create tag'}
 					aria-label="Create tag"
 				>
-					<Plus size={13} />
+					<Plus size={15} />
 				</button>
 			</div>
 
@@ -560,14 +575,29 @@
 								class="tag-input"
 								type="text"
 								bind:value={editTagValue}
+								bind:this={editTagInputEl}
 								onkeydown={(e) => {
 									if (e.key === 'Enter') {
 										e.preventDefault();
 										renameTag(tag.name, editTagValue);
-									} else if (e.key === 'Escape') editingTag = null;
+									} else if (e.key === 'Escape') {
+										e.stopPropagation();
+										editingTag = null;
+									}
 								}}
-								onblur={() => renameTag(tag.name, editTagValue)}
+								onblur={() => {
+									editingTag = null;
+								}}
 							/>
+							<button
+								class="tag-edit-cancel"
+								onmousedown={(e) => e.preventDefault()}
+								onclick={() => {
+									editingTag = null;
+								}}
+								use:tooltip={'Cancel'}
+								aria-label="Cancel rename"><X size={13.25} /></button
+							>
 						</div>
 					{:else}
 						<div class="tag-item">
@@ -590,13 +620,13 @@
 										editTagValue = tag.name;
 									}}
 									use:tooltip={'Rename tag'}
-									aria-label="Rename tag"><Pencil size={13} /></button
+									aria-label="Rename tag"><Pencil size={13.25} /></button
 								>
 								<button
 									class="tag-action-btn"
 									onclick={() => deleteTag(tag.name)}
 									use:tooltip={'Delete tag'}
-									aria-label="Delete tag"><Trash2 size={13} /></button
+									aria-label="Delete tag"><Trash2 size={13.25} /></button
 								>
 							</div>
 						</div>
@@ -820,7 +850,7 @@
 		border: none;
 		border-radius: 3px;
 		color: var(--accent);
-		font-size: 13px;
+		font-size: 13.25px;
 		cursor: pointer;
 		flex-shrink: 0;
 		transition: background 0.12s;
@@ -947,7 +977,7 @@
 
 	.entry-indicator {
 		flex-shrink: 0;
-		font-size: 11px;
+		font-size: 13.25px;
 		color: var(--accent);
 	}
 
@@ -1000,7 +1030,30 @@
 	}
 
 	.tag-edit-row {
+		display: flex;
+		align-items: center;
+		gap: 3px;
 		padding: 2px 8px 2px 22px;
+	}
+
+	.tag-edit-cancel {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		padding: 0;
+		flex-shrink: 0;
+		background: none;
+		border: none;
+		border-radius: 2px;
+		color: var(--fg-muted);
+		cursor: pointer;
+		transition: color 0.12s;
+	}
+
+	.tag-edit-cancel:hover {
+		color: var(--fg);
 	}
 
 	.tag-input {
