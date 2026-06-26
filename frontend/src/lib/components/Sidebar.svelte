@@ -45,7 +45,7 @@
 		pendingScrollRestore,
 	} from '$lib/stores/ui';
 	import { viewerEntry } from '$lib/stores/toolbar';
-	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
+	import { navigateInTab, navigateInSectionTab, openEntryTab } from '$lib/stores/tabs';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { entryAddedTick, entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
 	import { tooltip } from '$lib/actions/tooltip';
@@ -480,6 +480,12 @@
 								class:active-entry={page.params['id'] === String(entry.id)}
 								class:entry-match-item={isMatchEntry}
 								onclick={() => openEntry(entry.id, entry.title)}
+								onmousedown={(e) => {
+									if (e.button === 1) {
+										e.preventDefault();
+										openEntryTab(entry.id, entry.title, true, entry.source_type);
+									}
+								}}
 								oncontextmenu={(e) => showContextMenu(e, entry)}
 								use:tooltip={entry.title}
 								use:flash={isMatchEntry ? dashboardEntry?.id : undefined}

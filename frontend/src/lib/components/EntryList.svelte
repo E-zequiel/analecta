@@ -7,10 +7,12 @@
 		entries,
 		loading = false,
 		onitemclick,
+		showStatusLabel = false,
 	}: {
 		entries: Entry[];
 		loading?: boolean;
 		onitemclick?: (entry: Entry) => void;
+		showStatusLabel?: boolean;
 	} = $props();
 
 	const sourceColors: Record<string, string> = {
@@ -61,8 +63,14 @@
 						</div>
 						<div class="entry-meta">
 							<span class="entry-date">{formatDate(entry.created_at)}</span>
-							{#if entry.status !== 'unread'}
-								<span class="entry-status">{entry.status}</span>
+							{#if showStatusLabel}
+								<span class="entry-status entry-status-{entry.status}">{entry.status}</span>
+							{/if}
+							{#if entry.flags.includes('bookmark')}
+								<span class="entry-badge entry-badge-bookmark">bookmark</span>
+							{/if}
+							{#if entry.flags.includes('gem')}
+								<span class="entry-badge entry-badge-gem">gem</span>
 							{/if}
 							{#each entry.tags as tag (tag)}
 								<span class="entry-tag">#{tag}</span>
@@ -102,8 +110,14 @@
 						</div>
 						<div class="entry-meta">
 							<span class="entry-date">{formatDate(entry.created_at)}</span>
-							{#if entry.status !== 'unread'}
-								<span class="entry-status">{entry.status}</span>
+							{#if showStatusLabel}
+								<span class="entry-status entry-status-{entry.status}">{entry.status}</span>
+							{/if}
+							{#if entry.flags.includes('bookmark')}
+								<span class="entry-badge entry-badge-bookmark">bookmark</span>
+							{/if}
+							{#if entry.flags.includes('gem')}
+								<span class="entry-badge entry-badge-gem">gem</span>
 							{/if}
 							{#each entry.tags as tag (tag)}
 								<span class="entry-tag">#{tag}</span>
@@ -191,7 +205,26 @@
 
 	.entry-status {
 		font-size: 0.68rem;
+	}
+
+	.entry-status-read {
 		color: var(--yellow);
+	}
+
+	.entry-status-unread {
+		color: var(--fg-muted);
+	}
+
+	.entry-badge {
+		font-size: 0.68rem;
+	}
+
+	.entry-badge-bookmark {
+		color: var(--cyan);
+	}
+
+	.entry-badge-gem {
+		color: var(--magenta);
 	}
 
 	.entry-tag {

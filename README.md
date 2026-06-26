@@ -36,7 +36,7 @@ Download for Linux from the [Releases page](https://github.com/E-zequiel/analect
 
 | Format | Recommended for |
 |--------|----------------|
-| `.deb` | Ubuntu, Debian, Pop!\_OS, Linux Mint |
+| `.deb` | Debian, Ubuntu, Pop!\_OS, Linux Mint |
 | `.rpm` | Fedora, openSUSE, RHEL |
 | `.AppImage` | Any Linux distribution |
 
