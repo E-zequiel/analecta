@@ -33,7 +33,7 @@ _REGISTRY_TIMEOUT = 15
 # Types
 # ---------------------------------------------------------------------------
 
-type Updated = tuple[str, str, str]  # (name, old, new)
+type Updated = tuple[str, str, str, datetime]  # (name, old, new, release_dt)
 type Skipped = tuple[str, str, datetime]  # (name, new, release_dt)
 
 # ---------------------------------------------------------------------------
@@ -160,7 +160,7 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], bool]:
             had_error = True
         else:
             print("    [ok] updated")
-            updated.append((name, current, latest))
+            updated.append((name, current, latest, release_dt))
 
     if fetch_attempted > 0 and fetch_ok == 0:
         print(
@@ -275,7 +275,7 @@ def update_node(
             had_error = True
         else:
             print("    [ok] updated")
-            updated.append((name, current, latest))
+            updated.append((name, current, latest, release_dt))
 
     if fetch_attempted > 0 and fetch_ok == 0:
         print("::error::All npm registry fetches failed — no packages could be checked")
@@ -307,10 +307,12 @@ def _pr_body(
     def _section(title: str, up: list[Updated], sk: list[Skipped]) -> None:
         lines.append(f"### {title}")
         if up:
-            lines.append("| Package | Old | New |")
-            lines.append("|---------|-----|-----|")
-            for name, old, new in up:
-                lines.append(f"| `{name}` | {old} | {new} |")
+            lines.append("| Package | Old | New | Released |")
+            lines.append("|---------|-----|-----|----------|")
+            for name, old, new, release_dt in up:
+                lines.append(
+                    f"| `{name}` | {old} | {new} | {release_dt.strftime('%Y-%m-%d')} |"
+                )
         else:
             lines.append("_No updates applied._")
         if sk:

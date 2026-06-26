@@ -21,6 +21,7 @@
 	} from '$lib/stores/ui';
 	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
 	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
+	import { showContextMenu } from '$lib/stores/contextMenu';
 	import EntryList from '$lib/components/EntryList.svelte';
 	import SortBar from '$lib/components/SortBar.svelte';
 	import LocalGraph from '$lib/components/LocalGraph.svelte';
@@ -335,6 +336,7 @@
 		const badges: Array<{ label: string; cls: string }> = [];
 		if (entry.flags.includes('archive')) badges.push({ label: 'archived', cls: 'badge-archive' });
 		if (entry.status === 'read') badges.push({ label: 'read', cls: 'badge-read' });
+		if (entry.status === 'unread') badges.push({ label: 'unread', cls: 'badge-unread' });
 		if (entry.flags.includes('bookmark')) badges.push({ label: 'bookmark', cls: 'badge-bookmark' });
 		if (entry.flags.includes('gem')) badges.push({ label: 'gem', cls: 'badge-gem' });
 		return badges;
@@ -670,6 +672,7 @@
 											selectDashboardEntry(entry.id);
 										}
 									}}
+									oncontextmenu={(e) => showContextMenu(e, entry)}
 								>
 									<div class="tag-entry-body">
 										<span class="tag-entry-title">{entry.title}</span>
@@ -766,6 +769,7 @@
 						onitemclick={(entry) => {
 							selectDashboardEntry(entry.id);
 						}}
+						showStatusLabel={$activeSection === 'library'}
 					/>
 				</div>
 				{#if dashboardSelectedId !== null}
@@ -1076,6 +1080,10 @@
 	.badge-read {
 		background: var(--bg-highlight);
 		color: var(--yellow);
+	}
+	.badge-unread {
+		background: var(--bg-highlight);
+		color: var(--fg-muted);
 	}
 	.badge-bookmark {
 		background: var(--bg-highlight);
