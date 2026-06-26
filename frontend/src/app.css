@@ -101,9 +101,9 @@
 	--font-family: 'JetBrains Mono', monospace;
 	--font-ui-family: 'Bricolage Grotesque', sans-serif;
 	--font-ui-size: 17px;
-	--font-size-label:    0.78rem;
-	--font-size-sublabel: 0.72rem;
-	--font-size-count:    0.70rem;
+	--font-size-label: 0.78rem;
+	--font-size-sublabel: 0.75rem;
+	--font-size-count: 0.7rem;
 }
 
 /* Tokyo Night Light palette — derived and modified from tcmmichaelb139/obsidian-tokyonight */

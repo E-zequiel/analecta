@@ -951,12 +951,12 @@
 	}
 
 	.tag-chip-name {
-		font-size: 13.25px;
+		font-size: 12.85px;
 		color: var(--fg);
 	}
 
 	.tag-chip-count {
-		font-size: 13px;
+		font-size: 12.85px;
 		color: var(--fg-muted);
 		background: var(--bg-highlight);
 		border-radius: 10px;
@@ -974,7 +974,7 @@
 		border-radius: 20px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13px;
+		font-size: 12.85px;
 		outline: none;
 		min-width: 80px;
 	}
