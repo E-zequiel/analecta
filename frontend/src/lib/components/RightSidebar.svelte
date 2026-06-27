@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { X, Cable } from '@lucide/svelte';
-	import { entries as entriesApi, type Backlink, type Entry } from '$lib/api/client';
+	import {
+		entries as entriesApi,
+		type Backlink,
+		type Entry,
+		type HashtagGroup,
+	} from '$lib/api/client';
 	import { selectedTag, sidebarTagPreview } from '$lib/stores/ui';
 	import { entryChangedTick } from '$lib/stores/sse';
 	import { showContextMenu } from '$lib/stores/contextMenu';
@@ -21,7 +26,6 @@
 		onclose,
 		onwidthchange,
 		activeEntryId = null,
-		isDashboardPreview = false,
 		onbacklinksopen,
 	}: {
 		entries?: StackEntry[];
@@ -31,7 +35,6 @@
 		onclose?: (id: string) => void;
 		onwidthchange?: (w: number) => void;
 		activeEntryId?: number | null;
-		isDashboardPreview?: boolean;
 		onbacklinksopen?: (id: number, name: string) => void;
 	} = $props();
 
@@ -84,11 +87,8 @@
 		e.preventDefault();
 	}
 
-	type TagGroup = { tag: string; entries: Entry[] };
-
-	let backlinks = $state<Backlink[]>([]);
 	let tagEntries = $state<Entry[]>([]);
-	let tagGroups = $state<TagGroup[]>([]);
+	let hashtagGroups = $state<HashtagGroup[]>([]);
 	let directBacklinks = $state<Backlink[]>([]);
 	let connLoading = $state(false);
 
@@ -111,62 +111,32 @@
 		};
 	});
 
-	// Flat backlinks — used only in reading view (not dashboard preview)
+	// Unified connections — hashtag groups (via backlink_refs) + direct backlinks.
+	// Runs for both reading view and dashboard preview whenever an entry is active.
 	$effect(() => {
 		const id = activeEntryId;
-		const preview = isDashboardPreview;
-		void $entryChangedTick;
-		backlinks = [];
-		if (id === null || preview) return;
-
-		let cancelled = false;
-		entriesApi
-			.getBacklinks(id)
-			.then((result) => {
-				if (!cancelled) backlinks = result.linked;
-			})
-			.catch(() => {});
-		return () => {
-			cancelled = true;
-		};
-	});
-
-	// Rich connections — used in dashboard preview mode (tag groups + direct backlinks).
-	// Sequential tag fetches avoid racing multiple connections to the sidecar.
-	$effect(() => {
-		const id = activeEntryId;
-		const preview = isDashboardPreview;
 		const tag = activeTag;
+		void $entryChangedTick;
 
-		tagGroups = [];
+		hashtagGroups = [];
 		directBacklinks = [];
 
-		if (!preview || id === null || tag !== null) return;
+		if (id === null || tag !== null) return;
 
 		connLoading = true;
 		let cancelled = false;
 
 		(async () => {
 			try {
-				const entry = await entriesApi.get(id);
+				const [conn, bl] = await Promise.all([
+					entriesApi.getHashtagConnections(id).catch(() => ({ groups: [] as HashtagGroup[] })),
+					entriesApi.getBacklinks(id).catch(() => ({ linked: [] as Backlink[] })),
+				]);
 				if (cancelled) return;
-
-				const groups: TagGroup[] = [];
-				for (const t of entry.tags) {
-					if (cancelled) return;
-					const es = await entriesApi.list({ tag: t }).catch(() => [] as Entry[]);
-					const filtered = es.filter((e) => e.id !== id);
-					groups.push({ tag: t, entries: filtered });
-				}
-
-				if (cancelled) return;
-				const bl = await entriesApi.getBacklinks(id).catch(() => ({ linked: [] as Backlink[] }));
-
-				if (cancelled) return;
-				tagGroups = groups;
+				hashtagGroups = conn.groups;
 				directBacklinks = bl.linked;
 			} catch {
-				// outer entry fetch failed — leave empty state
+				// outer fetch failed — leave empty state
 			} finally {
 				if (!cancelled) connLoading = false;
 			}
@@ -241,14 +211,12 @@
 					<span class="bl-label">BACKLINKS</span>
 					{#if activeTag && tagEntries.length > 0}
 						<span class="bl-count">{tagEntries.length}</span>
-					{:else if isDashboardPreview && !activeTag && !connLoading}
+					{:else if !activeTag && !connLoading}
 						{@const total =
-							tagGroups.reduce((s, g) => s + g.entries.length, 0) + directBacklinks.length}
+							hashtagGroups.reduce((s, g) => s + g.entries.length, 0) + directBacklinks.length}
 						{#if total > 0}
 							<span class="bl-count">{total}</span>
 						{/if}
-					{:else if !activeTag && !isDashboardPreview && backlinks.length > 0}
-						<span class="bl-count">{backlinks.length}</span>
 					{/if}
 				</div>
 				{#if activeTag}
@@ -279,16 +247,16 @@
 						{/each}
 					</div>
 				{/if}
-			{:else if isDashboardPreview}
+			{:else}
 				{#if connLoading}
 					<p class="bl-empty">Loading…</p>
-				{:else if tagGroups.length === 0 && directBacklinks.length === 0}
+				{:else if hashtagGroups.length === 0 && directBacklinks.length === 0}
 					<p class="bl-empty">No connections.</p>
 				{:else}
 					<div class="bl-rich-scroll">
-						{#each tagGroups as group (group.tag)}
+						{#each hashtagGroups as group (group.hashtag)}
 							<div class="bl-group-header">
-								<span class="bl-group-tag">#{group.tag}</span>
+								<span class="bl-group-tag">#{group.hashtag}</span>
 								<span class="bl-count">{group.entries.length}</span>
 							</div>
 							<div class="bl-group-list">
@@ -315,21 +283,6 @@
 								{/each}
 							</div>
 						{/if}
-					</div>
-				{/if}
-			{:else}
-				{#if backlinks.length === 0}
-					<p class="bl-empty">No backlinks.</p>
-				{:else}
-					<div class="bl-list">
-						{#each backlinks as item, i (`${item.id}-${i}`)}
-							<button class="bl-item" onclick={() => onbacklinksopen?.(item.id, item.name)}>
-								<span class="bl-item-name">{item.name}</span>
-								{#if item.context?.heading}
-									<span class="bl-item-heading">{item.context.heading}</span>
-								{/if}
-							</button>
-						{/each}
 					</div>
 				{/if}
 			{/if}

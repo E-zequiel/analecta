@@ -665,3 +665,317 @@ class TestLinkedEndpoints:
             assert resp.status_code == 204
             linked = c.get(f"/api/v1/entries/{id_a}/linked").json()
         assert linked == []
+
+
+# ---------------------------------------------------------------------------
+# VaultIndex.get_hashtag_connections — integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestBacklinksBootstrap:
+    def test_bootstrap_indexes_unindexed_entries(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db_path = tmp_path / "vault" / "analecta.db"
+
+        # First open: entries added but index_backlinks never called
+        db = VaultIndex(db_path)
+        f1 = vault / "a1.md"
+        f1.write_text("About #python.\n", encoding="utf-8")
+        id1 = _seed(db, n=1, file_path=str(f1))
+        f2 = vault / "a2.md"
+        f2.write_text("Also #python.\n", encoding="utf-8")
+        id2 = _seed(db, n=2, file_path=str(f2))
+        db.close()
+
+        # Remove the bootstrap marker to simulate a fresh re-open where
+        # the one-time migration has not run for these entries yet.
+        import sqlite3 as _sqlite3
+
+        conn = _sqlite3.connect(str(db_path))
+        conn.execute(
+            "DELETE FROM schema_migrations WHERE version = 'py:008_backlinks_bootstrap'"
+        )
+        conn.commit()
+        conn.close()
+
+        # Second open: bootstrap runs, finds the two entries with empty
+        # backlink_refs, indexes them.
+        db2 = VaultIndex(db_path)
+        groups = db2.get_hashtag_connections(id1)
+        db2.close()
+
+        assert len(groups) == 1
+        assert groups[0].hashtag == "python"
+        assert len(groups[0].entries) == 1
+        assert groups[0].entries[0].id == id2
+
+    def test_bootstrap_marker_prevents_rerun(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db_path = tmp_path / "vault" / "analecta.db"
+
+        db = VaultIndex(db_path)
+        f1 = vault / "a1.md"
+        f1.write_text("About #python.\n", encoding="utf-8")
+        _seed(db, n=1, file_path=str(f1))
+        db.close()
+
+        # Remove marker to force bootstrap on re-open
+        import sqlite3 as _sqlite3
+
+        conn = _sqlite3.connect(str(db_path))
+        conn.execute(
+            "DELETE FROM schema_migrations WHERE version = 'py:008_backlinks_bootstrap'"
+        )
+        conn.commit()
+        conn.close()
+
+        db2 = VaultIndex(db_path)
+        db2.close()
+
+        # Marker should now be present — third open won't run bootstrap again
+        conn2 = _sqlite3.connect(str(db_path))
+        row = conn2.execute(
+            "SELECT version FROM schema_migrations "
+            "WHERE version = 'py:008_backlinks_bootstrap'"
+        ).fetchone()
+        conn2.close()
+
+        assert row is not None
+
+
+class TestHashtagConnections:
+    # --- content hashtags via backlink_refs ---
+
+    def test_shared_hashtag_groups_peer_entry(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        f1 = vault / "a1.md"
+        f1.write_text("About #python and its ecosystem.\n", encoding="utf-8")
+        id1 = _seed(db, n=1, file_path=str(f1))
+
+        f2 = vault / "a2.md"
+        f2.write_text("Using #python for data science.\n", encoding="utf-8")
+        id2 = _seed(db, n=2, file_path=str(f2))
+
+        db.index_backlinks(id1)
+        db.index_backlinks(id2)
+
+        groups = db.get_hashtag_connections(id1)
+
+        assert len(groups) == 1
+        assert groups[0].hashtag == "python"
+        assert len(groups[0].entries) == 1
+        assert groups[0].entries[0].id == id2
+        db.close()
+
+    def test_no_shared_tags_returns_empty(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        f1 = vault / "a1.md"
+        f1.write_text("About #rust only.\n", encoding="utf-8")
+        id1 = _seed(db, n=1, file_path=str(f1))
+
+        f2 = vault / "a2.md"
+        f2.write_text("About #python only.\n", encoding="utf-8")
+        id2 = _seed(db, n=2, file_path=str(f2))
+
+        db.index_backlinks(id1)
+        db.index_backlinks(id2)
+
+        assert db.get_hashtag_connections(id1) == []
+        db.close()
+
+    def test_self_excluded_from_group(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        f1 = vault / "a1.md"
+        f1.write_text("Talking about #python.\n", encoding="utf-8")
+        id1 = _seed(db, n=1, file_path=str(f1))
+
+        db.index_backlinks(id1)
+
+        assert db.get_hashtag_connections(id1) == []
+        db.close()
+
+    def test_multiple_content_hashtag_groups(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        f1 = vault / "a1.md"
+        f1.write_text("Topics: #python and #ml.\n", encoding="utf-8")
+        id1 = _seed(db, n=1, file_path=str(f1))
+
+        f2 = vault / "a2.md"
+        f2.write_text("Using #python for #ml projects.\n", encoding="utf-8")
+        id2 = _seed(db, n=2, file_path=str(f2))
+
+        db.index_backlinks(id1)
+        db.index_backlinks(id2)
+
+        groups = db.get_hashtag_connections(id1)
+
+        assert len(groups) == 2
+        hashtags = {g.hashtag for g in groups}
+        assert hashtags == {"ml", "python"}
+        for g in groups:
+            assert len(g.entries) == 1
+            assert g.entries[0].id == id2
+        db.close()
+
+    def test_each_entry_appears_once_per_group(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        f1 = vault / "a1.md"
+        f1.write_text("About #python.\n", encoding="utf-8")
+        id1 = _seed(db, n=1, file_path=str(f1))
+
+        f2 = vault / "a2.md"
+        f2.write_text("Using #python here and #python there.\n", encoding="utf-8")
+        id2 = _seed(db, n=2, file_path=str(f2))
+
+        db.index_backlinks(id1)
+        db.index_backlinks(id2)
+
+        groups = db.get_hashtag_connections(id1)
+
+        assert len(groups) == 1
+        assert len(groups[0].entries) == 1
+        assert groups[0].entries[0].id == id2
+        db.close()
+
+    def test_no_tags_no_backlink_refs_returns_empty(self, tmp_path: Path) -> None:
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        id1 = _seed(db, n=1)
+        assert db.get_hashtag_connections(id1) == []
+        db.close()
+
+    # --- structural tags via entry_tags ---
+
+    def test_structural_tag_finds_peer(self, tmp_path: Path) -> None:
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        id1 = _seed(db, n=1)
+        id2 = _seed(db, n=2)
+        db.update_tags(id1, ["security"])
+        db.update_tags(id2, ["security"])
+
+        groups = db.get_hashtag_connections(id1)
+
+        assert len(groups) == 1
+        assert groups[0].hashtag == "security"
+        assert groups[0].entries[0].id == id2
+        db.close()
+
+    def test_structural_tag_case_insensitive(self, tmp_path: Path) -> None:
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        id1 = _seed(db, n=1)
+        id2 = _seed(db, n=2)
+        # "Python" (capital) vs "python" (lowercase) — treated as same tag
+        db.update_tags(id1, ["Python"])
+        db.update_tags(id2, ["python"])
+
+        groups = db.get_hashtag_connections(id1)
+
+        assert len(groups) == 1
+        assert groups[0].hashtag == "Python"  # display name from source entry
+        assert groups[0].entries[0].id == id2
+        db.close()
+
+    def test_structural_tag_no_peers_excluded(self, tmp_path: Path) -> None:
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        id1 = _seed(db, n=1)
+        db.update_tags(id1, ["unique_tag"])
+
+        assert db.get_hashtag_connections(id1) == []
+        db.close()
+
+    def test_structural_and_content_hashtag_no_duplication(
+        self, tmp_path: Path
+    ) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        f1 = vault / "a1.md"
+        f1.write_text("About #python.\n", encoding="utf-8")
+        id1 = _seed(db, n=1, file_path=str(f1))
+
+        f2 = vault / "a2.md"
+        f2.write_text("Also #python.\n", encoding="utf-8")
+        id2 = _seed(db, n=2, file_path=str(f2))
+
+        db.update_tags(id1, ["python"])
+        db.update_tags(id2, ["python"])
+        db.index_backlinks(id1)
+        db.index_backlinks(id2)
+
+        groups = db.get_hashtag_connections(id1)
+
+        # "python" appears in both sources — should produce exactly one group
+        assert len(groups) == 1
+        assert groups[0].hashtag == "python"
+        assert len(groups[0].entries) == 1
+        assert groups[0].entries[0].id == id2
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# API endpoint — GET /entries/{id}/hashtag-connections
+# ---------------------------------------------------------------------------
+
+
+class TestHashtagConnectionsEndpoint:
+    @pytest.fixture
+    def client(self, tmp_path: Path) -> Generator[TestClient]:
+        with TestClient(_make_app(tmp_path)) as c:
+            yield c
+
+    def test_404_unknown_entry(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/entries/9999/hashtag-connections")
+        assert resp.status_code == 404
+
+    def test_empty_when_no_shared_hashtags(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path)
+        config = AppConfig(vault_path=tmp_path / "vault")
+        with VaultIndex(config.vault_path / "analecta.db") as index:
+            id1 = _seed(index, n=1)
+        with TestClient(app) as c:
+            resp = c.get(f"/api/v1/entries/{id1}/hashtag-connections")
+        assert resp.status_code == 200
+        assert resp.json() == {"groups": []}
+
+    def test_shared_hashtag_returned(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        app = _make_app(tmp_path)
+        config = AppConfig(vault_path=tmp_path / "vault")
+        with VaultIndex(config.vault_path / "analecta.db") as index:
+            f1 = vault / "a1.md"
+            f1.write_text("About #python.\n", encoding="utf-8")
+            id1 = _seed(index, n=1, file_path=str(f1))
+            f2 = vault / "a2.md"
+            f2.write_text("Also about #python.\n", encoding="utf-8")
+            id2 = _seed(index, n=2, file_path=str(f2))
+            index.index_backlinks(id1)
+            index.index_backlinks(id2)
+        with TestClient(app) as c:
+            resp = c.get(f"/api/v1/entries/{id1}/hashtag-connections")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["groups"]) == 1
+        group = data["groups"][0]
+        assert group["hashtag"] == "python"
+        assert len(group["entries"]) == 1
+        assert group["entries"][0]["id"] == id2

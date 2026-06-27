@@ -69,9 +69,6 @@
 	);
 
 	const resolvedEntryId = $derived(activeViewerEntryId ?? $dashboardPreviewEntryId);
-	const isDashboardPreview = $derived(
-		activeViewerEntryId === null && $dashboardPreviewEntryId !== null
-	);
 
 	$effect(() => {
 		if (activeViewerEntryId !== null) {
@@ -311,7 +308,6 @@
 					onclose={(id) => closeTab(id)}
 					onwidthchange={(w) => rightSidebarWidth.set(w)}
 					activeEntryId={resolvedEntryId}
-					{isDashboardPreview}
 					onbacklinksopen={(id, name) => openEntryTab(id, name)}
 				/>
 			{/if}
