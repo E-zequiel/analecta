@@ -64,6 +64,15 @@ export interface BacklinksResult {
 	linked: Backlink[];
 }
 
+export interface HashtagGroup {
+	hashtag: string;
+	entries: Entry[];
+}
+
+export interface HashtagConnectionsResult {
+	groups: HashtagGroup[];
+}
+
 export interface GraphNode {
 	node_id: string;
 	label: string;
@@ -195,6 +204,10 @@ export const entries = {
 
 	getBacklinks(id: number): Promise<BacklinksResult> {
 		return apiFetch<BacklinksResult>(`/entries/${id}/backlinks`);
+	},
+
+	getHashtagConnections(id: number): Promise<HashtagConnectionsResult> {
+		return apiFetch<HashtagConnectionsResult>(`/entries/${id}/hashtag-connections`);
 	},
 
 	getGraph(): Promise<GraphResult> {

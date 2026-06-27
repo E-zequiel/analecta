@@ -91,6 +91,19 @@ class EntryRecord:
     id: int | None = None
 
 
+@dataclass
+class HashtagConnectionGroup:
+    """Other entries sharing a common content hashtag with the source entry.
+
+    Args:
+        hashtag: Normalized hashtag text (e.g. ``python``).
+        entries: All other entries whose ``backlink_refs`` contain this hashtag.
+    """
+
+    hashtag: str
+    entries: list[EntryRecord]
+
+
 class VaultIndex:
     """SQLite-backed index for vault entries with FTS5 full-text search.
 
@@ -155,6 +168,34 @@ class VaultIndex:
                 (resource.name, _now()),
             )
             self._conn.commit()
+
+        # One-time Python migration: populate backlink_refs for entries that
+        # existed before 007_backlinks.sql created the table.
+        _py_bootstrap = "py:008_backlinks_bootstrap"
+        if _py_bootstrap not in applied:
+            self._bootstrap_backlinks()
+            self._conn.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                (_py_bootstrap, _now()),
+            )
+            self._conn.commit()
+
+    def _bootstrap_backlinks(self) -> None:
+        """Populate backlink_refs for entries that have never been indexed.
+
+        Entries created before migration 007_backlinks.sql have no rows in
+        backlink_refs.  This one-time method calls index_backlinks for each
+        such entry so that hashtag and wikilink connections become available.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT e.id FROM entries e
+            LEFT JOIN backlink_refs br ON br.source_id = e.id
+            WHERE br.source_id IS NULL
+            """
+        ).fetchall()
+        for row in rows:
+            self.index_backlinks(row[0])
 
     # ------------------------------------------------------------------
     # CRUD
@@ -657,6 +698,97 @@ class VaultIndex:
                 post=row[5],
             )
             for row in rows
+        ]
+
+    def get_hashtag_connections(self, source_id: int) -> list[HashtagConnectionGroup]:
+        """Return other entries grouped by shared tag — structural or content.
+
+        Combines two sources:
+
+        1. **Structural tags** from ``entry_tags``: for each tag assigned to
+           *source_id*, finds all other entries that carry the same tag using a
+           case-insensitive name comparison.  This handles tags created via the
+           Tags UI regardless of capitalisation (e.g. "Python" matches "python").
+
+        2. **Content hashtags** from ``backlink_refs``: for each ``#hashtag``
+           parsed out of *source_id*'s Markdown file, finds other entries whose
+           ``backlink_refs`` contain the same hashtag.  Tags already covered by
+           source 1 (case-insensitive overlap) are not duplicated.
+
+        Groups are sorted alphabetically by the display name from *source_id*'s
+        own perspective; entries within each group are sorted by title.  Empty
+        groups (no peer entries) are excluded.
+
+        Args:
+            source_id: ID of the entry to query connections for.
+
+        Returns:
+            List of :class:`HashtagConnectionGroup` ordered by display name.
+        """
+        # key = lowercase tag name; value = (display_name, [peer EntryRecord])
+        merged: dict[str, tuple[str, list[EntryRecord]]] = {}
+
+        # --- Source 1: structural tags from entry_tags ---
+        structural_rows = self._conn.execute(
+            "SELECT t.name FROM entry_tags et "
+            "JOIN tags t ON t.id = et.tag_id "
+            "WHERE et.entry_id = ? "
+            "ORDER BY t.name",
+            (source_id,),
+        ).fetchall()
+
+        for row in structural_rows:
+            tag_name: str = row[0]
+            key = tag_name.lower()
+            if key in merged:
+                continue
+            peer_rows = self._conn.execute(
+                """
+                SELECT DISTINCT e.*
+                FROM entry_tags et
+                JOIN tags t ON t.id = et.tag_id
+                JOIN entries e ON e.id = et.entry_id
+                WHERE LOWER(t.name) = LOWER(?) AND et.entry_id != ?
+                ORDER BY e.title ASC
+                """,
+                (tag_name, source_id),
+            ).fetchall()
+            peers = [_row_to_entry(r) for r in peer_rows]
+            if peers:
+                merged[key] = (tag_name, peers)
+
+        # --- Source 2: content hashtags from backlink_refs ---
+        hashtag_rows = self._conn.execute(
+            "SELECT DISTINCT target_text FROM backlink_refs "
+            "WHERE source_id = ? AND is_hashtag = 1 "
+            "ORDER BY target_text",
+            (source_id,),
+        ).fetchall()
+
+        for row in hashtag_rows:
+            hashtag: str = row[0]
+            key = hashtag.lower()
+            if key in merged:
+                continue  # already covered by a structural tag
+            peer_rows = self._conn.execute(
+                """
+                SELECT e.*
+                FROM backlink_refs br
+                JOIN entries e ON e.id = br.source_id
+                WHERE br.target_text = ? AND br.is_hashtag = 1
+                  AND br.source_id != ?
+                GROUP BY e.id
+                ORDER BY e.title ASC
+                """,
+                (hashtag, source_id),
+            ).fetchall()
+            peers = [_row_to_entry(r) for r in peer_rows]
+            if peers:
+                merged[key] = (hashtag, peers)
+
+        return [
+            HashtagConnectionGroup(hashtag=display, entries=entries)
+            for _, (display, entries) in sorted(merged.items())
         ]
 
     def get_subgraph(

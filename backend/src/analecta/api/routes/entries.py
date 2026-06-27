@@ -125,6 +125,28 @@ class BacklinksResultOut(BaseModel):
     linked: list[BacklinkOut]
 
 
+class HashtagGroupOut(BaseModel):
+    """Entries sharing a single content hashtag with the queried entry.
+
+    Attributes:
+        hashtag: Normalized hashtag text (e.g. ``python``).
+        entries: Other entries that contain this hashtag in their content.
+    """
+
+    hashtag: str
+    entries: list[EntryOut]
+
+
+class HashtagConnectionsOut(BaseModel):
+    """Response body for GET /entries/{id}/hashtag-connections.
+
+    Attributes:
+        groups: Hashtag groups sorted by hashtag name.
+    """
+
+    groups: list[HashtagGroupOut]
+
+
 class GraphNodeOut(BaseModel):
     """A node in the vault connection graph.
 
@@ -461,6 +483,43 @@ async def get_entry_backlinks(
                 ),
             )
             for r in records
+        ]
+    )
+
+
+@router.get(
+    "/entries/{entry_id}/hashtag-connections", response_model=HashtagConnectionsOut
+)
+async def get_entry_hashtag_connections(
+    entry_id: int,
+    index: VaultIndex = Depends(get_index),
+) -> HashtagConnectionsOut:
+    """Return other entries grouped by shared content hashtag.
+
+    For each hashtag in *entry_id*'s ``backlink_refs``, finds all other
+    entries whose ``backlink_refs`` contain the same hashtag.  Groups are
+    ordered by hashtag; entries within each group are ordered by title.
+
+    Args:
+        entry_id: Source entry id.
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        HashtagConnectionsOut with a list of hashtag groups.
+
+    Raises:
+        HTTPException: 404 if the entry does not exist.
+    """
+    if await asyncio.to_thread(index.get_entry, entry_id) is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    groups = await asyncio.to_thread(index.get_hashtag_connections, entry_id)
+    return HashtagConnectionsOut(
+        groups=[
+            HashtagGroupOut(
+                hashtag=g.hashtag,
+                entries=[entry_out(e) for e in g.entries],
+            )
+            for g in groups
         ]
     )
 
