@@ -487,21 +487,6 @@
 							<span class="count">{counts[section.id]}</span>
 						{/if}
 					</button>
-					{#if isEntrySection}
-						<button
-							class="entry-open-btn"
-							onclick={() => {
-								if (dashboardEntry)
-									navigateInTab(
-										dashboardEntry.id,
-										dashboardEntry.title,
-										dashboardEntry.source_type
-									);
-							}}
-							use:tooltip={'Open in reading view'}
-							aria-label="Open in reading view">↗</button
-						>
-					{/if}
 				</div>
 
 				{#if $expandedSections.has(section.id)}
@@ -875,27 +860,6 @@
 
 	.section-row.entry-match .section-label {
 		color: var(--accent);
-	}
-
-	.entry-open-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 22px;
-		height: 22px;
-		padding: 0;
-		background: none;
-		border: none;
-		border-radius: 3px;
-		color: var(--accent);
-		font-size: 13.25px;
-		cursor: pointer;
-		flex-shrink: 0;
-		transition: background 0.12s;
-	}
-
-	.entry-open-btn:hover {
-		background: color-mix(in srgb, var(--accent) 18%, transparent);
 	}
 
 	.chevron-btn {
