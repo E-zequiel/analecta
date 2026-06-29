@@ -100,9 +100,15 @@ Use the imperative mood. Keep the subject line under 72 characters.
 
 ## Submitting a pull request
 
-1. Fork the repository and create a branch from `main`.
-2. Make your change. Run `mise exec -- ./scripts/check.sh` and confirm it passes with zero warnings.
-3. Open a pull request against `main` with a clear description of what changes and why.
+> [!IMPORTANT]
+> CI includes a dependency security scan that only runs on branches within this repository, not on fork pull requests. Fork PRs cannot pass the required CI checks and cannot be merged directly.
+
+The project uses a maintainer-applies workflow:
+
+1. **Open an issue** describing the change. Wait for maintainer sign-off before writing code — this avoids wasted effort on both sides.
+2. **Develop your changes** on a local fork or clone. Run `mise exec -- ./scripts/check.sh` and confirm it passes with zero warnings.
+3. **Share your work** via the issue thread: either a link to your fork branch or `git format-patch` output attached to the issue.
+4. **The maintainer applies your commits** to a branch in this repository, preserving your authorship, and opens the PR from there. You appear as the commit author in the project history.
 
 Response times are best-effort for a solo-maintained project.
 
