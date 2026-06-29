@@ -1,6 +1,11 @@
 # Analecta
 
-Save web content as clean Markdown. Read, annotate, and explore connections — entirely locally.
+> Latin (a.naˈlɛk.ta), masculine noun I declension, from the Ancient Greek ἀνάλεκτα (analékta).
+> *Selected fragments, a curated collection of writings.*
+
+Save web content as clean Markdown. Read, annotate and connect. Entirely locally.
+
+Made in Linux for Linux.
 
 [![CI](https://github.com/E-zequiel/analecta/actions/workflows/ci.yml/badge.svg)](https://github.com/E-zequiel/analecta/actions/workflows/ci.yml)
 [![GitHub release](https://img.shields.io/github/v/release/E-zequiel/analecta)](https://github.com/E-zequiel/analecta/releases/latest)
@@ -8,7 +13,7 @@ Save web content as clean Markdown. Read, annotate, and explore connections — 
 
 ![Analecta](.github/assets/hero-readme.png)
 
-Analecta is a local Linux desktop application that turns any URL — article, YouTube video, Substack post — into a clean Markdown file stored in your personal vault. No cloud sync, no subscription, no tracking. Entirely private.
+Analecta is a local Linux desktop application that turns any URL — article, YouTube video, Substack post — into a clean Markdown file stored in your personal vault. No cloud sync, no subscription, no tracking. Truly private and yours.
 
 ## Features
 
