@@ -1,6 +1,6 @@
 [project]
 name = "analecta"
-version = "0.1.0"
+version = "0.3.0"
 description = "URL → extraction → clean Markdown → local PKM vault"
 authors = [
     { name = "Ezequiel", email = "173857765+E-zequiel@users.noreply.github.com" }
