@@ -34,9 +34,8 @@ jobs:
         run: mise exec -- uv sync --frozen
         working-directory: backend
 
-      - name: Run tests
-        run: mise exec -- uv run pytest tests -v -m "not integration"
-        working-directory: backend
+      - name: Run backend checks
+        run: ./scripts/check.sh backend
 
   check-frontend:
     runs-on: ubuntu-22.04
@@ -56,8 +55,8 @@ jobs:
       - name: Install frontend dependencies
         run: mise exec -- pnpm install --frozen-lockfile
 
-      - name: Svelte type check
-        run: mise exec -- pnpm --filter frontend check
+      - name: Run frontend checks
+        run: ./scripts/check.sh frontend
 
   verify-provenance:
     runs-on: ubuntu-22.04
