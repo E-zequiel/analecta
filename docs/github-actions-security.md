@@ -467,7 +467,13 @@ After install, `socket ci` reads `pnpm-lock.yaml` and `package.json` directly �
 
 ### CI: downstream jobs are gated on `socket` passing
 
-`check-frontend` and `test-backend` declare `needs: [socket]` so they only execute after the scan succeeds:
+`check-frontend` and `test-backend` declare `needs: [socket]` so they only execute after the scan succeeds. Each job runs `./scripts/check.sh <layer>` — the full quality gate for that layer:
+
+- `test-backend` → `./scripts/check.sh backend`: ruff format, ruff check, basedpyright, pytest
+- `check-frontend` → `./scripts/check.sh frontend`: prettier, ESLint, tsc, svelte-check, Vite production build
+
+This means the entire static analysis and test suite for both layers is CI-enforced, not
+just a subset of tools.
 
 ```yaml
 check-frontend:
