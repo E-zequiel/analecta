@@ -246,9 +246,48 @@ def test_search_no_results(index: VaultIndex):
     assert index.search("xyzzy_nonexistent") == []
 
 
-def test_search_invalid_fts_syntax_raises(index: VaultIndex):
-    with pytest.raises(sqlite3.OperationalError):
-        index.search("AND")
+def test_search_prefix_match(index: VaultIndex):
+    index.add_entry(
+        _entry(title="Rolldown paused Rust integration", url="https://a.com")
+    )
+    index.add_entry(_entry(title="React Compiler update", url="https://b.com"))
+    results = index.search("Rolld")
+    assert len(results) == 1
+    assert results[0].title == "Rolldown paused Rust integration"
+
+
+def test_search_prefix_partial_word(index: VaultIndex):
+    index.add_entry(_entry(title="socket security scan", url="https://a.com"))
+    assert len(index.search("Socke")) == 1
+    assert len(index.search("sock")) == 1
+
+
+def test_search_multiterm_prefix(index: VaultIndex):
+    index.add_entry(_entry(title="React Compiler deep dive", url="https://a.com"))
+    index.add_entry(_entry(title="Python asyncio guide", url="https://b.com"))
+    results = index.search("React Comp")
+    assert len(results) == 1
+    assert results[0].title == "React Compiler deep dive"
+
+
+def test_search_special_chars_sanitized(index: VaultIndex):
+    index.add_entry(_entry(title="hello world article", url="https://a.com"))
+    # Special FTS5 chars should be stripped, not cause an error
+    results = index.search('hello"world')
+    assert isinstance(results, list)
+
+
+def test_search_fts_keyword_as_term(index: VaultIndex):
+    # "AND" was previously an invalid FTS5 query; now sanitized to "AND*"
+    index.add_entry(_entry(title="Android development", url="https://a.com"))
+    results = index.search("AND")
+    assert isinstance(results, list)
+    assert any(r.title == "Android development" for r in results)
+
+
+def test_search_only_special_chars_returns_empty(index: VaultIndex):
+    index.add_entry(_entry())
+    assert index.search("!!!") == []
 
 
 # ---------------------------------------------------------------------------

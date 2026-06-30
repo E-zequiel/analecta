@@ -1,5 +1,6 @@
 import importlib.resources
 import json
+import re as _re
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -1103,15 +1104,19 @@ class VaultIndex:
     def search(self, query: str) -> list[EntryRecord]:
         """Full-text search across title and content using FTS5.
 
+        Transforms the raw query into a safe prefix-match expression via
+        :func:`_fts_prefix_query` so that partial words match (e.g. ``"Rolld"``
+        finds ``"Rolldown…"``).
+
         Args:
-            query: FTS5 query string.
+            query: Raw user query string.
 
         Returns:
             Matching entries ordered by relevance (BM25).
-
-        Raises:
-            sqlite3.OperationalError: If ``query`` is not valid FTS5 syntax.
         """
+        fts_query = _fts_prefix_query(query)
+        if not fts_query:
+            return []
         rows = self._conn.execute(
             """
             SELECT e.* FROM entries e
@@ -1119,7 +1124,7 @@ class VaultIndex:
             WHERE entries_fts MATCH ?
             ORDER BY rank
             """,
-            (query,),
+            (fts_query,),
         ).fetchall()
         return [_row_to_entry(r) for r in rows]
 
@@ -1230,6 +1235,24 @@ class VaultIndex:
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
+
+def _fts_prefix_query(raw: str) -> str:
+    """Build a safe FTS5 prefix-match expression from a raw user query.
+
+    Strips FTS5 special characters, splits on whitespace, and appends ``*``
+    to each term so partial words match (e.g. ``"Rolld"`` finds
+    ``"Rolldown…"``).  Returns an empty string when no terms remain, which
+    the caller interprets as "return no results".
+
+    Args:
+        raw: Unsanitized user input.
+
+    Returns:
+        FTS5-safe query string, or ``""`` if nothing remains after sanitization.
+    """
+    terms = _re.sub(r"[^\w\s]", " ", raw, flags=_re.UNICODE).split()
+    return " ".join(f"{t.lower()}*" for t in terms)
 
 
 def _now() -> str:
