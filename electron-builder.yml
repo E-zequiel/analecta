@@ -9,9 +9,12 @@ directories:
 files:
   - dist/**/*
   - "!dist/**/*.map"
-  - build-resources/tray-icon.png
 
 extraResources:
+  - from: build-resources/tray-icon-dark.png
+    to: tray-icon-dark.png
+  - from: build-resources/tray-icon-light.png
+    to: tray-icon-light.png
   - from: ../binaries/analecta-sidecar
     to: analecta-sidecar
     filter: ["**/*"]

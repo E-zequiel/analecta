@@ -8,7 +8,10 @@ let themeListener: (() => void) | null = null;
 
 function resolveIcon(variant: 'dark' | 'light'): Electron.NativeImage {
 	const filename = variant === 'dark' ? 'tray-icon-dark.png' : 'tray-icon-light.png';
-	const iconPath = path.join(__dirname, '..', '..', 'build-resources', filename);
+	const basePath = app.isPackaged
+		? process.resourcesPath
+		: path.join(__dirname, '..', '..', 'build-resources');
+	const iconPath = path.join(basePath, filename);
 	return fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty();
 }
 
