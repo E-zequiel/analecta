@@ -23,6 +23,7 @@ extraResources:
     to: defuddle-browser.js
 
 linux:
+  executableName: analecta
   target:
     - deb
     - rpm
