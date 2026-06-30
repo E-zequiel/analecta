@@ -29,12 +29,15 @@ export const isWaylandNative = process.env.XDG_SESSION_TYPE === 'wayland';
 function registerDevSchemeHandler(): void {
 	const desktopDir = path.join(app.getPath('home'), '.local', 'share', 'applications');
 	const desktopFile = path.join(desktopDir, 'analecta-dev.desktop');
+	const iconPath = path.join(__dirname, '..', '..', 'build-resources', 'icons', '512x512.png');
 	const entry = [
 		'[Desktop Entry]',
 		'Type=Application',
 		'Name=Analecta (dev)',
 		`Exec=${process.execPath} ${app.getAppPath()} %u`,
+		`Icon=${iconPath}`,
 		'MimeType=x-scheme-handler/analecta',
+		'StartupWMClass=Analecta',
 		'NoDisplay=true',
 		'StartupNotify=false',
 		'',
@@ -54,6 +57,18 @@ function registerDevSchemeHandler(): void {
 // Must be set before app.ready: display name and XDG-compliant userData path.
 app.setName('Analecta');
 app.setPath('userData', path.join(app.getPath('home'), '.config', 'analecta'));
+
+// On Wayland the compositor resolves the taskbar/alt-tab icon by matching the
+// xdg_toplevel app-id against a .desktop filename. In dev the file is
+// analecta-dev.desktop; production uses the binary name (analecta) which
+// electron-builder writes automatically.
+if (!app.isPackaged && process.platform === 'linux') {
+	app.setDesktopFileName('analecta-dev');
+	// Write the .desktop entry here (pre-ready) so the icon is available to the
+	// compositor before the first window opens. app.getPath/getAppPath are safe
+	// to call before ready.
+	registerDevSchemeHandler();
+}
 
 // Register custom schemes before app.ready (Electron requirement).
 registerProtocols();
@@ -116,7 +131,6 @@ app
 	.then(async () => {
 		Menu.setApplicationMenu(null);
 		setupProtocolHandlers();
-		if (!app.isPackaged) registerDevSchemeHandler();
 
 		mainWindow = createWindow();
 		setMainWindowRef(mainWindow);
