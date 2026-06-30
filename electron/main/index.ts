@@ -67,6 +67,12 @@ if (!app.requestSingleInstanceLock()) {
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
 
+function resolveAppIcon(): string {
+	return app.isPackaged
+		? path.join(process.resourcesPath, 'icon.png')
+		: path.join(__dirname, '..', '..', 'build-resources', 'icons', '512x512.png');
+}
+
 function createWindow(): BrowserWindow {
 	return new BrowserWindow({
 		width: 1280,
@@ -74,6 +80,7 @@ function createWindow(): BrowserWindow {
 		minWidth: 700,
 		minHeight: 500,
 		frame: false,
+		icon: resolveAppIcon(),
 		webPreferences: {
 			contextIsolation: true,
 			sandbox: true,
