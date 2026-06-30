@@ -8,8 +8,14 @@
 ## Running the gate
 
 ```bash
-./scripts/check.sh   # from repo root
+./scripts/check.sh              # all layers (from repo root)
+./scripts/check.sh backend      # Python sidecar only
+./scripts/check.sh frontend     # TypeScript / Svelte only
 ```
+
+The no-arg form runs both layers sequentially (backend first). CI calls each layer
+separately — `test-backend` runs `./scripts/check.sh backend` and `check-frontend`
+runs `./scripts/check.sh frontend`.
 
 Steps in order:
 
