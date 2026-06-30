@@ -54,6 +54,7 @@ def main() -> None:
             "--distpath",
             str(BINARIES),
             "--noconfirm",
+            "--clean",
         ],
         cwd=BACKEND,
         check=True,
