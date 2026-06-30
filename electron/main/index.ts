@@ -63,7 +63,10 @@ app.setPath('userData', path.join(app.getPath('home'), '.config', 'analecta'));
 // analecta-dev.desktop; production uses the binary name (analecta) which
 // electron-builder writes automatically.
 if (!app.isPackaged && process.platform === 'linux') {
-	app.setDesktopFileName('analecta-dev');
+	// Align the Wayland xdg_toplevel app-id with the dev .desktop filename so the
+	// compositor can resolve the icon. setDesktopName is not in the v42 type defs
+	// but is present in the runtime binary.
+	(app as unknown as { setDesktopName(name: string): void }).setDesktopName('analecta-dev.desktop');
 	// Write the .desktop entry here (pre-ready) so the icon is available to the
 	// compositor before the first window opens. app.getPath/getAppPath are safe
 	// to call before ready.
