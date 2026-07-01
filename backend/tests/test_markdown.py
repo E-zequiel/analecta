@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 import yaml
 
@@ -18,7 +20,7 @@ _CREATED_AT = "2024-01-15T10:00:00"
 
 
 def _content(**kwargs) -> ExtractedContent:
-    defaults = {
+    defaults: dict[str, Any] = {
         "title": "Test Article",
         "html": "<p>Hello world</p>",
         "url": "https://example.com/article",

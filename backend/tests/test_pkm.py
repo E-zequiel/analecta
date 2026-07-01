@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from analecta.pkm.tags import get_backlinks, get_cooccurrences
@@ -22,7 +24,7 @@ def index(tmp_path):
 
 
 def _entry(**kwargs) -> EntryRecord:
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         title="T",
         url="https://example.com/1",
         file_path="/vault/pages/2024-01-01-t.md",
