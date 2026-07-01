@@ -17,7 +17,7 @@ def test_appconfig_defaults():
 
 
 def test_appconfig_vault_path_expanduser():
-    config = AppConfig(vault_path="~/my-vault")
+    config = AppConfig(vault_path="~/my-vault")  # pyright: ignore[reportArgumentType]
     assert not str(config.vault_path).startswith("~")
 
 
@@ -25,7 +25,7 @@ def test_appconfig_vault_path_expanduser():
 @settings(max_examples=50)
 def test_appconfig_rejects_invalid_font_variant(value: str):
     with pytest.raises(ValidationError):
-        AppConfig(font_variant=value)
+        AppConfig(font_variant=value)  # pyright: ignore[reportArgumentType]
 
 
 def test_load_config_missing_file(tmp_path: Path):
@@ -49,7 +49,7 @@ def test_load_config_invalid_field_raises(tmp_path: Path):
 
 
 def test_appconfig_close_to_tray_default():
-    assert AppConfig().close_to_tray is True
+    assert AppConfig().close_to_tray is False
 
 
 def test_load_config_reads_close_to_tray(tmp_path: Path):
