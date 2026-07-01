@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-06-29
+## [0.3.1] - 2026-07-01
 
 Initial public release.
 
@@ -21,9 +21,10 @@ Initial public release.
 - Vault-wide knowledge graph and per-entry subgraph, built with Sigma.js.
 - Built-in Markdown editor with CodeMirror 6 and Tokyo Night theme.
 - Multi-tab reading with scroll position persistence across sessions.
-- System tray integration and clipboard-to-URL capture.
+- System tray integration (configurable close-to-tray behavior, off by default) and clipboard-to-URL capture.
 - Auto-updates via in-app updater.
-- Distribution packages for Linux: `.deb`, `.rpm`, `.AppImage`.
+- Native Linux packaging — `.deb`, `.rpm`, `.AppImage` — with correct application identity and icons, including taskbar/alt-tab icon support on Wayland compositors.
+- Keyboard navigation in the connections search dialog.
 
-[Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/E-zequiel/analecta/releases/tag/v0.3.0
+[Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/E-zequiel/analecta/releases/tag/v0.3.1
