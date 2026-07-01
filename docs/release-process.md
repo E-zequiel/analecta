@@ -60,7 +60,9 @@ The workflow only runs against `E-zequiel/analecta` (guarded), so it never fires
 
 - Download the installer package from the draft release's assets instead of building locally.
 - Install it (e.g. `sudo apt install ./analecta_X.Y.Z_amd64.deb`) and confirm the app
-  launches and behaves as expected.
+  launches and behaves as expected. Package/artifact naming is set explicitly in
+  `electron-builder.yml`'s `deb`/`rpm` blocks — see
+  `docs/electron-builder-linux-package-naming.md` if it ever reverts to `analecta-electron`.
 
 ---
 
