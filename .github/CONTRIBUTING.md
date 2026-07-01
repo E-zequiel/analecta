@@ -37,6 +37,17 @@ mise exec -- pnpm install
 git config core.hooksPath .githooks
 ```
 
+## Project structure
+
+```
+analecta/
+├── backend/     # Python sidecar — FastAPI + SQLite, extraction & business logic
+├── frontend/    # SvelteKit UI
+├── electron/    # Electron shell — window management + sidecar lifecycle
+├── scripts/     # build, quality-gate, and dependency tooling
+└── docs/        # architecture decisions and platform-specific quirk notes
+```
+
 ## Running in development
 
 **Backend sidecar only** (API server, prints its port to stdout):
