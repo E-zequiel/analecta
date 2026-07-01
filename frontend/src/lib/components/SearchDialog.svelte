@@ -194,9 +194,13 @@
 		transition: background 0.1s;
 	}
 
-	.result-item:hover,
+	.result-item:hover {
+		background: var(--bg-highlight);
+	}
+
 	.result-item.is-selected {
 		background: var(--bg-highlight);
+		color: var(--accent);
 	}
 
 	.result-title {
