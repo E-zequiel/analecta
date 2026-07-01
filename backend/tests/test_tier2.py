@@ -1,10 +1,12 @@
+from typing import Any
+
 import pytest
 
 from analecta.extraction.core import ExtractionError
 from analecta.extraction.tier2 import render_url
 
 
-def _mock_httpx(mocker, json_body: dict) -> None:
+def _mock_httpx(mocker, json_body: dict[str, Any]) -> None:
     mock_resp = mocker.MagicMock()
     mock_resp.raise_for_status.return_value = None
     mock_resp.json.return_value = json_body

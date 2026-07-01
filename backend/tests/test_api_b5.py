@@ -131,11 +131,14 @@ def test_events_200(tmp_path: Path, mocker: MockerFixture) -> None:
     # which never happens for an infinite SSE stream.  We replace
     # EventSourceResponse with a finite StreamingResponse so the handler
     # returns normally and we can verify the 200 + content-type.
+    def _fake_event_source_response(content: object, **kw: object) -> StreamingResponse:
+        return StreamingResponse(
+            iter([b"data: {}\n\n"]), media_type="text/event-stream"
+        )
+
     mocker.patch(
         "analecta.api.routes.system.EventSourceResponse",
-        side_effect=lambda content, **kw: StreamingResponse(
-            iter([b"data: {}\n\n"]), media_type="text/event-stream"
-        ),
+        side_effect=_fake_event_source_response,
     )
     with TestClient(_make_app(tmp_path)) as c:
         r = c.get("/api/v1/system/events")

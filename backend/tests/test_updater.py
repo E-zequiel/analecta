@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "scripts"))
-from deps_update import _age_ok, _parse_iso, _parse_pnpm_outdated
+from deps_update import (  # pyright: ignore[reportMissingImports]
+    _age_ok,
+    _parse_iso,
+    _parse_pnpm_outdated,
+)
 
 
 class TestParseIso:

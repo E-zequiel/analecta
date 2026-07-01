@@ -1,5 +1,6 @@
 import json
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from youtube_transcript_api._transcripts import FetchedTranscriptSnippet
@@ -463,7 +464,7 @@ def test_try_nextjs_hydration_rsc_app_router_returns_none():
 
 def test_populate_metadata_fills_all_fields():
     meta = SimpleNamespace(author="Alice", description="A post", date="2024-01-01")
-    metadata: dict = {}
+    metadata: dict[str, Any] = {}
     _populate_metadata(metadata, meta)
     assert metadata == {
         "author": "Alice",
@@ -474,7 +475,7 @@ def test_populate_metadata_fills_all_fields():
 
 def test_populate_metadata_skips_missing_fields():
     meta = SimpleNamespace(author="Bob", description=None, date=None)
-    metadata: dict = {}
+    metadata: dict[str, Any] = {}
     _populate_metadata(metadata, meta)
     assert metadata == {"author": "Bob"}
     assert "description" not in metadata

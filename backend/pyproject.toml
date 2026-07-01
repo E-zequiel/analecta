@@ -116,5 +116,14 @@ reportUnknownMemberType = "none"
 reportUnknownArgumentType = "none"
 reportUnknownVariableType = "none"
 reportUnknownParameterType = "none"
-include = ["src/analecta"]
+include = ["src/analecta", "tests"]
 exclude = []
+
+[[tool.basedpyright.executionEnvironments]]
+root = "tests"
+# pytest/pytest-mock fixtures (mocker, monkeypatch) are duck-typed by the
+# framework and have no static signature to annotate against.
+reportMissingParameterType = "none"
+# White-box tests intentionally reach into internals (_conn, _PORT) that have
+# no public accessor.
+reportPrivateUsage = "none"

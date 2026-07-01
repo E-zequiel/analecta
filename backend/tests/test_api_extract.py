@@ -2,7 +2,6 @@ import asyncio
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import cast
 
 import pytest
 from fastapi import FastAPI
@@ -115,7 +114,7 @@ def test_extract_publishes_sse_event(tmp_path: Path, mocker: MockerFixture) -> N
         c.post("/api/v1/extract", json={"url": "https://example.com/article"})
 
     assert not sink.empty()
-    event = cast(dict[str, object], sink.get_nowait())
+    event = sink.get_nowait()
     assert event["type"] == "entry_added"
     assert isinstance(event["id"], int)
 

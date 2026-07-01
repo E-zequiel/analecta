@@ -2,6 +2,7 @@ import json
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -18,7 +19,7 @@ def _now() -> str:
 
 
 def _entry(**kwargs) -> EntryRecord:
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         title="Test Entry",
         url="https://example.com/test",
         file_path="/vault/pages/2026-04-30-test-entry.md",
@@ -175,19 +176,25 @@ def test_duplicate_url_raises_integrity_error(index: VaultIndex):
 def test_update_status(index: VaultIndex):
     entry_id = index.add_entry(_entry())
     index.update_status(entry_id, "read")
-    assert index.get_entry(entry_id).status == "read"
+    entry = index.get_entry(entry_id)
+    assert entry is not None
+    assert entry.status == "read"
 
 
 def test_soft_delete_sets_deleted_status(index: VaultIndex):
     entry_id = index.add_entry(_entry())
     index.soft_delete(entry_id)
-    assert index.get_entry(entry_id).status == "deleted"
+    entry = index.get_entry(entry_id)
+    assert entry is not None
+    assert entry.status == "deleted"
 
 
 def test_update_tags_sets_json(index: VaultIndex):
     entry_id = index.add_entry(_entry())
     index.update_tags(entry_id, ["python", "sqlite"])
-    assert json.loads(index.get_entry(entry_id).tags_json) == ["python", "sqlite"]
+    entry = index.get_entry(entry_id)
+    assert entry is not None
+    assert json.loads(entry.tags_json) == ["python", "sqlite"]
 
 
 def test_update_tags_syncs_tags_table(index: VaultIndex):
@@ -321,7 +328,9 @@ def test_rename_tag_updates_entries_json(index: VaultIndex):
     index.rename_tag("python", "py")
     import json as _json
 
-    tags = _json.loads(index.get_entry(entry_id).tags_json)
+    entry = index.get_entry(entry_id)
+    assert entry is not None
+    tags = _json.loads(entry.tags_json)
     assert "py" in tags
     assert "python" not in tags
     assert "sqlite" in tags
@@ -351,7 +360,9 @@ def test_delete_tag_removes_from_entries_json(index: VaultIndex):
     entry_id = index.add_entry(_entry())
     index.update_tags(entry_id, ["python", "sqlite"])
     index.delete_tag("python")
-    tags = _json.loads(index.get_entry(entry_id).tags_json)
+    entry = index.get_entry(entry_id)
+    assert entry is not None
+    tags = _json.loads(entry.tags_json)
     assert "python" not in tags
     assert "sqlite" in tags
 
