@@ -37,7 +37,7 @@ Analecta is a local Linux desktop application that turns any URL — article, Yo
 
 ## Download
 
-Download for Linux from the [Releases page](https://github.com/E-zequiel/analecta/releases/latest).
+Download for Linux from the [Releases page](https://github.com/E-zequiel/analecta/releases/latest). See [CHANGELOG.md](CHANGELOG.md) for what's new in each version.
 
 | Format | Recommended for |
 |--------|----------------|

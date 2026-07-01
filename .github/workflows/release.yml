@@ -62,6 +62,22 @@ jobs:
       - name: Package with electron-builder
         run: mise exec -- pnpm --filter analecta-electron run dist
 
+      - name: Extract changelog section
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          HEADING="## [$VERSION]"
+          awk -v heading="$HEADING" '
+            index($0, heading) == 1 { found=1; next }
+            found && index($0, "## [") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::No CHANGELOG.md section found for version $VERSION (expected a '$HEADING' heading). Add one before tagging."
+            exit 1
+          fi
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+
       - name: Create GitHub Release
         run: |
           EXTRA_FLAGS=""
@@ -71,6 +87,7 @@ jobs:
           gh release create "$RELEASE_TAG" \
             --title "Analecta $RELEASE_TAG" \
             --draft \
+            --notes-file release-notes.md \
             $EXTRA_FLAGS \
             dist-electron/*.deb dist-electron/*.rpm dist-electron/*.AppImage
         env:
