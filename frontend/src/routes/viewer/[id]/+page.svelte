@@ -124,7 +124,9 @@
 	let linkedEntries = $state<Entry[]>([]);
 	let connSearch = $state('');
 	let connResults = $state<Entry[]>([]);
+	let connSelectedIndex = $state(-1);
 	let connInputEl = $state<HTMLInputElement | null>(null);
+	let connResultsEl = $state<HTMLDivElement | null>(null);
 
 	const tagSuggestions = $derived(
 		newTagInput.length > 0
@@ -157,6 +159,7 @@
 		} else {
 			connSearch = '';
 			connResults = [];
+			connSelectedIndex = -1;
 		}
 	});
 
@@ -167,6 +170,7 @@
 		if (_connSearchTimer) clearTimeout(_connSearchTimer);
 		if (!q.trim()) {
 			connResults = [];
+			connSelectedIndex = -1;
 			return;
 		}
 		_connSearchTimer = setTimeout(async () => {
@@ -175,8 +179,10 @@
 				const linkedIds = new Set(linkedEntries.map((e) => e.id));
 				const currentId = untrack(() => entry?.id);
 				connResults = results.filter((e) => !linkedIds.has(e.id) && e.id !== currentId).slice(0, 8);
+				connSelectedIndex = connResults.length > 0 ? 0 : -1;
 			} catch {
 				connResults = [];
+				connSelectedIndex = -1;
 			}
 		}, 200);
 	});
@@ -438,6 +444,7 @@
 		entryChangedTick.update((n) => n + 1);
 		connSearch = '';
 		connResults = [];
+		connSelectedIndex = -1;
 		setTimeout(() => connInputEl?.focus(), 0);
 	}
 
@@ -446,6 +453,33 @@
 		await entriesApi.unlink(entry.id, target.id);
 		linkedEntries = linkedEntries.filter((e) => e.id !== target.id);
 		entryChangedTick.update((n) => n + 1);
+	}
+
+	function scrollConnSelectedIntoView() {
+		connResultsEl
+			?.querySelectorAll('.suggestion-item')
+			[connSelectedIndex]?.scrollIntoView({ block: 'nearest' });
+	}
+
+	function handleConnKey(e: KeyboardEvent) {
+		e.stopPropagation();
+		if (e.key === 'Escape') {
+			viewerBacklinksOpen.set(false);
+		} else if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			if (connResults.length === 0) return;
+			connSelectedIndex = (connSelectedIndex + 1) % connResults.length;
+			scrollConnSelectedIntoView();
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			if (connResults.length === 0) return;
+			connSelectedIndex = (connSelectedIndex - 1 + connResults.length) % connResults.length;
+			scrollConnSelectedIntoView();
+		} else if (e.key === 'Enter') {
+			e.preventDefault();
+			const target = connResults[connSelectedIndex];
+			if (target) void connectEntry(target);
+		}
 	}
 
 	function handleRightClick(e: MouseEvent) {
@@ -582,9 +616,7 @@
 			aria-modal="true"
 			tabindex="-1"
 			onclick={(e) => e.stopPropagation()}
-			onkeydown={(e) => {
-				if (e.key === 'Escape') viewerBacklinksOpen.set(false);
-			}}
+			onkeydown={handleConnKey}
 		>
 			{#if linkedEntries.length > 0}
 				<div class="conn-linked">
@@ -607,15 +639,15 @@
 				placeholder="Search to connect…"
 				bind:value={connSearch}
 				bind:this={connInputEl}
-				onkeydown={(e) => {
-					if (e.key === 'Escape') viewerBacklinksOpen.set(false);
-				}}
 			/>
 			{#if connResults.length > 0}
-				<div class="tag-suggestions">
-					{#each connResults as result (result.id)}
-						<button class="suggestion-item" onclick={() => connectEntry(result)}
-							>{result.title}</button
+				<div class="tag-suggestions" bind:this={connResultsEl}>
+					{#each connResults as result, i (result.id)}
+						<button
+							class="suggestion-item"
+							class:is-selected={i === connSelectedIndex}
+							onclick={() => connectEntry(result)}
+							onmouseenter={() => (connSelectedIndex = i)}>{result.title}</button
 						>
 					{/each}
 				</div>
@@ -1005,6 +1037,11 @@
 		color: var(--fg);
 		background: var(--bg-highlight);
 		outline: none;
+	}
+
+	.suggestion-item.is-selected {
+		color: var(--accent);
+		background: var(--bg-highlight);
 	}
 
 	.conn-dialog {
