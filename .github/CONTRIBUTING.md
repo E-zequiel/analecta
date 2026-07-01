@@ -32,6 +32,9 @@ cd backend && mise exec -- uv sync && cd ..
 
 # Install frontend and Electron dependencies
 mise exec -- pnpm install
+
+# Enable repo git hooks (blocks feat/fix commits missing a CHANGELOG.md entry)
+git config core.hooksPath .githooks
 ```
 
 ## Running in development
@@ -82,6 +85,12 @@ The gate covers Python (ruff, basedpyright, pytest) and TypeScript/Svelte (ESLin
 Every change to `backend/src/analecta/**` must include tests in `backend/tests/` in the same commit. Zero coverage on new backend code blocks merging.
 
 TypeScript, Svelte, and Electron code are covered by manual QA only; no automated frontend tests are required.
+
+### Changelog requirement
+
+Every PR that changes user-facing behavior must add a line under `## [Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md), in the same commit. Internal refactors, tests, docs, and CI changes don't need an entry.
+
+The `commit-msg` hook (enabled by `git config core.hooksPath .githooks`, see Getting started) enforces this automatically: it blocks any `feat`/`fix` commit that doesn't have `CHANGELOG.md` staged. For a `feat`/`fix` commit that genuinely has no user-facing effect, skip the check with `git commit --no-verify`.
 
 ## Commit conventions
 
