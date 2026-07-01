@@ -20,7 +20,6 @@ class AppConfig(BaseModel):
             Grotesque and is not user-selectable.
         ui_font_size: Font size for UI chrome (sidebar, toolbar) in pixels.
         reading_font_size: Font size for article reading area in pixels.
-        update_channel: Release channel for the built-in updater.
         theme: UI colour theme — ``dark`` or ``light``.
         accent_color: Active accent colour drawn from the Tokyo Night palette.
     """
@@ -30,7 +29,6 @@ class AppConfig(BaseModel):
     font_variant: Literal["regular", "bricolage"] = "regular"
     ui_font_size: float = 17.0
     reading_font_size: float = 18.0
-    update_channel: Literal["stable", "dev"] = "stable"
     theme: Literal["dark", "light"] = "dark"
     accent_color: Literal["red", "yellow", "green", "cyan"] = "yellow"
     open_tab_ids: list[str] = ["section-library"]
@@ -74,7 +72,6 @@ def save_config(config: AppConfig, config_path: Path = CONFIG_PATH) -> None:
         "font_variant": config.font_variant,
         "ui_font_size": config.ui_font_size,
         "reading_font_size": config.reading_font_size,
-        "update_channel": config.update_channel,
         "theme": config.theme,
         "accent_color": config.accent_color,
         "open_tab_ids": list(config.open_tab_ids),
