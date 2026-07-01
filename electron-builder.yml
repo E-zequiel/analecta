@@ -39,6 +39,20 @@ linux:
     entry:
       MimeType: x-scheme-handler/analecta
 
+# electron-builder's ${name} artifact-name macro and the deb/rpm control-file
+# Package: field both default to package.json's raw "name" (analecta-electron —
+# the pnpm workspace package identifier for electron/), not productName or
+# executableName. Renaming package.json instead would collide with the root
+# workspace package (also "analecta") and break `pnpm --filter`. Override both
+# the internal package name and the artifact filename explicitly here instead.
+deb:
+  packageName: analecta
+  artifactName: "analecta_${version}_${arch}.${ext}"
+
+rpm:
+  packageName: analecta
+  artifactName: "analecta-${version}.${arch}.${ext}"
+
 publish:
   provider: github
   owner: E-zequiel
