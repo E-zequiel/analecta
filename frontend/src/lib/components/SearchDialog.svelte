@@ -6,13 +6,16 @@
 	let query = $state('');
 	let results = $state<Entry[]>([]);
 	let loading = $state(false);
+	let selectedIndex = $state(-1);
 	let inputEl = $state<HTMLInputElement | undefined>(undefined);
+	let resultsEl = $state<HTMLDivElement | undefined>(undefined);
 	let timer: ReturnType<typeof setTimeout>;
 
 	$effect(() => {
 		if ($searchOpen) {
 			query = '';
 			results = [];
+			selectedIndex = -1;
 			// Focus input on next tick
 			setTimeout(() => inputEl?.focus(), 0);
 		}
@@ -24,18 +27,27 @@
 		const q = query.trim();
 		if (!q) {
 			results = [];
+			selectedIndex = -1;
 			return;
 		}
 		loading = true;
 		timer = setTimeout(async () => {
 			try {
 				results = await entriesApi.list({ q });
+				selectedIndex = results.length > 0 ? 0 : -1;
 			} catch {
 				results = [];
+				selectedIndex = -1;
 			} finally {
 				loading = false;
 			}
 		}, 300);
+	}
+
+	function scrollSelectedIntoView() {
+		resultsEl
+			?.querySelectorAll('.result-item')
+			[selectedIndex]?.scrollIntoView({ block: 'nearest' });
 	}
 
 	function close() {
@@ -49,7 +61,23 @@
 
 	function handleKey(e: KeyboardEvent) {
 		e.stopPropagation();
-		if (e.key === 'Escape') close();
+		if (e.key === 'Escape') {
+			close();
+		} else if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			if (results.length === 0) return;
+			selectedIndex = (selectedIndex + 1) % results.length;
+			scrollSelectedIntoView();
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			if (results.length === 0) return;
+			selectedIndex = (selectedIndex - 1 + results.length) % results.length;
+			scrollSelectedIntoView();
+		} else if (e.key === 'Enter') {
+			e.preventDefault();
+			const entry = results[selectedIndex];
+			if (entry) open(entry);
+		}
 	}
 
 	function handleBackdropKey(e: KeyboardEvent) {
@@ -75,14 +103,19 @@
 				value={query}
 				oninput={handleInput}
 			/>
-			<div class="results">
+			<div class="results" bind:this={resultsEl}>
 				{#if loading}
 					<p class="hint">Searching…</p>
 				{:else if query.trim() && results.length === 0}
 					<p class="hint">No results.</p>
 				{:else}
-					{#each results as entry (entry.id)}
-						<button class="result-item" onclick={() => open(entry)}>
+					{#each results as entry, i (entry.id)}
+						<button
+							class="result-item"
+							class:is-selected={i === selectedIndex}
+							onclick={() => open(entry)}
+							onmouseenter={() => (selectedIndex = i)}
+						>
 							<span class="result-title">{entry.title}</span>
 							<span class="result-meta">{entry.source_type}</span>
 						</button>
@@ -161,7 +194,8 @@
 		transition: background 0.1s;
 	}
 
-	.result-item:hover {
+	.result-item:hover,
+	.result-item.is-selected {
 		background: var(--bg-highlight);
 	}
 
