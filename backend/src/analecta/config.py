@@ -33,7 +33,7 @@ class AppConfig(BaseModel):
     accent_color: Literal["red", "yellow", "green", "cyan"] = "yellow"
     open_tab_ids: list[str] = ["section-library"]
     active_tab_id: str = "section-library"
-    close_to_tray: bool = True
+    close_to_tray: bool = False
 
     @field_validator("vault_path", mode="before")
     @classmethod

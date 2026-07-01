@@ -19,7 +19,7 @@
 		reading_font_size: 18.0,
 		theme: 'dark' as 'dark' | 'light',
 		accent_color: 'yellow' as 'red' | 'yellow' | 'green' | 'cyan',
-		close_to_tray: true,
+		close_to_tray: false,
 	});
 	let initialVaultPath = $state('');
 	let error = $state('');

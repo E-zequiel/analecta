@@ -7,7 +7,7 @@ import { checkForUpdates, downloadUpdate, quitAndInstall } from './updater.js';
 
 let initialDeepLink: string | null = null;
 let mainWindow: BrowserWindow | null = null;
-let closeToTray = true;
+let closeToTray = false;
 
 export function getCloseToTray(): boolean {
 	return closeToTray;
