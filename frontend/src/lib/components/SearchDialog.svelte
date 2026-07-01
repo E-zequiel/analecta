@@ -48,6 +48,7 @@
 	}
 
 	function handleKey(e: KeyboardEvent) {
+		e.stopPropagation();
 		if (e.key === 'Escape') close();
 	}
 
