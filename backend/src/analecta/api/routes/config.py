@@ -21,7 +21,6 @@ class ConfigOut(BaseModel):
         font_variant: Reading-font selection (``regular`` or ``bricolage``).
         ui_font_size: Font size for UI chrome in pixels.
         reading_font_size: Font size for reading area in pixels.
-        update_channel: Release channel (``stable`` or ``dev``).
         theme: UI colour theme (``dark`` or ``light``).
         accent_color: Active accent colour name.
     """
@@ -30,7 +29,6 @@ class ConfigOut(BaseModel):
     font_variant: str
     ui_font_size: float
     reading_font_size: float
-    update_channel: str
     theme: str
     accent_color: str
     open_tab_ids: list[str]
@@ -47,7 +45,6 @@ class ConfigIn(BaseModel):
         font_variant: New reading-font variant, if provided.
         ui_font_size: New UI chrome font size in pixels, if provided.
         reading_font_size: New reading area font size in pixels, if provided.
-        update_channel: New update channel, if provided.
         theme: New UI colour theme, if provided.
         accent_color: New accent colour name, if provided.
         open_tab_ids: Ordered list of open tab IDs for persistence, if provided.
@@ -58,7 +55,6 @@ class ConfigIn(BaseModel):
     font_variant: Literal["regular", "bricolage"] | None = None
     ui_font_size: float | None = None
     reading_font_size: float | None = None
-    update_channel: Literal["stable", "dev"] | None = None
     theme: Literal["dark", "light"] | None = None
     accent_color: Literal["red", "yellow", "green", "cyan"] | None = None
     open_tab_ids: list[str] | None = None
@@ -94,7 +90,6 @@ def _config_out(cfg: AppConfig) -> ConfigOut:
         font_variant=cfg.font_variant,
         ui_font_size=cfg.ui_font_size,
         reading_font_size=cfg.reading_font_size,
-        update_channel=cfg.update_channel,
         theme=cfg.theme,
         accent_color=cfg.accent_color,
         open_tab_ids=list(cfg.open_tab_ids),
@@ -149,9 +144,6 @@ async def update_config(
         reading_font_size=body.reading_font_size
         if body.reading_font_size is not None
         else config.reading_font_size,
-        update_channel=body.update_channel
-        if body.update_channel is not None
-        else config.update_channel,
         theme=body.theme if body.theme is not None else config.theme,
         accent_color=body.accent_color
         if body.accent_color is not None

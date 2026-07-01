@@ -102,7 +102,6 @@ export interface AppConfig {
 	font_variant: 'regular' | 'bricolage';
 	ui_font_size: number;
 	reading_font_size: number;
-	update_channel: 'stable' | 'dev';
 	theme: 'dark' | 'light';
 	accent_color: 'red' | 'yellow' | 'green' | 'cyan';
 	open_tab_ids: string[];
@@ -116,7 +115,6 @@ export interface AppConfigUpdate {
 	font_variant?: 'regular' | 'bricolage';
 	ui_font_size?: number;
 	reading_font_size?: number;
-	update_channel?: 'stable' | 'dev';
 	theme?: 'dark' | 'light';
 	accent_color?: 'red' | 'yellow' | 'green' | 'cyan';
 	open_tab_ids?: string[];

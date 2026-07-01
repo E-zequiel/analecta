@@ -17,7 +17,6 @@
 		font_variant: 'regular' as 'regular' | 'bricolage',
 		ui_font_size: 17.0,
 		reading_font_size: 18.0,
-		update_channel: 'stable' as 'stable' | 'dev',
 		theme: 'dark' as 'dark' | 'light',
 		accent_color: 'yellow' as 'red' | 'yellow' | 'green' | 'cyan',
 		close_to_tray: true,
@@ -30,7 +29,6 @@
 	let fontVariantSaved = $state(false);
 	let uiFontSaved = $state(false);
 	let readingFontSaved = $state(false);
-	let channelSaved = $state(false);
 	let themeSaved = $state(false);
 	let accentSaved = $state(false);
 	let closeToTraySaved = $state(false);
@@ -99,7 +97,6 @@
 				font_variant: cfg.font_variant,
 				ui_font_size: cfg.ui_font_size,
 				reading_font_size: cfg.reading_font_size,
-				update_channel: cfg.update_channel,
 				theme: cfg.theme,
 				accent_color: cfg.accent_color,
 				close_to_tray: cfg.close_to_tray,
@@ -180,15 +177,6 @@
 				error = err instanceof Error ? err.message : String(err);
 			}
 		}, 300);
-	}
-
-	async function autoSaveChannel() {
-		try {
-			await configApi.update({ update_channel: form.update_channel });
-			flash((v) => (channelSaved = v));
-		} catch (err) {
-			error = err instanceof Error ? err.message : String(err);
-		}
 	}
 
 	function toggleTheme() {
@@ -390,19 +378,6 @@
 						></button>
 					{/each}
 				</div>
-			</div>
-		</section>
-
-		<section>
-			<h2>Updates</h2>
-			<div class="field">
-				<label for="update-channel">
-					Channel {#if channelSaved}<span class="saved-tag">✓</span>{/if}
-				</label>
-				<select id="update-channel" bind:value={form.update_channel} onchange={autoSaveChannel}>
-					<option value="stable">Stable</option>
-					<option value="dev">Dev</option>
-				</select>
 			</div>
 		</section>
 
