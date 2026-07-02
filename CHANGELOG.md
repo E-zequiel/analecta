@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.1] - 2026-07-01
+## [0.3.1] - 2026-07-02
 
 Initial public release.
 
@@ -24,6 +24,7 @@ Initial public release.
 - System tray integration (configurable close-to-tray behavior, off by default) and clipboard-to-URL capture.
 - Auto-updates via in-app updater.
 - Native Linux packaging — `.deb`, `.rpm`, `.AppImage` — with correct application identity and icons, including taskbar/alt-tab icon support on Wayland compositors.
+- Release integrity verification — SHA256SUMS checksums for all packaged installers, plus a Sigstore build provenance attestation (attaches automatically once the repository goes public).
 - Keyboard navigation in the connections search dialog.
 
 [Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.3.1...HEAD
