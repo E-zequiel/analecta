@@ -58,7 +58,10 @@ The workflow only runs against `E-zequiel/analecta` (guarded), so it never fires
 
 ## Verification before publishing
 
-- Download the installer package from the draft release's assets instead of building locally.
+- Download the installer package and `SHA256SUMS` from the draft release's assets instead of
+  building locally.
+- Verify the download against the checksums file: `sha256sum -c SHA256SUMS` (run from the
+  directory containing the downloaded installer).
 - Install it (e.g. `sudo apt install ./analecta_X.Y.Z_amd64.deb`) and confirm the app
   launches and behaves as expected. Package/artifact naming is set explicitly in
   `electron-builder.yml`'s `deb`/`rpm` blocks — see
