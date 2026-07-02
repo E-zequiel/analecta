@@ -214,6 +214,48 @@ wheels = [
 No separate `pip show`/PyPI-API round trip was run by hand — the `hash =`
 fields are uv's own resolution output, committed and reviewable as-is.
 
+## Removing a dependency
+
+Static analysis (no source imports + no lockfile-declared transitive
+relationship) is a necessary first check but not sufficient — see the
+worked example below.
+
+### Procedure
+
+1. Grep source for imports (both ecosystems) — confirms nothing in this
+   repo's own code imports it directly.
+2. Grep the lockfile for any *other* package declaring it as their own
+   dependency (`pnpm-lock.yaml`: the package name appearing under another
+   package's `dependencies:` block; `uv.lock`: same, under another
+   package's `dependencies = [...]`). This catches declared transitive
+   relationships.
+3. Remove from `package.json`/`pyproject.toml`, re-run `pnpm install` /
+   `uv lock`.
+4. **Run the actual build — not just tests.** `pnpm --filter frontend
+   build` (or `check.sh`'s vite-build step), and the full backend
+   `check.sh` run. Steps 1–2 cannot catch a package whose *compiled
+   output* imports a runtime helper that its own `package.json` never
+   declared as a dependency — the lockfile only records declared
+   relationships, not what published, pre-built code actually references.
+5. If the build breaks, that's ground truth: revert and keep the
+   dependency, rather than trusting the static analysis.
+
+### Worked example
+
+`@babel/runtime` passed steps 1–2 cleanly during a dependency audit — zero
+direct imports, zero lockfile-declared transitive consumers. Removed from
+`frontend/package.json`; `vite build` failed immediately:
+
+```
+Error: [vite]: Rolldown failed to resolve import "@babel/runtime/helpers/extends"
+from ".../@uiw/codemirror-theme-tokyo-night/esm/index.js"
+```
+
+`@uiw/codemirror-theme-tokyo-night`'s compiled ESM output imports the Babel
+runtime helper directly, but its own `package.json` never lists
+`@babel/runtime` as a dependency. Restored the entry; verified the build
+passes again.
+
 ## Relationship to `verify-provenance.py`
 
 `verify-provenance.py` only parses `pnpm-lock.yaml` — it has no Python/uv
