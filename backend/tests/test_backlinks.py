@@ -126,6 +126,30 @@ class TestParseRefs:
         assert len(refs) == 1
         assert refs[0].target_text == "alpha"
 
+    def test_wikilink_in_inline_code_skipped(self) -> None:
+        refs = parse_refs("Use `[[Not A Link]]` as a literal example.\n")
+        assert refs == []
+
+    def test_hashtag_in_inline_code_skipped(self) -> None:
+        refs = parse_refs("Try `echo #not_a_tag` in your shell.\n")
+        assert refs == []
+
+    def test_hashtag_flush_against_backtick_still_skipped(self) -> None:
+        # Already worked before the fix (via the hashtag lookbehind);
+        # must still hold now that masking is the mechanism.
+        refs = parse_refs("Run `#not_a_tag` literally.\n")
+        assert refs == []
+
+    def test_wikilink_outside_inline_code_still_matched(self) -> None:
+        refs = parse_refs("See [[Alpha]] and also `[[Not A Link]]` here.\n")
+        assert len(refs) == 1
+        assert refs[0].target_text == "alpha"
+
+    def test_dangling_backtick_does_not_suppress_real_refs(self) -> None:
+        refs = parse_refs("It's not `code but has [[Alpha]] after.\n")
+        assert len(refs) == 1
+        assert refs[0].target_text == "alpha"
+
     def test_frontmatter_skipped(self) -> None:
         md = "---\ntitle: Test\nurl: https://example.com\n---\n\nBody with [[Alpha]].\n"
         refs = parse_refs(md)

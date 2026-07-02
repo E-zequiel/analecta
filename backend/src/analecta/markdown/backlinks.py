@@ -14,6 +14,7 @@ _HASHTAG_RE = re.compile(r"(?<!\S)#([A-Za-z][A-Za-z0-9_]*)(?![A-Za-z0-9_])")
 _HEADING_RE = re.compile(r"^#{1,6}\s+(.+)")
 _FENCE_RE = re.compile(r"^```")
 _FRONTMATTER_RE = re.compile(r"^---\n[\s\S]*?\n---\n", re.MULTILINE)
+_INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 
 _CONTEXT_RADIUS = 60
 
@@ -39,12 +40,29 @@ class ParsedRef:
     post: str
 
 
+def _mask_inline_code(line: str) -> str:
+    """Blank out inline code spans in *line*, preserving length and offsets.
+
+    Prevents ``[[wikilinks]]`` and ``#hashtags`` written inside inline code
+    (e.g. `` `[[Not A Link]]` ``) from being mistaken for real references,
+    without disturbing character positions used for context extraction.
+
+    Args:
+        line: A single line of Markdown (no embedded newlines).
+
+    Returns:
+        *line* with each `` `...` `` span replaced by spaces of the same
+        length.
+    """
+    return _INLINE_CODE_RE.sub(lambda m: " " * len(m.group(0)), line)
+
+
 def parse_refs(markdown: str) -> list[ParsedRef]:
     """Extract all wikilink, hashtag, and frontmatter-linked references from *markdown*.
 
     Reads the ``linked:`` list from YAML frontmatter (if present), then
     skips frontmatter and parses ``[[wikilinks]]`` and ``#hashtags`` from
-    the body. Skips code-fence blocks and heading lines.
+    the body. Skips code-fence blocks, inline code spans, and heading lines.
 
     Args:
         markdown: Raw Markdown text to parse.
@@ -96,8 +114,10 @@ def parse_refs(markdown: str) -> list[ParsedRef]:
             current_heading = heading_match.group(1).strip()
             continue
 
+        masked_line = _mask_inline_code(line)
+
         # Wikilinks: [[Title]] or [[Title|Alias]]
-        for m in _WIKILINK_RE.finditer(line):
+        for m in _WIKILINK_RE.finditer(masked_line):
             start, end = m.start(), m.end()
             target = m.group(1).strip()
             refs.append(
@@ -112,7 +132,7 @@ def parse_refs(markdown: str) -> list[ParsedRef]:
             )
 
         # Hashtags: #word (inline, not heading-style)
-        for m in _HASHTAG_RE.finditer(line):
+        for m in _HASHTAG_RE.finditer(masked_line):
             start, end = m.start(), m.end()
             tag_name = m.group(1)
             refs.append(
