@@ -77,13 +77,20 @@
 		editorIsDirty.set(content !== originalContent);
 	});
 
+	// Blanks out inline code spans, preserving length, so a `#hashtag`-looking
+	// word inside `backticks` isn't mistaken for a real tag.
+	function maskInlineCode(line: string): string {
+		return line.replace(/`[^`\n]+`/g, (m) => ' '.repeat(m.length));
+	}
+
 	function extractHashtags(text: string): string[] {
 		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local algorithmic variable, not reactive state
 		const tags = new Set<string>();
 		for (const line of text.split('\n')) {
 			// Skip markdown headings (# Heading) but not hashtag-only lines (#tag1 #tag2)
 			if (/^#{1,6}(?:\s|$)/.test(line.trimStart())) continue;
-			for (const m of line.matchAll(/#([a-zA-Z][a-zA-Z0-9_]*)/g)) {
+			const masked = maskInlineCode(line);
+			for (const m of masked.matchAll(/#([a-zA-Z][a-zA-Z0-9_]*)/g)) {
 				tags.add(m[1].toLowerCase());
 			}
 		}
