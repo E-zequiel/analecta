@@ -36,6 +36,7 @@ uses: actions/checkout@v4
 | `actions/checkout` | `v6.0.3` | `df4cb1c069e1874edd31b4311f1884172cec0e10` | 2026-06-04 |
 | `jdx/mise-action` | `v4.1.0` | `dba19683ed58901619b14f395a24841710cb4925` | 2026-06-04 |
 | `bitwarden/sm-action` | `v3.0.0` | `27c0c9dcab679d7250dbab91227c85b49ffa5e0f` | 2026-05-08 |
+| `actions/attest-build-provenance` | `v4.1.1` | `0f67c3f4856b2e3261c31976d6725780e5e4c373` | 2026-07-01 |
 
 ### How to resolve a SHA for a new action or version
 
@@ -77,7 +78,7 @@ jobs:
 
 `contents: read` is required for every job that uses `actions/checkout` to clone a private repository. This includes the `socket` job — without it, `actions/checkout` cannot authenticate and the clone fails with "Repository not found". On a public repository this permission is redundant (checkout requires no token), but it is harmless and kept for consistency.
 
-No other permission (`packages`, `id-token`, etc.) is granted to any job.
+The only exception is `build-linux` in `release.yml`, which also declares `id-token: write` and `attestations: write` for build provenance attestation — see Control 14. No other permission (`packages`, etc.) is granted to any job.
 
 ### Known platform limitation
 
@@ -601,6 +602,65 @@ With this pattern:
 | Dependabot PR passed CI but you want CLI-level enforcement before merging | Dispatch on `main`, set `ref` to the PR's branch name |
 | Manual dependency addition on a branch before opening a PR | Dispatch on `main`, set `ref` to your branch |
 | Ad-hoc audit of `main` itself | Dispatch on `main`, leave `ref` as `main` |
+
+---
+
+## Control 14: Build Provenance Attestation
+
+`actions/attest-build-provenance` generates a Sigstore-backed provenance attestation for the packaged `.deb`, `.rpm`, and `.AppImage` installers in `release.yml`'s `build-linux` job, immediately after "Package with electron-builder".
+
+### What this proves, and what it doesn't
+
+This is the producer-side complement to Control 10 (which verifies *upstream* npm packages' provenance). It answers a different question than the manual `SHA256SUMS` signing already in place (see `docs/release-process.md`'s verification step, and the local, gitignored `CLAUDE.md` for the signing procedure itself):
+
+| Mechanism | Question answered | Trust anchor |
+|---|---|---|
+| SSH-signed `SHA256SUMS` | Did the maintainer approve these exact bytes? | A long-lived private key, verified via `ssh-keygen -Y verify` against a manually distributed public key |
+| `attest-build-provenance` | Did this artifact come out of this specific CI run/commit/repo? | GitHub's OIDC issuer + Sigstore's Fulcio CA issuing short-lived certs per job; verified via `gh attestation verify`, no public-key distribution needed |
+
+They are complementary, not substitutable. A compromised release step between CI-build and manual-signing is caught by the maintainer's review before signing, but not by build provenance alone; conversely, a malicious commit merged before the tag is attested as "legitimately built" either way — attestation proves *provenance*, not *correctness*.
+
+### Implementation
+
+```yaml
+permissions:
+  contents: write
+  id-token: write       # mints the OIDC token used to request the Fulcio cert
+  attestations: write   # publishes the attestation to GitHub's attestation store
+
+steps:
+  ...
+  - name: Attest build provenance
+    if: ${{ !github.event.repository.private }}
+    uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+    with:
+      subject-path: |
+        dist-electron/*.deb
+        dist-electron/*.rpm
+        dist-electron/*.AppImage
+```
+
+Scope: the three installers only. Not `SHA256SUMS` itself (already covered by the SSH signature), not the bundled sidecar binary (it ships inside the installers, not as a separate release asset).
+
+### Why the `if:` guard
+
+GitHub's artifact attestation storage/retrieval requires a public repository, or GitHub Enterprise Cloud for private repositories — confirmed against `actions/attest-build-provenance`'s own README, 2026-07-01. This repository is currently private on a non-Enterprise plan. Without the guard, the step would hard-fail on every tag push — and because it runs *before* "Create GitHub Release" with no `continue-on-error`, that failure would block the entire release job, not just skip the attestation.
+
+```yaml
+if: ${{ !github.event.repository.private }}
+```
+
+The `${{ }}` wrapper is required here — a bare `if: !…` is invalid YAML, since a leading `!` is a tag indicator, not negation. `github.event.repository.private` is populated on tag-push events, so this is self-activating: once the repository goes public, the step starts running with no further edit to `release.yml`.
+
+### Verification (once public)
+
+Not yet exercised end-to-end — deferred until the repository is public (see the project's pending release checklist). At that point:
+
+```bash
+gh attestation verify analecta_X.Y.Z_amd64.deb --owner E-zequiel
+```
+
+No end-user-facing verification documentation has been added yet — consistent with the same deliberate deferral applied to the SSH-signing procedure (no external party needs to verify a release yet; revisit if a second maintainer joins or a user asks).
 
 ---
 

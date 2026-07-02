@@ -98,9 +98,11 @@ Severity: **MEDIUM**
 
 #### Unnecessary `id-token: write`
 
-Flag any job that declares `id-token: write`. This grants the job an OIDC token that can be used to authenticate as the repository to cloud providers (AWS, GCP, Azure). If the workflow doesn't use Trusted Publishing or cloud OIDC authentication, it's unnecessary exposure.
+Flag any job that declares `id-token: write`. This grants the job an OIDC token, usable either to authenticate as the repository to cloud providers (AWS, GCP, Azure) or to mint a short-lived Sigstore/Fulcio certificate for artifact attestation (`actions/attest-build-provenance`, npm/PyPI trusted publishing). If the workflow doesn't use one of these, it's unnecessary exposure.
 
 Note it, explain what it enables, and ask the user whether it is intentional.
+
+**Analecta instance:** `release.yml` → `build-linux` declares `id-token: write` + `attestations: write` for `actions/attest-build-provenance`, generating a build provenance attestation for the packaged installers. Intentional, documented in `docs/github-actions-security.md` Control 14. The step itself is gated with `if: ${{ !github.event.repository.private }}` since attestation storage requires a public repo or GitHub Enterprise Cloud — this repo is currently private, so the step is a documented no-op until it goes public. No finding.
 
 Severity: **LOW–MEDIUM** depending on whether cloud credentials are in scope.
 
@@ -191,6 +193,34 @@ grep "^sigstore==" scripts/requirements-provenance.lock
 | `sigstore` not pinned (version range instead of `==`) | LOW | Pin to exact version in lock file |
 
 **Context:** `scripts/verify-provenance.py` verifies Sigstore provenance attestations for ~13% of installed npm packages (those that publish them). It cross-checks the attested subject SHA-512 against `pnpm-lock.yaml` (independent of registry) and verifies the Sigstore bundle against Rekor + Fulcio. See `docs/github-actions-security.md` Control 10 for the full threat model and residual gap table.
+
+#### Build provenance attestation (producer-side)
+
+Check that the build provenance attestation step (Control 14 in `docs/github-actions-security.md`) is intact in `release.yml`:
+
+```bash
+# attest step must exist in build-linux
+grep -A6 "Attest build provenance" .github/workflows/release.yml
+
+# must be gated on repository visibility (private repos below Enterprise Cloud
+# cannot store attestations — an ungated step here would hard-fail every release
+# while the repo is private, since it runs before "Create GitHub Release" with no
+# continue-on-error)
+grep -B2 "attest-build-provenance" .github/workflows/release.yml | grep "if:"
+
+# job must declare both permissions the action needs
+grep -A3 "permissions:" .github/workflows/release.yml | grep -E "id-token|attestations"
+```
+
+| Finding | Severity | Remediation |
+|---|---|---|
+| `attest-build-provenance` step present but missing the `if: ${{ !github.event.repository.private }}` guard (or equivalent) while the repo is private/sub-Enterprise | HIGH | Add the guard — an ungated step here fails the whole release job, not just the attestation, because it precedes "Create GitHub Release" with no `continue-on-error` |
+| Step present, `id-token: write` or `attestations: write` missing from job `permissions:` | MEDIUM | Add both — `id-token: write` mints the OIDC token, `attestations: write` publishes the result; the action fails without them |
+| `subject-path` covers files other than the release-facing installers (e.g. the bundled sidecar, `SHA256SUMS`) | LOW | Scope to the actual release assets only — matches what a downloader would run `gh attestation verify` against |
+
+**Context:** this is the producer-side counterpart to the "Provenance verification infrastructure" check above — that one verifies *upstream* npm packages' attestations; this one confirms Analecta's *own* release artifacts get attested. See `docs/github-actions-security.md` Control 14 for the full threat model, the relationship to the SSH-signed `SHA256SUMS`, and why the guard is self-activating (no edit needed once the repo goes public).
+
+**Analecta instance:** implemented 2026-07-01. `if: ${{ !github.event.repository.private }}` on the step (repo currently private, step is a documented no-op); `id-token: write` + `attestations: write` on `build-linux`; `subject-path` scoped to `dist-electron/*.deb *.rpm *.AppImage` only. No finding.
 
 #### Scan ordering: scan before lifecycle scripts
 
@@ -356,9 +386,9 @@ Produce the findings table, clean file list, and summary.
 
 | Level | Meaning |
 |-------|---------|
-| HIGH | Unpinned CLI tool in a step that has secrets in environment scope |
-| MEDIUM | Unpinned action ref · missing permissions guard · missing repository guard on a sensitive job · missing lifecycle script restriction · scan ordering gap (`--ignore-scripts` absent) · Dependabot PR secret-access gap · `workflow_dispatch` ref-trust gap |
-| LOW | `cancel-in-progress: true` on release · unnecessary `id-token: write` · missing `packageManager` SHA field · provenance infrastructure issues |
+| HIGH | Unpinned CLI tool in a step that has secrets in environment scope · missing repository-visibility guard on `attest-build-provenance` while private/sub-Enterprise (blocks the whole release job) |
+| MEDIUM | Unpinned action ref · missing permissions guard · missing repository guard on a sensitive job · missing lifecycle script restriction · scan ordering gap (`--ignore-scripts` absent) · Dependabot PR secret-access gap · `workflow_dispatch` ref-trust gap · missing permissions for build provenance attestation |
+| LOW | `cancel-in-progress: true` on release · unnecessary `id-token: write` · missing `packageManager` SHA field · provenance infrastructure issues (consumer- or producer-side) |
 
 ---
 
