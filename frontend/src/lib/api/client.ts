@@ -64,6 +64,21 @@ export interface BacklinksResult {
 	linked: Backlink[];
 }
 
+export interface OutgoingLink {
+	id: number;
+	name: string;
+	context?: {
+		heading?: string;
+		pre: string;
+		highlight: string;
+		post: string;
+	};
+}
+
+export interface OutgoingLinksResult {
+	linked: OutgoingLink[];
+}
+
 export interface HashtagGroup {
 	hashtag: string;
 	entries: Entry[];
@@ -202,6 +217,10 @@ export const entries = {
 
 	getBacklinks(id: number): Promise<BacklinksResult> {
 		return apiFetch<BacklinksResult>(`/entries/${id}/backlinks`);
+	},
+
+	getOutgoingLinks(id: number): Promise<OutgoingLinksResult> {
+		return apiFetch<OutgoingLinksResult>(`/entries/${id}/outgoing-links`);
 	},
 
 	getHashtagConnections(id: number): Promise<HashtagConnectionsResult> {

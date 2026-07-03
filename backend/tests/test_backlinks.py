@@ -353,6 +353,127 @@ class TestVaultIndexBacklinks:
 
 
 # ---------------------------------------------------------------------------
+# VaultIndex.get_outgoing_links — integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestVaultIndexOutgoingLinks:
+    def test_wikilink_resolves_to_target(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        target_id = _seed(db, n=1, title="Python Tutorial")
+        src_file = vault / "article-2.md"
+        src_file.write_text("See [[Python Tutorial]] for details.\n", encoding="utf-8")
+        src_id = _seed(db, n=2, file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+        results = db.get_outgoing_links(src_id)
+
+        assert len(results) == 1
+        assert results[0].target_id == target_id
+        assert results[0].target_title == "Python Tutorial"
+        assert results[0].highlight == "[[Python Tutorial]]"
+        db.close()
+
+    def test_hashtag_resolves_to_titled_entry(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        target_id = _seed(db, n=1, title="Machine Learning")
+        src_file = vault / "article-2.md"
+        src_file.write_text("Topic: #machine_learning is key.\n", encoding="utf-8")
+        src_id = _seed(db, n=2, file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+        results = db.get_outgoing_links(src_id)
+
+        assert len(results) == 1
+        assert results[0].target_id == target_id
+        db.close()
+
+    def test_unresolved_wikilink_skipped(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        src_file = vault / "article-1.md"
+        src_file.write_text("See [[Future Note]] someday.\n", encoding="utf-8")
+        src_id = _seed(db, n=1, file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+        assert db.get_outgoing_links(src_id) == []
+        db.close()
+
+    def test_unresolved_hashtag_skipped(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        src_file = vault / "article-1.md"
+        src_file.write_text("Filed under #nonexistent.\n", encoding="utf-8")
+        src_id = _seed(db, n=1, file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+        assert db.get_outgoing_links(src_id) == []
+        db.close()
+
+    def test_no_self_link(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        src_file = vault / "article-1.md"
+        src_file.write_text(
+            "This entry [[Article 1]] mentions itself.\n", encoding="utf-8"
+        )
+        src_id = _seed(db, n=1, title="Article 1", file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+        assert db.get_outgoing_links(src_id) == []
+        db.close()
+
+    def test_multiple_targets_ordered_by_title(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        beta_id = _seed(db, n=1, title="Beta")
+        alpha_id = _seed(db, n=2, title="Alpha")
+        src_file = vault / "article-3.md"
+        src_file.write_text("See [[Beta]] and [[Alpha]].\n", encoding="utf-8")
+        src_id = _seed(db, n=3, file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+        results = db.get_outgoing_links(src_id)
+
+        assert [r.target_id for r in results] == [alpha_id, beta_id]
+        db.close()
+
+    def test_reindex_clears_stale_outgoing_links(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        target_a = _seed(db, n=1, title="Alpha")
+        target_b = _seed(db, n=2, title="Beta")
+        src_file = vault / "article-3.md"
+        src_file.write_text("See [[Alpha]].\n", encoding="utf-8")
+        src_id = _seed(db, n=3, file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+        assert [r.target_id for r in db.get_outgoing_links(src_id)] == [target_a]
+
+        src_file.write_text("See [[Beta]].\n", encoding="utf-8")
+        db.index_backlinks(src_id)
+
+        assert [r.target_id for r in db.get_outgoing_links(src_id)] == [target_b]
+        db.close()
+
+
+# ---------------------------------------------------------------------------
 # API endpoint — GET /entries/{id}/backlinks
 # ---------------------------------------------------------------------------
 
@@ -429,6 +550,59 @@ class TestBacklinksEndpoint:
         assert all(item["id"] == src_id for item in linked)
         headings = {item["context"]["heading"] for item in linked}
         assert headings == {"Intro", "Details"}
+
+
+# ---------------------------------------------------------------------------
+# API endpoint — GET /entries/{id}/outgoing-links
+# ---------------------------------------------------------------------------
+
+
+class TestOutgoingLinksEndpoint:
+    @pytest.fixture
+    def client(self, tmp_path: Path) -> Generator[TestClient]:
+        with TestClient(_make_app(tmp_path)) as c:
+            yield c
+
+    def test_404_unknown_entry(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/entries/9999/outgoing-links")
+        assert resp.status_code == 404
+
+    def test_empty_outgoing_links(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path)
+        config = AppConfig(vault_path=tmp_path / "vault")
+        with VaultIndex(config.vault_path / "analecta.db") as index:
+            _seed(index, n=1, title="Lonely Entry")
+        with TestClient(app) as c:
+            resp = c.get("/api/v1/entries/1/outgoing-links")
+        assert resp.status_code == 200
+        assert resp.json() == {"linked": []}
+
+    def test_outgoing_links_populated(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        app = _make_app(tmp_path)
+        config = AppConfig(vault_path=tmp_path / "vault")
+        with VaultIndex(config.vault_path / "analecta.db") as index:
+            target_id = _seed(index, n=1, title="Python Tutorial")
+            src_file = vault / "article-2.md"
+            src_file.write_text(
+                "## Intro\n\nRead [[Python Tutorial]] first.\n", encoding="utf-8"
+            )
+            src_id = _seed(index, n=2, file_path=str(src_file))
+            index.index_backlinks(src_id)
+
+        with TestClient(app) as c:
+            resp = c.get(f"/api/v1/entries/{src_id}/outgoing-links")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["linked"]) == 1
+        item = data["linked"][0]
+        assert item["id"] == target_id
+        assert item["name"] == "Python Tutorial"
+        assert item["context"]["heading"] == "Intro"
+        assert item["context"]["highlight"] == "[[Python Tutorial]]"
 
 
 # ---------------------------------------------------------------------------

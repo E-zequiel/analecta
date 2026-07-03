@@ -119,6 +119,26 @@ def test_list_entries_search(seeded_client: TestClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# GET /entries/titles
+# ---------------------------------------------------------------------------
+
+
+def test_list_entry_titles_empty(client: TestClient) -> None:
+    r = client.get("/api/v1/entries/titles")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_entry_titles_returns_id_and_title_only(seeded_client: TestClient) -> None:
+    r = seeded_client.get("/api/v1/entries/titles")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 2
+    assert {"id", "title"} == set(data[0].keys())
+    assert {row["title"] for row in data} == {"Article 1", "Article 2"}
+
+
+# ---------------------------------------------------------------------------
 # GET /entries/{id}
 # ---------------------------------------------------------------------------
 

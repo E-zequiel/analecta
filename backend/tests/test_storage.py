@@ -226,6 +226,16 @@ def test_list_entries_by_status(index: VaultIndex):
     assert len(index.list_entries(status="unread")) == 1
 
 
+def test_get_all_titles_empty(index: VaultIndex):
+    assert index.get_all_titles() == []
+
+
+def test_get_all_titles_returns_id_and_title(index: VaultIndex):
+    id1 = index.add_entry(_entry(title="Alpha", url="https://a.com"))
+    id2 = index.add_entry(_entry(title="Beta", url="https://b.com"))
+    assert index.get_all_titles() == [(id1, "Alpha"), (id2, "Beta")]
+
+
 # ---------------------------------------------------------------------------
 # VaultIndex — FTS5 search
 # ---------------------------------------------------------------------------

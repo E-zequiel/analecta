@@ -85,6 +85,18 @@ class EntryOut(BaseModel):
     flags: list[str]
 
 
+class EntryTitleOut(BaseModel):
+    """A minimal id/title pair for client-side title lookups.
+
+    Attributes:
+        id: Entry id.
+        title: Entry title.
+    """
+
+    id: int
+    title: str
+
+
 class BacklinkContextOut(BaseModel):
     """Surrounding text context for a single backlink occurrence.
 
@@ -123,6 +135,30 @@ class BacklinksResultOut(BaseModel):
     """
 
     linked: list[BacklinkOut]
+
+
+class OutgoingLinkOut(BaseModel):
+    """A single outgoing link entry.
+
+    Attributes:
+        id: Target entry id.
+        name: Target entry title.
+        context: Surrounding text context for this occurrence.
+    """
+
+    id: int
+    name: str
+    context: BacklinkContextOut
+
+
+class OutgoingLinksResultOut(BaseModel):
+    """Response body for GET /entries/{id}/outgoing-links.
+
+    Attributes:
+        linked: All outgoing link occurrences from the requested entry.
+    """
+
+    linked: list[OutgoingLinkOut]
 
 
 class HashtagGroupOut(BaseModel):
@@ -389,6 +425,25 @@ async def get_entries_graph(
     )
 
 
+@router.get("/entries/titles", response_model=list[EntryTitleOut])
+async def list_entry_titles(
+    index: VaultIndex = Depends(get_index),
+) -> list[EntryTitleOut]:
+    """Return a lightweight id/title pair for every entry.
+
+    Used by the frontend to resolve ``[[wikilinks]]`` to a real entry id
+    without fetching the full entry list.
+
+    Args:
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        List of EntryTitleOut ordered by id.
+    """
+    rows = await asyncio.to_thread(index.get_all_titles)
+    return [EntryTitleOut(id=entry_id, title=title) for entry_id, title in rows]
+
+
 @router.get("/entries/{entry_id}", response_model=EntryOut)
 async def get_entry(
     entry_id: int,
@@ -475,6 +530,43 @@ async def get_entry_backlinks(
             BacklinkOut(
                 id=r.source_id,
                 name=r.source_title,
+                context=BacklinkContextOut(
+                    heading=r.heading,
+                    pre=r.pre,
+                    highlight=r.highlight,
+                    post=r.post,
+                ),
+            )
+            for r in records
+        ]
+    )
+
+
+@router.get("/entries/{entry_id}/outgoing-links", response_model=OutgoingLinksResultOut)
+async def get_entry_outgoing_links(
+    entry_id: int,
+    index: VaultIndex = Depends(get_index),
+) -> OutgoingLinksResultOut:
+    """Return all entries that *entry_id* links to.
+
+    Args:
+        entry_id: Source entry id.
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        OutgoingLinksResultOut with a list of outgoing link occurrences.
+
+    Raises:
+        HTTPException: 404 if the entry does not exist.
+    """
+    if await asyncio.to_thread(index.get_entry, entry_id) is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    records = await asyncio.to_thread(index.get_outgoing_links, entry_id)
+    return OutgoingLinksResultOut(
+        linked=[
+            OutgoingLinkOut(
+                id=r.target_id,
+                name=r.target_title,
                 context=BacklinkContextOut(
                     heading=r.heading,
                     pre=r.pre,

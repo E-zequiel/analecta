@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { X, Cable } from '@lucide/svelte';
+	import { X, Cable, ArrowDownLeft, ArrowUpRight } from '@lucide/svelte';
 	import {
 		entries as entriesApi,
 		type Backlink,
 		type Entry,
 		type HashtagGroup,
+		type OutgoingLink,
 	} from '$lib/api/client';
 	import { selectedTag, sidebarTagPreview } from '$lib/stores/ui';
 	import { entryChangedTick } from '$lib/stores/sse';
@@ -87,12 +88,29 @@
 		e.preventDefault();
 	}
 
+	type DirectLink = {
+		id: number;
+		name: string;
+		direction: 'in' | 'out';
+		context?: { heading?: string; pre: string; highlight: string; post: string };
+	};
+
 	let tagEntries = $state<Entry[]>([]);
 	let hashtagGroups = $state<HashtagGroup[]>([]);
 	let directBacklinks = $state<Backlink[]>([]);
+	let outgoingLinks = $state<OutgoingLink[]>([]);
 	let connLoading = $state(false);
 
 	const activeTag = $derived($sidebarTagPreview ?? $selectedTag);
+
+	// Incoming + outgoing links merged into one list, each row tagged with its
+	// direction — the user chose a single combined list over two sections.
+	const directLinks = $derived<DirectLink[]>(
+		[
+			...directBacklinks.map((b) => ({ ...b, direction: 'in' as const })),
+			...outgoingLinks.map((o) => ({ ...o, direction: 'out' as const })),
+		].sort((a, b) => a.name.localeCompare(b.name))
+	);
 
 	$effect(() => {
 		const tag = activeTag;
@@ -120,6 +138,7 @@
 
 		hashtagGroups = [];
 		directBacklinks = [];
+		outgoingLinks = [];
 
 		if (id === null || tag !== null) return;
 
@@ -128,13 +147,15 @@
 
 		(async () => {
 			try {
-				const [conn, bl] = await Promise.all([
+				const [conn, bl, ol] = await Promise.all([
 					entriesApi.getHashtagConnections(id).catch(() => ({ groups: [] as HashtagGroup[] })),
 					entriesApi.getBacklinks(id).catch(() => ({ linked: [] as Backlink[] })),
+					entriesApi.getOutgoingLinks(id).catch(() => ({ linked: [] as OutgoingLink[] })),
 				]);
 				if (cancelled) return;
 				hashtagGroups = conn.groups;
 				directBacklinks = bl.linked;
+				outgoingLinks = ol.linked;
 			} catch {
 				// outer fetch failed — leave empty state
 			} finally {
@@ -213,7 +234,7 @@
 						<span class="bl-count">{tagEntries.length}</span>
 					{:else if !activeTag && !connLoading}
 						{@const total =
-							hashtagGroups.reduce((s, g) => s + g.entries.length, 0) + directBacklinks.length}
+							hashtagGroups.reduce((s, g) => s + g.entries.length, 0) + directLinks.length}
 						{#if total > 0}
 							<span class="bl-count">{total}</span>
 						{/if}
@@ -250,7 +271,7 @@
 			{:else}
 				{#if connLoading}
 					<p class="bl-empty">Loading…</p>
-				{:else if hashtagGroups.length === 0 && directBacklinks.length === 0}
+				{:else if hashtagGroups.length === 0 && directLinks.length === 0}
 					<p class="bl-empty">No connections.</p>
 				{:else}
 					<div class="bl-rich-scroll">
@@ -267,15 +288,26 @@
 								{/each}
 							</div>
 						{/each}
-						{#if directBacklinks.length > 0}
+						{#if directLinks.length > 0}
 							<div class="bl-group-header">
 								<span class="bl-group-direct">Direct</span>
-								<span class="bl-count">{directBacklinks.length}</span>
+								<span class="bl-count">{directLinks.length}</span>
 							</div>
 							<div class="bl-group-list">
-								{#each directBacklinks as item, i (`${item.id}-${i}`)}
+								{#each directLinks as item, i (`${item.direction}-${item.id}-${i}`)}
 									<button class="bl-item" onclick={() => onbacklinksopen?.(item.id, item.name)}>
-										<span class="bl-item-name">{item.name}</span>
+										<span class="bl-item-row">
+											{#if item.direction === 'in'}
+												<span class="bl-item-dir" use:tooltip={'Incoming link'}>
+													<ArrowDownLeft size={11} />
+												</span>
+											{:else}
+												<span class="bl-item-dir" use:tooltip={'Outgoing link'}>
+													<ArrowUpRight size={11} />
+												</span>
+											{/if}
+											<span class="bl-item-name">{item.name}</span>
+										</span>
 										{#if item.context?.heading}
 											<span class="bl-item-heading">{item.context.heading}</span>
 										{/if}
@@ -547,6 +579,20 @@
 	}
 	.bl-item:hover {
 		background: var(--bg-highlight);
+	}
+
+	.bl-item-row {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		min-width: 0;
+	}
+
+	.bl-item-dir {
+		display: flex;
+		align-items: center;
+		flex-shrink: 0;
+		color: var(--fg-muted);
 	}
 
 	.bl-item-name {
