@@ -31,7 +31,6 @@
     "@shikijs/langs": "4.2.0",
     "@shikijs/markdown-it": "4.2.0",
     "@shikijs/themes": "4.2.0",
-    "@shikijs/transformers": "4.2.0",
     "@types/d3-force": "^3.0.10",
     "@uiw/codemirror-theme-tokyo-night": "4.25.10",
     "@uiw/codemirror-theme-tokyo-night-day": "4.25.10",

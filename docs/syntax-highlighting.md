@@ -107,6 +107,9 @@ populated regardless of sync vs async. The `cyrb53` hash implementation is
 identical to the one inside `@shikijs/transformers` — class names are
 inter-compatible if the upstream transformer is ever fixed.
 
+`@shikijs/transformers` is not currently a declared dependency (removed
+2026-07-02, unused) — re-add it if reviving this path.
+
 ---
 
 ## File map

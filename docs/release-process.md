@@ -47,10 +47,15 @@ Pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml`:
 
 1. Builds the Python sidecar (PyInstaller), the frontend (Vite), and the Electron shell.
 2. Packages `.deb`, `.rpm`, and `.AppImage` with `electron-builder`.
-3. Extracts the `## [X.Y.Z]` section from `CHANGELOG.md` as the release notes. The job
+3. Generates `SHA256SUMS` over the three packaged installers.
+4. Generates a Sigstore build provenance attestation for the three installers via
+   `actions/attest-build-provenance` — skipped while the repository is private (requires a
+   public repo or GitHub Enterprise Cloud); see `docs/github-actions-security.md` Control 14.
+5. Extracts the `## [X.Y.Z]` section from `CHANGELOG.md` as the release notes. The job
    fails if no heading matches the tagged version — the CHANGELOG rename in the release
    PR must land before the tag is pushed.
-4. Creates the GitHub Release as a **draft**, with the built packages attached as assets.
+6. Creates the GitHub Release as a **draft**, with the built packages and `SHA256SUMS`
+   attached as assets.
 
 The workflow only runs against `E-zequiel/analecta` (guarded), so it never fires on forks.
 
@@ -58,7 +63,10 @@ The workflow only runs against `E-zequiel/analecta` (guarded), so it never fires
 
 ## Verification before publishing
 
-- Download the installer package from the draft release's assets instead of building locally.
+- Download the installer package and `SHA256SUMS` from the draft release's assets instead of
+  building locally.
+- Verify the download against the checksums file: `sha256sum -c SHA256SUMS` (run from the
+  directory containing the downloaded installer).
 - Install it (e.g. `sudo apt install ./analecta_X.Y.Z_amd64.deb`) and confirm the app
   launches and behaves as expected. Package/artifact naming is set explicitly in
   `electron-builder.yml`'s `deb`/`rpm` blocks — see

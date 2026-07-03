@@ -21,7 +21,9 @@ jobs:
     # which would produce confusing failures rather than a clear skip.
     if: github.repository == 'E-zequiel/analecta'
     permissions:
-      contents: write  # Required to create the GitHub Release and upload assets
+      contents: write      # Required to create the GitHub Release and upload assets
+      id-token: write      # Required to mint the OIDC token for build provenance attestation
+      attestations: write  # Required to publish the build provenance attestation
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
@@ -62,6 +64,23 @@ jobs:
       - name: Package with electron-builder
         run: mise exec -- pnpm --filter analecta-electron run dist
 
+      - name: Generate release checksums
+        run: sha256sum *.deb *.rpm *.AppImage > SHA256SUMS
+        working-directory: dist-electron
+
+      - name: Attest build provenance
+        # Artifact attestations require a public repo (or GitHub Enterprise Cloud for
+        # private repos) — skip until this repo goes public, so an unsupported plan/
+        # visibility can't fail the job and block the release. Self-activating: no
+        # edit needed here once the repo is public.
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        with:
+          subject-path: |
+            dist-electron/*.deb
+            dist-electron/*.rpm
+            dist-electron/*.AppImage
+
       - name: Extract changelog section
         run: |
           VERSION="${RELEASE_TAG#v}"
@@ -89,7 +108,7 @@ jobs:
             --draft \
             --notes-file release-notes.md \
             $EXTRA_FLAGS \
-            dist-electron/*.deb dist-electron/*.rpm dist-electron/*.AppImage
+            dist-electron/*.deb dist-electron/*.rpm dist-electron/*.AppImage dist-electron/SHA256SUMS
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
