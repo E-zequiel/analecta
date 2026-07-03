@@ -86,11 +86,17 @@
 	function extractHashtags(text: string): string[] {
 		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local algorithmic variable, not reactive state
 		const tags = new Set<string>();
+		let inFence = false;
 		for (const line of text.split('\n')) {
+			if (/^```/.test(line)) {
+				inFence = !inFence;
+				continue;
+			}
+			if (inFence) continue;
 			// Skip markdown headings (# Heading) but not hashtag-only lines (#tag1 #tag2)
 			if (/^#{1,6}(?:\s|$)/.test(line.trimStart())) continue;
 			const masked = maskInlineCode(line);
-			for (const m of masked.matchAll(/#([a-zA-Z][a-zA-Z0-9_]*)/g)) {
+			for (const m of masked.matchAll(/(?<!\S)#([a-zA-Z][a-zA-Z0-9_]*)/g)) {
 				tags.add(m[1].toLowerCase());
 			}
 		}
