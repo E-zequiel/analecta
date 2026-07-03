@@ -33,8 +33,8 @@ uses: actions/checkout@v4
 
 | Action | Tag | SHA | Last verified |
 |--------|-----|-----|---------------|
-| `actions/checkout` | `v6.0.3` | `df4cb1c069e1874edd31b4311f1884172cec0e10` | 2026-06-04 |
-| `jdx/mise-action` | `v4.1.0` | `dba19683ed58901619b14f395a24841710cb4925` | 2026-06-04 |
+| `actions/checkout` | `v7.0.0` | `9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0` | 2026-07-03 |
+| `jdx/mise-action` | `v4.2.0` | `e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d` | 2026-07-03 |
 | `bitwarden/sm-action` | `v3.0.0` | `27c0c9dcab679d7250dbab91227c85b49ffa5e0f` | 2026-05-08 |
 | `actions/attest-build-provenance` | `v4.1.1` | `0f67c3f4856b2e3261c31976d6725780e5e4c373` | 2026-07-01 |
 
