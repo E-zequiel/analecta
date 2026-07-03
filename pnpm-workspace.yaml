@@ -11,8 +11,8 @@ overrides:
   tmp: '0.2.7'
   # CVE-2024-47764 (accept-splitting) — transitive via @sveltejs/kit; 0.7.0 is the fix.
   cookie: '0.7.0'
-  # Security patch — transitive via electron-builder.
-  js-yaml: '4.2.0'
+  # GHSA-52cp-r559-cp3m (CVSS 7.5, quadratic-time DoS via chained merge keys) — transitive via electron-builder.
+  js-yaml: '4.3.0'
   # Security patch — transitive via electron-builder and friends.
   form-data: '4.0.6'
   # Security patch — transitive via node-gyp and electron-builder.

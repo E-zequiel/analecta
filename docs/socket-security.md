@@ -57,10 +57,6 @@ Socket's "Obfuscated code" detector flags packages that use split operations on 
 | 2026-06-07 scan | `@typescript-eslint/eslint-plugin@8.60.0` | Dev dep, linting only. Official typescript-eslint org. |
 | 2026-06-15 scan (16 alerts) | `nodejs-wheel-binaries@24.15.0` (PyPI) | Transitive of `basedpyright` (dev-only). Ships the compiled `node` binary across ~8 platform wheels; each binary flagged independently — same false-positive class as `electron-winstaller@wix.dll`. Confirmed absent from the shipped PyInstaller `--onedir` artifact (`backend.spec` has no `basedpyright`/`nodejs` references). |
 
-### npm — `js-yaml@4.2.0` (monitor, not Ignore)
-
-`obfuscatedFile`/`supplyChainRisk`, confidence 0.9. Flagged file is the library's minified UMD bundle. Socket analyst: "no clear evidence of malware (no network exfiltration, eval injection, or credential theft)"; only flags `__proto__` handling in YAML type resolution, which is normal object-assignment code. No upgrade exists — 4.2.0 is `dist-tags.latest` and the version already pinned via `pnpm-workspace.yaml overrides:`. **Status: "monitor" (not "Ignore") in Socket dashboard** — alert stays open for tracking. Do not re-propose setting it to "Ignore".
-
 ### PyPI — Removed packages on npm-only PRs
 
 When a PR triggers the `socket` CI job via `pnpm-lock.yaml` changes only (no `backend/uv.lock` change), Socket's `ci` diff command compares the full repo against its previous `main` baseline. Python packages that were indexed in the baseline but fall outside the PR's diff scope are reported as "Removed."
@@ -113,6 +109,12 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 ---
 
 ## Resolved CVEs
+
+### 2026-07-03
+
+| Package | CVE | Fix |
+|---------|-----|-----|
+| `js-yaml@4.2.0` | GHSA-52cp-r559-cp3m (CVSS 7.5, quadratic-time DoS via chained merge-key mappings) | `overrides: {js-yaml: '4.3.0'}` — 10-day window exception approved given severity (4.3.0 was ~7 days old at merge). Cleared the `obfuscatedFile`/`supplyChainRisk` "monitor" alert on the previous 4.2.0 minified bundle (formerly documented in "Known false positives" — removed, alert no longer present post-upgrade). |
 
 ### 2026-06-19
 
