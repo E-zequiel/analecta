@@ -70,9 +70,16 @@ If the package is one of a matched pair/family (e.g. a theme's light/dark
 siblings from the same publisher), pin both to the same exact version to avoid
 drift between them.
 
-`.npmrc` contains `save-exact=true`, which makes `pnpm add` write exact pins by
-default and prevents accidental range introduction. The weekly updater relies on
-this when bumping existing pins via `pnpm add <pkg>@<latest> --save-exact`.
+`.npmrc` contains `save-exact=true`, and `pnpm add` also takes an explicit
+`--save-exact` flag — but neither reliably strips a pre-existing range
+operator on an *upgrade*. Observed: bumping `@babel/runtime` from `^7` to
+`8.0.0` via `pnpm add @babel/runtime@8.0.0 --save-exact --filter frontend`
+left `^8.0.0` in `package.json`, not `8.0.0`. `deps_update.py` now re-checks
+the specifier after every successful `pnpm add` and rewrites it directly if
+a range operator remains, re-syncing the lockfile with `pnpm install` when
+it does (see `_ensure_exact_specifier()`). When bumping a pin by hand,
+verify the resulting `package.json` line yourself — don't trust
+`--save-exact` alone.
 
 CVE-driven patches of *transitive* dependencies use a different mechanism
 (`overrides:` in `pnpm-workspace.yaml`) but the same

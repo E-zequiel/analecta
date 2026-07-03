@@ -139,6 +139,22 @@ corepack use pnpm@<version>
 
 Severity: **LOW**
 
+#### Non-exact direct dependency pins (pnpm projects)
+
+If the repo declares an exact-pin policy for direct dependencies, check whether any workspace's `package.json` still carries a range operator:
+
+```bash
+grep -E '"[^"]+": *"[\^~><]' frontend/package.json electron/package.json package.json 2>/dev/null
+```
+
+A hit here is a policy violation: it lets a future `pnpm update` — or a plain `pnpm install` if the range is later loosened upstream — silently move the resolved version without a reviewable one-line `package.json` diff, the same audit-trail gap the exact-pin policy exists to close. **`pnpm add <pkg>@<version> --save-exact` does not reliably strip a pre-existing range operator on a cross-major bump** — observed leaving `^8.0.0` in place after bumping `@babel/runtime` from `^7`. Do not assume the flag alone guarantees the pin; verify the resulting `package.json` line.
+
+**Remediation:** Edit the specifier directly to the exact version, then run `pnpm install --filter <workspace>` to re-sync the lockfile.
+
+Severity: **LOW** (audit-trail/reviewability gap, not a direct exploit vector — same class as the missing `packageManager` field check above)
+
+**Analecta instance:** `scripts/deps_update.py` re-checks the specifier after every `pnpm add` and self-corrects it (`_ensure_exact_specifier()`), re-syncing the lockfile when it does. Manual pin bumps still need a by-hand check — see `docs/dependency-verification.md`.
+
 #### Missing lifecycle script restriction (pnpm projects)
 
 Check whether `pnpm-workspace.yaml` restricts which packages are allowed to run install-time lifecycle scripts (`preinstall`, `install`, `postinstall`):
@@ -388,7 +404,7 @@ Produce the findings table, clean file list, and summary.
 |-------|---------|
 | HIGH | Unpinned CLI tool in a step that has secrets in environment scope · missing repository-visibility guard on `attest-build-provenance` while private/sub-Enterprise (blocks the whole release job) |
 | MEDIUM | Unpinned action ref · missing permissions guard · missing repository guard on a sensitive job · missing lifecycle script restriction · scan ordering gap (`--ignore-scripts` absent) · Dependabot PR secret-access gap · `workflow_dispatch` ref-trust gap · missing permissions for build provenance attestation |
-| LOW | `cancel-in-progress: true` on release · unnecessary `id-token: write` · missing `packageManager` SHA field · provenance infrastructure issues (consumer- or producer-side) |
+| LOW | `cancel-in-progress: true` on release · unnecessary `id-token: write` · missing `packageManager` SHA field · non-exact direct dependency pin after intended exact-pin policy · provenance infrastructure issues (consumer- or producer-side) |
 
 ---
 

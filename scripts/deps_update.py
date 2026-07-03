@@ -28,6 +28,7 @@ from typing import Any, cast
 REPO_ROOT = Path(__file__).parent.parent
 COOLDOWN_DAYS = 10
 _REGISTRY_TIMEOUT = 15
+_WORKSPACE_DIR = {"frontend": "frontend", "analecta-electron": "electron"}
 
 # ---------------------------------------------------------------------------
 # Types
@@ -208,6 +209,28 @@ def _npm_release_date(name: str, version: str) -> datetime | None:
         return None
 
 
+def _ensure_exact_specifier(workspace_dir: str, name: str, version: str) -> bool:
+    """Rewrite the package.json specifier for name to an exact pin.
+
+    pnpm's --save-exact does not reliably strip the range operator when
+    rewriting an existing specifier — observed leaving ^8.0.0 in place
+    after `pnpm add pkg@8.0.0 --save-exact` over a prior ^7 range.
+
+    Returns:
+        True if the specifier was rewritten, meaning the lockfile needs
+        a resync via `pnpm install`.
+    """
+    pkg_path = REPO_ROOT / workspace_dir / "package.json"
+    text = pkg_path.read_text()
+    pattern = re.compile(rf'("{re.escape(name)}":\s*")([^"]*)(")')
+    match = pattern.search(text)
+    if match is None or match.group(2) == version:
+        return False
+    new_text = pattern.sub(rf"\g<1>{version}\g<3>", text, count=1)
+    _ = pkg_path.write_text(new_text)
+    return True
+
+
 def update_node(
     cooldown: int, workspace: str
 ) -> tuple[list[Updated], list[Skipped], bool]:
@@ -273,9 +296,21 @@ def update_node(
         if result.returncode != 0:
             print(f"::error::{name}: pnpm add failed — {result.stderr.strip()}")
             had_error = True
-        else:
-            print("    [ok] updated")
-            updated.append((name, current, latest, release_dt))
+            continue
+
+        if _ensure_exact_specifier(_WORKSPACE_DIR[workspace], name, latest):
+            resync = _run(["pnpm", "install", "--filter", workspace], cwd=REPO_ROOT)
+            if resync.returncode != 0:
+                print(
+                    f"::error::{name}: lockfile resync failed after exact-pin fix"
+                    f" — {resync.stderr.strip()}"
+                )
+                had_error = True
+                continue
+            print("    [fix] forced exact pin, resynced lockfile")
+
+        print("    [ok] updated")
+        updated.append((name, current, latest, release_dt))
 
     if fetch_attempted > 0 and fetch_ok == 0:
         print("::error::All npm registry fetches failed — no packages could be checked")

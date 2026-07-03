@@ -192,7 +192,7 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 1. Detect outdated packages via `uv` and `pnpm outdated`.
 2. Query the upstream registry for the new version's release date (PyPI JSON API, npm registry `time` map).
 3. **Skip** any package released fewer than 10 days ago — this prevents "day-zero supply chain" attacks where a malicious release is injected before the community has time to detect and report it.
-4. Apply updates selectively: Python packages via `uv lock --upgrade-package <pkg>`; Node packages via `pnpm add <pkg>@<latest> --save-exact --filter <workspace>`. (`pnpm update` is a no-op for exact-pinned packages — it only moves within the declared range, but exact pins have no range to move within.)
+4. Apply updates selectively: Python packages via `uv lock --upgrade-package <pkg>`; Node packages via `pnpm add <pkg>@<latest> --save-exact --filter <workspace>`, followed by a direct re-check that strips any range operator `--save-exact` failed to remove, re-syncing the lockfile if it had to correct one (see `docs/dependency-verification.md`). (`pnpm update` is a no-op for exact-pinned packages — it only moves within the declared range, but exact pins have no range to move within.)
 5. Run `check.sh` to confirm all tests and static checks still pass; revert lockfiles if they fail.
 6. Open a pull request summarising what was updated and what was held back (with eligibility dates).
 
