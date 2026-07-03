@@ -33,6 +33,27 @@ class BacklinkRecord:
 
 
 @dataclass
+class OutgoingLinkRecord:
+    """A resolved outgoing wikilink/hashtag reference to another entry.
+
+    Args:
+        target_id: ID of the entry being linked to.
+        target_title: Title of the entry being linked to.
+        heading: Section heading above the reference, or ``None``.
+        pre: Text immediately before the reference (up to 60 chars).
+        highlight: The matched link text as it appears in source.
+        post: Text immediately after the reference (up to 60 chars).
+    """
+
+    target_id: int
+    target_title: str
+    heading: str | None
+    pre: str
+    highlight: str
+    post: str
+
+
+@dataclass
 class GraphNodeRecord:
     """A node in the vault connection graph.
 
@@ -700,6 +721,82 @@ class VaultIndex:
             )
             for row in rows
         ]
+
+    def get_all_titles(self) -> list[tuple[int, str]]:
+        """Return the id and title of every entry.
+
+        Used for client-side title-to-id lookups (e.g. resolving
+        ``[[wikilinks]]`` to a real entry without a per-render round trip).
+
+        Returns:
+            List of ``(id, title)`` tuples ordered by id.
+        """
+        rows = self._conn.execute(
+            "SELECT id, title FROM entries ORDER BY id ASC"
+        ).fetchall()
+        return [(row["id"], row["title"]) for row in rows]
+
+    def get_outgoing_links(self, source_id: int) -> list[OutgoingLinkRecord]:
+        """Return all entries that *source_id* links to via wikilinks or hashtags.
+
+        Resolves *source_id*'s own ``backlink_refs`` rows against the current
+        ``entries`` table, using the same title-matching rules as
+        :meth:`get_backlinks` and :meth:`get_subgraph`. References that don't
+        resolve to a real entry (unresolved wikilinks, hashtags with no
+        matching entry) are skipped — there is nothing to navigate to.
+
+        Args:
+            source_id: ID of the entry to query outgoing links for.
+
+        Returns:
+            List of :class:`OutgoingLinkRecord` ordered by target title then
+            document position.
+        """
+        from analecta.markdown.hashtags import normalize_tag
+
+        entry_rows = self._conn.execute("SELECT id, title FROM entries").fetchall()
+        lower_title_to_entry: dict[str, tuple[int, str]] = {
+            row["title"].lower(): (row["id"], row["title"]) for row in entry_rows
+        }
+        slug_to_entry: dict[str, tuple[int, str]] = {
+            normalize_tag(row["title"]): (row["id"], row["title"]) for row in entry_rows
+        }
+
+        rows = self._conn.execute(
+            """
+            SELECT target_text, is_hashtag, heading, pre, highlight, post
+            FROM backlink_refs
+            WHERE source_id = ?
+            ORDER BY id ASC
+            """,
+            (source_id,),
+        ).fetchall()
+
+        results: list[OutgoingLinkRecord] = []
+        for row in rows:
+            target_text: str = row["target_text"]
+            is_hashtag: bool = bool(row["is_hashtag"])
+            resolved = (
+                slug_to_entry.get(target_text)
+                if is_hashtag
+                else lower_title_to_entry.get(target_text)
+            )
+            if resolved is None or resolved[0] == source_id:
+                continue
+            target_id, target_title = resolved
+            results.append(
+                OutgoingLinkRecord(
+                    target_id=target_id,
+                    target_title=target_title,
+                    heading=row["heading"],
+                    pre=row["pre"],
+                    highlight=row["highlight"],
+                    post=row["post"],
+                )
+            )
+
+        results.sort(key=lambda r: (r.target_title.lower(), r.target_id))
+        return results
 
     def get_hashtag_connections(self, source_id: int) -> list[HashtagConnectionGroup]:
         """Return other entries grouped by shared tag — structural or content.
