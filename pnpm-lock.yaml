@@ -68,7 +68,7 @@ importers:
   frontend:
     dependencies:
       '@babel/runtime':
-        specifier: ^8.0.0
+        specifier: 8.0.0
         version: 8.0.0
       '@codemirror/commands':
         specifier: ^6
