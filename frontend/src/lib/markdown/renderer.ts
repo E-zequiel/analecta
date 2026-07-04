@@ -2,7 +2,7 @@ import MarkdownIt from 'markdown-it';
 import footnote from 'markdown-it-footnote';
 import taskLists from 'markdown-it-task-lists';
 import { fromHighlighter } from '@shikijs/markdown-it/core';
-import { createHighlighterCoreSync } from 'shiki/core';
+import { createHighlighterCoreSync, type HighlighterGeneric } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 import tokyoNight from '@shikijs/themes/tokyo-night';
 import langPython from '@shikijs/langs/python';
@@ -18,6 +18,7 @@ import langC from '@shikijs/langs/c';
 import langSql from '@shikijs/langs/sql';
 import langYaml from '@shikijs/langs/yaml';
 import { createStyleToClassTransformer } from './shiki-style-to-class.js';
+import wikilink, { type ResolveWikilinkTitle } from './wikilink';
 import { convertFileSrc } from '$lib/platform';
 
 const highlighter = createHighlighterCoreSync({
@@ -58,12 +59,19 @@ function stripFrontmatter(source: string): string {
 	return afterClose === -1 ? '' : source.slice(afterClose + 1);
 }
 
-export function createRenderer(markdownFilePath: string): (source: string) => string {
+export function createRenderer(
+	markdownFilePath: string,
+	resolveWikilinkTitle: ResolveWikilinkTitle
+): (source: string) => string {
 	const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
 		.use(footnote)
 		.use(taskLists, { enabled: false, label: true })
+		.use(wikilink, { resolveTitle: resolveWikilinkTitle })
 		.use(
-			fromHighlighter(highlighter, {
+			// HighlighterCore is HighlighterGeneric<never, never>; fromHighlighter wants
+			// <any, any> — a Shiki typing gap, not a real mismatch (runtime is unaffected).
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see above
+			fromHighlighter(highlighter as HighlighterGeneric<any, any>, {
 				theme: 'tokyo-night',
 				transformers: [createStyleToClassTransformer()],
 			})

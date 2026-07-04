@@ -38,6 +38,13 @@
 	color: var(--cyan);
 }
 
+.markdown-body .wikilink-unresolved {
+	color: var(--fg-muted);
+	text-decoration: underline dashed;
+	text-underline-offset: 2px;
+	cursor: default;
+}
+
 .markdown-body strong {
 	font-weight: 700;
 	color: var(--cyan);

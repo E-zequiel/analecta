@@ -5,6 +5,7 @@
 	import { readTextFile, writeTextFile } from '$lib/platform';
 	import { entries as entriesApi, type Entry } from '$lib/api/client';
 	import { entryChangedTick } from '$lib/stores/sse';
+	import { entryTitleIndex, ensureEntryTitleIndexLoaded } from '$lib/stores/entryTitles';
 	import {
 		editorSaving,
 		editorSaved,
@@ -31,6 +32,8 @@
 	let previewTimer: ReturnType<typeof setTimeout>;
 
 	onMount(() => {
+		ensureEntryTitleIndexLoaded();
+
 		entriesApi
 			.get(entryId)
 			.then((e) => {
@@ -103,13 +106,17 @@
 		return [...tags];
 	}
 
+	function resolveWikilinkTitle(title: string): number | null {
+		return $entryTitleIndex.get(title.toLowerCase()) ?? null;
+	}
+
 	function handleChange(newContent: string) {
 		content = newContent;
 		saved = false;
 		if (showPreview && entry) {
 			clearTimeout(previewTimer);
 			previewTimer = setTimeout(() => {
-				previewHtml = createRenderer(entry!.file_path)(content);
+				previewHtml = createRenderer(entry!.file_path, resolveWikilinkTitle)(content);
 			}, 400);
 		}
 	}
@@ -145,7 +152,7 @@
 	function togglePreview() {
 		showPreview = !showPreview;
 		if (showPreview && entry) {
-			previewHtml = createRenderer(entry.file_path)(content);
+			previewHtml = createRenderer(entry.file_path, resolveWikilinkTitle)(content);
 		}
 	}
 </script>

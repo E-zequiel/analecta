@@ -32,6 +32,11 @@ export interface Entry {
 	flags: string[];
 }
 
+export interface EntryTitle {
+	id: number;
+	title: string;
+}
+
 export interface FtsPatch {
 	title: string;
 	content: string;
@@ -196,6 +201,10 @@ export const entries = {
 
 	getCounts(): Promise<Record<string, number>> {
 		return apiFetch<Record<string, number>>('/entries/counts');
+	},
+
+	getTitles(): Promise<EntryTitle[]> {
+		return apiFetch<EntryTitle[]>('/entries/titles');
 	},
 
 	getMetrics(): Promise<{ reads_week: number; reads_month: number; reads_year: number }> {

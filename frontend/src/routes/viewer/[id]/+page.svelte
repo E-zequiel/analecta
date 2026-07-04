@@ -15,8 +15,9 @@
 	import '$lib/markdown/tokyo-night.css';
 	import '$lib/markdown/shiki-classes.css';
 	import { lastViewedId, pendingScrollRestore, scrollPositions } from '$lib/stores/ui';
-	import { ensureEntryTab, closeTab } from '$lib/stores/tabs';
+	import { ensureEntryTab, closeTab, openEntryTab } from '$lib/stores/tabs';
 	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
+	import { entryTitleIndex, ensureEntryTitleIndexLoaded } from '$lib/stores/entryTitles';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import {
 		viewerEntry,
@@ -224,6 +225,8 @@
 
 	// Config is stable across entries — fetch once on mount.
 	onMount(() => {
+		ensureEntryTitleIndexLoaded();
+
 		configApi
 			.get()
 			.then((cfg) => {
@@ -266,6 +269,7 @@
 
 		entry = null;
 		html = '';
+		source = '';
 		error = '';
 		linkedEntries = [];
 		viewerTagsOpen.set(false);
@@ -284,7 +288,6 @@
 			.then((src) => {
 				if (cancelled) return;
 				source = src;
-				html = createRenderer(entry!.file_path)(src);
 			})
 			.catch((err) => {
 				if (!cancelled && err !== 'cancelled') {
@@ -303,6 +306,21 @@
 				scrollPositions.update((p) => ({ ...p, [String(id)]: top }));
 			}
 		};
+	});
+
+	// Recomputes html from the already-fetched source whenever the entry or
+	// the wikilink title index changes — avoids re-fetching the file just to
+	// pick up newly-loaded/renamed titles.
+	$effect(() => {
+		const currentEntry = entry;
+		const src = source;
+		const titleIndex = $entryTitleIndex;
+		if (!currentEntry || !src) {
+			html = '';
+			return;
+		}
+		const resolveWikilinkTitle = (title: string) => titleIndex.get(title.toLowerCase()) ?? null;
+		html = createRenderer(currentEntry.file_path, resolveWikilinkTitle)(src);
 	});
 
 	// Restore scroll position when content for an entry finishes loading.
@@ -497,8 +515,15 @@
 	async function handleContentClick(e: MouseEvent) {
 		const link = (e.target as HTMLElement).closest('a');
 		if (!link) return;
-		const href = link.getAttribute('href') ?? '';
 		e.preventDefault();
+
+		const wikilinkEntryId = link.getAttribute('data-entry-id');
+		if (wikilinkEntryId) {
+			openEntryTab(Number(wikilinkEntryId), link.textContent ?? '');
+			return;
+		}
+
+		const href = link.getAttribute('href') ?? '';
 		if (href.startsWith('http://') || href.startsWith('https://')) {
 			await openUrl(href);
 		}
