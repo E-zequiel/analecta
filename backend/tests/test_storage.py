@@ -382,6 +382,77 @@ def test_delete_tag_nonexistent_noop(index: VaultIndex):
 
 
 # ---------------------------------------------------------------------------
+# list_tags — unions structural tags with content-only hashtags
+# ---------------------------------------------------------------------------
+
+
+def test_list_tags_content_only_hashtag_appears(index: VaultIndex, tmp_path: Path):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Great article about #python.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+
+    # No structural "python" tag exists — the content hashtag still shows up.
+    pairs = dict(index.list_tags())
+    assert pairs["python"] == 1
+
+
+def test_list_tags_content_hashtag_count_multiple_entries(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    for i in range(2):
+        src_file = vault / f"article-{i}.md"
+        src_file.write_text("Filed under #python.\n", encoding="utf-8")
+        entry_id = index.add_entry(
+            _entry(url=f"https://example.com/{i}", file_path=str(src_file))
+        )
+        index.index_backlinks(entry_id)
+
+    pairs = dict(index.list_tags())
+    assert pairs["python"] == 2
+
+
+def test_list_tags_structural_preferred_over_content(index: VaultIndex, tmp_path: Path):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("No hashtags here.\n", encoding="utf-8")
+
+    structural_id = index.add_entry(_entry(url="https://a.com"))
+    index.update_tags(structural_id, ["python"])
+
+    content_id = index.add_entry(_entry(url="https://b.com", file_path=str(src_file)))
+    index.index_backlinks(content_id)
+
+    # Same structural-first semantics as get_entry_ids_by_tag: the content
+    # hashtag under the same name is not counted once a structural tag exists.
+    pairs = dict(index.list_tags())
+    assert pairs["python"] == 1
+
+
+def test_list_tags_standalone_zero_count_tag_not_shadowed_by_hashtag(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+
+    index.create_tag("python")  # standalone, zero structural entries
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+
+    # A standalone tag with zero linked entries does not block the
+    # content-hashtag fallback — it still reflects real usage.
+    pairs = dict(index.list_tags())
+    assert pairs["python"] == 1
+
+
+# ---------------------------------------------------------------------------
 # get_metrics — weekly window starts on Sunday
 # ---------------------------------------------------------------------------
 
