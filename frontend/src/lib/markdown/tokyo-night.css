@@ -38,6 +38,10 @@
 	color: var(--cyan);
 }
 
+.markdown-body .wikilink {
+	cursor: pointer;
+}
+
 .markdown-body .wikilink-unresolved {
 	color: var(--fg-muted);
 	text-decoration: underline dashed;

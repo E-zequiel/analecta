@@ -1,11 +1,16 @@
+from __future__ import annotations
+
+import functools
 import importlib.resources
 import json
 import re as _re
 import sqlite3
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Concatenate
 
 _ALLOWED_SORT_COLS: frozenset[str] = frozenset({"title", "created_at"})
 _ALLOWED_SORT_DIRS: frozenset[str] = frozenset({"asc", "desc"})
@@ -126,6 +131,35 @@ class HashtagConnectionGroup:
     entries: list[EntryRecord]
 
 
+def _synchronized[**P, R](
+    fn: Callable[Concatenate[VaultIndex, P], R],
+) -> Callable[Concatenate[VaultIndex, P], R]:
+    """Serialize a VaultIndex method against the shared sqlite3.Connection.
+
+    A single connection is shared across every request-handling thread, and
+    a connection has exactly one transaction context — so without this, a
+    reader thread can observe another thread's uncommitted multi-statement
+    write (e.g. ``index_backlinks``' ``DELETE`` before its matching
+    ``INSERT``s commit). Held for the whole method, not per-statement, so
+    multi-statement writes stay atomic from a concurrent reader's
+    perspective. Uses ``RLock`` because several methods call other
+    decorated methods on ``self`` (e.g. ``add_link`` calls ``get_entry``).
+
+    Args:
+        fn: Method to wrap.
+
+    Returns:
+        Wrapped method that acquires ``self._lock`` before calling *fn*.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(self: VaultIndex, *args: P.args, **kwargs: P.kwargs) -> R:
+        with self._lock:  # pyright: ignore[reportPrivateUsage] — decorator is VaultIndex's own synchronization helper
+            return fn(self, *args, **kwargs)
+
+    return wrapper
+
+
 class VaultIndex:
     """SQLite-backed index for vault entries with FTS5 full-text search.
 
@@ -135,6 +169,7 @@ class VaultIndex:
 
     def __init__(self, db_path: Path) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
@@ -223,6 +258,7 @@ class VaultIndex:
     # CRUD
     # ------------------------------------------------------------------
 
+    @_synchronized
     def add_entry(self, entry: EntryRecord) -> int:
         """Insert a new entry and seed its FTS row.
 
@@ -263,6 +299,7 @@ class VaultIndex:
         self._conn.commit()
         return entry_id
 
+    @_synchronized
     def get_entry(self, entry_id: int) -> EntryRecord | None:
         """Fetch a single entry by id.
 
@@ -277,6 +314,7 @@ class VaultIndex:
         ).fetchone()
         return _row_to_entry(row) if row else None
 
+    @_synchronized
     def list_entries(
         self,
         status: str | None = None,
@@ -326,6 +364,7 @@ class VaultIndex:
         ).fetchall()
         return [_row_to_entry(r) for r in rows]
 
+    @_synchronized
     def get_counts(self) -> dict[str, int]:
         """Return entry counts for all dashboard sections in one aggregated query.
 
@@ -370,6 +409,7 @@ class VaultIndex:
             "archive": row["archive"] or 0,
         }
 
+    @_synchronized
     def get_metrics(self) -> dict[str, int]:
         """Return read-activity metrics used by the Collecta dashboard.
 
@@ -402,6 +442,7 @@ class VaultIndex:
             "reads_year": row[2] or 0,
         }
 
+    @_synchronized
     def update_status(self, entry_id: int, status: str) -> None:
         """Update an entry's status field.
 
@@ -426,6 +467,7 @@ class VaultIndex:
             )
         self._conn.commit()
 
+    @_synchronized
     def update_flags(self, entry_id: int, flags: list[str]) -> None:
         """Replace an entry's flags list.
 
@@ -439,6 +481,7 @@ class VaultIndex:
         )
         self._conn.commit()
 
+    @_synchronized
     def update_tags(self, entry_id: int, tags: list[str]) -> None:
         """Replace an entry's tags and keep the tags/entry_tags tables in sync.
 
@@ -469,6 +512,7 @@ class VaultIndex:
         )
         self._conn.commit()
 
+    @_synchronized
     def soft_delete(self, entry_id: int) -> None:
         """Mark an entry as deleted without removing it from the database.
 
@@ -477,6 +521,7 @@ class VaultIndex:
         """
         self.update_status(entry_id, "deleted")
 
+    @_synchronized
     def hard_delete(self, entry_id: int) -> None:
         """Permanently remove an entry and all its associations from the database.
 
@@ -497,6 +542,7 @@ class VaultIndex:
         self._conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
         self._conn.commit()
 
+    @_synchronized
     def update_fts_content(self, entry_id: int, title: str, content: str) -> None:
         """Replace the FTS5 row for an entry with updated title and body.
 
@@ -514,6 +560,7 @@ class VaultIndex:
         )
         self._conn.commit()
 
+    @_synchronized
     def get_entry_ids_by_tag(self, tag: str) -> list[int]:
         """Return IDs of all entries tagged with *tag*.
 
@@ -534,6 +581,7 @@ class VaultIndex:
         ).fetchall()
         return [row[0] for row in rows]
 
+    @_synchronized
     def create_tag(self, name: str) -> None:
         """Create a standalone tag with no entries.
 
@@ -545,6 +593,7 @@ class VaultIndex:
         )
         self._conn.commit()
 
+    @_synchronized
     def rename_tag(self, old_name: str, new_name: str) -> None:
         """Rename a tag globally.
 
@@ -590,6 +639,7 @@ class VaultIndex:
                 )
         self._conn.commit()
 
+    @_synchronized
     def delete_tag(self, name: str) -> None:
         """Delete a tag globally.
 
@@ -626,6 +676,7 @@ class VaultIndex:
         self._conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
         self._conn.commit()
 
+    @_synchronized
     def index_backlinks(self, source_id: int) -> None:
         """Re-index all outgoing backlink refs for *source_id*.
 
@@ -670,6 +721,7 @@ class VaultIndex:
             )
         self._conn.commit()
 
+    @_synchronized
     def get_backlinks(self, target_id: int) -> list[BacklinkRecord]:
         """Return all entries that link to *target_id*.
 
@@ -722,6 +774,7 @@ class VaultIndex:
             for row in rows
         ]
 
+    @_synchronized
     def get_all_titles(self) -> list[tuple[int, str]]:
         """Return the id and title of every entry.
 
@@ -736,6 +789,7 @@ class VaultIndex:
         ).fetchall()
         return [(row["id"], row["title"]) for row in rows]
 
+    @_synchronized
     def get_outgoing_links(self, source_id: int) -> list[OutgoingLinkRecord]:
         """Return all entries that *source_id* links to via wikilinks or hashtags.
 
@@ -798,6 +852,7 @@ class VaultIndex:
         results.sort(key=lambda r: (r.target_title.lower(), r.target_id))
         return results
 
+    @_synchronized
     def get_hashtag_connections(self, source_id: int) -> list[HashtagConnectionGroup]:
         """Return other entries grouped by shared tag — structural or content.
 
@@ -889,6 +944,7 @@ class VaultIndex:
             for _, (display, entries) in sorted(merged.items())
         ]
 
+    @_synchronized
     def get_subgraph(
         self, focus_id: int
     ) -> tuple[list[GraphNodeRecord], list[GraphEdgeRecord]] | None:
@@ -1072,6 +1128,7 @@ class VaultIndex:
         ]
         return nodes, edges
 
+    @_synchronized
     def list_tags(self) -> list[tuple[str, int]]:
         """Return all tags sorted by entry count descending.
 
@@ -1083,6 +1140,7 @@ class VaultIndex:
         ).fetchall()
         return [(row[0], row[1]) for row in rows]
 
+    @_synchronized
     def get_graph(
         self,
     ) -> tuple[list[GraphNodeRecord], list[GraphEdgeRecord]]:
@@ -1198,6 +1256,7 @@ class VaultIndex:
 
         return nodes, edges
 
+    @_synchronized
     def search(self, query: str) -> list[EntryRecord]:
         """Full-text search across title and content using FTS5.
 
@@ -1225,6 +1284,7 @@ class VaultIndex:
         ).fetchall()
         return [_row_to_entry(r) for r in rows]
 
+    @_synchronized
     def get_linked_entries(self, entry_id: int) -> list[EntryRecord]:
         """Return entries listed in *entry_id*'s frontmatter ``linked`` field.
 
@@ -1270,6 +1330,7 @@ class VaultIndex:
                 result.append(_row_to_entry(row))
         return result
 
+    @_synchronized
     def add_link(self, source_id: int, target_id: int) -> None:
         """Create a bidirectional explicit link between two entries.
 
@@ -1299,6 +1360,7 @@ class VaultIndex:
         self.index_backlinks(source_id)
         self.index_backlinks(target_id)
 
+    @_synchronized
     def remove_link(self, source_id: int, target_id: int) -> None:
         """Remove the bidirectional explicit link between two entries.
 
