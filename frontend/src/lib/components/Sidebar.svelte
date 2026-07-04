@@ -105,7 +105,9 @@
 	const activeDisplayEntry = $derived(
 		$dashboardPreviewEntryId !== null ? dashboardEntry : $viewerEntry
 	);
-	const currentEntryTagSet = $derived(new Set(activeDisplayEntry?.tags ?? []));
+	const currentEntryTagSet = $derived(
+		new Set([...(activeDisplayEntry?.tags ?? []), ...(activeDisplayEntry?.content_tags ?? [])])
+	);
 	const displayTagList = $derived(
 		activeDisplayEntry && $activeSection !== 'collecta'
 			? tagList.filter((t) => currentEntryTagSet.has(t.name))
