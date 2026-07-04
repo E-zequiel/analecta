@@ -98,7 +98,13 @@ export function setupProtocolHandlers(): void {
 		} catch {
 			return new Response('Forbidden', { status: 403 });
 		}
-		return net.fetch(`file://${filePath}`);
+		try {
+			return await net.fetch(`file://${filePath}`);
+		} catch {
+			// Missing vault image is routine user-caused state (deleted asset,
+			// moved vault, hand-edited markdown) — not worth logging per miss.
+			return new Response('Not found', { status: 404 });
+		}
 	});
 
 	// Inject CSP only in packaged builds; dev uses Vite's own headers.
