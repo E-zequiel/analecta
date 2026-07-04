@@ -416,11 +416,13 @@ def test_list_tags_content_hashtag_count_multiple_entries(
     assert pairs["python"] == 2
 
 
-def test_list_tags_structural_preferred_over_content(index: VaultIndex, tmp_path: Path):
+def test_list_tags_unions_structural_and_content_same_name(
+    index: VaultIndex, tmp_path: Path
+):
     vault = tmp_path / "pages"
     vault.mkdir()
     src_file = vault / "article.md"
-    src_file.write_text("No hashtags here.\n", encoding="utf-8")
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
 
     structural_id = index.add_entry(_entry(url="https://a.com"))
     index.update_tags(structural_id, ["python"])
@@ -428,8 +430,26 @@ def test_list_tags_structural_preferred_over_content(index: VaultIndex, tmp_path
     content_id = index.add_entry(_entry(url="https://b.com", file_path=str(src_file)))
     index.index_backlinks(content_id)
 
-    # Same structural-first semantics as get_entry_ids_by_tag: the content
-    # hashtag under the same name is not counted once a structural tag exists.
+    # Same union semantics as get_entry_ids_by_tag: an entry with the tag
+    # only as a content hashtag still counts, alongside the structural one.
+    pairs = dict(index.list_tags())
+    assert pairs["python"] == 2
+
+
+def test_list_tags_dedupes_entry_with_both_structural_and_content_tag(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.update_tags(entry_id, ["python"])
+    index.index_backlinks(entry_id)
+
+    # Same entry carries "python" both structurally and as a content
+    # hashtag — counted once, not twice.
     pairs = dict(index.list_tags())
     assert pairs["python"] == 1
 
