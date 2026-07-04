@@ -80,32 +80,6 @@
 		editorIsDirty.set(content !== originalContent);
 	});
 
-	// Blanks out inline code spans, preserving length, so a `#hashtag`-looking
-	// word inside `backticks` isn't mistaken for a real tag.
-	function maskInlineCode(line: string): string {
-		return line.replace(/`[^`\n]+`/g, (m) => ' '.repeat(m.length));
-	}
-
-	function extractHashtags(text: string): string[] {
-		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local algorithmic variable, not reactive state
-		const tags = new Set<string>();
-		let inFence = false;
-		for (const line of text.split('\n')) {
-			if (/^```/.test(line)) {
-				inFence = !inFence;
-				continue;
-			}
-			if (inFence) continue;
-			// Skip markdown headings (# Heading) but not hashtag-only lines (#tag1 #tag2)
-			if (/^#{1,6}(?:\s|$)/.test(line.trimStart())) continue;
-			const masked = maskInlineCode(line);
-			for (const m of masked.matchAll(/(?<!\S)#([a-zA-Z][a-zA-Z0-9_]*)/g)) {
-				tags.add(m[1].toLowerCase());
-			}
-		}
-		return [...tags];
-	}
-
 	function resolveWikilinkTitle(title: string): number | null {
 		return $entryTitleIndex.get(title.toLowerCase()) ?? null;
 	}
@@ -128,7 +102,6 @@
 		try {
 			await writeTextFile(entry.file_path, content);
 			await entriesApi.patch(entry.id, {
-				tags: extractHashtags(content),
 				fts: { title: entry.title, content },
 			});
 			originalContent = content;
