@@ -609,6 +609,43 @@ class VaultIndex:
         return sorted(ids)
 
     @_synchronized
+    def get_content_hashtags_for_entries(
+        self, entry_ids: list[int]
+    ) -> dict[int, list[str]]:
+        """Return each entry's own content hashtags, keyed by entry id.
+
+        Unlike :meth:`get_hashtag_connections`, this has no peer
+        requirement — it's the raw set of hashtags an entry's own
+        Markdown contains, regardless of whether any other entry shares
+        them. Used to let the reading view's tag list include hashtags
+        that were never also assigned as a structural tag.
+
+        Args:
+            entry_ids: Entry ids to look up.
+
+        Returns:
+            Dict mapping entry id to a sorted list of distinct hashtag
+            texts. Entries with none are omitted from the dict.
+        """
+        if not entry_ids:
+            return {}
+        placeholders = ",".join("?" for _ in entry_ids)
+        rows = self._conn.execute(
+            f"""
+            SELECT DISTINCT source_id, target_text
+            FROM backlink_refs
+            WHERE is_hashtag = 1 AND source_id IN ({placeholders})
+            """,
+            entry_ids,
+        ).fetchall()
+        result: dict[int, list[str]] = {}
+        for source_id, target_text in rows:
+            result.setdefault(source_id, []).append(target_text)
+        for tags in result.values():
+            tags.sort()
+        return result
+
+    @_synchronized
     def create_tag(self, name: str) -> None:
         """Create a standalone tag with no entries.
 

@@ -156,6 +156,40 @@ def test_get_entry_404(client: TestClient) -> None:
     assert r.status_code == 404
 
 
+def test_get_entry_includes_content_tags(client: TestClient, tmp_path: Path) -> None:
+    vault = tmp_path / "vault" / "pages"
+    vault.mkdir(parents=True)
+    src_file = vault / "article.md"
+    src_file.write_text("Original content.\n", encoding="utf-8")
+
+    config = AppConfig(vault_path=tmp_path / "vault")
+    with VaultIndex(config.vault_path / "analecta.db") as index:
+        entry_id = index.add_entry(
+            EntryRecord(
+                title="Fresh",
+                url="https://example.com/fresh",
+                file_path=str(src_file),
+                source_type="article",
+                created_at="2024-01-01T00:00:00+00:00",
+                updated_at="2024-01-01T00:00:00+00:00",
+            )
+        )
+
+    new_content = "Filed under #python.\n"
+    src_file.write_text(new_content, encoding="utf-8")
+    r = client.patch(
+        f"/api/v1/entries/{entry_id}",
+        json={"fts": {"title": "Fresh", "content": new_content}},
+    )
+    assert r.status_code == 200
+    assert r.json()["content_tags"] == ["python"]
+    assert r.json()["tags"] == []
+
+    r = client.get(f"/api/v1/entries/{entry_id}")
+    assert r.status_code == 200
+    assert r.json()["content_tags"] == ["python"]
+
+
 # ---------------------------------------------------------------------------
 # PATCH /entries/{id}
 # ---------------------------------------------------------------------------

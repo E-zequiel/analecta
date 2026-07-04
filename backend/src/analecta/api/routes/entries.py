@@ -69,7 +69,9 @@ class EntryOut(BaseModel):
         created_at: ISO 8601 creation timestamp.
         updated_at: ISO 8601 last-update timestamp.
         status: Entry status string.
-        tags: List of tag names.
+        tags: List of structural tag names (Tags UI-assigned).
+        content_tags: List of content hashtags found in this entry's own
+            Markdown, regardless of whether any other entry shares them.
         flags: List of flag strings (e.g. bookmark, gem).
     """
 
@@ -82,6 +84,7 @@ class EntryOut(BaseModel):
     updated_at: str
     status: str
     tags: list[str]
+    content_tags: list[str]
     flags: list[str]
 
 
@@ -272,11 +275,15 @@ def graph_edge_out(record: GraphEdgeRecord) -> GraphEdgeOut:
     )
 
 
-def entry_out(record: EntryRecord) -> EntryOut:
+def entry_out(record: EntryRecord, content_tags: list[str] | None = None) -> EntryOut:
     """Convert a storage EntryRecord to the API EntryOut model.
 
     Args:
         record: Row from the entries table (must have a non-None id).
+        content_tags: This entry's own content hashtags, if already
+            fetched by the caller (e.g. via
+            :meth:`VaultIndex.get_content_hashtags_for_entries`).
+            Defaults to an empty list.
 
     Returns:
         Serialisable EntryOut instance.
@@ -292,6 +299,7 @@ def entry_out(record: EntryRecord) -> EntryOut:
         updated_at=record.updated_at,
         status=record.status,
         tags=json.loads(record.tags_json),
+        content_tags=content_tags or [],
         flags=json.loads(record.flags_json),
     )
 
@@ -375,7 +383,13 @@ async def list_entries(
             sort_by=sort_by,
             sort_dir=sort_dir,
         )
-    return [entry_out(r) for r in records]
+    content_tags_map = await asyncio.to_thread(
+        index.get_content_hashtags_for_entries, [r.id for r in records if r.id]
+    )
+    return [
+        entry_out(r, content_tags_map.get(r.id) if r.id is not None else None)
+        for r in records
+    ]
 
 
 @router.get("/entries/counts", response_model=dict[str, int])
@@ -464,7 +478,10 @@ async def get_entry(
     record = await asyncio.to_thread(index.get_entry, entry_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Entry not found")
-    return entry_out(record)
+    content_tags_map = await asyncio.to_thread(
+        index.get_content_hashtags_for_entries, [entry_id]
+    )
+    return entry_out(record, content_tags_map.get(entry_id))
 
 
 @router.patch("/entries/{entry_id}", response_model=EntryOut)
@@ -502,7 +519,10 @@ async def patch_entry(
         await asyncio.to_thread(index.index_backlinks, entry_id)
     updated = await asyncio.to_thread(index.get_entry, entry_id)
     assert updated is not None
-    return entry_out(updated)
+    content_tags_map = await asyncio.to_thread(
+        index.get_content_hashtags_for_entries, [entry_id]
+    )
+    return entry_out(updated, content_tags_map.get(entry_id))
 
 
 @router.get("/entries/{entry_id}/backlinks", response_model=BacklinksResultOut)
@@ -605,11 +625,20 @@ async def get_entry_hashtag_connections(
     if await asyncio.to_thread(index.get_entry, entry_id) is None:
         raise HTTPException(status_code=404, detail="Entry not found")
     groups = await asyncio.to_thread(index.get_hashtag_connections, entry_id)
+    all_ids = [e.id for g in groups for e in g.entries if e.id]
+    content_tags_map = await asyncio.to_thread(
+        index.get_content_hashtags_for_entries, all_ids
+    )
     return HashtagConnectionsOut(
         groups=[
             HashtagGroupOut(
                 hashtag=g.hashtag,
-                entries=[entry_out(e) for e in g.entries],
+                entries=[
+                    entry_out(
+                        e, content_tags_map.get(e.id) if e.id is not None else None
+                    )
+                    for e in g.entries
+                ],
             )
             for g in groups
         ]
@@ -668,7 +697,13 @@ async def get_linked_entries(
     if await asyncio.to_thread(index.get_entry, entry_id) is None:
         raise HTTPException(status_code=404, detail="Entry not found")
     records = await asyncio.to_thread(index.get_linked_entries, entry_id)
-    return [entry_out(r) for r in records]
+    content_tags_map = await asyncio.to_thread(
+        index.get_content_hashtags_for_entries, [r.id for r in records if r.id]
+    )
+    return [
+        entry_out(r, content_tags_map.get(r.id) if r.id is not None else None)
+        for r in records
+    ]
 
 
 @router.post("/entries/{source_id}/link/{target_id}", status_code=204)

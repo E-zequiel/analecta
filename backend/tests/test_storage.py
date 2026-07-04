@@ -473,6 +473,69 @@ def test_list_tags_standalone_zero_count_tag_not_shadowed_by_hashtag(
 
 
 # ---------------------------------------------------------------------------
+# get_content_hashtags_for_entries
+# ---------------------------------------------------------------------------
+
+
+def test_get_content_hashtags_for_entries_empty_ids(index: VaultIndex):
+    assert index.get_content_hashtags_for_entries([]) == {}
+
+
+def test_get_content_hashtags_for_entries_single_entry(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python and #dev.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+
+    result = index.get_content_hashtags_for_entries([entry_id])
+    assert result == {entry_id: ["dev", "python"]}
+
+
+def test_get_content_hashtags_for_entries_omits_entries_with_none(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("No hashtags here.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+
+    assert index.get_content_hashtags_for_entries([entry_id]) == {}
+
+
+def test_get_content_hashtags_for_entries_multiple(index: VaultIndex, tmp_path: Path):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    file_a = vault / "a.md"
+    file_a.write_text("#alpha\n", encoding="utf-8")
+    file_b = vault / "b.md"
+    file_b.write_text("#beta\n", encoding="utf-8")
+
+    id_a = index.add_entry(_entry(url="https://a.com", file_path=str(file_a)))
+    index.index_backlinks(id_a)
+    id_b = index.add_entry(_entry(url="https://b.com", file_path=str(file_b)))
+    index.index_backlinks(id_b)
+
+    result = index.get_content_hashtags_for_entries([id_a, id_b])
+    assert result == {id_a: ["alpha"], id_b: ["beta"]}
+
+
+def test_get_content_hashtags_for_entries_structural_tag_not_included(
+    index: VaultIndex,
+):
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["python"])
+
+    # Structural tags never populate backlink_refs, so they're absent here.
+    assert index.get_content_hashtags_for_entries([entry_id]) == {}
+
+
+# ---------------------------------------------------------------------------
 # get_metrics — weekly window starts on Sunday
 # ---------------------------------------------------------------------------
 

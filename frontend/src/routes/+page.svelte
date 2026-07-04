@@ -921,14 +921,14 @@
 	.tag-grid {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.5rem;
-		align-content: flex-start;
+		gap: 0.35rem;
+		align-content: center;
 	}
 
 	.tag-chip {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.35rem;
 		padding: 0.3rem 0.7rem;
 		background: var(--bg-alt);
 		border: 1px solid var(--border);
@@ -951,12 +951,12 @@
 	}
 
 	.tag-chip-name {
-		font-size: 12.85px;
+		font-size: 12.25px;
 		color: var(--fg);
 	}
 
 	.tag-chip-count {
-		font-size: 12.85px;
+		font-size: 12.25px;
 		color: var(--fg-muted);
 		background: var(--bg-highlight);
 		border-radius: 10px;
@@ -974,7 +974,7 @@
 		border-radius: 20px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 12.85px;
+		font-size: 12.25px;
 		outline: none;
 		min-width: 80px;
 	}

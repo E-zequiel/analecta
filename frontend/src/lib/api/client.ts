@@ -29,6 +29,7 @@ export interface Entry {
 	updated_at: string;
 	status: string;
 	tags: string[];
+	content_tags: string[];
 	flags: string[];
 }
 
