@@ -62,6 +62,43 @@ def test_get_entry_ids_by_tag_multiple_entries(index):
     assert set(ids) == {e1, e2}
 
 
+def test_get_entry_ids_by_tag_falls_back_to_content_hashtag(index, tmp_path):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Great article about #python.\n", encoding="utf-8")
+    eid = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(eid)
+
+    # No structural tag named "python" exists — only the content hashtag.
+    assert index.get_entry_ids_by_tag("python") == [eid]
+
+
+def test_get_entry_ids_by_tag_prefers_structural_over_content(index, tmp_path):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("No hashtags here.\n", encoding="utf-8")
+    structural_id = index.add_entry(_entry(url="https://a.com"))
+    index.update_tags(structural_id, ["python"])
+    content_id = index.add_entry(_entry(url="https://b.com", file_path=str(src_file)))
+    index.index_backlinks(content_id)
+
+    # Structural match exists, so the content-hashtag fallback never runs.
+    assert index.get_entry_ids_by_tag("python") == [structural_id]
+
+
+def test_get_entry_ids_by_tag_content_hashtag_case_insensitive(index, tmp_path):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    eid = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(eid)
+
+    assert index.get_entry_ids_by_tag("PYTHON") == [eid]
+
+
 # ---------------------------------------------------------------------------
 # tags — get_backlinks
 # ---------------------------------------------------------------------------

@@ -14,8 +14,8 @@
 	import { createRenderer } from '$lib/markdown/renderer';
 	import '$lib/markdown/tokyo-night.css';
 	import '$lib/markdown/shiki-classes.css';
-	import { lastViewedId, pendingScrollRestore, scrollPositions } from '$lib/stores/ui';
-	import { ensureEntryTab, closeTab, openEntryTab } from '$lib/stores/tabs';
+	import { lastViewedId, pendingScrollRestore, scrollPositions, selectedTag } from '$lib/stores/ui';
+	import { ensureEntryTab, closeTab, openEntryTab, navigateInSectionTab } from '$lib/stores/tabs';
 	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
 	import { entryTitleIndex, ensureEntryTitleIndexLoaded } from '$lib/stores/entryTitles';
 	import { showContextMenu } from '$lib/stores/contextMenu';
@@ -520,6 +520,13 @@
 		const wikilinkEntryId = link.getAttribute('data-entry-id');
 		if (wikilinkEntryId) {
 			openEntryTab(Number(wikilinkEntryId), link.textContent ?? '');
+			return;
+		}
+
+		const hashtag = link.getAttribute('data-hashtag');
+		if (hashtag) {
+			selectedTag.set(hashtag);
+			navigateInSectionTab('tags');
 			return;
 		}
 

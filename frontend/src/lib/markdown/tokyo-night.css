@@ -49,6 +49,10 @@
 	cursor: default;
 }
 
+.markdown-body .hashtag {
+	cursor: pointer;
+}
+
 .markdown-body strong {
 	font-weight: 700;
 	color: var(--cyan);

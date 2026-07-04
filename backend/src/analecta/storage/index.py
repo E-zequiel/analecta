@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Concatenate
 
+from analecta.markdown.hashtags import normalize_tag
+
 _ALLOWED_SORT_COLS: frozenset[str] = frozenset({"title", "created_at"})
 _ALLOWED_SORT_DIRS: frozenset[str] = frozenset({"asc", "desc"})
 
@@ -562,13 +564,21 @@ class VaultIndex:
 
     @_synchronized
     def get_entry_ids_by_tag(self, tag: str) -> list[int]:
-        """Return IDs of all entries tagged with *tag*.
+        """Return IDs of all entries associated with *tag*.
+
+        Tries a structural-tag match first (``entry_tags``/``tags``, exact
+        case). If no structural tag exists under that name, falls back to a
+        content-hashtag match (``backlink_refs``, matched against *tag*
+        normalized the same way hashtags are normalized at index time) —
+        this lets a ``#hashtag`` that was never also assigned as a
+        structural tag still resolve to the entries that mention it.
 
         Args:
             tag: Tag name to look up.
 
         Returns:
-            List of entry IDs. Empty if the tag does not exist.
+            List of entry IDs. Empty if neither a structural tag nor a
+            matching content hashtag exists.
         """
         rows = self._conn.execute(
             """
@@ -579,7 +589,18 @@ class VaultIndex:
             """,
             (tag,),
         ).fetchall()
-        return [row[0] for row in rows]
+        if rows:
+            return [row[0] for row in rows]
+
+        hashtag_rows = self._conn.execute(
+            """
+            SELECT DISTINCT source_id
+            FROM backlink_refs
+            WHERE target_text = ? AND is_hashtag = 1
+            """,
+            (normalize_tag(tag),),
+        ).fetchall()
+        return [row[0] for row in hashtag_rows]
 
     @_synchronized
     def create_tag(self, name: str) -> None:
