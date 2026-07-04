@@ -1151,15 +1151,60 @@ class VaultIndex:
 
     @_synchronized
     def list_tags(self) -> list[tuple[str, int]]:
-        """Return all tags sorted by entry count descending.
+        """Return all tags — structural and content-only — sorted by count.
+
+        Unions two sources, mirroring :meth:`get_entry_ids_by_tag`'s
+        structural-first semantics:
+
+        1. **Structural tags** (``entry_tags``/``tags``): counted by
+           distinct linked entries, not the cached ``tags.count`` column
+           directly. A standalone tag with zero entries still appears
+           (count 0).
+        2. **Content-only hashtags** (``backlink_refs``): a hashtag with
+           no structural entries under the same name (case-insensitive)
+           falls back to a count of distinct entries that mention it in
+           their Markdown — this is what lets a ``#hashtag`` that was
+           never also assigned via the Tags UI still show up as its own
+           entry in the TAGS dashboard.
 
         Returns:
-            List of ``(name, count)`` tuples.
+            List of ``(name, count)`` tuples, sorted by count descending
+            then name ascending.
         """
-        rows = self._conn.execute(
-            "SELECT name, count FROM tags ORDER BY count DESC, name ASC"
+        structural_rows = self._conn.execute(
+            """
+            SELECT t.name, COUNT(DISTINCT et.entry_id)
+            FROM tags t
+            LEFT JOIN entry_tags et ON et.tag_id = t.id
+            GROUP BY t.id
+            ORDER BY t.name
+            """
         ).fetchall()
-        return [(row[0], row[1]) for row in rows]
+
+        merged: dict[str, tuple[str, int]] = {}
+        structural_keys: set[str] = set()
+        for name, count in structural_rows:
+            key = name.lower()
+            merged.setdefault(key, (name, count))
+            if count > 0:
+                structural_keys.add(key)
+
+        hashtag_rows = self._conn.execute(
+            """
+            SELECT target_text, COUNT(DISTINCT source_id)
+            FROM backlink_refs
+            WHERE is_hashtag = 1
+            GROUP BY target_text
+            """
+        ).fetchall()
+
+        for target_text, count in hashtag_rows:
+            key = target_text.lower()
+            if key in structural_keys:
+                continue
+            merged[key] = (target_text, count)
+
+        return sorted(merged.values(), key=lambda pair: (-pair[1], pair[0]))
 
     @_synchronized
     def get_graph(
