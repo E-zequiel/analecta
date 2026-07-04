@@ -564,33 +564,37 @@ class VaultIndex:
 
     @_synchronized
     def get_entry_ids_by_tag(self, tag: str) -> list[int]:
-        """Return IDs of all entries associated with *tag*.
+        """Return IDs of all entries associated with *tag* — a true union.
 
-        Tries a structural-tag match first (``entry_tags``/``tags``, exact
-        case). If no structural tag exists under that name, falls back to a
-        content-hashtag match (``backlink_refs``, matched against *tag*
-        normalized the same way hashtags are normalized at index time) —
-        this lets a ``#hashtag`` that was never also assigned as a
-        structural tag still resolve to the entries that mention it.
+        Unions two sources so an entry shows up regardless of which
+        mechanism it uses:
+
+        1. **Structural tags** (``entry_tags``/``tags``), matched
+           case-insensitively (``LOWER(t.name) = LOWER(?)``) — same
+           convention as :meth:`get_hashtag_connections`.
+        2. **Content hashtags** (``backlink_refs``), matched against
+           *tag* normalized the same way hashtags are normalized at
+           index time.
+
+        An entry that carries *tag* both structurally and as a content
+        hashtag is only counted once.
 
         Args:
             tag: Tag name to look up.
 
         Returns:
-            List of entry IDs. Empty if neither a structural tag nor a
-            matching content hashtag exists.
+            Sorted, deduplicated list of entry IDs. Empty if neither a
+            structural tag nor a matching content hashtag exists.
         """
-        rows = self._conn.execute(
+        structural_rows = self._conn.execute(
             """
             SELECT et.entry_id
             FROM entry_tags et
             JOIN tags t ON et.tag_id = t.id
-            WHERE t.name = ?
+            WHERE LOWER(t.name) = LOWER(?)
             """,
             (tag,),
         ).fetchall()
-        if rows:
-            return [row[0] for row in rows]
 
         hashtag_rows = self._conn.execute(
             """
@@ -600,7 +604,9 @@ class VaultIndex:
             """,
             (normalize_tag(tag),),
         ).fetchall()
-        return [row[0] for row in hashtag_rows]
+
+        ids = {row[0] for row in structural_rows} | {row[0] for row in hashtag_rows}
+        return sorted(ids)
 
     @_synchronized
     def create_tag(self, name: str) -> None:
@@ -1151,60 +1157,47 @@ class VaultIndex:
 
     @_synchronized
     def list_tags(self) -> list[tuple[str, int]]:
-        """Return all tags — structural and content-only — sorted by count.
+        """Return all tags — structural and content — as a true union.
 
-        Unions two sources, mirroring :meth:`get_entry_ids_by_tag`'s
-        structural-first semantics:
-
-        1. **Structural tags** (``entry_tags``/``tags``): counted by
-           distinct linked entries, not the cached ``tags.count`` column
-           directly. A standalone tag with zero entries still appears
-           (count 0).
-        2. **Content-only hashtags** (``backlink_refs``): a hashtag with
-           no structural entries under the same name (case-insensitive)
-           falls back to a count of distinct entries that mention it in
-           their Markdown — this is what lets a ``#hashtag`` that was
-           never also assigned via the Tags UI still show up as its own
-           entry in the TAGS dashboard.
+        A tag's entry set is the union of its structural ``entry_tags``
+        links and its content-hashtag ``backlink_refs`` rows, matched
+        case-insensitively / normalized the same way
+        :meth:`get_entry_ids_by_tag` matches them, and deduplicated by
+        entry id — an entry that carries a tag both structurally and as
+        a content hashtag is only counted once. A standalone structural
+        tag with zero links still appears (count 0).
 
         Returns:
             List of ``(name, count)`` tuples, sorted by count descending
             then name ascending.
         """
+        groups: dict[str, tuple[str, set[int]]] = {}
+
+        for name in self._conn.execute("SELECT name FROM tags"):
+            groups.setdefault(name[0].lower(), (name[0], set()))
+
         structural_rows = self._conn.execute(
             """
-            SELECT t.name, COUNT(DISTINCT et.entry_id)
-            FROM tags t
-            LEFT JOIN entry_tags et ON et.tag_id = t.id
-            GROUP BY t.id
-            ORDER BY t.name
+            SELECT t.name, et.entry_id
+            FROM entry_tags et
+            JOIN tags t ON t.id = et.tag_id
             """
         ).fetchall()
-
-        merged: dict[str, tuple[str, int]] = {}
-        structural_keys: set[str] = set()
-        for name, count in structural_rows:
-            key = name.lower()
-            merged.setdefault(key, (name, count))
-            if count > 0:
-                structural_keys.add(key)
+        for name, entry_id in structural_rows:
+            _, ids = groups.setdefault(name.lower(), (name, set()))
+            ids.add(entry_id)
 
         hashtag_rows = self._conn.execute(
-            """
-            SELECT target_text, COUNT(DISTINCT source_id)
-            FROM backlink_refs
-            WHERE is_hashtag = 1
-            GROUP BY target_text
-            """
+            "SELECT target_text, source_id FROM backlink_refs WHERE is_hashtag = 1"
         ).fetchall()
+        for target_text, source_id in hashtag_rows:
+            _, ids = groups.setdefault(target_text.lower(), (target_text, set()))
+            ids.add(source_id)
 
-        for target_text, count in hashtag_rows:
-            key = target_text.lower()
-            if key in structural_keys:
-                continue
-            merged[key] = (target_text, count)
-
-        return sorted(merged.values(), key=lambda pair: (-pair[1], pair[0]))
+        return sorted(
+            ((display, len(ids)) for display, ids in groups.values()),
+            key=lambda pair: (-pair[1], pair[0]),
+        )
 
     @_synchronized
     def get_graph(
