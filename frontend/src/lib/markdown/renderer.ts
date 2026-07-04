@@ -19,6 +19,7 @@ import langSql from '@shikijs/langs/sql';
 import langYaml from '@shikijs/langs/yaml';
 import { createStyleToClassTransformer } from './shiki-style-to-class.js';
 import wikilink, { type ResolveWikilinkTitle } from './wikilink';
+import hashtag from './hashtag';
 import { convertFileSrc } from '$lib/platform';
 
 const highlighter = createHighlighterCoreSync({
@@ -67,6 +68,7 @@ export function createRenderer(
 		.use(footnote)
 		.use(taskLists, { enabled: false, label: true })
 		.use(wikilink, { resolveTitle: resolveWikilinkTitle })
+		.use(hashtag)
 		.use(
 			// HighlighterCore is HighlighterGeneric<never, never>; fromHighlighter wants
 			// <any, any> — a Shiki typing gap, not a real mismatch (runtime is unaffected).
