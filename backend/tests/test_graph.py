@@ -539,3 +539,81 @@ def test_subgraph_tag_neighbors_included(tmp_path: Path) -> None:
     edge_pairs = {(e.source, e.target) for e in edges}
     assert (f"entry:{focus_id}", "tag:python") in edge_pairs
     assert (f"entry:{nbr_id}", "tag:python") in edge_pairs
+
+
+# ---------------------------------------------------------------------------
+# Tag identity unification — structural tags vs. content hashtags
+# ---------------------------------------------------------------------------
+
+
+def test_graph_unifies_structural_tag_and_content_hashtag(tmp_path: Path) -> None:
+    struct_md = tmp_path / "struct.md"
+    struct_md.write_text("Structural entry content.", encoding="utf-8")
+    hashtag_md = tmp_path / "hashtag.md"
+    hashtag_md.write_text("Body mentions #python here.", encoding="utf-8")
+    with VaultIndex(tmp_path / "db.sqlite") as idx:
+        struct_id = _seed(idx, n=1, title="Structural Entry", file_path=str(struct_md))
+        hashtag_id = _seed(idx, n=2, title="Hashtag Entry", file_path=str(hashtag_md))
+        idx.update_tags(struct_id, ["Python"])
+        idx.index_backlinks(hashtag_id)
+        nodes, edges = idx.get_graph()
+
+    tag_nodes = [n for n in nodes if n.kind == "tag"]
+    assert len(tag_nodes) == 1
+    assert tag_nodes[0].node_id == "tag:python"
+    assert tag_nodes[0].label == "#Python"  # structural casing wins
+    edge_pairs = {(e.source, e.target) for e in edges}
+    assert (f"entry:{struct_id}", "tag:python") in edge_pairs
+    assert (f"entry:{hashtag_id}", "tag:python") in edge_pairs
+
+
+def test_subgraph_lists_hashtag_only_entry_as_neighbor_of_structural_tag(
+    tmp_path: Path,
+) -> None:
+    struct_md = tmp_path / "struct.md"
+    struct_md.write_text("Structural entry content.", encoding="utf-8")
+    hashtag_md = tmp_path / "hashtag.md"
+    hashtag_md.write_text("Body mentions #python here.", encoding="utf-8")
+    with VaultIndex(tmp_path / "db.sqlite") as idx:
+        struct_id = _seed(idx, n=1, title="Structural Entry", file_path=str(struct_md))
+        hashtag_id = _seed(idx, n=2, title="Hashtag Entry", file_path=str(hashtag_md))
+        idx.update_tags(struct_id, ["Python"])
+        idx.index_backlinks(hashtag_id)
+        result = idx.get_subgraph(struct_id)
+
+    assert result is not None
+    nodes, edges = result
+    node_ids = {n.node_id for n in nodes}
+    assert f"entry:{hashtag_id}" in node_ids
+    edge_pairs = {(e.source, e.target) for e in edges}
+    assert (f"entry:{struct_id}", "tag:python") in edge_pairs
+    assert (f"entry:{hashtag_id}", "tag:python") in edge_pairs
+
+
+def test_symbol_bearing_tag_does_not_collide_with_stripped_hashtag(
+    tmp_path: Path,
+) -> None:
+    struct_md = tmp_path / "struct.md"
+    struct_md.write_text("Structural entry content.", encoding="utf-8")
+    hashtag_md = tmp_path / "hashtag.md"
+    hashtag_md.write_text("About #c programming.", encoding="utf-8")
+    with VaultIndex(tmp_path / "db.sqlite") as idx:
+        struct_id = _seed(idx, n=1, title="Structural Entry", file_path=str(struct_md))
+        hashtag_id = _seed(idx, n=2, title="Hashtag Entry", file_path=str(hashtag_md))
+        idx.update_tags(struct_id, ["C++"])
+        idx.index_backlinks(hashtag_id)
+        nodes, edges = idx.get_graph()
+        subgraph = idx.get_subgraph(struct_id)
+
+    tag_nodes = {n.node_id: n.label for n in nodes if n.kind == "tag"}
+    assert tag_nodes == {"tag:c++": "#C++", "tag:c": "#c"}
+    edge_pairs = {(e.source, e.target) for e in edges}
+    assert (f"entry:{struct_id}", "tag:c++") in edge_pairs
+    assert (f"entry:{hashtag_id}", "tag:c") in edge_pairs
+    assert (f"entry:{struct_id}", "tag:c") not in edge_pairs
+    assert (f"entry:{hashtag_id}", "tag:c++") not in edge_pairs
+
+    assert subgraph is not None
+    sub_nodes, _ = subgraph
+    sub_node_ids = {n.node_id for n in sub_nodes}
+    assert f"entry:{hashtag_id}" not in sub_node_ids

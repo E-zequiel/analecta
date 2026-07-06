@@ -178,7 +178,7 @@
 	function handleClick(node: GraphNode) {
 		if (node.node_id === focusNodeId) return;
 		if (node.kind === 'tag') {
-			const tagName = node.node_id.startsWith('tag:') ? node.node_id.slice(4) : node.label;
+			const tagName = node.label.startsWith('#') ? node.label.slice(1) : node.label;
 			ontagclick?.(tagName);
 		} else if (node.kind === 'entry') {
 			const id = parseInt(node.node_id.slice(6));

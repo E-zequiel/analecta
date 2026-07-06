@@ -352,7 +352,9 @@
 			selectedNodeKey = node;
 			const attrs = graph.getNodeAttributes(node);
 			if (attrs.kind === 'tag') {
-				const tagName = node.startsWith('tag:') ? node.slice(4) : attrs.fullLabel;
+				const tagName = attrs.fullLabel.startsWith('#')
+					? attrs.fullLabel.slice(1)
+					: attrs.fullLabel;
 				ontagclick?.(tagName);
 			} else if (attrs.kind === 'entry') {
 				const rawId = node.startsWith('entry:') ? node.slice(6) : node;
