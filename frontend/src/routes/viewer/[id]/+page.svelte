@@ -556,6 +556,15 @@
 		}
 	}
 
+	function handleContentMouseDown(e: MouseEvent) {
+		if (e.button !== 1) return;
+		const link = (e.target as HTMLElement).closest('a.wikilink');
+		const wikilinkEntryId = link?.getAttribute('data-entry-id');
+		if (!wikilinkEntryId) return;
+		e.preventDefault();
+		openEntryTab(Number(wikilinkEntryId), link?.textContent ?? '', true);
+	}
+
 	let hoverStatus = $state('');
 
 	function getHoverStatus(target: HTMLElement): string {
@@ -823,6 +832,7 @@
 				<div
 					class="markdown-body"
 					onclick={handleContentClick}
+					onmousedown={handleContentMouseDown}
 					onmouseover={handleContentMouseOver}
 					onmouseleave={handleContentMouseLeave}
 					onfocus={handleContentFocus}
