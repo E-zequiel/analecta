@@ -143,6 +143,154 @@ def test_context_manager(tmp_path: Path):
         assert idx.list_entries() == []
 
 
+def _seed_pre_008_vault(db_path: Path) -> None:
+    """Build a vault at ``db_path`` on the schema as it existed just before
+    008_tags_normalized.sql — i.e. with a real, pre-fix case-duplicate
+    tag ("Python" / "python" as two separate rows) already on disk.
+
+    Applies the real 001-007 migration files (so the schema is exactly
+    what production vaults have), marks them plus the 007 backlinks
+    bootstrap as already-applied, then inserts entries/tags/entry_tags
+    directly — bypassing VaultIndex entirely, since post-008 the app
+    layer itself refuses to create a case-duplicate.
+    """
+    import importlib.resources
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "CREATE TABLE schema_migrations"
+        " (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
+    )
+    migrations_dir = importlib.resources.files("analecta") / "migrations"
+    applied: list[str] = []
+    for resource in sorted(
+        (r for r in migrations_dir.iterdir() if r.name.endswith(".sql")),
+        key=lambda r: r.name,
+    ):
+        if resource.name >= "008":
+            continue
+        conn.executescript(resource.read_text(encoding="utf-8"))
+        applied.append(resource.name)
+    applied.append("py:008_backlinks_bootstrap")
+    now = _now()
+    for version in applied:
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+            (version, now),
+        )
+
+    entry_ids = []
+    for i in range(4):
+        cur = conn.execute(
+            """
+            INSERT INTO entries
+                (title, url, file_path, source_type, created_at, updated_at, tags_json)
+            VALUES (?, ?, ?, 'article', ?, ?, '[]')
+            """,
+            (f"Entry {i}", f"https://example.com/{i}", f"/vault/{i}.md", now, now),
+        )
+        entry_ids.append(cur.lastrowid)
+
+    conn.execute("INSERT INTO tags (name, count) VALUES ('Python', 0)")
+    python_id = conn.execute("SELECT id FROM tags WHERE name = 'Python'").fetchone()[0]
+    conn.execute("INSERT INTO tags (name, count) VALUES ('python', 0)")
+    python_lower_id = conn.execute(
+        "SELECT id FROM tags WHERE name = 'python'"
+    ).fetchone()[0]
+
+    # 3 entries carry the tag as "Python" (more real usage), 1 as "python".
+    for eid in entry_ids[:3]:
+        conn.execute(
+            "INSERT INTO entry_tags (entry_id, tag_id) VALUES (?, ?)",
+            (eid, python_id),
+        )
+        conn.execute(
+            "UPDATE entries SET tags_json = ? WHERE id = ?",
+            (json.dumps(["Python"]), eid),
+        )
+    conn.execute(
+        "INSERT INTO entry_tags (entry_id, tag_id) VALUES (?, ?)",
+        (entry_ids[3], python_lower_id),
+    )
+    conn.execute(
+        "UPDATE entries SET tags_json = ? WHERE id = ?",
+        (json.dumps(["python"]), entry_ids[3]),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_bootstrap_tag_normalization_is_noop_on_fresh_vault(tmp_path: Path):
+    with VaultIndex(tmp_path / "vault.db") as index:
+        assert index.list_tags() == []
+        row = index._conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master"
+            " WHERE type='index' AND name='idx_tags_normalized'"
+        ).fetchone()
+        assert row[0] == 1
+
+
+def test_bootstrap_tag_normalization_merges_case_duplicates(tmp_path: Path):
+    db_path = tmp_path / "legacy.db"
+    _seed_pre_008_vault(db_path)
+
+    with VaultIndex(db_path) as index:
+        pairs = dict(index.list_tags())
+        # Merged into one entry, under the higher-usage display casing.
+        assert pairs.get("Python") == 4
+        assert "python" not in pairs
+
+        row_count = index._conn.execute(
+            "SELECT COUNT(*) FROM tags WHERE normalized = 'python'"
+        ).fetchone()[0]
+        assert row_count == 1
+
+        # The entry that carried the lowercase variant is rewritten to the
+        # canonical casing, deduplicated (not ["Python", "Python"]).
+        merged_entry = index.get_entry(4)
+        assert merged_entry is not None
+        assert json.loads(merged_entry.tags_json) == ["Python"]
+
+        # No stray entry_tags rows point at a now-deleted duplicate row.
+        orphaned = index._conn.execute(
+            """
+            SELECT COUNT(*) FROM entry_tags et
+            LEFT JOIN tags t ON t.id = et.tag_id
+            WHERE t.id IS NULL
+            """
+        ).fetchone()[0]
+        assert orphaned == 0
+
+
+def test_bootstrap_tag_normalization_dedupes_entry_carrying_both_variants(
+    tmp_path: Path,
+):
+    db_path = tmp_path / "legacy.db"
+    _seed_pre_008_vault(db_path)
+
+    # Directly add the case variant onto an entry that already carries the
+    # canonical one — simulates a vault where one entry was tagged both
+    # "Python" and "python" before the identity was unified.
+    conn = sqlite3.connect(str(db_path))
+    python_lower_id = conn.execute(
+        "SELECT id FROM tags WHERE name = 'python'"
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO entry_tags (entry_id, tag_id) VALUES (1, ?)", (python_lower_id,)
+    )
+    conn.execute(
+        "UPDATE entries SET tags_json = ? WHERE id = 1",
+        (json.dumps(["Python", "python"]),),
+    )
+    conn.commit()
+    conn.close()
+
+    with VaultIndex(db_path) as index:
+        entry = index.get_entry(1)
+        assert entry is not None
+        assert json.loads(entry.tags_json) == ["Python"]
+
+
 # ---------------------------------------------------------------------------
 # VaultIndex — CRUD
 # ---------------------------------------------------------------------------
@@ -197,19 +345,47 @@ def test_update_tags_sets_json(index: VaultIndex):
     assert json.loads(entry.tags_json) == ["python", "sqlite"]
 
 
+def _live_tag_count(index: VaultIndex, name: str) -> int:
+    row = index._conn.execute(
+        """
+        SELECT COUNT(*) FROM entry_tags et
+        JOIN tags t ON t.id = et.tag_id
+        WHERE t.name = ?
+        """,
+        (name,),
+    ).fetchone()
+    return row[0]
+
+
 def test_update_tags_syncs_tags_table(index: VaultIndex):
     entry_id = index.add_entry(_entry())
     index.update_tags(entry_id, ["python", "sqlite"])
-    row = index._conn.execute("SELECT count FROM tags WHERE name = 'python'").fetchone()
-    assert row[0] == 1
+    assert _live_tag_count(index, "python") == 1
 
 
 def test_update_tags_replaces_previous(index: VaultIndex):
     entry_id = index.add_entry(_entry())
     index.update_tags(entry_id, ["python", "sqlite"])
     index.update_tags(entry_id, ["python"])
-    row = index._conn.execute("SELECT count FROM tags WHERE name = 'sqlite'").fetchone()
-    assert row[0] == 0
+    assert _live_tag_count(index, "sqlite") == 0
+
+
+def test_get_entries_by_ids_empty(index: VaultIndex):
+    assert index.get_entries_by_ids([]) == []
+
+
+def test_get_entries_by_ids_returns_matching(index: VaultIndex):
+    e1 = index.add_entry(_entry(url="https://a.com"))
+    e2 = index.add_entry(_entry(url="https://b.com"))
+    index.add_entry(_entry(url="https://c.com"))
+    records = index.get_entries_by_ids([e1, e2])
+    assert {r.id for r in records} == {e1, e2}
+
+
+def test_get_entries_by_ids_omits_missing(index: VaultIndex):
+    e1 = index.add_entry(_entry(url="https://a.com"))
+    records = index.get_entries_by_ids([e1, 9999])
+    assert [r.id for r in records] == [e1]
 
 
 def test_list_entries_all(index: VaultIndex):
@@ -323,6 +499,33 @@ def test_create_tag_idempotent(index: VaultIndex):
     assert sum(1 for name, _ in index.list_tags() if name == "python") == 1
 
 
+def test_create_tag_case_insensitive_noop(index: VaultIndex):
+    index.create_tag("Python")
+    index.create_tag("PYTHON")  # same identity — no new row, no rename
+    names = [n for n, _ in index.list_tags()]
+    assert names == ["Python"]
+    row_count = index._conn.execute(
+        "SELECT COUNT(*) FROM tags WHERE normalized = 'python'"
+    ).fetchone()[0]
+    assert row_count == 1
+
+
+def test_update_tags_case_insensitive_reuses_existing_row(index: VaultIndex):
+    e1 = index.add_entry(_entry(url="https://a.com"))
+    index.update_tags(e1, ["Python"])
+    e2 = index.add_entry(_entry(url="https://b.com"))
+    index.update_tags(e2, ["PYTHON"])  # same identity as "Python"
+
+    row_count = index._conn.execute(
+        "SELECT COUNT(*) FROM tags WHERE normalized = 'python'"
+    ).fetchone()[0]
+    assert row_count == 1
+
+    # Display casing stays the first-seen one; both entries count toward it.
+    pairs = dict(index.list_tags())
+    assert pairs == {"Python": 2}
+
+
 def test_rename_tag_updates_table(index: VaultIndex):
     entry_id = index.add_entry(_entry())
     index.update_tags(entry_id, ["python"])
@@ -351,6 +554,34 @@ def test_rename_tag_conflict_raises(index: VaultIndex):
     index.update_tags(entry_id, ["python", "sqlite"])
     with pytest.raises(ValueError, match="already exists"):
         index.rename_tag("python", "sqlite")
+
+
+def test_rename_tag_conflict_case_insensitive(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["python", "SQLite"])
+    with pytest.raises(ValueError, match="already exists"):
+        index.rename_tag("python", "sqlite")  # differs only by case from "SQLite"
+
+
+def test_rename_tag_into_content_only_identity_allowed(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #rust.\n", encoding="utf-8")
+    content_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(content_id)
+
+    structural_id = index.add_entry(_entry(url="https://a.com"))
+    index.update_tags(structural_id, ["ferrous"])
+
+    # "rust" only exists today as a content hashtag (no tags-table row) —
+    # renaming a structural tag into that identity must not raise.
+    index.rename_tag("ferrous", "rust")
+
+    ids = index.get_entry_ids_by_tag("rust")
+    assert set(ids) == {structural_id, content_id}
 
 
 def test_rename_tag_nonexistent_noop(index: VaultIndex):
@@ -434,6 +665,44 @@ def test_list_tags_unions_structural_and_content_same_name(
     # only as a content hashtag still counts, alongside the structural one.
     pairs = dict(index.list_tags())
     assert pairs["python"] == 2
+
+
+def test_list_tags_content_hashtag_case_variants_count_as_one_tag(
+    index: VaultIndex, tmp_path: Path
+):
+    """#Python in one article and #python in another are the same tag.
+
+    Direct regression guard for the literal requirement: the casing typed
+    in the article body is never rewritten (each file keeps what its
+    author/site originally wrote), but both occurrences must contribute
+    to the same tag identity and count.
+    """
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    file_a = vault / "a.md"
+    file_a.write_text("Great article about #Python.\n", encoding="utf-8")
+    file_b = vault / "b.md"
+    file_b.write_text("Also using #python here.\n", encoding="utf-8")
+    file_c = vault / "c.md"
+    file_c.write_text("And #PYTHON again.\n", encoding="utf-8")
+
+    id_a = index.add_entry(_entry(url="https://a.com", file_path=str(file_a)))
+    index.index_backlinks(id_a)
+    id_b = index.add_entry(_entry(url="https://b.com", file_path=str(file_b)))
+    index.index_backlinks(id_b)
+    id_c = index.add_entry(_entry(url="https://c.com", file_path=str(file_c)))
+    index.index_backlinks(id_c)
+
+    # One tag, not three — count reflects all three articles.
+    pairs = dict(index.list_tags())
+    assert sum(1 for name in pairs if name.casefold() == "python") == 1
+    assert pairs["python"] == 3
+    assert set(index.get_entry_ids_by_tag("python")) == {id_a, id_b, id_c}
+
+    # The raw body text is untouched — each file keeps its original casing.
+    assert "#Python" in file_a.read_text(encoding="utf-8")
+    assert "#python" in file_b.read_text(encoding="utf-8")
+    assert "#PYTHON" in file_c.read_text(encoding="utf-8")
 
 
 def test_list_tags_dedupes_entry_with_both_structural_and_content_tag(
@@ -533,6 +802,28 @@ def test_get_content_hashtags_for_entries_structural_tag_not_included(
 
     # Structural tags never populate backlink_refs, so they're absent here.
     assert index.get_content_hashtags_for_entries([entry_id]) == {}
+
+
+def test_get_content_hashtags_for_entries_resolves_structural_casing(
+    index: VaultIndex, tmp_path: Path
+):
+    # A different entry curates the tag structurally as "Python" (capital).
+    structural_id = index.add_entry(_entry(url="https://a.com"))
+    index.update_tags(structural_id, ["Python"])
+
+    # This entry only ever mentions it as a lowercase content hashtag.
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    content_id = index.add_entry(_entry(url="https://b.com", file_path=str(src_file)))
+    index.index_backlinks(content_id)
+
+    # Display casing matches the structural tag's, not the raw lowercase
+    # form stored in backlink_refs — this is what keeps the reading-view
+    # Sidebar's tag list case-consistent with the rest of the UI.
+    result = index.get_content_hashtags_for_entries([content_id])
+    assert result == {content_id: ["Python"]}
 
 
 # ---------------------------------------------------------------------------
