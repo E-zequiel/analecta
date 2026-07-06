@@ -500,7 +500,27 @@
 		}
 	}
 
-	function handleRightClick(e: MouseEvent) {
+	async function handleRightClick(e: MouseEvent) {
+		const wikilink = (e.target as HTMLElement).closest('a.wikilink');
+		const wikilinkEntryId = wikilink?.getAttribute('data-entry-id');
+		if (wikilinkEntryId) {
+			e.preventDefault();
+			try {
+				const target = await entriesApi.get(Number(wikilinkEntryId));
+				showContextMenu(e, {
+					id: target.id,
+					title: target.title,
+					url: target.url,
+					file_path: target.file_path,
+					status: target.status,
+					flags: target.flags,
+				});
+			} catch {
+				// entry deleted or sidecar not ready
+			}
+			return;
+		}
+
 		if (!entry) return;
 		showContextMenu(e, {
 			id: entry.id,
