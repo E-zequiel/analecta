@@ -785,25 +785,37 @@ class VaultIndex:
         return result
 
     @_synchronized
-    def create_tag(self, name: str) -> None:
+    def create_tag(self, name: str) -> tuple[str, int]:
         """Create a standalone tag with no entries.
 
         Args:
             name: Tag name to create. No-ops if a tag with the same
                 case-insensitive identity already exists.
+
+        Returns:
+            Tuple of ``(canonical_name, count)``. If a tag with this
+            case-insensitive identity already exists, returns its existing
+            display name and current structural+hashtag union count rather
+            than creating a duplicate. Otherwise creates the tag and
+            returns ``(name, count)`` — count may be nonzero if content
+            hashtags already reference this identity.
         """
         key = name.casefold()
-        if self._conn.execute(
-            "SELECT id FROM tags WHERE normalized = ?", (key,)
-        ).fetchone():
-            return
-        self._conn.execute(
-            "INSERT INTO tags (name, normalized) VALUES (?, ?)", (name, key)
-        )
-        self._conn.commit()
+        row = self._conn.execute(
+            "SELECT name FROM tags WHERE normalized = ?", (key,)
+        ).fetchone()
+        if row is None:
+            self._conn.execute(
+                "INSERT INTO tags (name, normalized) VALUES (?, ?)", (name, key)
+            )
+            self._conn.commit()
+            canonical = name
+        else:
+            canonical = row["name"]
+        return canonical, len(self.get_entry_ids_by_tag(canonical))
 
     @_synchronized
-    def rename_tag(self, old_name: str, new_name: str) -> None:
+    def rename_tag(self, old_name: str, new_name: str) -> tuple[str, int] | None:
         """Rename a tag globally.
 
         Updates the tags table and re-serialises ``tags_json`` in all
@@ -814,18 +826,24 @@ class VaultIndex:
         occurrences going forward.
 
         Args:
-            old_name: Current tag name.
+            old_name: Current tag name. Matched case-insensitively.
             new_name: Replacement tag name.
+
+        Returns:
+            Tuple of ``(new_name, count)`` — the renamed tag's current
+            structural+hashtag union count — or ``None`` if no tag with
+            *old_name*'s case-insensitive identity exists (no-op).
 
         Raises:
             ValueError: If a structural tag with *new_name*'s
                 case-insensitive identity already exists.
         """
+        old_key = old_name.casefold()
         tag_row = self._conn.execute(
-            "SELECT id FROM tags WHERE name = ?", (old_name,)
+            "SELECT id FROM tags WHERE normalized = ?", (old_key,)
         ).fetchone()
         if tag_row is None:
-            return
+            return None
         tag_id = tag_row["id"]
         new_key = new_name.casefold()
         if self._conn.execute(
@@ -850,7 +868,7 @@ class VaultIndex:
             ).fetchone()
             if row:
                 tags = [
-                    new_name if t == old_name else t
+                    new_name if t.casefold() == old_key else t
                     for t in json.loads(row["tags_json"])
                 ]
                 self._conn.execute(
@@ -858,6 +876,7 @@ class VaultIndex:
                     (json.dumps(tags, ensure_ascii=False), now, eid),
                 )
         self._conn.commit()
+        return new_name, len(self.get_entry_ids_by_tag(new_name))
 
     @_synchronized
     def delete_tag(self, name: str) -> None:
@@ -867,10 +886,12 @@ class VaultIndex:
         in all affected entries.
 
         Args:
-            name: Tag name to delete. Does nothing if it does not exist.
+            name: Tag name to delete. Matched case-insensitively. Does
+                nothing if no tag with this identity exists.
         """
+        key = name.casefold()
         tag_row = self._conn.execute(
-            "SELECT id FROM tags WHERE name = ?", (name,)
+            "SELECT id FROM tags WHERE normalized = ?", (key,)
         ).fetchone()
         if tag_row is None:
             return
@@ -887,7 +908,7 @@ class VaultIndex:
                 "SELECT tags_json FROM entries WHERE id = ?", (eid,)
             ).fetchone()
             if row:
-                tags = [t for t in json.loads(row["tags_json"]) if t != name]
+                tags = [t for t in json.loads(row["tags_json"]) if t.casefold() != key]
                 self._conn.execute(
                     "UPDATE entries SET tags_json = ?, updated_at = ? WHERE id = ?",
                     (json.dumps(tags, ensure_ascii=False), now, eid),
