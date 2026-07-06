@@ -65,7 +65,9 @@ class GraphNodeRecord:
     """A node in the vault connection graph.
 
     Args:
-        node_id: Prefixed stable identifier — ``entry:{int_id}`` or ``tag:{name}``.
+        node_id: Prefixed stable identifier — ``entry:{int_id}`` or
+            ``tag:{normalized}`` (``casefold`` identity, shared by a
+            structural tag and a content hashtag of the same name).
         label: Display label (entry title or ``#tagname``).
         kind: Node kind: ``entry`` or ``tag``.
         source_type: Entry source type (``article``, ``youtube``, etc.) or ``None``.
@@ -1166,7 +1168,10 @@ class VaultIndex:
 
         Resolves both outlinks (entries that *focus_id* links to) and inlinks
         (entries that link to *focus_id*) using the same title-matching rules
-        as :meth:`get_backlinks` and :meth:`get_graph`. The focus entry is
+        as :meth:`get_backlinks` and :meth:`get_graph`. Tag connections are a
+        true union of structural ``entry_tags`` and content hashtags — an
+        entry linked to the focus only through the other mechanism still
+        appears as a neighbor of the shared tag node. The focus entry is
         always present as a node even when it has no connections. Returns
         ``None`` if *focus_id* does not exist.
 
@@ -1209,6 +1214,23 @@ class VaultIndex:
             source_type=focus_source_type,
         )
 
+        tag_display: dict[str, str] = dict(
+            self._conn.execute("SELECT normalized, name FROM tags").fetchall()
+        )
+
+        def ensure_tag_node(key: str) -> str:
+            node_id = f"tag:{key}"
+            if node_id not in node_map:
+                node_map[node_id] = GraphNodeRecord(
+                    node_id=node_id,
+                    label=f"#{tag_display.get(key, key)}",
+                    kind="tag",
+                    source_type=None,
+                )
+            return node_id
+
+        focus_tag_keys: set[str] = set()
+
         # Outlinks: refs where focus_id is the source
         out_refs = self._conn.execute(
             "SELECT target_text, is_hashtag FROM backlink_refs WHERE source_id = ?",
@@ -1243,14 +1265,8 @@ class VaultIndex:
                             source_type=t_src_type,
                         )
                 else:
-                    target_node_id = f"tag:{target_text}"
-                    if target_node_id not in node_map:
-                        node_map[target_node_id] = GraphNodeRecord(
-                            node_id=target_node_id,
-                            label=f"#{target_text}",
-                            kind="tag",
-                            source_type=None,
-                        )
+                    target_node_id = ensure_tag_node(target_text)
+                    focus_tag_keys.add(target_text)
             key = (focus_node_id, target_node_id)
             edge_weights[key] = edge_weights.get(key, 0) + 1
 
@@ -1284,38 +1300,42 @@ class VaultIndex:
             key = (src_node_id, focus_node_id)
             edge_weights[key] = edge_weights.get(key, 0) + 1
 
-        # Tag-hub: structured entry_tags for the focus entry
-        focus_tag_rows = self._conn.execute(
+        # Tag-hub: structured entry_tags for the focus entry, keyed by
+        # tags.normalized (never normalize_tag(name) — see get_graph).
+        structural_tag_rows = self._conn.execute(
             """
-            SELECT t.name
+            SELECT t.normalized
             FROM entry_tags et
             JOIN tags t ON t.id = et.tag_id
             WHERE et.entry_id = ?
             """,
             (focus_id,),
         ).fetchall()
-        for ftag_row in focus_tag_rows:
-            ftag_name: str = ftag_row[0]
-            tag_node_id = f"tag:{ftag_name}"
-            if tag_node_id not in node_map:
-                node_map[tag_node_id] = GraphNodeRecord(
-                    node_id=tag_node_id,
-                    label=f"#{ftag_name}",
-                    kind="tag",
-                    source_type=None,
-                )
+        for srow in structural_tag_rows:
+            tag_key: str = srow[0]
+            focus_tag_keys.add(tag_key)
+            tag_node_id = ensure_tag_node(tag_key)
             key = (focus_node_id, tag_node_id)
             edge_weights[key] = edge_weights.get(key, 0) + 1
 
-            # Neighbors sharing this tag (1-hop via hub)
+        # Neighbors sharing any of the focus entry's tags — a true union of
+        # structural entry_tags and content hashtags by normalized identity,
+        # so an entry linked only through one mechanism still shows up as a
+        # neighbor of one sharing the same tag through the other.
+        for tag_key in focus_tag_keys:
+            tag_node_id = f"tag:{tag_key}"
             neighbor_rows = self._conn.execute(
                 """
                 SELECT et.entry_id
                 FROM entry_tags et
                 JOIN tags t ON t.id = et.tag_id
-                WHERE t.name = ? AND et.entry_id != ?
+                WHERE t.normalized = ? AND et.entry_id != ?
+                UNION
+                SELECT source_id
+                FROM backlink_refs
+                WHERE target_text = ? AND is_hashtag = 1 AND source_id != ?
                 """,
-                (ftag_name, focus_id),
+                (tag_key, focus_id, tag_key, focus_id),
             ).fetchall()
             for nrow in neighbor_rows:
                 neighbor_id: int = nrow[0]
@@ -1394,9 +1414,11 @@ class VaultIndex:
         Resolves ``backlink_refs`` against the current ``entries`` table using
         the same title-matching rules as :meth:`get_backlinks`. Wikilinks that
         do not resolve to an existing entry are skipped. Unresolved hashtags
-        produce virtual tag nodes (``tag:{name}``). Multiple occurrences of the
-        same source→target pair are collapsed into a single weighted edge.
-        Entries with no connections (isolated nodes) are excluded.
+        produce virtual tag nodes (``tag:{normalized}``). A structural tag and
+        a content hashtag of the same identity share one node — see
+        :class:`GraphNodeRecord`. Multiple occurrences of the same
+        source→target pair are collapsed into a single weighted edge. Entries
+        with no connections (isolated nodes) are excluded.
 
         Returns:
             Tuple of ``(nodes, edges)``.  Nodes include both ``entry:`` and
@@ -1450,19 +1472,22 @@ class VaultIndex:
             key = (source_node, target_node)
             edge_weights[key] = edge_weights.get(key, 0) + 1
 
-        # Tag-hub edges from structured entry_tags (UI-assigned tags)
+        # Tag-hub edges from structured entry_tags (UI-assigned tags), keyed
+        # by tags.normalized so these land on the same tag node as a content
+        # hashtag of the same identity. Never normalize_tag(name) here — it
+        # strips symbols and would collide e.g. "C++" with a "#c" hashtag.
         tag_ref_rows = self._conn.execute(
-            "SELECT et.entry_id, t.name"
+            "SELECT et.entry_id, t.normalized"
             " FROM entry_tags et JOIN tags t ON t.id = et.tag_id"
         ).fetchall()
         for tag_row in tag_ref_rows:
             tagged_entry_id: int = tag_row[0]
-            tag_name: str = tag_row[1]
+            tag_key: str = tag_row[1]
             if tagged_entry_id not in entries:
                 continue
             source_node = f"entry:{tagged_entry_id}"
-            target_node = f"tag:{tag_name}"
-            virtual_tags.add(tag_name)
+            target_node = f"tag:{tag_key}"
+            virtual_tags.add(tag_key)
             key = (source_node, target_node)
             edge_weights[key] = edge_weights.get(key, 0) + 1
 
@@ -1472,6 +1497,10 @@ class VaultIndex:
                 connected_entry_ids.add(int(s[6:]))
             if t.startswith("entry:"):
                 connected_entry_ids.add(int(t[6:]))
+
+        tag_display: dict[str, str] = dict(
+            self._conn.execute("SELECT normalized, name FROM tags").fetchall()
+        )
 
         nodes: list[GraphNodeRecord] = [
             GraphNodeRecord(
@@ -1484,12 +1513,12 @@ class VaultIndex:
         ]
         nodes += [
             GraphNodeRecord(
-                node_id=f"tag:{name}",
-                label=f"#{name}",
+                node_id=f"tag:{key}",
+                label=f"#{tag_display.get(key, key)}",
                 kind="tag",
                 source_type=None,
             )
-            for name in virtual_tags
+            for key in virtual_tags
         ]
 
         edges: list[GraphEdgeRecord] = [
