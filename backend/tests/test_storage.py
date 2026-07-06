@@ -493,6 +493,34 @@ def test_create_tag(index: VaultIndex):
     assert any(name == "python" for name, _ in index.list_tags())
 
 
+def test_create_tag_returns_new_name_and_zero_count(index: VaultIndex):
+    assert index.create_tag("newtag") == ("newtag", 0)
+
+
+def test_create_tag_case_insensitive_returns_existing_canonical(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["Python"])
+    # Creating "PYTHON" must no-op and report the existing identity's
+    # canonical casing and true count, not a fabricated (name, 0).
+    assert index.create_tag("PYTHON") == ("Python", 1)
+
+
+def test_create_tag_unifies_with_existing_hashtag_count(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Great article about #python.\n", encoding="utf-8")
+    content_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(content_id)
+
+    # "python" has no structural tags-table row yet, only a content
+    # hashtag — creating it structurally must report the pre-existing
+    # hashtag occurrence in its count, not 0.
+    assert index.create_tag("python") == ("python", 1)
+
+
 def test_create_tag_idempotent(index: VaultIndex):
     index.create_tag("python")
     index.create_tag("python")  # should not raise
@@ -588,6 +616,34 @@ def test_rename_tag_nonexistent_noop(index: VaultIndex):
     index.rename_tag("nonexistent", "other")  # should not raise
 
 
+def test_rename_tag_nonexistent_returns_none(index: VaultIndex):
+    assert index.rename_tag("nonexistent", "other") is None
+
+
+def test_rename_tag_returns_new_name_and_count(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["python"])
+    assert index.rename_tag("python", "py") == ("py", 1)
+
+
+def test_rename_tag_case_insensitive_old_name_lookup(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["Python"])
+    # old_name lookup must match "Python" case-insensitively.
+    assert index.rename_tag("PYTHON", "py") == ("py", 1)
+    names = [n for n, _ in index.list_tags()]
+    assert "Python" not in names
+    assert "py" in names
+
+    # tags_json holds "Python" (display casing), not "PYTHON" (the arg
+    # passed to rename_tag) — the rewrite must match it by casefold too.
+    entry = index.get_entry(entry_id)
+    assert entry is not None
+    tags = json.loads(entry.tags_json)
+    assert "py" in tags
+    assert "Python" not in tags
+
+
 def test_delete_tag_removes_from_table(index: VaultIndex):
     entry_id = index.add_entry(_entry())
     index.update_tags(entry_id, ["python"])
@@ -610,6 +666,22 @@ def test_delete_tag_removes_from_entries_json(index: VaultIndex):
 
 def test_delete_tag_nonexistent_noop(index: VaultIndex):
     index.delete_tag("nonexistent")  # should not raise
+
+
+def test_delete_tag_case_insensitive_lookup(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["Python"])
+    # name lookup must match "Python" case-insensitively.
+    index.delete_tag("PYTHON")
+    assert not any(name == "Python" for name, _ in index.list_tags())
+
+    # tags_json holds "Python" (display casing), not "PYTHON" (the arg
+    # passed to delete_tag) — the rewrite must match it by casefold too,
+    # otherwise the stale string resurrects the tag on the next update_tags.
+    entry = index.get_entry(entry_id)
+    assert entry is not None
+    tags = json.loads(entry.tags_json)
+    assert "Python" not in tags
 
 
 # ---------------------------------------------------------------------------

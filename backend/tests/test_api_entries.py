@@ -323,6 +323,15 @@ def test_create_tag_idempotent(client: TestClient) -> None:
     assert r.status_code == 201
 
 
+def test_create_tag_case_insensitive_returns_existing_canonical(
+    seeded_client: TestClient,
+) -> None:
+    # seeded_client already has one entry tagged "python" (count 1).
+    r = seeded_client.post("/api/v1/tags", json={"name": "PYTHON"})
+    assert r.status_code == 201
+    assert r.json() == {"name": "python", "count": 1}
+
+
 # ---------------------------------------------------------------------------
 # PUT /tags/{name}
 # ---------------------------------------------------------------------------
@@ -344,6 +353,19 @@ def test_rename_tag_conflict_409(seeded_client: TestClient) -> None:
     assert r.status_code == 409
 
 
+def test_rename_tag_case_insensitive_lookup(seeded_client: TestClient) -> None:
+    # seeded_client's tag is stored as "python"; URL param differs in case.
+    r = seeded_client.put("/api/v1/tags/PYTHON", json={"new_name": "py"})
+    assert r.status_code == 200
+    assert r.json() == {"name": "py", "count": 1}
+
+
+def test_rename_tag_nonexistent_returns_200_zero_count(client: TestClient) -> None:
+    r = client.put("/api/v1/tags/nonexistent", json={"new_name": "other"})
+    assert r.status_code == 200
+    assert r.json() == {"name": "other", "count": 0}
+
+
 # ---------------------------------------------------------------------------
 # DELETE /tags/{name}
 # ---------------------------------------------------------------------------
@@ -359,6 +381,14 @@ def test_delete_tag(seeded_client: TestClient) -> None:
 def test_delete_tag_nonexistent_204(client: TestClient) -> None:
     r = client.delete("/api/v1/tags/nonexistent")
     assert r.status_code == 204
+
+
+def test_delete_tag_case_insensitive_lookup(seeded_client: TestClient) -> None:
+    # seeded_client's tag is stored as "python"; URL param differs in case.
+    r = seeded_client.delete("/api/v1/tags/PYTHON")
+    assert r.status_code == 204
+    tags = seeded_client.get("/api/v1/tags").json()
+    assert not any(t["name"] == "python" for t in tags)
 
 
 # ---------------------------------------------------------------------------

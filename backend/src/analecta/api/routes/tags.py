@@ -73,12 +73,8 @@ async def create_tag(
     Returns:
         The tag as it exists in the database (count=0 if newly created).
     """
-    await asyncio.to_thread(index.create_tag, body.name)
-    pairs = await asyncio.to_thread(index.list_tags)
-    for name, count in pairs:
-        if name == body.name:
-            return TagOut(name=name, count=count)
-    return TagOut(name=body.name, count=0)
+    name, count = await asyncio.to_thread(index.create_tag, body.name)
+    return TagOut(name=name, count=count)
 
 
 @router.put("/tags/{name}", response_model=TagOut)
@@ -101,14 +97,13 @@ async def rename_tag(
         HTTPException: 409 if *new_name* already exists.
     """
     try:
-        await asyncio.to_thread(index.rename_tag, name, body.new_name)
+        result = await asyncio.to_thread(index.rename_tag, name, body.new_name)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    pairs = await asyncio.to_thread(index.list_tags)
-    for n, count in pairs:
-        if n == body.new_name:
-            return TagOut(name=n, count=count)
-    return TagOut(name=body.new_name, count=0)
+    if result is None:
+        return TagOut(name=body.new_name, count=0)
+    new_name, count = result
+    return TagOut(name=new_name, count=count)
 
 
 @router.delete("/tags/{name}", status_code=204)
