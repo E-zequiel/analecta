@@ -124,6 +124,14 @@ def test_migration_001_applied(index: VaultIndex):
     assert row is not None
 
 
+def test_entry_tags_tag_id_index_exists(index: VaultIndex):
+    row = index._conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' "
+        "AND name='idx_entry_tags_tag_id'"
+    ).fetchone()
+    assert row is not None
+
+
 def test_entries_table_exists(index: VaultIndex):
     row = index._conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='entries'"
