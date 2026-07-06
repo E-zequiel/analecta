@@ -1395,8 +1395,8 @@ class VaultIndex:
         always wins over a bare hashtag's lowercase form.
 
         Returns:
-            List of ``(name, count)`` tuples, sorted by count descending
-            then name ascending.
+            List of ``(name, count)`` tuples, sorted alphabetically by
+            name (case-insensitive).
         """
         groups: dict[str, tuple[str, set[int]]] = {}
 
@@ -1423,7 +1423,7 @@ class VaultIndex:
 
         return sorted(
             ((display, len(ids)) for display, ids in groups.values()),
-            key=lambda pair: (-pair[1], pair[0]),
+            key=lambda pair: pair[0].casefold(),
         )
 
     @_synchronized

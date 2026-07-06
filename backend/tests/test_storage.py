@@ -803,6 +803,15 @@ def test_list_tags_dedupes_entry_with_both_structural_and_content_tag(
     assert pairs["python"] == 1
 
 
+def test_list_tags_sorted_alphabetically_case_insensitive(index: VaultIndex):
+    index.create_tag("zebra")
+    index.create_tag("Apple")
+    index.create_tag("banana")
+
+    names = [name for name, _ in index.list_tags()]
+    assert names == ["Apple", "banana", "zebra"]
+
+
 def test_list_tags_standalone_zero_count_tag_not_shadowed_by_hashtag(
     index: VaultIndex, tmp_path: Path
 ):
