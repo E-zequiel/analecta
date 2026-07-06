@@ -733,8 +733,8 @@
 								selectDashboardEntry(id);
 							}}
 							ontagclick={(tagName) => {
-								selectDashboardEntry(null);
-								sidebarTagPreview.set(tagName);
+								selectedTag.set(tagName);
+								sidebarTagPreview.set(null);
 								rightSidebarOpen.set(true);
 							}}
 						/>
