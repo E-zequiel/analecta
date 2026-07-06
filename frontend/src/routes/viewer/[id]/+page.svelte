@@ -536,20 +536,28 @@
 		}
 	}
 
-	let hoveredHref = $state('');
+	let hoverStatus = $state('');
+
+	function getHoverStatus(target: HTMLElement): string {
+		const el = target.closest('a, .wikilink-unresolved');
+		if (!el) return '';
+		if (el.classList.contains('wikilink') || el.classList.contains('wikilink-unresolved')) {
+			return '[[Wikilink]]';
+		}
+		if (el.classList.contains('hashtag')) return 'TAGS';
+		return el.getAttribute('href') ?? '';
+	}
 
 	function handleContentMouseOver(e: MouseEvent) {
-		const link = (e.target as HTMLElement).closest('a');
-		hoveredHref = link?.getAttribute('href') ?? '';
+		hoverStatus = getHoverStatus(e.target as HTMLElement);
 	}
 
 	function handleContentFocus(e: FocusEvent) {
-		const link = (e.target as HTMLElement).closest('a');
-		hoveredHref = link?.getAttribute('href') ?? '';
+		hoverStatus = getHoverStatus(e.target as HTMLElement);
 	}
 
 	function handleContentMouseLeave() {
-		hoveredHref = '';
+		hoverStatus = '';
 	}
 </script>
 
@@ -688,8 +696,8 @@
 	</div>
 {/if}
 
-{#if hoveredHref}
-	<div class="link-status-bar" role="status" aria-live="polite">{hoveredHref}</div>
+{#if hoverStatus}
+	<div class="link-status-bar" role="status" aria-live="polite">{hoverStatus}</div>
 {/if}
 
 <div class="viewer">
