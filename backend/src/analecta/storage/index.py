@@ -954,8 +954,6 @@ class VaultIndex:
             List of :class:`BacklinkRecord` objects ordered by source title
             then document position.
         """
-        from analecta.markdown.hashtags import normalize_tag
-
         target_row = self._conn.execute(
             "SELECT title FROM entries WHERE id = ?", (target_id,)
         ).fetchone()
@@ -1024,8 +1022,6 @@ class VaultIndex:
             List of :class:`OutgoingLinkRecord` ordered by target title then
             document position.
         """
-        from analecta.markdown.hashtags import normalize_tag
-
         entry_rows = self._conn.execute("SELECT id, title FROM entries").fetchall()
         lower_title_to_entry: dict[str, tuple[int, str]] = {
             row["title"].lower(): (row["id"], row["title"]) for row in entry_rows
@@ -1180,8 +1176,6 @@ class VaultIndex:
         Returns:
             Tuple ``(nodes, edges)`` or ``None`` if the entry is missing.
         """
-        from analecta.markdown.hashtags import normalize_tag
-
         focus_row = self._conn.execute(
             "SELECT title, source_type FROM entries WHERE id = ?", (focus_id,)
         ).fetchone()
@@ -1409,8 +1403,6 @@ class VaultIndex:
             ``tag:`` kinds.  Edges are directed but the frontend may treat them
             as undirected for layout purposes.
         """
-        from analecta.markdown.hashtags import normalize_tag
-
         entry_rows = self._conn.execute(
             "SELECT id, title, source_type FROM entries"
         ).fetchall()
@@ -1558,8 +1550,6 @@ class VaultIndex:
         file_path = Path(entry.file_path)
         if not file_path.exists():
             return []
-
-        import re as _re
 
         markdown = file_path.read_text(encoding="utf-8")
         m = _re.match(r"^---\n([\s\S]*?)\n---\n", markdown)
