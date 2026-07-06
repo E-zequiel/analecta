@@ -355,11 +355,9 @@ async def list_entries(
             records = [r for r in records if r.id in tag_ids]
     elif tag:
         ids = await asyncio.to_thread(index.get_entry_ids_by_tag, tag)
+        fetched = await asyncio.to_thread(index.get_entries_by_ids, ids)
         records: list[EntryRecord] = []
-        for eid in ids:
-            entry = await asyncio.to_thread(index.get_entry, eid)
-            if entry is None:
-                continue
+        for entry in fetched:
             if status is not None and entry.status != status:
                 continue
             if flag is not None and flag not in json.loads(entry.flags_json):

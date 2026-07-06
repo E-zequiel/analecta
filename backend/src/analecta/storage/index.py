@@ -239,6 +239,18 @@ class VaultIndex:
             )
             self._conn.commit()
 
+        # One-time Python migration: merge pre-existing case-duplicate tags
+        # (e.g. "Python" and "python" as separate rows) and backfill
+        # tags.normalized, added by 008_tags_normalized.sql.
+        _py_tag_bootstrap = "py:008_tag_normalization_backfill"
+        if _py_tag_bootstrap not in applied:
+            self._bootstrap_tag_normalization()
+            self._conn.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                (_py_tag_bootstrap, _now()),
+            )
+            self._conn.commit()
+
     def _bootstrap_backlinks(self) -> None:
         """Populate backlink_refs for entries that have never been indexed.
 
@@ -255,6 +267,95 @@ class VaultIndex:
         ).fetchall()
         for row in rows:
             self.index_backlinks(row[0])
+
+    def _bootstrap_tag_normalization(self) -> None:
+        """Merge case-duplicate tag rows and backfill ``tags.normalized``.
+
+        Before 008_tags_normalized.sql, ``tags.name`` uniqueness was
+        exact-string, so "Python" and "python" could exist as two
+        separate rows with separate ``entry_tags`` memberships. Groups
+        existing rows by ``name.casefold()``; for any group with more
+        than one row, keeps the row with the most real ``entry_tags``
+        memberships (computed live via ``COUNT(*)``, tie-broken by
+        lowest id — never the old, unmaintained ``count`` column) as
+        canonical, reassigns every duplicate's ``entry_tags`` rows and
+        ``tags_json`` entries to it, and deletes the duplicates. Then
+        backfills ``normalized`` on every surviving row and creates the
+        unique index that prevents new case-duplicates from here on —
+        deliberately built *after* the merge, since creating it first
+        would fail on any pre-existing duplicate.
+        """
+        rows = self._conn.execute("SELECT id, name FROM tags").fetchall()
+        groups: dict[str, list[tuple[int, str]]] = {}
+        for tag_id, name in rows:
+            groups.setdefault(name.casefold(), []).append((tag_id, name))
+
+        now = _now()
+        for key, variants in groups.items():
+            if len(variants) > 1:
+                counts = [
+                    (
+                        self._conn.execute(
+                            "SELECT COUNT(*) FROM entry_tags WHERE tag_id = ?",
+                            (tid,),
+                        ).fetchone()[0],
+                        tid,
+                        name,
+                    )
+                    for tid, name in variants
+                ]
+                counts.sort(key=lambda c: (-c[0], c[1]))
+                _, canonical_id, canonical_name = counts[0]
+                for _, dup_id, dup_name in counts[1:]:
+                    affected_ids = [
+                        row[0]
+                        for row in self._conn.execute(
+                            "SELECT entry_id FROM entry_tags WHERE tag_id = ?",
+                            (dup_id,),
+                        ).fetchall()
+                    ]
+                    self._conn.execute(
+                        """
+                        INSERT OR IGNORE INTO entry_tags (entry_id, tag_id)
+                        SELECT entry_id, ? FROM entry_tags WHERE tag_id = ?
+                        """,
+                        (canonical_id, dup_id),
+                    )
+                    self._conn.execute(
+                        "DELETE FROM entry_tags WHERE tag_id = ?", (dup_id,)
+                    )
+                    for entry_id in affected_ids:
+                        entry_row = self._conn.execute(
+                            "SELECT tags_json FROM entries WHERE id = ?", (entry_id,)
+                        ).fetchone()
+                        if entry_row is None:
+                            continue
+                        entry_tags = json.loads(entry_row["tags_json"])
+                        if dup_name not in entry_tags:
+                            continue
+                        merged = [t for t in entry_tags if t != dup_name]
+                        if canonical_name not in merged:
+                            merged.append(canonical_name)
+                        self._conn.execute(
+                            "UPDATE entries SET tags_json = ?, updated_at = ?"
+                            " WHERE id = ?",
+                            (json.dumps(merged, ensure_ascii=False), now, entry_id),
+                        )
+                    self._conn.execute("DELETE FROM tags WHERE id = ?", (dup_id,))
+                self._conn.execute(
+                    "UPDATE tags SET normalized = ? WHERE id = ?",
+                    (key, canonical_id),
+                )
+            else:
+                ((tag_id, _),) = variants
+                self._conn.execute(
+                    "UPDATE tags SET normalized = ? WHERE id = ?", (key, tag_id)
+                )
+
+        self._conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_normalized ON tags(normalized)"
+        )
+        self._conn.commit()
 
     # ------------------------------------------------------------------
     # CRUD
@@ -487,6 +588,11 @@ class VaultIndex:
     def update_tags(self, entry_id: int, tags: list[str]) -> None:
         """Replace an entry's tags and keep the tags/entry_tags tables in sync.
 
+        Each name is resolved to its canonical row via a case-insensitive
+        (``casefold``) identity lookup — entering "PYTHON" when "Python"
+        already exists reuses that row rather than creating a
+        case-duplicate; the first-seen display casing sticks.
+
         Args:
             entry_id: Target row id.
             tags: New list of tag name strings.
@@ -497,21 +603,21 @@ class VaultIndex:
         )
         self._conn.execute("DELETE FROM entry_tags WHERE entry_id = ?", (entry_id,))
         for name in tags:
+            key = name.casefold()
+            row = self._conn.execute(
+                "SELECT id FROM tags WHERE normalized = ?", (key,)
+            ).fetchone()
+            if row is None:
+                cur = self._conn.execute(
+                    "INSERT INTO tags (name, normalized) VALUES (?, ?)", (name, key)
+                )
+                tag_id = cur.lastrowid
+            else:
+                tag_id = row["id"]
             self._conn.execute(
-                "INSERT OR IGNORE INTO tags (name, count) VALUES (?, 0)", (name,)
+                "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) VALUES (?, ?)",
+                (entry_id, tag_id),
             )
-            self._conn.execute(
-                """
-                INSERT INTO entry_tags (entry_id, tag_id)
-                SELECT ?, id FROM tags WHERE name = ?
-                """,
-                (entry_id, name),
-            )
-        self._conn.execute(
-            "UPDATE tags SET count = ("
-            "  SELECT COUNT(*) FROM entry_tags WHERE tag_id = tags.id"
-            ")"
-        )
         self._conn.commit()
 
     @_synchronized
@@ -527,19 +633,14 @@ class VaultIndex:
     def hard_delete(self, entry_id: int) -> None:
         """Permanently remove an entry and all its associations from the database.
 
-        Removes entry_tags rows, recalculates tag counts, removes the FTS index
-        row, and deletes the entry row. Does not touch the vault file — caller
-        is responsible for file removal.
+        Removes entry_tags rows, removes the FTS index row, and deletes the
+        entry row. Does not touch the vault file — caller is responsible
+        for file removal.
 
         Args:
             entry_id: Target row id.
         """
         self._conn.execute("DELETE FROM entry_tags WHERE entry_id = ?", (entry_id,))
-        self._conn.execute(
-            "UPDATE tags SET count = ("
-            "  SELECT COUNT(*) FROM entry_tags WHERE tag_id = tags.id"
-            ")"
-        )
         self._conn.execute("DELETE FROM entries_fts WHERE rowid = ?", (entry_id,))
         self._conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
         self._conn.commit()
@@ -563,15 +664,35 @@ class VaultIndex:
         self._conn.commit()
 
     @_synchronized
+    def get_entries_by_ids(self, entry_ids: list[int]) -> list[EntryRecord]:
+        """Fetch multiple entries in a single batched query.
+
+        Args:
+            entry_ids: Row ids to fetch.
+
+        Returns:
+            Matching ``EntryRecord`` objects. Ids with no matching row are
+            silently omitted; result order is not guaranteed to match
+            *entry_ids*.
+        """
+        if not entry_ids:
+            return []
+        placeholders = ",".join("?" for _ in entry_ids)
+        rows = self._conn.execute(
+            f"SELECT * FROM entries WHERE id IN ({placeholders})", entry_ids
+        ).fetchall()
+        return [_row_to_entry(r) for r in rows]
+
+    @_synchronized
     def get_entry_ids_by_tag(self, tag: str) -> list[int]:
         """Return IDs of all entries associated with *tag* — a true union.
 
         Unions two sources so an entry shows up regardless of which
         mechanism it uses:
 
-        1. **Structural tags** (``entry_tags``/``tags``), matched
-           case-insensitively (``LOWER(t.name) = LOWER(?)``) — same
-           convention as :meth:`get_hashtag_connections`.
+        1. **Structural tags** (``entry_tags``/``tags``), matched via
+           ``tags.normalized`` (``casefold`` identity) — same convention
+           as :meth:`update_tags`/:meth:`list_tags`.
         2. **Content hashtags** (``backlink_refs``), matched against
            *tag* normalized the same way hashtags are normalized at
            index time.
@@ -591,9 +712,9 @@ class VaultIndex:
             SELECT et.entry_id
             FROM entry_tags et
             JOIN tags t ON et.tag_id = t.id
-            WHERE LOWER(t.name) = LOWER(?)
+            WHERE t.normalized = ?
             """,
-            (tag,),
+            (tag.casefold(),),
         ).fetchall()
 
         hashtag_rows = self._conn.execute(
@@ -620,12 +741,21 @@ class VaultIndex:
         them. Used to let the reading view's tag list include hashtags
         that were never also assigned as a structural tag.
 
+        Hashtags are stored lowercase (normalized at index time), but the
+        display name returned here is resolved against any existing
+        *structural* tag with the same identity, so a hashtag that's also
+        a curated structural tag elsewhere in the vault (e.g. "Python")
+        displays with that casing instead of the raw lowercase form —
+        this is what keeps the reading-view tag list case-consistent with
+        the rest of the UI.
+
         Args:
             entry_ids: Entry ids to look up.
 
         Returns:
-            Dict mapping entry id to a sorted list of distinct hashtag
-            texts. Entries with none are omitted from the dict.
+            Dict mapping entry id to a sorted list of distinct,
+            canonically-cased hashtag texts. Entries with none are
+            omitted from the dict.
         """
         if not entry_ids:
             return {}
@@ -638,9 +768,16 @@ class VaultIndex:
             """,
             entry_ids,
         ).fetchall()
+        if not rows:
+            return {}
+        display_names = dict(
+            self._conn.execute("SELECT normalized, name FROM tags").fetchall()
+        )
         result: dict[int, list[str]] = {}
         for source_id, target_text in rows:
-            result.setdefault(source_id, []).append(target_text)
+            result.setdefault(source_id, []).append(
+                display_names.get(target_text, target_text)
+            )
         for tags in result.values():
             tags.sort()
         return result
@@ -650,10 +787,16 @@ class VaultIndex:
         """Create a standalone tag with no entries.
 
         Args:
-            name: Tag name to create. Does nothing if it already exists.
+            name: Tag name to create. No-ops if a tag with the same
+                case-insensitive identity already exists.
         """
+        key = name.casefold()
+        if self._conn.execute(
+            "SELECT id FROM tags WHERE normalized = ?", (key,)
+        ).fetchone():
+            return
         self._conn.execute(
-            "INSERT OR IGNORE INTO tags (name, count) VALUES (?, 0)", (name,)
+            "INSERT INTO tags (name, normalized) VALUES (?, ?)", (name, key)
         )
         self._conn.commit()
 
@@ -661,14 +804,20 @@ class VaultIndex:
     def rename_tag(self, old_name: str, new_name: str) -> None:
         """Rename a tag globally.
 
-        Updates the tags table and re-serialises ``tags_json`` in all affected entries.
+        Updates the tags table and re-serialises ``tags_json`` in all
+        affected entries. The destination is matched case-insensitively
+        against existing *structural* tags only — renaming into an
+        identity that today exists only as a content hashtag is allowed;
+        it simply lets the renamed tag unify with those content
+        occurrences going forward.
 
         Args:
             old_name: Current tag name.
             new_name: Replacement tag name.
 
         Raises:
-            ValueError: If a tag named *new_name* already exists.
+            ValueError: If a structural tag with *new_name*'s
+                case-insensitive identity already exists.
         """
         tag_row = self._conn.execute(
             "SELECT id FROM tags WHERE name = ?", (old_name,)
@@ -676,8 +825,10 @@ class VaultIndex:
         if tag_row is None:
             return
         tag_id = tag_row["id"]
+        new_key = new_name.casefold()
         if self._conn.execute(
-            "SELECT id FROM tags WHERE name = ?", (new_name,)
+            "SELECT id FROM tags WHERE normalized = ? AND id != ?",
+            (new_key, tag_id),
         ).fetchone():
             raise ValueError(f"Tag '{new_name}' already exists")
         entry_ids = [
@@ -686,7 +837,10 @@ class VaultIndex:
                 "SELECT entry_id FROM entry_tags WHERE tag_id = ?", (tag_id,)
             ).fetchall()
         ]
-        self._conn.execute("UPDATE tags SET name = ? WHERE id = ?", (new_name, tag_id))
+        self._conn.execute(
+            "UPDATE tags SET name = ?, normalized = ? WHERE id = ?",
+            (new_name, new_key, tag_id),
+        )
         now = _now()
         for eid in entry_ids:
             row = self._conn.execute(
@@ -956,7 +1110,7 @@ class VaultIndex:
 
         for row in structural_rows:
             tag_name: str = row[0]
-            key = tag_name.lower()
+            key = tag_name.casefold()
             if key in merged:
                 continue
             peer_rows = self._conn.execute(
@@ -965,10 +1119,10 @@ class VaultIndex:
                 FROM entry_tags et
                 JOIN tags t ON t.id = et.tag_id
                 JOIN entries e ON e.id = et.entry_id
-                WHERE LOWER(t.name) = LOWER(?) AND et.entry_id != ?
+                WHERE t.normalized = ? AND et.entry_id != ?
                 ORDER BY e.title ASC
                 """,
-                (tag_name, source_id),
+                (key, source_id),
             ).fetchall()
             peers = [_row_to_entry(r) for r in peer_rows]
             if peers:
@@ -984,7 +1138,7 @@ class VaultIndex:
 
         for row in hashtag_rows:
             hashtag: str = row[0]
-            key = hashtag.lower()
+            key = hashtag.casefold()
             if key in merged:
                 continue  # already covered by a structural tag
             peer_rows = self._conn.execute(
@@ -1197,12 +1351,13 @@ class VaultIndex:
         """Return all tags — structural and content — as a true union.
 
         A tag's entry set is the union of its structural ``entry_tags``
-        links and its content-hashtag ``backlink_refs`` rows, matched
-        case-insensitively / normalized the same way
-        :meth:`get_entry_ids_by_tag` matches them, and deduplicated by
-        entry id — an entry that carries a tag both structurally and as
-        a content hashtag is only counted once. A standalone structural
-        tag with zero links still appears (count 0).
+        links (identity = ``tags.normalized``, a ``casefold`` of the
+        display name) and its content-hashtag ``backlink_refs`` rows
+        (already normalized at index time), deduplicated by entry id —
+        an entry that carries a tag both structurally and as a content
+        hashtag is only counted once. A standalone structural tag with
+        zero links still appears (count 0). Structural display casing
+        always wins over a bare hashtag's lowercase form.
 
         Returns:
             List of ``(name, count)`` tuples, sorted by count descending
@@ -1210,25 +1365,25 @@ class VaultIndex:
         """
         groups: dict[str, tuple[str, set[int]]] = {}
 
-        for name in self._conn.execute("SELECT name FROM tags"):
-            groups.setdefault(name[0].lower(), (name[0], set()))
+        for normalized, name in self._conn.execute("SELECT normalized, name FROM tags"):
+            groups.setdefault(normalized, (name, set()))
 
         structural_rows = self._conn.execute(
             """
-            SELECT t.name, et.entry_id
+            SELECT t.normalized, t.name, et.entry_id
             FROM entry_tags et
             JOIN tags t ON t.id = et.tag_id
             """
         ).fetchall()
-        for name, entry_id in structural_rows:
-            _, ids = groups.setdefault(name.lower(), (name, set()))
+        for normalized, name, entry_id in structural_rows:
+            _, ids = groups.setdefault(normalized, (name, set()))
             ids.add(entry_id)
 
         hashtag_rows = self._conn.execute(
             "SELECT target_text, source_id FROM backlink_refs WHERE is_hashtag = 1"
         ).fetchall()
         for target_text, source_id in hashtag_rows:
-            _, ids = groups.setdefault(target_text.lower(), (target_text, set()))
+            _, ids = groups.setdefault(target_text, (target_text, set()))
             ids.add(source_id)
 
         return sorted(
