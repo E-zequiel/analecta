@@ -47,7 +47,7 @@ class TagRenameIn(BaseModel):
 async def list_tags(
     index: VaultIndex = Depends(get_index),
 ) -> list[TagOut]:
-    """Return all tags ordered by entry count descending.
+    """Return all tags ordered alphabetically by name (case-insensitive).
 
     Args:
         index: Injected VaultIndex singleton.
