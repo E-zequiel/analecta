@@ -366,6 +366,65 @@ def test_rename_tag_nonexistent_returns_200_zero_count(client: TestClient) -> No
     assert r.json() == {"name": "other", "count": 0}
 
 
+def test_rename_tag_migrates_body_hashtag(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    pages = vault / "pages"
+    pages.mkdir(parents=True)
+    src_file = pages / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+
+    config = AppConfig(vault_path=vault)
+    with VaultIndex(config.vault_path / "analecta.db") as index:
+        entry_id = index.add_entry(
+            EntryRecord(
+                title="Article",
+                url="https://example.com/1",
+                file_path=str(src_file),
+                source_type="article",
+                created_at="2024-01-01T00:00:00+00:00",
+                updated_at="2024-01-01T00:00:00+00:00",
+            )
+        )
+        index.update_tags(entry_id, ["python"])
+        index.index_backlinks(entry_id)
+
+    with TestClient(_make_app(tmp_path)) as c:
+        r = c.put("/api/v1/tags/python", json={"new_name": "py"})
+        assert r.status_code == 200
+        assert r.json() == {"name": "py", "count": 1}
+
+    assert "#py" in src_file.read_text(encoding="utf-8")
+
+
+def test_rename_tag_invalid_new_name_with_body_occurrences_409(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    pages = vault / "pages"
+    pages.mkdir(parents=True)
+    src_file = pages / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+
+    config = AppConfig(vault_path=vault)
+    with VaultIndex(config.vault_path / "analecta.db") as index:
+        entry_id = index.add_entry(
+            EntryRecord(
+                title="Article",
+                url="https://example.com/1",
+                file_path=str(src_file),
+                source_type="article",
+                created_at="2024-01-01T00:00:00+00:00",
+                updated_at="2024-01-01T00:00:00+00:00",
+            )
+        )
+        index.update_tags(entry_id, ["python"])
+        index.index_backlinks(entry_id)
+
+    with TestClient(_make_app(tmp_path)) as c:
+        r = c.put("/api/v1/tags/python", json={"new_name": "C++"})
+        assert r.status_code == 409
+
+    assert src_file.read_text(encoding="utf-8") == "Filed under #python.\n"
+
+
 # ---------------------------------------------------------------------------
 # DELETE /tags/{name}
 # ---------------------------------------------------------------------------
