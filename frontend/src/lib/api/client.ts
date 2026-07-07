@@ -280,6 +280,10 @@ export const tags = {
 	delete(name: string): Promise<void> {
 		return apiFetch<void>(`/tags/${encodeURIComponent(name)}`, { method: 'DELETE' });
 	},
+
+	bodyCount(name: string): Promise<{ count: number }> {
+		return apiFetch<{ count: number }>(`/tags/${encodeURIComponent(name)}/body-count`);
+	},
 };
 
 export const extract = {

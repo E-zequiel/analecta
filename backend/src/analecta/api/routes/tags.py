@@ -43,6 +43,16 @@ class TagRenameIn(BaseModel):
     new_name: str
 
 
+class TagBodyCountOut(BaseModel):
+    """Count of entries whose Markdown body contains a tag as literal ``#hashtag`` text.
+
+    Attributes:
+        count: Number of entries.
+    """
+
+    count: int
+
+
 @router.get("/tags", response_model=list[TagOut])
 async def list_tags(
     index: VaultIndex = Depends(get_index),
@@ -118,3 +128,25 @@ async def delete_tag(
         index: Injected VaultIndex singleton.
     """
     await asyncio.to_thread(index.delete_tag, name)
+
+
+@router.get("/tags/{name}/body-count", response_model=TagBodyCountOut)
+async def get_tag_body_count(
+    name: str,
+    index: VaultIndex = Depends(get_index),
+) -> TagBodyCountOut:
+    """Return how many entries contain *name* as literal ``#hashtag`` text.
+
+    Used by the delete-tag confirmation UI to warn that deleting a tag
+    doesn't remove these occurrences — they get converted to inline code
+    instead. See :meth:`VaultIndex.get_body_hashtag_entry_ids`.
+
+    Args:
+        name: Tag name (URL-encoded).
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        The count.
+    """
+    ids = await asyncio.to_thread(index.get_body_hashtag_entry_ids, name)
+    return TagBodyCountOut(count=len(ids))

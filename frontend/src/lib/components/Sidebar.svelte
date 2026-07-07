@@ -20,6 +20,7 @@
 		Pencil,
 		Trash2,
 		Archive,
+		TriangleAlert,
 		X,
 	} from '@lucide/svelte';
 	import { writable } from 'svelte/store';
@@ -145,6 +146,7 @@
 	let editTagValue = $state('');
 	let editTagInputEl = $state<HTMLInputElement | null>(null);
 	let deletingTag = $state<string | null>(null);
+	let deletingTagBodyCount = $state(0);
 	let deleteRowEl = $state<HTMLElement | null>(null);
 
 	$effect(() => {
@@ -377,6 +379,17 @@
 		}
 	}
 
+	async function requestDeleteTag(name: string) {
+		deletingTag = name;
+		deletingTagBodyCount = 0;
+		try {
+			const { count } = await tagsApi.bodyCount(name);
+			if (deletingTag === name) deletingTagBodyCount = count;
+		} catch {
+			// ignore — dialog just won't show the body-text warning
+		}
+	}
+
 	async function deleteTag(name: string) {
 		try {
 			await tagsApi.delete(name);
@@ -577,6 +590,14 @@
 					{#if deletingTag === tag.name}
 						<div class="tag-delete-row" bind:this={deleteRowEl}>
 							<span class="tag-delete-label">Delete <strong>{tag.name}</strong>?</span>
+							{#if deletingTagBodyCount > 0}
+								<span
+									class="tag-delete-body-count"
+									use:tooltip={`${deletingTagBodyCount} ${deletingTagBodyCount === 1 ? 'entry contains' : 'entries contain'} this as literal text in their body — it won't be removed, just converted to inline code`}
+								>
+									<TriangleAlert size={11} />{deletingTagBodyCount}
+								</span>
+							{/if}
 							<button
 								class="tag-action-btn tag-delete-confirm"
 								onclick={() => deleteTag(tag.name)}
@@ -647,9 +668,7 @@
 								>
 								<button
 									class="tag-action-btn"
-									onclick={() => {
-										deletingTag = tag.name;
-									}}
+									onclick={() => requestDeleteTag(tag.name)}
 									use:tooltip={'Delete tag'}
 									aria-label="Delete tag"><Trash2 size={13.25} /></button
 								>
@@ -1061,6 +1080,15 @@
 
 	.tag-delete-confirm:hover {
 		color: #b9ee8a;
+	}
+
+	.tag-delete-body-count {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		flex-shrink: 0;
+		color: var(--yellow);
+		font-size: var(--font-size-count);
 	}
 
 	.tag-edit-row {

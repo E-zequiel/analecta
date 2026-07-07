@@ -732,6 +732,45 @@ class VaultIndex:
         return sorted(ids)
 
     @_synchronized
+    def get_body_hashtag_entry_ids(self, name: str) -> list[int]:
+        """Return IDs of entries whose body contains *name* as a literal ``#hashtag``.
+
+        Unlike :meth:`get_entry_ids_by_tag`, this only counts the
+        content-hashtag side — an entry where *name* exists solely as a
+        structural ``entry_tags`` row is excluded. Used to find entries
+        whose body text would survive a structural tag deletion and
+        otherwise resurrect the tag identity.
+
+        A tag name only has a legitimate hashtag form when
+        ``normalize_tag(name) == name.casefold()`` — true for any name
+        built from the hashtag charset (letters/digits/underscore), false
+        for a symbol- or space-bearing name like ``"C++"``
+        (``normalize_tag("C++")`` folds to ``"c"``, a different identity
+        from the structural ``"c++"``). Returns an empty list rather than
+        spuriously matching a same-named hashtag for those — same
+        collision-avoidance rule documented on :meth:`get_entry_ids_by_tag`.
+
+        Args:
+            name: Tag name to look up.
+
+        Returns:
+            Sorted, deduplicated list of entry IDs. Empty if *name* has no
+            valid hashtag form or no matching content hashtag exists.
+        """
+        normalized = normalize_tag(name)
+        if normalized != name.casefold():
+            return []
+        rows = self._conn.execute(
+            """
+            SELECT DISTINCT source_id
+            FROM backlink_refs
+            WHERE target_text = ? AND is_hashtag = 1
+            """,
+            (normalized,),
+        ).fetchall()
+        return sorted(row[0] for row in rows)
+
+    @_synchronized
     def get_content_hashtags_for_entries(
         self, entry_ids: list[int]
     ) -> dict[int, list[str]]:
@@ -882,40 +921,76 @@ class VaultIndex:
     def delete_tag(self, name: str) -> None:
         """Delete a tag globally.
 
-        Removes it from the tags table, entry_tags, and re-serialises ``tags_json``
-        in all affected entries.
+        Removes it from the tags table, entry_tags, and re-serialises
+        ``tags_json`` in all affected entries. Also neutralizes any literal
+        ``#hashtag`` occurrence in an entry's Markdown body that shares this
+        tag's identity — wrapped in backticks so
+        :meth:`index_backlinks` treats it as inline code on the next
+        re-index, instead of letting the structural deletion leave a
+        surviving body mention that resurrects the tag (lowercase) the next
+        time that entry's file is re-indexed. See
+        :func:`analecta.markdown.backlinks.neutralize_hashtag_occurrences`.
+        Works even when *name* has no structural row at all — a
+        content-hashtag-only tag (as shown in the Sidebar's true-union tag
+        list) is fully removable too.
 
         Args:
-            name: Tag name to delete. Matched case-insensitively. Does
-                nothing if no tag with this identity exists.
+            name: Tag name to delete. Matched case-insensitively against
+                structural tags; matched via :func:`normalize_tag` against
+                content hashtags. Does nothing if neither exists.
         """
+        from analecta.markdown.backlinks import neutralize_hashtag_occurrences
+
         key = name.casefold()
         tag_row = self._conn.execute(
             "SELECT id FROM tags WHERE normalized = ?", (key,)
         ).fetchone()
-        if tag_row is None:
+        hashtag_entry_ids = self.get_body_hashtag_entry_ids(name)
+
+        if tag_row is None and not hashtag_entry_ids:
             return
-        tag_id = tag_row["id"]
-        entry_ids = [
-            row[0]
-            for row in self._conn.execute(
-                "SELECT entry_id FROM entry_tags WHERE tag_id = ?", (tag_id,)
-            ).fetchall()
-        ]
-        now = _now()
-        for eid in entry_ids:
-            row = self._conn.execute(
-                "SELECT tags_json FROM entries WHERE id = ?", (eid,)
-            ).fetchone()
-            if row:
-                tags = [t for t in json.loads(row["tags_json"]) if t.casefold() != key]
-                self._conn.execute(
-                    "UPDATE entries SET tags_json = ?, updated_at = ? WHERE id = ?",
-                    (json.dumps(tags, ensure_ascii=False), now, eid),
-                )
-        self._conn.execute("DELETE FROM entry_tags WHERE tag_id = ?", (tag_id,))
-        self._conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+
+        if tag_row is not None:
+            tag_id = tag_row["id"]
+            entry_ids = [
+                row[0]
+                for row in self._conn.execute(
+                    "SELECT entry_id FROM entry_tags WHERE tag_id = ?", (tag_id,)
+                ).fetchall()
+            ]
+            now = _now()
+            for eid in entry_ids:
+                row = self._conn.execute(
+                    "SELECT tags_json FROM entries WHERE id = ?", (eid,)
+                ).fetchone()
+                if row:
+                    tags = [
+                        t for t in json.loads(row["tags_json"]) if t.casefold() != key
+                    ]
+                    self._conn.execute(
+                        "UPDATE entries SET tags_json = ?, updated_at = ? WHERE id = ?",
+                        (json.dumps(tags, ensure_ascii=False), now, eid),
+                    )
+            self._conn.execute("DELETE FROM entry_tags WHERE tag_id = ?", (tag_id,))
+            self._conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
         self._conn.commit()
+
+        if hashtag_entry_ids:
+            target_normalized = normalize_tag(name)
+            for eid in hashtag_entry_ids:
+                entry = self.get_entry(eid)
+                if entry is None:
+                    continue
+                file_path = Path(entry.file_path)
+                if not file_path.exists():
+                    continue
+                markdown = file_path.read_text(encoding="utf-8")
+                rewritten, wrapped = neutralize_hashtag_occurrences(
+                    markdown, target_normalized
+                )
+                if wrapped:
+                    file_path.write_text(rewritten, encoding="utf-8")
+                    self.index_backlinks(eid)
 
     @_synchronized
     def index_backlinks(self, source_id: int) -> None:

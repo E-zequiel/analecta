@@ -392,6 +392,44 @@ def test_delete_tag_case_insensitive_lookup(seeded_client: TestClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# GET /tags/{name}/body-count
+# ---------------------------------------------------------------------------
+
+
+def test_tag_body_count_finds_content_hashtag(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    pages = vault / "pages"
+    pages.mkdir(parents=True)
+    src_file = pages / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+
+    config = AppConfig(vault_path=vault)
+    with VaultIndex(config.vault_path / "analecta.db") as index:
+        entry_id = index.add_entry(
+            EntryRecord(
+                title="Article",
+                url="https://example.com/1",
+                file_path=str(src_file),
+                source_type="article",
+                created_at="2024-01-01T00:00:00+00:00",
+                updated_at="2024-01-01T00:00:00+00:00",
+            )
+        )
+        index.index_backlinks(entry_id)
+
+    with TestClient(_make_app(tmp_path)) as c:
+        r = c.get("/api/v1/tags/python/body-count")
+        assert r.status_code == 200
+        assert r.json() == {"count": 1}
+
+
+def test_tag_body_count_zero_when_structural_only(seeded_client: TestClient) -> None:
+    r = seeded_client.get("/api/v1/tags/python/body-count")
+    assert r.status_code == 200
+    assert r.json() == {"count": 0}
+
+
+# ---------------------------------------------------------------------------
 # GET /search
 # ---------------------------------------------------------------------------
 
