@@ -146,6 +146,7 @@
 	let editingTag = $state<string | null>(null);
 	let editTagValue = $state('');
 	let editTagInputEl = $state<HTMLInputElement | null>(null);
+	let renameError = $state<string | null>(null);
 	let deletingTag = $state<string | null>(null);
 	let deletingTagBodyCount = $state(0);
 	let deleteRowEl = $state<HTMLElement | null>(null);
@@ -164,7 +165,10 @@
 	$effect(() => {
 		if (!editingTag) return;
 		function onKeyDown(e: KeyboardEvent) {
-			if (e.key === 'Escape') editingTag = null;
+			if (e.key === 'Escape') {
+				editingTag = null;
+				renameError = null;
+			}
 		}
 		window.addEventListener('keydown', onKeyDown);
 		return () => window.removeEventListener('keydown', onKeyDown);
@@ -392,9 +396,12 @@
 	}
 
 	async function renameTag(oldName: string, newName: string) {
-		editingTag = null;
 		const trimmed = newName.trim();
-		if (!trimmed || trimmed === oldName) return;
+		if (!trimmed || trimmed === oldName) {
+			editingTag = null;
+			renameError = null;
+			return;
+		}
 
 		// A collision with another *existing* tag is a merge, not a plain
 		// rename — require explicit confirmation before it's irreversible.
@@ -406,18 +413,25 @@
 		if (collision) {
 			// Show/send the destination's actual canonical casing, not
 			// whatever was typed — that's what the merge will actually do.
+			editingTag = null;
+			renameError = null;
 			mergeError = null;
 			mergingTag = { oldName, newName: collision.name };
 			return;
 		}
 
+		renameError = null;
 		try {
 			const updated = await tagsApi.rename(oldName, trimmed);
+			editingTag = null;
 			if ($selectedTag === oldName) selectedTag.set(updated.name);
 			await fetchTags();
 			entryChangedTick.update((n) => n + 1);
-		} catch {
-			// conflict or tag not found — ignore
+		} catch (e) {
+			// e.g. body text can't migrate to the new name — keep the
+			// input open and surface the backend's own message instead
+			// of failing silently.
+			renameError = e instanceof ApiError ? e.message : 'Rename failed.';
 		}
 	}
 
@@ -671,7 +685,7 @@
 								>
 							</div>
 							{#if mergeError}
-								<div class="tag-merge-error"><TriangleAlert size={11} />{mergeError}</div>
+								<div class="tag-op-error"><TriangleAlert size={11} />{mergeError}</div>
 							{/if}
 						</div>
 					{:else if deletingTag === tag.name}
@@ -714,10 +728,12 @@
 									} else if (e.key === 'Escape') {
 										e.stopPropagation();
 										editingTag = null;
+										renameError = null;
 									}
 								}}
 								onblur={() => {
 									editingTag = null;
+									renameError = null;
 								}}
 							/>
 							<button
@@ -725,11 +741,15 @@
 								onmousedown={(e) => e.preventDefault()}
 								onclick={() => {
 									editingTag = null;
+									renameError = null;
 								}}
 								use:tooltip={'Cancel'}
 								aria-label="Cancel rename"><X size={13.25} /></button
 							>
 						</div>
+						{#if renameError}
+							<div class="tag-op-error"><TriangleAlert size={11} />{renameError}</div>
+						{/if}
 					{:else}
 						<div class="tag-item">
 							<button
@@ -749,6 +769,7 @@
 									onclick={() => {
 										editingTag = tag.name;
 										editTagValue = tag.name;
+										renameError = null;
 									}}
 									use:tooltip={'Rename tag'}
 									aria-label="Rename tag"><Pencil size={13.25} /></button
@@ -1178,7 +1199,7 @@
 		font-size: var(--font-size-count);
 	}
 
-	.tag-merge-error {
+	.tag-op-error {
 		display: flex;
 		align-items: flex-start;
 		gap: 4px;
@@ -1188,7 +1209,7 @@
 		line-height: 1.35;
 	}
 
-	.tag-merge-error :global(svg) {
+	.tag-op-error :global(svg) {
 		flex-shrink: 0;
 		margin-top: 2px;
 	}
