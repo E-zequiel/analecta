@@ -270,10 +270,10 @@ export const tags = {
 		});
 	},
 
-	rename(name: string, newName: string): Promise<Tag> {
+	rename(name: string, newName: string, merge = false): Promise<Tag> {
 		return apiFetch<Tag>(`/tags/${encodeURIComponent(name)}`, {
 			method: 'PUT',
-			body: JSON.stringify({ new_name: newName }),
+			body: JSON.stringify({ new_name: newName, merge }),
 		});
 	},
 

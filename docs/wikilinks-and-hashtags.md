@@ -193,10 +193,42 @@ by this restriction, regardless of what `new_name` is.
 
 Renaming a content-only tag (no structural row) into an identity that already exists
 *structurally* merges rather than conflicts — the mirror of the already-allowed
-"structural tag renamed into a content-only identity" case above. Two structural tags
-colliding is still blocked (`409`, "already exists") since reconciling two real
-`entry_tags` rows into one is a merge operation this method doesn't implement; a
-content-only identity has no such row to reconcile, so there's nothing to conflict.
+"structural tag renamed into a content-only identity" case above. A content-only
+identity has no `entry_tags` row to reconcile, so there's nothing to conflict.
+
+### Merging two structural tags
+
+Renaming a structural tag into a name that already belongs to *another* structural
+tag is a merge — two curated tags collapsing into one — and is irreversible: once
+merged, there's no record of which entries originally carried which tag. Because of
+that, it's blocked by default (`409`, "already exists"); the caller must pass
+`merge: true` explicitly to proceed. The Sidebar's inline rename detects the
+collision client-side (against the already-loaded tag list) and shows a confirm/cancel
+row instead of committing on Enter, mirroring the delete-confirmation UX — a typo into
+an existing tag name must not silently collapse two categories.
+
+When the merge is confirmed, `rename_tag` reassigns every entry from the old tag's
+`entry_tags` row to the destination's (`INSERT OR IGNORE`, so an entry that already
+carried both tags doesn't collide), deletes the old `tags` row, and rewrites
+`tags_json` with the old name replaced by the destination's name — de-duplicated, so
+an entry that had both ends up listing the destination once, not twice.
+
+**The destination's preexisting display casing always wins**, everywhere the merge
+writes something — the structural row, `tags_json`, and any freshly-migrated body-text
+`#hashtag` occurrences all end up spelled exactly as the destination tag already was,
+not however the new name was typed into the rename input. This matches the
+sticky-first-seen convention used everywhere else in the tag system, and avoids a
+merge silently re-casing an already-established tag vault-wide. If literal body-text
+occurrences of the old identity exist and the destination's name isn't a valid bare
+hashtag token (e.g. merging into a symbol-bearing tag like `C++`), the merge is
+rejected the same way an ordinary rename is (see above) — the body text can't be
+migrated to the destination's name, so nothing is written.
+
+The content-only-into-structural case above does **not** require `merge: true` — a
+content-only identity has no structural row to protect, so there's nothing to
+reconcile. The destination-casing rule doesn't apply there either: the body text is
+migrated to whatever name was given to the rename, not the destination's preexisting
+casing.
 
 ## BACKLINKS / Connections panel
 
