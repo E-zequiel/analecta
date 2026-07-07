@@ -353,6 +353,28 @@ def test_rename_tag_conflict_409(seeded_client: TestClient) -> None:
     assert r.status_code == 409
 
 
+def test_rename_tag_merge_false_still_409s(seeded_client: TestClient) -> None:
+    seeded_client.post("/api/v1/tags", json={"name": "rust"})
+    r = seeded_client.put(
+        "/api/v1/tags/python", json={"new_name": "rust", "merge": False}
+    )
+    assert r.status_code == 409
+
+
+def test_rename_tag_merge_true_succeeds(seeded_client: TestClient) -> None:
+    seeded_client.post("/api/v1/tags", json={"name": "Rust"})
+    r = seeded_client.put(
+        "/api/v1/tags/python", json={"new_name": "rust", "merge": True}
+    )
+    assert r.status_code == 200
+    # Destination's preexisting casing wins, not what was sent as new_name.
+    assert r.json() == {"name": "Rust", "count": 1}
+    tags = seeded_client.get("/api/v1/tags").json()
+    names = [t["name"] for t in tags]
+    assert "python" not in names
+    assert "Rust" in names
+
+
 def test_rename_tag_case_insensitive_lookup(seeded_client: TestClient) -> None:
     # seeded_client's tag is stored as "python"; URL param differs in case.
     r = seeded_client.put("/api/v1/tags/PYTHON", json={"new_name": "py"})

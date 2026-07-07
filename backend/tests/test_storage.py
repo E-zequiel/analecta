@@ -649,6 +649,110 @@ def test_rename_tag_content_only_merges_into_existing_structural_tag(
     assert set(ids) == {structural_id, content_id}
 
 
+# ---------------------------------------------------------------------------
+# rename_tag — merging two structural tags (merge=True)
+# ---------------------------------------------------------------------------
+
+
+def test_rename_tag_merge_blocked_without_flag(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["celeste"])
+    other_id = index.add_entry(_entry(url="https://a.com"))
+    index.update_tags(other_id, ["Azul"])
+
+    with pytest.raises(ValueError, match="already exists"):
+        index.rename_tag("celeste", "azul")  # merge defaults to False
+
+
+def test_rename_tag_merge_migrates_body_hashtag_with_destination_casing(
+    index: VaultIndex, tmp_path: Path
+):
+    """The exact scenario asked about: a mixed-case body hashtag survives a
+    merge into a *preexisting* destination tag, and adopts the destination's
+    canonical casing rather than whatever was typed in the rename box.
+    """
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("The sky is #Celeste today.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.update_tags(entry_id, ["celeste"])
+    index.index_backlinks(entry_id)
+
+    dest_id = index.add_entry(_entry(url="https://a.com"))
+    index.update_tags(dest_id, ["Azul"])  # preexisting, mixed-case display name
+
+    result = index.rename_tag("celeste", "azul", merge=True)
+
+    # Destination's preexisting casing wins in the body text too — not the
+    # "azul" that was actually typed into the rename input.
+    assert "#Azul" in src_file.read_text(encoding="utf-8")
+    assert "#Celeste" not in src_file.read_text(encoding="utf-8")
+    assert result == ("Azul", 2)
+    assert index.get_entry_ids_by_tag("celeste") == []
+    assert set(index.get_entry_ids_by_tag("Azul")) == {entry_id, dest_id}
+
+
+def test_rename_tag_merge_reassigns_entry_tags(index: VaultIndex):
+    a_id = index.add_entry(_entry())
+    index.update_tags(a_id, ["celeste"])
+    b_id = index.add_entry(_entry(url="https://a.com"))
+    index.update_tags(b_id, ["azul"])
+
+    result = index.rename_tag("celeste", "azul", merge=True)
+
+    assert result == ("azul", 2)
+    names = [n for n, _ in index.list_tags()]
+    assert "celeste" not in names
+    assert set(index.get_entry_ids_by_tag("azul")) == {a_id, b_id}
+    entry_a = index.get_entry(a_id)
+    assert entry_a is not None
+    assert json.loads(entry_a.tags_json) == ["azul"]
+
+
+def test_rename_tag_merge_dedupes_entry_with_both_tags(index: VaultIndex):
+    # entry already carries both "celeste" and "azul" structurally.
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["celeste", "azul"])
+
+    index.rename_tag("celeste", "azul", merge=True)
+
+    entry = index.get_entry(entry_id)
+    assert entry is not None
+    assert json.loads(entry.tags_json) == ["azul"]
+    # entry_tags must not have a duplicate/dangling row either.
+    tag_id = index._conn.execute(
+        "SELECT id FROM tags WHERE normalized = 'azul'"
+    ).fetchone()["id"]
+    rows = index._conn.execute(
+        "SELECT COUNT(*) FROM entry_tags WHERE entry_id = ? AND tag_id = ?",
+        (entry_id, tag_id),
+    ).fetchone()
+    assert rows[0] == 1
+
+
+def test_rename_tag_merge_tags_json_uses_destination_casing(index: VaultIndex):
+    """Discriminating case for the tags_json write, not just the return tuple.
+
+    Every other merge test above types the same casing as the destination
+    (or asserts membership via get_entry_ids_by_tag, which resolves through
+    entry_tags, not tags_json) — none of them would catch tags_json ending
+    up with the literally-typed new_name instead of the destination's
+    preexisting display casing. This one types a different casing than the
+    destination on purpose.
+    """
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["celeste"])
+    dest_id = index.add_entry(_entry(url="https://a.com"))
+    index.update_tags(dest_id, ["Azul"])  # preexisting mixed-case display name
+
+    index.rename_tag("celeste", "azul", merge=True)  # typed lowercase
+
+    entry = index.get_entry(entry_id)
+    assert entry is not None
+    assert json.loads(entry.tags_json) == ["Azul"]
+
+
 def test_rename_tag_nonexistent_noop(index: VaultIndex):
     index.rename_tag("nonexistent", "other")  # should not raise
 

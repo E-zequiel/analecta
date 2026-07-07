@@ -38,9 +38,14 @@ class TagRenameIn(BaseModel):
 
     Attributes:
         new_name: Replacement tag name.
+        merge: Required (``True``) to proceed when *new_name*'s identity
+            already exists as another structural tag — an explicit,
+            irreversible merge of two curated tags. Defaults to ``False``,
+            which raises a 409 on collision instead of silently merging.
     """
 
     new_name: str
+    merge: bool = False
 
 
 class TagBodyCountOut(BaseModel):
@@ -97,17 +102,25 @@ async def rename_tag(
 
     Args:
         name: Current tag name (URL-encoded).
-        body: New name.
+        body: New name, and whether to merge if it collides.
         index: Injected VaultIndex singleton.
 
     Returns:
-        Updated tag.
+        Updated tag — for a merge, ``name`` is the destination's
+        preexisting canonical casing, which may differ from
+        ``body.new_name``.
 
     Raises:
-        HTTPException: 409 if *new_name* already exists.
+        HTTPException: 409 if *new_name* already exists as another
+            structural tag and ``body.merge`` isn't ``True``, or if
+            body-text occurrences of *name* exist but can't be migrated to
+            the resolved destination name (see
+            :meth:`~analecta.storage.index.VaultIndex.rename_tag`).
     """
     try:
-        result = await asyncio.to_thread(index.rename_tag, name, body.new_name)
+        result = await asyncio.to_thread(
+            index.rename_tag, name, body.new_name, merge=body.merge
+        )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if result is None:

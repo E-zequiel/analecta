@@ -148,6 +148,8 @@
 	let deletingTag = $state<string | null>(null);
 	let deletingTagBodyCount = $state(0);
 	let deleteRowEl = $state<HTMLElement | null>(null);
+	let mergingTag = $state<{ oldName: string; newName: string } | null>(null);
+	let mergeRowEl = $state<HTMLElement | null>(null);
 
 	$effect(() => {
 		if (newTagExpanded && newTagInputEl) newTagInputEl.focus();
@@ -173,6 +175,22 @@
 		}
 		function onMouseDown(e: MouseEvent) {
 			if (deleteRowEl && !deleteRowEl.contains(e.target as Node)) deletingTag = null;
+		}
+		window.addEventListener('keydown', onKeyDown);
+		window.addEventListener('mousedown', onMouseDown);
+		return () => {
+			window.removeEventListener('keydown', onKeyDown);
+			window.removeEventListener('mousedown', onMouseDown);
+		};
+	});
+
+	$effect(() => {
+		if (!mergingTag) return;
+		function onKeyDown(e: KeyboardEvent) {
+			if (e.key === 'Escape') mergingTag = null;
+		}
+		function onMouseDown(e: MouseEvent) {
+			if (mergeRowEl && !mergeRowEl.contains(e.target as Node)) mergingTag = null;
 		}
 		window.addEventListener('keydown', onKeyDown);
 		window.addEventListener('mousedown', onMouseDown);
@@ -369,13 +387,43 @@
 		editingTag = null;
 		const trimmed = newName.trim();
 		if (!trimmed || trimmed === oldName) return;
+
+		// A collision with another *existing* tag is a merge, not a plain
+		// rename — require explicit confirmation before it's irreversible.
+		const collision = tagList.find(
+			(t) =>
+				t.name.toLowerCase() === trimmed.toLowerCase() &&
+				t.name.toLowerCase() !== oldName.toLowerCase()
+		);
+		if (collision) {
+			// Show/send the destination's actual canonical casing, not
+			// whatever was typed — that's what the merge will actually do.
+			mergingTag = { oldName, newName: collision.name };
+			return;
+		}
+
 		try {
-			await tagsApi.rename(oldName, trimmed);
-			if ($selectedTag === oldName) selectedTag.set(trimmed);
+			const updated = await tagsApi.rename(oldName, trimmed);
+			if ($selectedTag === oldName) selectedTag.set(updated.name);
 			await fetchTags();
 			entryChangedTick.update((n) => n + 1);
 		} catch {
 			// conflict or tag not found — ignore
+		}
+	}
+
+	async function confirmMergeTag() {
+		if (!mergingTag) return;
+		const { oldName, newName } = mergingTag;
+		mergingTag = null;
+		try {
+			const updated = await tagsApi.rename(oldName, newName, true);
+			if ($selectedTag === oldName) selectedTag.set(updated.name);
+			await fetchTags();
+			entryChangedTick.update((n) => n + 1);
+		} catch {
+			// merge rejected (e.g. body text can't migrate to the
+			// destination's name) — ignore, same as renameTag above.
 		}
 	}
 
@@ -587,7 +635,28 @@
 
 			<div class="section-entries tags-section-entries">
 				{#each displayTagList as tag (tag.name)}
-					{#if deletingTag === tag.name}
+					{#if mergingTag?.oldName === tag.name}
+						<div class="tag-delete-row" bind:this={mergeRowEl}>
+							<span class="tag-delete-label"
+								>Merge <strong>{tag.name}</strong> into
+								<strong>{mergingTag.newName}</strong>?</span
+							>
+							<button
+								class="tag-action-btn tag-delete-confirm"
+								onclick={() => confirmMergeTag()}
+								use:tooltip={'Confirm merge'}
+								aria-label="Confirm merge">✓</button
+							>
+							<button
+								class="tag-action-btn"
+								onclick={() => {
+									mergingTag = null;
+								}}
+								use:tooltip={'Cancel'}
+								aria-label="Cancel merge"><X size={13.25} /></button
+							>
+						</div>
+					{:else if deletingTag === tag.name}
 						<div class="tag-delete-row" bind:this={deleteRowEl}>
 							<span class="tag-delete-label">Delete <strong>{tag.name}</strong>?</span>
 							{#if deletingTagBodyCount > 0}

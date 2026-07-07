@@ -854,48 +854,74 @@ class VaultIndex:
         return canonical, len(self.get_entry_ids_by_tag(canonical))
 
     @_synchronized
-    def rename_tag(self, old_name: str, new_name: str) -> tuple[str, int] | None:
-        """Rename a tag globally.
+    def rename_tag(
+        self, old_name: str, new_name: str, *, merge: bool = False
+    ) -> tuple[str, int] | None:
+        """Rename a tag globally, optionally merging into an existing tag.
 
         Updates the tags table and re-serialises ``tags_json`` in all
         affected entries. The destination is matched case-insensitively
         against existing *structural* tags only — renaming into an
-        identity that today exists only as a content hashtag is allowed;
-        it simply lets the renamed tag unify with those content
-        occurrences going forward.
+        identity that today exists only as a content hashtag is allowed
+        unconditionally; it simply lets the renamed tag unify with those
+        content occurrences going forward. Renaming into an identity that
+        already exists as *another structural tag* is a merge — two
+        curated tags collapsing into one, irreversible — and requires
+        ``merge=True``; without it, raises instead of silently combining
+        them (a typo into an existing tag name must not collapse two
+        categories by accident).
+
+        When merging two structural tags, the **destination's pre-existing
+        display casing wins** (matches the sticky-first-seen convention
+        used everywhere else) — *new_name*'s own casing is only used to
+        *find* the destination (case-insensitively), never to overwrite it.
+        Every entry carrying the old tag is reassigned to the destination's
+        ``entry_tags`` row (``INSERT OR IGNORE`` so an entry already
+        carrying both tags doesn't collide), the old ``tags`` row is
+        deleted, and ``tags_json`` is rewritten with the old name replaced
+        by the destination's canonical name, de-duplicated (an entry that
+        already had both tags must not end up with the destination name
+        listed twice).
 
         Also migrates literal ``#hashtag`` occurrences in entry bodies that
         share *old_name*'s identity — unlike :meth:`delete_tag`, which
         neutralizes survivor text (backticks it, since deletion should
-        sever the identity), rename rewrites ``#old`` to ``#new_name``
-        in place via
+        sever the identity), rename rewrites ``#old`` to the destination
+        tag's canonical name in place via
         :func:`~analecta.markdown.backlinks.rename_hashtag_occurrences`, so
         the body text keeps meaning the same tag instead of splitting into
         two identities after the rename. Works even when *old_name* has no
         structural row at all (a purely content-hashtag identity, as shown
         in the Sidebar's true-union tag list) — same content-only handling
-        as :meth:`delete_tag`.
+        as :meth:`delete_tag`; that path is unaffected by *merge* since a
+        content-only identity has no structural row to conflict with.
 
         Args:
             old_name: Current tag name. Matched case-insensitively against
                 structural tags; matched via
                 :func:`~analecta.markdown.hashtags.normalize_tag` against
                 content hashtags.
-            new_name: Replacement tag name.
+            new_name: Replacement tag name, or the (case-insensitive)
+                target of a merge.
+            merge: Required to proceed when *new_name*'s identity already
+                exists as another structural tag. Ignored otherwise.
 
         Returns:
-            Tuple of ``(new_name, count)`` — the renamed tag's current
-            structural+hashtag union count, computed after both the
-            structural update and any body-text migration — or ``None`` if
-            neither a structural tag nor a content hashtag with
-            *old_name*'s identity exists (no-op).
+            Tuple of ``(canonical_name, count)`` — *canonical_name* is
+            *new_name* as given, unless this was a merge, in which case
+            it's the destination's pre-existing display name. *count* is
+            the renamed tag's current structural+hashtag union count,
+            computed after both the structural update and any body-text
+            migration — or ``None`` if neither a structural tag nor a
+            content hashtag with *old_name*'s identity exists (no-op).
 
         Raises:
             ValueError: If a structural tag with *new_name*'s
-                case-insensitive identity already exists, or if body-text
-                occurrences of *old_name* exist but *new_name* isn't a
-                valid bare hashtag token (contains symbols or spaces) and
-                so can't be migrated.
+                case-insensitive identity already exists and *merge* is
+                not ``True``, or if body-text occurrences of *old_name*
+                exist but the resolved canonical name isn't a valid bare
+                hashtag token (contains symbols or spaces) and so can't be
+                migrated.
         """
         from analecta.markdown.backlinks import (
             is_valid_hashtag_literal,
@@ -912,20 +938,24 @@ class VaultIndex:
             return None
 
         new_key = new_name.casefold()
+        dest_row = None
         if tag_row is not None:
             tag_id = tag_row["id"]
-            if self._conn.execute(
-                "SELECT id FROM tags WHERE normalized = ? AND id != ?",
+            dest_row = self._conn.execute(
+                "SELECT id, name FROM tags WHERE normalized = ? AND id != ?",
                 (new_key, tag_id),
-            ).fetchone():
+            ).fetchone()
+            if dest_row is not None and not merge:
                 raise ValueError(f"Tag '{new_name}' already exists")
 
-        if hashtag_entry_ids and not is_valid_hashtag_literal(new_name):
+        canonical_name = dest_row["name"] if dest_row is not None else new_name
+
+        if hashtag_entry_ids and not is_valid_hashtag_literal(canonical_name):
             noun = (
                 "entry contains" if len(hashtag_entry_ids) == 1 else "entries contain"
             )
             raise ValueError(
-                f"Cannot rename to '{new_name}': {len(hashtag_entry_ids)} "
+                f"Cannot rename to '{canonical_name}': {len(hashtag_entry_ids)} "
                 f"{noun} '#{old_name}' as literal body text, which can't be "
                 "migrated to a name with symbols or spaces. Edit the body "
                 "text manually first."
@@ -939,20 +969,36 @@ class VaultIndex:
                     "SELECT entry_id FROM entry_tags WHERE tag_id = ?", (tag_id,)
                 ).fetchall()
             ]
-            self._conn.execute(
-                "UPDATE tags SET name = ?, normalized = ? WHERE id = ?",
-                (new_name, new_key, tag_id),
-            )
+            if dest_row is None:
+                self._conn.execute(
+                    "UPDATE tags SET name = ?, normalized = ? WHERE id = ?",
+                    (new_name, new_key, tag_id),
+                )
+            else:
+                dest_id = dest_row["id"]
+                for eid in entry_ids:
+                    self._conn.execute(
+                        "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id)"
+                        " VALUES (?, ?)",
+                        (eid, dest_id),
+                    )
+                self._conn.execute("DELETE FROM entry_tags WHERE tag_id = ?", (tag_id,))
+                self._conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
             now = _now()
             for eid in entry_ids:
                 row = self._conn.execute(
                     "SELECT tags_json FROM entries WHERE id = ?", (eid,)
                 ).fetchone()
                 if row:
-                    tags = [
-                        new_name if t.casefold() == old_key else t
-                        for t in json.loads(row["tags_json"])
-                    ]
+                    tags: list[str] = []
+                    seen: set[str] = set()
+                    for t in json.loads(row["tags_json"]):
+                        replacement = canonical_name if t.casefold() == old_key else t
+                        key = replacement.casefold()
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        tags.append(replacement)
                     self._conn.execute(
                         "UPDATE entries SET tags_json = ?, updated_at = ? WHERE id = ?",
                         (json.dumps(tags, ensure_ascii=False), now, eid),
@@ -970,13 +1016,13 @@ class VaultIndex:
                     continue
                 markdown = file_path.read_text(encoding="utf-8")
                 rewritten, changed = rename_hashtag_occurrences(
-                    markdown, target_normalized, new_name
+                    markdown, target_normalized, canonical_name
                 )
                 if changed:
                     file_path.write_text(rewritten, encoding="utf-8")
                     self.index_backlinks(eid)
 
-        return new_name, len(self.get_entry_ids_by_tag(new_name))
+        return canonical_name, len(self.get_entry_ids_by_tag(canonical_name))
 
     @_synchronized
     def delete_tag(self, name: str) -> None:
