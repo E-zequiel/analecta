@@ -1,8 +1,9 @@
 """Backlink reference extraction from Markdown.
 
 Parses ``[[wikilinks]]``, inline ``#hashtag`` references, and the ``linked:``
-YAML frontmatter field, capturing the nearest preceding heading and a
-±60-character context snippet per occurrence.
+YAML frontmatter field, capturing the enclosing heading (a ref inside a
+heading line belongs to that same heading) and a ±60-character context
+snippet per occurrence.
 """
 
 import re
@@ -62,7 +63,9 @@ def parse_refs(markdown: str) -> list[ParsedRef]:
 
     Reads the ``linked:`` list from YAML frontmatter (if present), then
     skips frontmatter and parses ``[[wikilinks]]`` and ``#hashtags`` from
-    the body. Skips code-fence blocks, inline code spans, and heading lines.
+    the body. Skips code-fence blocks and inline code spans. A heading
+    line's ``#`` marker is excluded, but the heading's own text is parsed
+    like any other line.
 
     Args:
         markdown: Raw Markdown text to parse.
@@ -112,7 +115,9 @@ def parse_refs(markdown: str) -> list[ParsedRef]:
         heading_match = _HEADING_RE.match(line)
         if heading_match:
             current_heading = heading_match.group(1).strip()
-            continue
+            # Exclude only the marker; parse the heading's own text below,
+            # tagged with the heading it just opened (self-reference).
+            line = heading_match.group(1)
 
         masked_line = _mask_inline_code(line)
 
@@ -131,7 +136,7 @@ def parse_refs(markdown: str) -> list[ParsedRef]:
                 )
             )
 
-        # Hashtags: #word (inline, not heading-style)
+        # Hashtags: #word (the heading's own marker was already excluded above)
         for m in _HASHTAG_RE.finditer(masked_line):
             start, end = m.start(), m.end()
             tag_name = m.group(1)

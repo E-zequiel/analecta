@@ -113,8 +113,22 @@ class TestParseRefs:
         refs = parse_refs("Intro text with [[Alpha]] before any heading.\n")
         assert refs[0].heading is None
 
-    def test_heading_line_not_parsed(self) -> None:
+    def test_wikilink_in_heading_text_resolves(self) -> None:
         refs = parse_refs("## [[Not a backlink]] heading\n")
+        assert len(refs) == 1
+        assert refs[0].target_text == "not a backlink"
+        assert refs[0].heading == "[[Not a backlink]] heading"
+
+    def test_hashtag_in_heading_text_resolves(self) -> None:
+        refs = parse_refs("## My favorite #topic\n")
+        assert len(refs) == 1
+        r = refs[0]
+        assert r.target_text == "topic"
+        assert r.is_hashtag is True
+        assert r.heading == "My favorite #topic"
+
+    def test_heading_marker_itself_not_a_hashtag(self) -> None:
+        refs = parse_refs("# heading\n\nBody text.\n")
         assert refs == []
 
     def test_code_fence_skipped(self) -> None:

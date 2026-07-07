@@ -67,8 +67,9 @@ entry point. Per line, it:
 1. Masks inline-code spans (blanks them out, preserving character offsets) so nothing
    inside backticks is ever matched.
 2. Tracks whether it's inside a fenced code block and skips those lines entirely.
-3. Tracks the current heading (for context in the BACKLINKS panel) and skips heading
-   lines themselves.
+3. Tracks the current heading (for context in the BACKLINKS panel). Only the
+   heading line's own `#`/`##`/... marker is excluded — the heading's text is
+   parsed like any other line, tagged with the heading it just opened.
 4. Matches `[[wikilinks]]` and `#hashtags` against the remaining text.
 
 It also reads a `linked:` list from the entry's YAML frontmatter, if present, and
@@ -77,8 +78,9 @@ manual "connect entries" feature (search-to-connect dialog, Cable icon) particip
 in the same backlink graph as inline wikilinks — a frontmatter-declared connection and
 a typed `[[wikilink]]` are indistinguishable once indexed.
 
-Every reference captures: the matched text, whether it's a hashtag, the nearest
-preceding heading, and up to 60 characters of surrounding context on each side (used
+Every reference captures: the matched text, whether it's a hashtag, the enclosing
+heading (a ref inside a heading line belongs to that same heading), and up to 60
+characters of surrounding context on each side (used
 for the BACKLINKS panel's preview snippet).
 
 `VaultIndex.index_backlinks(entry_id)` re-reads the entry's file, calls `parse_refs`,
