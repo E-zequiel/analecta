@@ -169,8 +169,34 @@ structural tag whose name has no valid hashtag form (symbols/spaces, e.g. `C++`)
 touches any body text on delete — see `get_body_hashtag_entry_ids`'s collision-avoidance
 rule above.
 
-This only happens on **delete**. `rename_tag` deliberately leaves body text alone —
-see Known limitations below.
+### Renaming a tag migrates literal body text too
+
+The same resurrection risk exists on rename: if a renamed tag also appears as literal
+`#hashtag` text in an entry's body, leaving that text alone would let the old
+(lowercase) identity reappear in `list_tags()` as a separate tag after the rename —
+a previously-unified tag splitting into two. Unlike delete, rename must preserve the
+body text's *continuity* with the tag rather than sever it, so `rename_tag` rewrites
+every live `#old_name` occurrence sharing the renamed identity to `#new_name` in
+place (`rename_hashtag_occurrences`), then re-indexes the affected entries. The
+literal text changes here — unlike the neutralize case, where only the surrounding
+markup changes — because the goal is migration, not severance. This also applies to
+a tag with no structural row at all (a purely content-hashtag identity): renaming it
+rewrites every occurrence the same way, with no structural table involved.
+
+`new_name` can only be migrated into body text if it's itself a valid bare hashtag
+token (a leading letter, then letters/digits/underscores — no symbols or spaces). If
+literal occurrences of the old identity exist in any entry's body and `new_name`
+doesn't qualify (e.g. renaming into `C++`), the rename is rejected outright (`409`)
+instead of silently leaving a split behind — edit the body text manually first, then
+retry the rename. A rename with no literal body-text occurrences at all is unaffected
+by this restriction, regardless of what `new_name` is.
+
+Renaming a content-only tag (no structural row) into an identity that already exists
+*structurally* merges rather than conflicts — the mirror of the already-allowed
+"structural tag renamed into a content-only identity" case above. Two structural tags
+colliding is still blocked (`409`, "already exists") since reconciling two real
+`entry_tags` rows into one is a merge operation this method doesn't implement; a
+content-only identity has no such row to reconcile, so there's nothing to conflict.
 
 ## BACKLINKS / Connections panel
 
@@ -222,17 +248,6 @@ name, and vice versa.
   re-normalizes independently for the actual query — but a rare edge case (e.g. a
   hashtag with doubled or trailing underscores) can show the un-collapsed form in the
   TAGS-dashboard header rather than backend's fully normalized display.
-- `rename_tag` does not yet touch literal `#hashtag` occurrences in entry bodies. If a
-  renamed tag also appears as literal text in any entry (the one being renamed or a
-  different one), that occurrence keeps referencing the old (lowercase) identity and
-  reappears in `list_tags()` as a separate tag after the rename — a previously-unified
-  tag can split into two. `delete_tag` addresses the equivalent resurrection problem for
-  deletion (see above) by neutralizing survivor text, but that move is wrong for
-  rename — rename wants the body text to keep meaning the same tag, migrated to the new
-  name, and backticking would sever that continuity instead of preserving it. A rename
-  fix is planned as the immediate next step of this same effort, with a mechanism of its
-  own (not delete's neutralize-via-backtick) — this bullet will be replaced once it
-  ships rather than staying open-ended.
 
 ## See also
 

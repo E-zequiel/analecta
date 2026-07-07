@@ -11,7 +11,12 @@ from starlette.testclient import TestClient
 from analecta.api.events import EventBus
 from analecta.api.routes.entries import router as entries_router
 from analecta.config import AppConfig
-from analecta.markdown.backlinks import neutralize_hashtag_occurrences, parse_refs
+from analecta.markdown.backlinks import (
+    is_valid_hashtag_literal,
+    neutralize_hashtag_occurrences,
+    parse_refs,
+    rename_hashtag_occurrences,
+)
 from analecta.storage.index import EntryRecord, VaultIndex
 
 # ---------------------------------------------------------------------------
@@ -324,6 +329,122 @@ class TestNeutralizeHashtagOccurrences:
         rewritten, count = neutralize_hashtag_occurrences(markdown, "python")
         assert rewritten == markdown
         assert count == 0
+
+
+class TestRenameHashtagOccurrences:
+    def test_replaces_matching_occurrence(self) -> None:
+        rewritten, count = rename_hashtag_occurrences(
+            "Filed under #python today.\n", "python", "py"
+        )
+        assert rewritten == "Filed under #py today.\n"
+        assert count == 1
+
+    def test_no_match_returns_unchanged(self) -> None:
+        markdown = "Filed under #rust today.\n"
+        rewritten, count = rename_hashtag_occurrences(markdown, "python", "py")
+        assert rewritten == markdown
+        assert count == 0
+
+    def test_renamed_occurrence_parses_as_the_new_identity(self) -> None:
+        markdown = "Filed under #python today.\n"
+        rewritten, count = rename_hashtag_occurrences(markdown, "python", "py")
+        assert count == 1
+        refs = parse_refs(rewritten)
+        assert len(refs) == 1
+        assert refs[0].target_text == "py"
+
+    def test_multiple_occurrences_same_line(self) -> None:
+        rewritten, count = rename_hashtag_occurrences(
+            "#python and #python again.\n", "python", "py"
+        )
+        assert rewritten == "#py and #py again.\n"
+        assert count == 2
+
+    def test_multiple_occurrences_across_lines(self) -> None:
+        markdown = "First #python line.\nSecond #python line.\n"
+        rewritten, count = rename_hashtag_occurrences(markdown, "python", "py")
+        assert rewritten == "First #py line.\nSecond #py line.\n"
+        assert count == 2
+
+    def test_only_matching_identity_replaced(self) -> None:
+        rewritten, count = rename_hashtag_occurrences(
+            "See #python and #rust.\n", "python", "py"
+        )
+        assert rewritten == "See #py and #rust.\n"
+        assert count == 1
+
+    def test_code_fence_skipped(self) -> None:
+        markdown = "Before #python.\n```\n#python\n```\nAfter #python.\n"
+        rewritten, count = rename_hashtag_occurrences(markdown, "python", "py")
+        assert count == 2
+        assert "```\n#python\n```" in rewritten
+
+    def test_already_inline_code_left_untouched(self) -> None:
+        markdown = "Try `#python` literally.\n"
+        rewritten, count = rename_hashtag_occurrences(markdown, "python", "py")
+        assert rewritten == markdown
+        assert count == 0
+
+    def test_hashtag_in_heading_text_replaced_marker_preserved(self) -> None:
+        rewritten, count = rename_hashtag_occurrences(
+            "## My favorite #topic\n", "topic", "subject"
+        )
+        assert rewritten == "## My favorite #subject\n"
+        assert count == 1
+
+    def test_original_casing_discarded_for_new_name(self) -> None:
+        # Unlike delete's neutralize (which preserves the typed casing under
+        # backticks), rename replaces the whole span — the migrated identity
+        # is always spelled exactly as `new_name` was given, regardless of
+        # how the old hashtag was originally cased in this file.
+        rewritten, count = rename_hashtag_occurrences(
+            "Filed under #PYTHON today.\n", "python", "py"
+        )
+        assert rewritten == "Filed under #py today.\n"
+        assert count == 1
+
+    def test_preserves_crlf_line_endings(self) -> None:
+        rewritten, count = rename_hashtag_occurrences(
+            "Filed under #python.\r\nNext line.\r\n", "python", "py"
+        )
+        assert rewritten == "Filed under #py.\r\nNext line.\r\n"
+        assert count == 1
+
+    def test_frontmatter_untouched(self) -> None:
+        markdown = (
+            "---\ntitle: Test\nurl: https://example.com\n---\n\nFiled under #python.\n"
+        )
+        rewritten, count = rename_hashtag_occurrences(markdown, "python", "py")
+        assert rewritten.startswith(
+            "---\ntitle: Test\nurl: https://example.com\n---\n\n"
+        )
+        assert count == 1
+
+    def test_no_occurrences_leaves_document_byte_identical(self) -> None:
+        markdown = "Nothing to see here.\n\n## Heading\n\nMore text.\n"
+        rewritten, count = rename_hashtag_occurrences(markdown, "python", "py")
+        assert rewritten == markdown
+        assert count == 0
+
+
+class TestIsValidHashtagLiteral:
+    def test_plain_snake_case_valid(self) -> None:
+        assert is_valid_hashtag_literal("python_dev") is True
+
+    def test_mixed_case_valid(self) -> None:
+        assert is_valid_hashtag_literal("PythonDev") is True
+
+    def test_leading_digit_invalid(self) -> None:
+        assert is_valid_hashtag_literal("2026_review") is False
+
+    def test_symbols_invalid(self) -> None:
+        assert is_valid_hashtag_literal("C++") is False
+
+    def test_space_invalid(self) -> None:
+        assert is_valid_hashtag_literal("machine learning") is False
+
+    def test_empty_invalid(self) -> None:
+        assert is_valid_hashtag_literal("") is False
 
 
 # ---------------------------------------------------------------------------

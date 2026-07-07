@@ -7,6 +7,7 @@ snippet per occurrence.
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,6 +15,7 @@ from analecta.markdown.hashtags import normalize_tag
 
 _WIKILINK_RE = re.compile(r"\[\[([^\[\]|]+?)(?:\|[^\[\]]+?)?\]\]")
 _HASHTAG_RE = re.compile(r"(?<!\S)#([A-Za-z][A-Za-z0-9_]*)(?![A-Za-z0-9_])")
+_HASHTAG_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _HEADING_RE = re.compile(r"^#{1,6}\s+(.+)")
 _FENCE_RE = re.compile(r"^```")
 _FRONTMATTER_RE = re.compile(r"^---\n[\s\S]*?\n---\n", re.MULTILINE)
@@ -154,28 +156,32 @@ def parse_refs(markdown: str) -> list[ParsedRef]:
     return fm_refs + refs
 
 
-def neutralize_hashtag_occurrences(
-    markdown: str, target_normalized: str
+def _rewrite_hashtag_body(
+    markdown: str,
+    target_normalized: str,
+    replace: Callable[[str], str],
 ) -> tuple[str, int]:
-    """Wrap every live ``#hashtag`` matching *target_normalized* in backticks.
+    """Shared line-traversal for rewriting every live ``#hashtag`` occurrence.
 
-    Used when a tag is deleted: backticking demotes the literal body text to
-    inline code, which :func:`parse_refs` already skips (via
-    :func:`_mask_inline_code`), so the tag cannot resurrect itself on the
-    next :meth:`~analecta.storage.index.VaultIndex.index_backlinks` call.
-    Frontmatter, fenced code blocks, and already-masked inline code are left
-    untouched. A heading's own marker is preserved and only its text is
-    scanned — including it, since a heading-embedded hashtag (see
-    ``test_hashtag_in_heading_text_resolves``) is just as live as any other
-    and must not become a resurrection loophole.
+    Walks *markdown* exactly like :func:`parse_refs` — respecting
+    frontmatter, fenced code blocks, heading markers, and inline code — and
+    replaces each occurrence matching *target_normalized* with
+    ``replace(original_span)``, where *original_span* is the matched text
+    as typed (e.g. ``"#Python"``). Backs both
+    :func:`neutralize_hashtag_occurrences` (delete) and
+    :func:`rename_hashtag_occurrences` (rename) so "what counts as a live
+    occurrence" can never drift between the two mechanisms, or from what
+    :func:`parse_refs` itself would index.
 
     Args:
         markdown: Raw Markdown text to rewrite.
         target_normalized: Normalized (:func:`normalize_tag`) hashtag
-            identity to neutralize.
+            identity to match.
+        replace: Called with each matched span's original text; its return
+            value replaces that span.
 
     Returns:
-        Tuple of ``(rewritten_markdown, occurrences_wrapped)``. Returns
+        Tuple of ``(rewritten_markdown, occurrences_changed)``. Returns
         *markdown* unchanged with ``0`` if no live occurrence matches.
     """
     # .match (not .sub) anchors at position 0, so a mid-document ``---``
@@ -222,9 +228,82 @@ def neutralize_hashtag_occurrences(
         ]
         for m in reversed(matches):
             start, end = m.start(), m.end()
-            content = f"{content[:start]}`{content[start:end]}`{content[end:]}"
+            content = f"{content[:start]}{replace(content[start:end])}{content[end:]}"
         count += len(matches)
 
         out_lines.append(f"{marker}{content}{eol}")
 
     return frontmatter + "".join(out_lines), count
+
+
+def neutralize_hashtag_occurrences(
+    markdown: str, target_normalized: str
+) -> tuple[str, int]:
+    """Wrap every live ``#hashtag`` matching *target_normalized* in backticks.
+
+    Used when a tag is deleted: backticking demotes the literal body text to
+    inline code, which :func:`parse_refs` already skips (via
+    :func:`_mask_inline_code`), so the tag cannot resurrect itself on the
+    next :meth:`~analecta.storage.index.VaultIndex.index_backlinks` call.
+    Includes heading-embedded hashtags too — a heading-embedded hashtag
+    (see ``test_hashtag_in_heading_text_resolves``) is just as live as any
+    other and must not become a resurrection loophole.
+
+    Args:
+        markdown: Raw Markdown text to rewrite.
+        target_normalized: Normalized (:func:`normalize_tag`) hashtag
+            identity to neutralize.
+
+    Returns:
+        Tuple of ``(rewritten_markdown, occurrences_wrapped)``. Returns
+        *markdown* unchanged with ``0`` if no live occurrence matches.
+    """
+    return _rewrite_hashtag_body(markdown, target_normalized, lambda span: f"`{span}`")
+
+
+def rename_hashtag_occurrences(
+    markdown: str, target_normalized: str, new_name: str
+) -> tuple[str, int]:
+    """Replace every live ``#hashtag`` matching *target_normalized* with ``#new_name``.
+
+    Used when a tag is renamed: unlike delete's neutralize-via-backtick,
+    rename must preserve the body text's continuity with the tag identity
+    rather than sever it, so the literal occurrence is migrated to the new
+    name instead of being demoted to inline code. Callers must first check
+    :func:`is_valid_hashtag_literal` on *new_name* — this function does not
+    validate it, and a *new_name* containing symbols or spaces would produce
+    a span that no longer parses as a hashtag on the next
+    :func:`parse_refs` pass.
+
+    Args:
+        markdown: Raw Markdown text to rewrite.
+        target_normalized: Normalized (:func:`normalize_tag`) hashtag
+            identity to migrate.
+        new_name: Literal replacement text (without the leading ``#``).
+
+    Returns:
+        Tuple of ``(rewritten_markdown, occurrences_changed)``. Returns
+        *markdown* unchanged with ``0`` if no live occurrence matches.
+    """
+    return _rewrite_hashtag_body(
+        markdown, target_normalized, lambda _span: f"#{new_name}"
+    )
+
+
+def is_valid_hashtag_literal(name: str) -> bool:
+    """Return whether *name* could appear verbatim as ``#name`` and parse as live.
+
+    Mirrors :data:`_HASHTAG_RE`'s capture-group charset exactly (a leading
+    letter, then letters/digits/underscore), so a ``True`` result guarantees
+    :func:`rename_hashtag_occurrences`'s output round-trips through
+    :func:`parse_refs`. Used to gate whether :meth:`VaultIndex.rename_tag`
+    can migrate literal body-text occurrences to *name*, or must reject the
+    rename instead.
+
+    Args:
+        name: Candidate tag name — typically ``rename_tag``'s *new_name*.
+
+    Returns:
+        ``True`` if *name* is a valid bare hashtag token.
+    """
+    return bool(_HASHTAG_NAME_RE.fullmatch(name))

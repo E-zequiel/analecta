@@ -620,6 +620,35 @@ def test_rename_tag_into_content_only_identity_allowed(
     assert set(ids) == {structural_id, content_id}
 
 
+def test_rename_tag_content_only_merges_into_existing_structural_tag(
+    index: VaultIndex, tmp_path: Path
+):
+    """Mirror of test_rename_tag_into_content_only_identity_allowed.
+
+    A content-only tag ("python", no structural row) renamed into an
+    identity that already exists structurally ("rust") merges rather than
+    conflicting — unlike two structural tags colliding (blocked with a
+    ValueError), there's no second entry_tags/tags_json row to reconcile
+    here, so this is the same "allowed unification" the structural ->
+    content-only direction already gets, just mirrored.
+    """
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    content_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(content_id)
+
+    structural_id = index.add_entry(_entry(url="https://a.com"))
+    index.update_tags(structural_id, ["rust"])
+
+    index.rename_tag("python", "rust")  # must not raise
+
+    assert "#rust" in src_file.read_text(encoding="utf-8")
+    ids = index.get_entry_ids_by_tag("rust")
+    assert set(ids) == {structural_id, content_id}
+
+
 def test_rename_tag_nonexistent_noop(index: VaultIndex):
     index.rename_tag("nonexistent", "other")  # should not raise
 
@@ -650,6 +679,155 @@ def test_rename_tag_case_insensitive_old_name_lookup(index: VaultIndex):
     tags = json.loads(entry.tags_json)
     assert "py" in tags
     assert "Python" not in tags
+
+
+# ---------------------------------------------------------------------------
+# rename_tag — migrates surviving body-text #hashtag occurrences
+# ---------------------------------------------------------------------------
+
+
+def test_rename_tag_migrates_body_hashtag_on_same_entry(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.update_tags(entry_id, ["python"])
+    index.index_backlinks(entry_id)
+
+    index.rename_tag("python", "py")
+
+    assert "#py" in src_file.read_text(encoding="utf-8")
+    assert "#python" not in src_file.read_text(encoding="utf-8")
+    names = [n for n, _ in index.list_tags()]
+    assert "py" in names
+    assert "python" not in names
+
+
+def test_rename_tag_closes_the_split_across_entries(index: VaultIndex, tmp_path: Path):
+    """The core regression: rename must not let a tag split into two identities.
+
+    Entry A carries the tag structurally; entry B only mentions it as a
+    literal ``#python`` in its body. Before this fix, renaming via A's
+    structural row left B's body text pointing at the old (lowercase)
+    identity, so it would reappear in list_tags() as a separate tag.
+    """
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    body_file = vault / "article.md"
+    body_file.write_text("Filed under #python.\n", encoding="utf-8")
+
+    structural_id = index.add_entry(_entry())
+    index.update_tags(structural_id, ["python"])
+
+    content_id = index.add_entry(_entry(url="https://b.com", file_path=str(body_file)))
+    index.index_backlinks(content_id)
+
+    result = index.rename_tag("python", "py")
+
+    assert "#py" in body_file.read_text(encoding="utf-8")
+    assert index.get_entry_ids_by_tag("python") == []
+    assert set(index.get_entry_ids_by_tag("py")) == {structural_id, content_id}
+    # The returned count reflects the migration, not just the structural
+    # side — computed after both the structural update and the body rewrite.
+    assert result == ("py", 2)
+
+
+def test_rename_tag_content_only_migrates_body_text(index: VaultIndex, tmp_path: Path):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+
+    # No structural row exists at all for "python".
+    row = index._conn.execute(
+        "SELECT id FROM tags WHERE normalized = 'python'"
+    ).fetchone()
+    assert row is None
+
+    result = index.rename_tag("python", "py")
+
+    assert "#py" in src_file.read_text(encoding="utf-8")
+    assert result == ("py", 1)
+    pairs = dict(index.list_tags())
+    assert pairs.get("py") == 1
+    assert "python" not in pairs
+
+
+def test_rename_tag_symbol_bearing_old_name_does_not_touch_unrelated_hashtag(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Written in #c.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+
+    structural_id = index.add_entry(_entry(url="https://a.com"))
+    index.update_tags(structural_id, ["C++"])
+
+    index.rename_tag("C++", "cpp")
+
+    # The unrelated "#c" content hashtag in article.md must survive untouched.
+    assert src_file.read_text(encoding="utf-8") == "Written in #c.\n"
+    assert index.get_entry_ids_by_tag("c") == [entry_id]
+    names = [n for n, _ in index.list_tags()]
+    assert "cpp" in names
+    assert "C++" not in names
+
+
+def test_rename_tag_no_body_occurrence_no_file_write(index: VaultIndex, tmp_path: Path):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("No hashtags here.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.update_tags(entry_id, ["python"])
+    index.index_backlinks(entry_id)
+
+    index.rename_tag("python", "py")
+
+    assert src_file.read_text(encoding="utf-8") == "No hashtags here.\n"
+
+
+def test_rename_tag_invalid_new_name_with_body_occurrences_raises(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.update_tags(entry_id, ["python"])
+    index.index_backlinks(entry_id)
+
+    with pytest.raises(ValueError, match="Cannot rename"):
+        index.rename_tag("python", "C++")
+
+    # Nothing was written — neither the structural row nor the body text.
+    assert src_file.read_text(encoding="utf-8") == "Filed under #python.\n"
+    names = [n for n, _ in index.list_tags()]
+    assert "python" in names
+    assert "C++" not in names
+
+
+def test_rename_tag_invalid_new_name_without_body_occurrences_succeeds(
+    index: VaultIndex,
+):
+    # No body hashtag occurrence exists at all, so the hashtag-literal gate
+    # never fires — a structural-only rename into a symbol-bearing name is
+    # unaffected by this fix (same as it worked before).
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["python"])
+
+    result = index.rename_tag("python", "C++")
+
+    assert result == ("C++", 1)
 
 
 def test_delete_tag_removes_from_table(index: VaultIndex):

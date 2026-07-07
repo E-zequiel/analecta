@@ -864,57 +864,118 @@ class VaultIndex:
         it simply lets the renamed tag unify with those content
         occurrences going forward.
 
+        Also migrates literal ``#hashtag`` occurrences in entry bodies that
+        share *old_name*'s identity — unlike :meth:`delete_tag`, which
+        neutralizes survivor text (backticks it, since deletion should
+        sever the identity), rename rewrites ``#old`` to ``#new_name``
+        in place via
+        :func:`~analecta.markdown.backlinks.rename_hashtag_occurrences`, so
+        the body text keeps meaning the same tag instead of splitting into
+        two identities after the rename. Works even when *old_name* has no
+        structural row at all (a purely content-hashtag identity, as shown
+        in the Sidebar's true-union tag list) — same content-only handling
+        as :meth:`delete_tag`.
+
         Args:
-            old_name: Current tag name. Matched case-insensitively.
+            old_name: Current tag name. Matched case-insensitively against
+                structural tags; matched via
+                :func:`~analecta.markdown.hashtags.normalize_tag` against
+                content hashtags.
             new_name: Replacement tag name.
 
         Returns:
             Tuple of ``(new_name, count)`` — the renamed tag's current
-            structural+hashtag union count — or ``None`` if no tag with
-            *old_name*'s case-insensitive identity exists (no-op).
+            structural+hashtag union count, computed after both the
+            structural update and any body-text migration — or ``None`` if
+            neither a structural tag nor a content hashtag with
+            *old_name*'s identity exists (no-op).
 
         Raises:
             ValueError: If a structural tag with *new_name*'s
-                case-insensitive identity already exists.
+                case-insensitive identity already exists, or if body-text
+                occurrences of *old_name* exist but *new_name* isn't a
+                valid bare hashtag token (contains symbols or spaces) and
+                so can't be migrated.
         """
+        from analecta.markdown.backlinks import (
+            is_valid_hashtag_literal,
+            rename_hashtag_occurrences,
+        )
+
         old_key = old_name.casefold()
         tag_row = self._conn.execute(
             "SELECT id FROM tags WHERE normalized = ?", (old_key,)
         ).fetchone()
-        if tag_row is None:
+        hashtag_entry_ids = self.get_body_hashtag_entry_ids(old_name)
+
+        if tag_row is None and not hashtag_entry_ids:
             return None
-        tag_id = tag_row["id"]
+
         new_key = new_name.casefold()
-        if self._conn.execute(
-            "SELECT id FROM tags WHERE normalized = ? AND id != ?",
-            (new_key, tag_id),
-        ).fetchone():
-            raise ValueError(f"Tag '{new_name}' already exists")
-        entry_ids = [
-            row[0]
-            for row in self._conn.execute(
-                "SELECT entry_id FROM entry_tags WHERE tag_id = ?", (tag_id,)
-            ).fetchall()
-        ]
-        self._conn.execute(
-            "UPDATE tags SET name = ?, normalized = ? WHERE id = ?",
-            (new_name, new_key, tag_id),
-        )
-        now = _now()
-        for eid in entry_ids:
-            row = self._conn.execute(
-                "SELECT tags_json FROM entries WHERE id = ?", (eid,)
-            ).fetchone()
-            if row:
-                tags = [
-                    new_name if t.casefold() == old_key else t
-                    for t in json.loads(row["tags_json"])
-                ]
-                self._conn.execute(
-                    "UPDATE entries SET tags_json = ?, updated_at = ? WHERE id = ?",
-                    (json.dumps(tags, ensure_ascii=False), now, eid),
+        if tag_row is not None:
+            tag_id = tag_row["id"]
+            if self._conn.execute(
+                "SELECT id FROM tags WHERE normalized = ? AND id != ?",
+                (new_key, tag_id),
+            ).fetchone():
+                raise ValueError(f"Tag '{new_name}' already exists")
+
+        if hashtag_entry_ids and not is_valid_hashtag_literal(new_name):
+            noun = (
+                "entry contains" if len(hashtag_entry_ids) == 1 else "entries contain"
+            )
+            raise ValueError(
+                f"Cannot rename to '{new_name}': {len(hashtag_entry_ids)} "
+                f"{noun} '#{old_name}' as literal body text, which can't be "
+                "migrated to a name with symbols or spaces. Edit the body "
+                "text manually first."
+            )
+
+        if tag_row is not None:
+            tag_id = tag_row["id"]
+            entry_ids = [
+                row[0]
+                for row in self._conn.execute(
+                    "SELECT entry_id FROM entry_tags WHERE tag_id = ?", (tag_id,)
+                ).fetchall()
+            ]
+            self._conn.execute(
+                "UPDATE tags SET name = ?, normalized = ? WHERE id = ?",
+                (new_name, new_key, tag_id),
+            )
+            now = _now()
+            for eid in entry_ids:
+                row = self._conn.execute(
+                    "SELECT tags_json FROM entries WHERE id = ?", (eid,)
+                ).fetchone()
+                if row:
+                    tags = [
+                        new_name if t.casefold() == old_key else t
+                        for t in json.loads(row["tags_json"])
+                    ]
+                    self._conn.execute(
+                        "UPDATE entries SET tags_json = ?, updated_at = ? WHERE id = ?",
+                        (json.dumps(tags, ensure_ascii=False), now, eid),
+                    )
+            self._conn.commit()
+
+        if hashtag_entry_ids:
+            target_normalized = normalize_tag(old_name)
+            for eid in hashtag_entry_ids:
+                entry = self.get_entry(eid)
+                if entry is None:
+                    continue
+                file_path = Path(entry.file_path)
+                if not file_path.exists():
+                    continue
+                markdown = file_path.read_text(encoding="utf-8")
+                rewritten, changed = rename_hashtag_occurrences(
+                    markdown, target_normalized, new_name
                 )
-        self._conn.commit()
+                if changed:
+                    file_path.write_text(rewritten, encoding="utf-8")
+                    self.index_backlinks(eid)
+
         return new_name, len(self.get_entry_ids_by_tag(new_name))
 
     @_synchronized
