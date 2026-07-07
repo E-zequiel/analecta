@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from analecta.markdown.hashtags import normalize_tag
+
 _WIKILINK_RE = re.compile(r"\[\[([^\[\]|]+?)(?:\|[^\[\]]+?)?\]\]")
 _HASHTAG_RE = re.compile(r"(?<!\S)#([A-Za-z][A-Za-z0-9_]*)(?![A-Za-z0-9_])")
 _HEADING_RE = re.compile(r"^#{1,6}\s+(.+)")
@@ -75,8 +77,6 @@ def parse_refs(markdown: str) -> list[ParsedRef]:
         first, followed by body references in document order.
     """
     import yaml
-
-    from analecta.markdown.hashtags import normalize_tag
 
     # Collect refs declared in frontmatter ``linked: [...]``.
     fm_refs: list[ParsedRef] = []
@@ -152,3 +152,79 @@ def parse_refs(markdown: str) -> list[ParsedRef]:
             )
 
     return fm_refs + refs
+
+
+def neutralize_hashtag_occurrences(
+    markdown: str, target_normalized: str
+) -> tuple[str, int]:
+    """Wrap every live ``#hashtag`` matching *target_normalized* in backticks.
+
+    Used when a tag is deleted: backticking demotes the literal body text to
+    inline code, which :func:`parse_refs` already skips (via
+    :func:`_mask_inline_code`), so the tag cannot resurrect itself on the
+    next :meth:`~analecta.storage.index.VaultIndex.index_backlinks` call.
+    Frontmatter, fenced code blocks, and already-masked inline code are left
+    untouched. A heading's own marker is preserved and only its text is
+    scanned — including it, since a heading-embedded hashtag (see
+    ``test_hashtag_in_heading_text_resolves``) is just as live as any other
+    and must not become a resurrection loophole.
+
+    Args:
+        markdown: Raw Markdown text to rewrite.
+        target_normalized: Normalized (:func:`normalize_tag`) hashtag
+            identity to neutralize.
+
+    Returns:
+        Tuple of ``(rewritten_markdown, occurrences_wrapped)``. Returns
+        *markdown* unchanged with ``0`` if no live occurrence matches.
+    """
+    # .match (not .sub) anchors at position 0, so a mid-document ``---``
+    # thematic-break block is never mistaken for a frontmatter prefix — the
+    # sub-based approach `parse_refs` uses is safe there because it only
+    # ever *drops* the matched span, but here the span is reused as a
+    # prefix for reconstruction, so it must actually be one.
+    fm_match = _FRONTMATTER_RE.match(markdown)
+    frontmatter = fm_match.group(0) if fm_match else ""
+    stripped_body = markdown[len(frontmatter) :]
+
+    in_fence = False
+    count = 0
+    out_lines: list[str] = []
+
+    for raw_line in stripped_body.splitlines(keepends=True):
+        if raw_line.endswith("\r\n"):
+            eol, line = "\r\n", raw_line[:-2]
+        elif raw_line.endswith("\n"):
+            eol, line = "\n", raw_line[:-1]
+        else:
+            eol, line = "", raw_line
+
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            out_lines.append(raw_line)
+            continue
+        if in_fence:
+            out_lines.append(raw_line)
+            continue
+
+        marker = ""
+        content = line
+        heading_match = _HEADING_RE.match(line)
+        if heading_match:
+            marker = line[: heading_match.start(1)]
+            content = heading_match.group(1)
+
+        masked = _mask_inline_code(content)
+        matches = [
+            m
+            for m in _HASHTAG_RE.finditer(masked)
+            if normalize_tag(m.group(1)) == target_normalized
+        ]
+        for m in reversed(matches):
+            start, end = m.start(), m.end()
+            content = f"{content[:start]}`{content[start:end]}`{content[end:]}"
+        count += len(matches)
+
+        out_lines.append(f"{marker}{content}{eol}")
+
+    return frontmatter + "".join(out_lines), count

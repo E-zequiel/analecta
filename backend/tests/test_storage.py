@@ -693,6 +693,142 @@ def test_delete_tag_case_insensitive_lookup(index: VaultIndex):
 
 
 # ---------------------------------------------------------------------------
+# get_body_hashtag_entry_ids — content-hashtag-only lookup for delete warnings
+# ---------------------------------------------------------------------------
+
+
+def test_get_body_hashtag_entry_ids_finds_content_occurrence(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+
+    assert index.get_body_hashtag_entry_ids("python") == [entry_id]
+
+
+def test_get_body_hashtag_entry_ids_excludes_structural_only(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["python"])
+
+    # No markdown body hashtag at all — structural-only doesn't count.
+    assert index.get_body_hashtag_entry_ids("python") == []
+
+
+def test_get_body_hashtag_entry_ids_deduplicated_and_sorted(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    ids = []
+    for i in range(3):
+        src_file = vault / f"article-{i}.md"
+        src_file.write_text("#python #python again\n", encoding="utf-8")
+        entry_id = index.add_entry(
+            _entry(url=f"https://example.com/{i}", file_path=str(src_file))
+        )
+        index.index_backlinks(entry_id)
+        ids.append(entry_id)
+
+    assert index.get_body_hashtag_entry_ids("python") == sorted(ids)
+
+
+def test_get_body_hashtag_entry_ids_symbol_bearing_name_returns_empty(
+    index: VaultIndex, tmp_path: Path
+):
+    """ "C++" has no valid hashtag form — must never spuriously match "#c"."""
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Written in #c.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+
+    assert index.get_body_hashtag_entry_ids("C++") == []
+    # "c" itself (a valid hashtag form) still finds it.
+    assert index.get_body_hashtag_entry_ids("c") == [entry_id]
+
+
+# ---------------------------------------------------------------------------
+# delete_tag — neutralizes surviving body-text #hashtag occurrences
+# ---------------------------------------------------------------------------
+
+
+def test_delete_tag_wraps_surviving_body_hashtag(index: VaultIndex, tmp_path: Path):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.update_tags(entry_id, ["python"])
+    index.index_backlinks(entry_id)
+
+    index.delete_tag("python")
+
+    assert "`#python`" in src_file.read_text(encoding="utf-8")
+    # Structural row gone AND body text no longer resurrects it.
+    assert not any(name == "python" for name, _ in index.list_tags())
+
+
+def test_delete_tag_content_only_tag_fully_removed(index: VaultIndex, tmp_path: Path):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+
+    # No structural row exists at all for "python".
+    row = index._conn.execute(
+        "SELECT id FROM tags WHERE normalized = 'python'"
+    ).fetchone()
+    assert row is None
+
+    index.delete_tag("python")
+
+    assert "`#python`" in src_file.read_text(encoding="utf-8")
+    assert not any(name == "python" for name, _ in index.list_tags())
+
+
+def test_delete_tag_symbol_bearing_name_does_not_touch_unrelated_hashtag(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Written in #c.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+
+    structural_id = index.add_entry(_entry(url="https://a.com"))
+    index.update_tags(structural_id, ["C++"])
+
+    index.delete_tag("C++")
+
+    # The unrelated "#c" content hashtag in article.md must survive untouched.
+    assert src_file.read_text(encoding="utf-8") == "Written in #c.\n"
+    assert index.get_entry_ids_by_tag("c") == [entry_id]
+    assert not any(name == "C++" for name, _ in index.list_tags())
+
+
+def test_delete_tag_no_body_occurrence_no_file_write(index: VaultIndex, tmp_path: Path):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("No hashtags here.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.update_tags(entry_id, ["python"])
+    index.index_backlinks(entry_id)
+
+    index.delete_tag("python")
+
+    assert src_file.read_text(encoding="utf-8") == "No hashtags here.\n"
+
+
+# ---------------------------------------------------------------------------
 # list_tags — unions structural tags with content-only hashtags
 # ---------------------------------------------------------------------------
 

@@ -149,6 +149,29 @@ A normalized identity that strips symbols means a structural tag like `C++` and 
 hashtag `#c` are never accidentally unified — `normalize_tag("C++")` and `casefold`
 identity diverge enough that they stay distinct tags.
 
+### Deleting a tag neutralizes literal body text too
+
+The literal `#hashtag` text in an article's body is otherwise never rewritten (see
+above), which used to leave a resurrection hole on delete: if any entry's Markdown
+still contained `#tag` in its body, the next `index_backlinks()` re-index would bring
+the tag right back (lowercase, split from whatever casing the deleted structural tag
+had). `delete_tag` closes this by wrapping every live `#hashtag` occurrence sharing the
+deleted tag's identity in backticks (`` `#tag` ``) — inline code is already excluded
+from parsing (see `_mask_inline_code` above), so the reference stops being indexed on
+the next re-index. The literal characters are preserved — readers still see `#python`
+in the text, now styled as inline code instead of a live tag — only the markup around
+it changes. This runs even inside heading text (the heading-embedded-hashtag case
+`## My favorite #topic` parses as live, so it must be neutralized too, even though the
+result — inline code nested in a heading — renders unusually). It also applies to a
+tag with no structural row at all (a purely content-hashtag identity shown in the
+Sidebar's TAGS grid) — deleting it neutralizes every occurrence the same way. A
+structural tag whose name has no valid hashtag form (symbols/spaces, e.g. `C++`) never
+touches any body text on delete — see `get_body_hashtag_entry_ids`'s collision-avoidance
+rule above.
+
+This only happens on **delete**. `rename_tag` deliberately leaves body text alone —
+see Known limitations below.
+
 ## BACKLINKS / Connections panel
 
 The right-sidebar panel shown for an entry combines two kinds of connections:
@@ -199,6 +222,17 @@ name, and vice versa.
   re-normalizes independently for the actual query — but a rare edge case (e.g. a
   hashtag with doubled or trailing underscores) can show the un-collapsed form in the
   TAGS-dashboard header rather than backend's fully normalized display.
+- `rename_tag` does not yet touch literal `#hashtag` occurrences in entry bodies. If a
+  renamed tag also appears as literal text in any entry (the one being renamed or a
+  different one), that occurrence keeps referencing the old (lowercase) identity and
+  reappears in `list_tags()` as a separate tag after the rename — a previously-unified
+  tag can split into two. `delete_tag` addresses the equivalent resurrection problem for
+  deletion (see above) by neutralizing survivor text, but that move is wrong for
+  rename — rename wants the body text to keep meaning the same tag, migrated to the new
+  name, and backticking would sever that continuity instead of preserving it. A rename
+  fix is planned as the immediate next step of this same effort, with a mechanism of its
+  own (not delete's neutralize-via-backtick) — this bullet will be replaced once it
+  ships rather than staying open-ended.
 
 ## See also
 

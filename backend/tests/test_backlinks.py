@@ -11,7 +11,7 @@ from starlette.testclient import TestClient
 from analecta.api.events import EventBus
 from analecta.api.routes.entries import router as entries_router
 from analecta.config import AppConfig
-from analecta.markdown.backlinks import parse_refs
+from analecta.markdown.backlinks import neutralize_hashtag_occurrences, parse_refs
 from analecta.storage.index import EntryRecord, VaultIndex
 
 # ---------------------------------------------------------------------------
@@ -203,6 +203,127 @@ class TestParseRefs:
         assert len(refs) == 2
         assert refs[0].heading == "Intro"
         assert refs[1].heading == "Details"
+
+
+# ---------------------------------------------------------------------------
+# neutralize_hashtag_occurrences — unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestNeutralizeHashtagOccurrences:
+    def test_wraps_matching_occurrence(self) -> None:
+        rewritten, count = neutralize_hashtag_occurrences(
+            "Filed under #python today.\n", "python"
+        )
+        assert rewritten == "Filed under `#python` today.\n"
+        assert count == 1
+
+    def test_no_match_returns_unchanged(self) -> None:
+        markdown = "Filed under #rust today.\n"
+        rewritten, count = neutralize_hashtag_occurrences(markdown, "python")
+        assert rewritten == markdown
+        assert count == 0
+
+    def test_wrapped_occurrence_no_longer_parses_as_live(self) -> None:
+        markdown = "Filed under #python today.\n"
+        rewritten, count = neutralize_hashtag_occurrences(markdown, "python")
+        assert count == 1
+        assert parse_refs(rewritten) == []
+
+    def test_multiple_occurrences_same_line(self) -> None:
+        rewritten, count = neutralize_hashtag_occurrences(
+            "#python and #python again.\n", "python"
+        )
+        assert rewritten == "`#python` and `#python` again.\n"
+        assert count == 2
+
+    def test_multiple_occurrences_across_lines(self) -> None:
+        markdown = "First #python line.\nSecond #python line.\n"
+        rewritten, count = neutralize_hashtag_occurrences(markdown, "python")
+        assert rewritten == "First `#python` line.\nSecond `#python` line.\n"
+        assert count == 2
+
+    def test_only_matching_identity_wrapped(self) -> None:
+        rewritten, count = neutralize_hashtag_occurrences(
+            "See #python and #rust.\n", "python"
+        )
+        assert rewritten == "See `#python` and #rust.\n"
+        assert count == 1
+
+    def test_code_fence_skipped(self) -> None:
+        markdown = "Before #python.\n```\n#python\n```\nAfter #python.\n"
+        rewritten, count = neutralize_hashtag_occurrences(markdown, "python")
+        assert count == 2
+        assert "```\n#python\n```" in rewritten
+
+    def test_already_inline_code_left_untouched(self) -> None:
+        markdown = "Try `#python` literally.\n"
+        rewritten, count = neutralize_hashtag_occurrences(markdown, "python")
+        assert rewritten == markdown
+        assert count == 0
+
+    def test_hashtag_in_heading_text_wrapped_marker_preserved(self) -> None:
+        rewritten, count = neutralize_hashtag_occurrences(
+            "## My favorite #topic\n", "topic"
+        )
+        assert rewritten == "## My favorite `#topic`\n"
+        assert count == 1
+
+    def test_heading_marker_not_mistaken_for_match(self) -> None:
+        rewritten, count = neutralize_hashtag_occurrences(
+            "# heading\n\nBody #python text.\n", "python"
+        )
+        assert count == 1
+        assert rewritten == "# heading\n\nBody `#python` text.\n"
+
+    def test_preserves_crlf_line_endings(self) -> None:
+        rewritten, count = neutralize_hashtag_occurrences(
+            "Filed under #python.\r\nNext line.\r\n", "python"
+        )
+        assert rewritten == "Filed under `#python`.\r\nNext line.\r\n"
+        assert count == 1
+
+    def test_preserves_missing_trailing_newline(self) -> None:
+        rewritten, count = neutralize_hashtag_occurrences(
+            "Filed under #python.", "python"
+        )
+        assert rewritten == "Filed under `#python`."
+        assert count == 1
+
+    def test_frontmatter_untouched(self) -> None:
+        markdown = (
+            "---\ntitle: Test\nurl: https://example.com\n---\n\nFiled under #python.\n"
+        )
+        rewritten, count = neutralize_hashtag_occurrences(markdown, "python")
+        assert rewritten.startswith(
+            "---\ntitle: Test\nurl: https://example.com\n---\n\n"
+        )
+        assert count == 1
+
+    def test_no_leading_frontmatter_mid_document_dashes_not_mistaken_for_it(
+        self,
+    ) -> None:
+        # Regression: a body-only "---\n...\n---\n" thematic-break block (no
+        # leading frontmatter) must not be misread as a frontmatter prefix —
+        # `_FRONTMATTER_RE` is MULTILINE and can match mid-document, but only
+        # a `.match()` (position-0-anchored) result is safe to treat as one.
+        markdown = "before #python\n\n---\nmid\n---\n\nafter\n"
+        rewritten, count = neutralize_hashtag_occurrences(markdown, "python")
+        assert rewritten == "before `#python`\n\n---\nmid\n---\n\nafter\n"
+        assert count == 1
+
+    def test_original_casing_preserved_under_backticks(self) -> None:
+        rewritten, count = neutralize_hashtag_occurrences(
+            "Filed under #Python today.\n", "python"
+        )
+        assert rewritten == "Filed under `#Python` today.\n"
+        assert count == 1
+
+    def test_no_occurrences_leaves_document_byte_identical(self) -> None:
+        markdown = "Nothing to see here.\n\n## Heading\n\nMore text.\n"
+        rewritten, count = neutralize_hashtag_occurrences(markdown, "python")
+        assert rewritten == markdown
+        assert count == 0
 
 
 # ---------------------------------------------------------------------------
