@@ -1091,90 +1091,75 @@ class VaultIndex:
 
     @_synchronized
     def get_hashtag_connections(self, source_id: int) -> list[HashtagConnectionGroup]:
-        """Return other entries grouped by shared tag — structural or content.
+        """Return other entries grouped by shared tag — a true union.
 
-        Combines two sources:
+        Like :meth:`list_tags`, gathers every tag identity *source_id* itself
+        carries — structural (``entry_tags``, keyed by ``tags.normalized``)
+        or content (its own ``backlink_refs`` hashtags) — then, for each
+        identity, finds peer entries that carry it through *either*
+        mechanism (same
+        ``entry_tags UNION backlink_refs`` pattern as :meth:`get_subgraph`'s
+        neighbor query). An entry tagged "python" structurally and one that
+        only ever writes ``#python`` in its body correctly show up as
+        connections of each other, regardless of which mechanism either side
+        uses. Display name resolves via the same ``normalized -> name`` map
+        as :meth:`get_graph`/:meth:`get_subgraph` — structural casing wins
+        when a structural counterpart exists anywhere in the vault, even if
+        *source_id* itself only has the tag as a lowercase content hashtag.
 
-        1. **Structural tags** from ``entry_tags``: for each tag assigned to
-           *source_id*, finds all other entries that carry the same tag using a
-           case-insensitive name comparison.  This handles tags created via the
-           Tags UI regardless of capitalisation (e.g. "Python" matches "python").
-
-        2. **Content hashtags** from ``backlink_refs``: for each ``#hashtag``
-           parsed out of *source_id*'s Markdown file, finds other entries whose
-           ``backlink_refs`` contain the same hashtag.  Tags already covered by
-           source 1 (case-insensitive overlap) are not duplicated.
-
-        Groups are sorted alphabetically by the display name from *source_id*'s
-        own perspective; entries within each group are sorted by title.  Empty
-        groups (no peer entries) are excluded.
+        Groups are sorted by normalized key; entries within each group are
+        sorted by title. Empty groups (no peer entries) are excluded.
 
         Args:
             source_id: ID of the entry to query connections for.
 
         Returns:
-            List of :class:`HashtagConnectionGroup` ordered by display name.
+            List of :class:`HashtagConnectionGroup` ordered by normalized key.
         """
-        # key = lowercase tag name; value = (display_name, [peer EntryRecord])
-        merged: dict[str, tuple[str, list[EntryRecord]]] = {}
-
-        # --- Source 1: structural tags from entry_tags ---
         structural_rows = self._conn.execute(
-            "SELECT t.name FROM entry_tags et "
-            "JOIN tags t ON t.id = et.tag_id "
-            "WHERE et.entry_id = ? "
-            "ORDER BY t.name",
+            "SELECT t.normalized FROM entry_tags et"
+            " JOIN tags t ON t.id = et.tag_id WHERE et.entry_id = ?",
             (source_id,),
         ).fetchall()
-
-        for row in structural_rows:
-            tag_name: str = row[0]
-            key = tag_name.casefold()
-            if key in merged:
-                continue
-            peer_rows = self._conn.execute(
-                """
-                SELECT DISTINCT e.*
-                FROM entry_tags et
-                JOIN tags t ON t.id = et.tag_id
-                JOIN entries e ON e.id = et.entry_id
-                WHERE t.normalized = ? AND et.entry_id != ?
-                ORDER BY e.title ASC
-                """,
-                (key, source_id),
-            ).fetchall()
-            peers = [_row_to_entry(r) for r in peer_rows]
-            if peers:
-                merged[key] = (tag_name, peers)
-
-        # --- Source 2: content hashtags from backlink_refs ---
         hashtag_rows = self._conn.execute(
-            "SELECT DISTINCT target_text FROM backlink_refs "
-            "WHERE source_id = ? AND is_hashtag = 1 "
-            "ORDER BY target_text",
+            "SELECT DISTINCT target_text FROM backlink_refs"
+            " WHERE source_id = ? AND is_hashtag = 1",
             (source_id,),
         ).fetchall()
+        tag_keys: set[str] = {row[0] for row in structural_rows} | {
+            row[0] for row in hashtag_rows
+        }
+        if not tag_keys:
+            return []
 
-        for row in hashtag_rows:
-            hashtag: str = row[0]
-            key = hashtag.casefold()
-            if key in merged:
-                continue  # already covered by a structural tag
+        tag_display: dict[str, str] = dict(
+            self._conn.execute("SELECT normalized, name FROM tags").fetchall()
+        )
+
+        merged: dict[str, tuple[str, list[EntryRecord]]] = {}
+        for key in tag_keys:
             peer_rows = self._conn.execute(
                 """
                 SELECT e.*
-                FROM backlink_refs br
-                JOIN entries e ON e.id = br.source_id
-                WHERE br.target_text = ? AND br.is_hashtag = 1
-                  AND br.source_id != ?
-                GROUP BY e.id
+                FROM entries e
+                WHERE e.id IN (
+                    SELECT et.entry_id
+                    FROM entry_tags et
+                    JOIN tags t ON t.id = et.tag_id
+                    WHERE t.normalized = ? AND et.entry_id != ?
+                    UNION
+                    SELECT br.source_id
+                    FROM backlink_refs br
+                    WHERE br.target_text = ? AND br.is_hashtag = 1
+                      AND br.source_id != ?
+                )
                 ORDER BY e.title ASC
                 """,
-                (hashtag, source_id),
+                (key, source_id, key, source_id),
             ).fetchall()
             peers = [_row_to_entry(r) for r in peer_rows]
             if peers:
-                merged[key] = (hashtag, peers)
+                merged[key] = (tag_display.get(key, key), peers)
 
         return [
             HashtagConnectionGroup(hashtag=display, entries=entries)

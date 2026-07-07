@@ -1128,6 +1128,83 @@ class TestHashtagConnections:
         assert groups[0].entries[0].id == id2
         db.close()
 
+    # --- cross-mechanism union (2026-07-07 fix — was previously missed) ---
+
+    def test_structural_only_finds_content_only_peer(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        id1 = _seed(db, n=1)  # structural tag only, no body text
+        db.update_tags(id1, ["python"])
+
+        f2 = vault / "a2.md"
+        f2.write_text("Discussing #python today.\n", encoding="utf-8")
+        id2 = _seed(db, n=2, file_path=str(f2))  # content hashtag only
+        db.index_backlinks(id2)
+
+        groups = db.get_hashtag_connections(id1)
+
+        assert len(groups) == 1
+        assert groups[0].hashtag == "python"
+        assert groups[0].entries[0].id == id2
+        db.close()
+
+    def test_content_only_finds_structural_only_peer(self, tmp_path: Path) -> None:
+        # Same setup as above, queried from the other side — the gap was
+        # symmetric, so both directions must be verified independently.
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        id1 = _seed(db, n=1)
+        db.update_tags(id1, ["python"])
+
+        f2 = vault / "a2.md"
+        f2.write_text("Discussing #python today.\n", encoding="utf-8")
+        id2 = _seed(db, n=2, file_path=str(f2))
+        db.index_backlinks(id2)
+
+        groups = db.get_hashtag_connections(id2)
+
+        assert len(groups) == 1
+        assert groups[0].hashtag == "python"
+        assert groups[0].entries[0].id == id1
+        db.close()
+
+    def test_content_only_group_shows_canonical_structural_casing(
+        self, tmp_path: Path
+    ) -> None:
+        # Focus entry only has the tag as a lowercase content hashtag, but a
+        # *third* entry elsewhere in the vault has it as a structural tag —
+        # the group's display name should resolve to that canonical casing,
+        # matching get_content_hashtags_for_entries/get_graph's convention,
+        # not the raw lowercase form.
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+
+        f1 = vault / "a1.md"
+        f1.write_text("Discussing #python today.\n", encoding="utf-8")
+        id1 = _seed(db, n=1, file_path=str(f1))
+        db.index_backlinks(id1)
+
+        f2 = vault / "a2.md"
+        f2.write_text("Also #python here.\n", encoding="utf-8")
+        id2 = _seed(db, n=2, file_path=str(f2))
+        db.index_backlinks(id2)
+
+        id3 = _seed(db, n=3)
+        db.update_tags(id3, ["Python"])  # structural, elsewhere in the vault
+
+        groups = db.get_hashtag_connections(id1)
+
+        assert len(groups) == 1
+        assert groups[0].hashtag == "Python"  # canonical casing, not "python"
+        peer_ids = {e.id for e in groups[0].entries}
+        assert peer_ids == {id2, id3}
+        db.close()
+
 
 # ---------------------------------------------------------------------------
 # API endpoint — GET /entries/{id}/hashtag-connections
