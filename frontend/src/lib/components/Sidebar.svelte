@@ -30,6 +30,7 @@
 		entries as entriesApi,
 		tags as tagsApi,
 		extract as extractApi,
+		ApiError,
 		type Entry,
 		type Tag,
 	} from '$lib/api/client';
@@ -149,6 +150,7 @@
 	let deletingTagBodyCount = $state(0);
 	let deleteRowEl = $state<HTMLElement | null>(null);
 	let mergingTag = $state<{ oldName: string; newName: string } | null>(null);
+	let mergeError = $state<string | null>(null);
 	let mergeRowEl = $state<HTMLElement | null>(null);
 
 	$effect(() => {
@@ -187,10 +189,16 @@
 	$effect(() => {
 		if (!mergingTag) return;
 		function onKeyDown(e: KeyboardEvent) {
-			if (e.key === 'Escape') mergingTag = null;
+			if (e.key === 'Escape') {
+				mergingTag = null;
+				mergeError = null;
+			}
 		}
 		function onMouseDown(e: MouseEvent) {
-			if (mergeRowEl && !mergeRowEl.contains(e.target as Node)) mergingTag = null;
+			if (mergeRowEl && !mergeRowEl.contains(e.target as Node)) {
+				mergingTag = null;
+				mergeError = null;
+			}
 		}
 		window.addEventListener('keydown', onKeyDown);
 		window.addEventListener('mousedown', onMouseDown);
@@ -398,6 +406,7 @@
 		if (collision) {
 			// Show/send the destination's actual canonical casing, not
 			// whatever was typed — that's what the merge will actually do.
+			mergeError = null;
 			mergingTag = { oldName, newName: collision.name };
 			return;
 		}
@@ -415,15 +424,18 @@
 	async function confirmMergeTag() {
 		if (!mergingTag) return;
 		const { oldName, newName } = mergingTag;
-		mergingTag = null;
+		mergeError = null;
 		try {
 			const updated = await tagsApi.rename(oldName, newName, true);
+			mergingTag = null;
 			if ($selectedTag === oldName) selectedTag.set(updated.name);
 			await fetchTags();
 			entryChangedTick.update((n) => n + 1);
-		} catch {
-			// merge rejected (e.g. body text can't migrate to the
-			// destination's name) — ignore, same as renameTag above.
+		} catch (e) {
+			// Merge rejected (e.g. body text can't migrate to the
+			// destination's name) — keep the row open and surface the
+			// backend's own message instead of failing silently.
+			mergeError = e instanceof ApiError ? e.message : 'Merge failed.';
 		}
 	}
 
@@ -636,25 +648,31 @@
 			<div class="section-entries tags-section-entries">
 				{#each displayTagList as tag (tag.name)}
 					{#if mergingTag?.oldName === tag.name}
-						<div class="tag-delete-row" bind:this={mergeRowEl}>
-							<span class="tag-delete-label"
-								>Merge <strong>{tag.name}</strong> into
-								<strong>{mergingTag.newName}</strong>?</span
-							>
-							<button
-								class="tag-action-btn tag-delete-confirm"
-								onclick={() => confirmMergeTag()}
-								use:tooltip={'Confirm merge'}
-								aria-label="Confirm merge">✓</button
-							>
-							<button
-								class="tag-action-btn"
-								onclick={() => {
-									mergingTag = null;
-								}}
-								use:tooltip={'Cancel'}
-								aria-label="Cancel merge"><X size={13.25} /></button
-							>
+						<div bind:this={mergeRowEl}>
+							<div class="tag-delete-row">
+								<span class="tag-delete-label"
+									>Merge <strong>{tag.name}</strong> into
+									<strong>{mergingTag.newName}</strong>?</span
+								>
+								<button
+									class="tag-action-btn tag-delete-confirm"
+									onclick={() => confirmMergeTag()}
+									use:tooltip={'Confirm merge'}
+									aria-label="Confirm merge">✓</button
+								>
+								<button
+									class="tag-action-btn"
+									onclick={() => {
+										mergingTag = null;
+										mergeError = null;
+									}}
+									use:tooltip={'Cancel'}
+									aria-label="Cancel merge"><X size={13.25} /></button
+								>
+							</div>
+							{#if mergeError}
+								<div class="tag-merge-error"><TriangleAlert size={11} />{mergeError}</div>
+							{/if}
 						</div>
 					{:else if deletingTag === tag.name}
 						<div class="tag-delete-row" bind:this={deleteRowEl}>
@@ -1158,6 +1176,21 @@
 		flex-shrink: 0;
 		color: var(--yellow);
 		font-size: var(--font-size-count);
+	}
+
+	.tag-merge-error {
+		display: flex;
+		align-items: flex-start;
+		gap: 4px;
+		padding: 2px 8px 4px 22px;
+		color: var(--yellow);
+		font-size: var(--font-size-sublabel);
+		line-height: 1.35;
+	}
+
+	.tag-merge-error :global(svg) {
+		flex-shrink: 0;
+		margin-top: 2px;
 	}
 
 	.tag-edit-row {
