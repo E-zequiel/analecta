@@ -17,7 +17,7 @@
 		windowIsMaximized,
 	} from '$lib/platform';
 	import { port } from '$lib/stores/sidecar';
-	import { entryAddedTick } from '$lib/stores/sse';
+	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
 	import {
 		sidebarCollapsed,
 		sidebarWidth,
@@ -266,6 +266,8 @@
 				if (data.type === 'entry_added') {
 					entryAddedTick.update((n) => n + 1);
 					await notify('Analecta', 'New entry saved.');
+				} else if (data.type === 'vault_rescanned') {
+					entryChangedTick.update((n) => n + 1);
 				}
 			} catch {
 				// ignore malformed events

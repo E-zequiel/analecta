@@ -1,3 +1,4 @@
+import asyncio
 import os
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
@@ -156,6 +157,24 @@ def test_rescan_200_returns_updated_count(client: TestClient) -> None:
     r = client.post("/api/v1/system/rescan")
     assert r.status_code == 200
     assert r.json() == {"updated": 0}
+
+
+def test_rescan_publishes_sse_event(tmp_path: Path) -> None:
+    """A rescan has no single changed entry to report, so the frontend
+    can't infer it happened the way it does for an in-app edit — it must
+    be told, or an already-open window's Sidebar tag list (and anything
+    else derived from backlink_refs) never refreshes."""
+    app = _make_app(tmp_path)
+    with TestClient(app) as c:
+        bus: EventBus = app.state.event_bus
+        sink: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+        bus._queues.append(sink)
+
+        r = c.post("/api/v1/system/rescan")
+        assert r.status_code == 200
+
+    assert not sink.empty()
+    assert sink.get_nowait() == {"type": "vault_rescanned"}
 
 
 def test_rescan_reindexes_entry_edited_after_startup(tmp_path: Path) -> None:
