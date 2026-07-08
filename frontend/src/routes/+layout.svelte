@@ -17,7 +17,7 @@
 		windowIsMaximized,
 	} from '$lib/platform';
 	import { port } from '$lib/stores/sidecar';
-	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
+	import { entryAddedTick, entryChangedTick, vaultRescannedTick } from '$lib/stores/sse';
 	import {
 		sidebarCollapsed,
 		sidebarWidth,
@@ -41,7 +41,7 @@
 		saveTabs,
 		navigateInSectionTab,
 	} from '$lib/stores/tabs';
-	import { pkm, config as configApi } from '$lib/api/client';
+	import { pkm, config as configApi, system as systemApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 	import SidecarLoadingScreen from '$lib/components/SidecarLoadingScreen.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
@@ -88,6 +88,26 @@
 	let pendingUpdateVersion = $state<string | null>(null);
 	let isResizing = $state(false);
 	let maximized = $state(false);
+	let rescanInFlight = false;
+
+	async function triggerRescan() {
+		if (rescanInFlight) return;
+		rescanInFlight = true;
+		try {
+			const { updated } = await systemApi.rescan();
+			await notify(
+				'Analecta',
+				updated === 0
+					? 'No entries needed updating.'
+					: `Updated ${updated} ${updated === 1 ? 'entry' : 'entries'}.`
+			);
+		} catch {
+			// Vault rescan failures are non-critical from a global shortcut — the
+			// Settings page surfaces the same action with visible error handling.
+		} finally {
+			rescanInFlight = false;
+		}
+	}
 
 	function startResize(e: PointerEvent) {
 		if ($sidebarCollapsed) return;
@@ -166,6 +186,10 @@
 			if (e.ctrlKey && e.key === 'l') {
 				pasteUrlSignal.update((n) => n + 1);
 				e.preventDefault();
+			}
+			if (e.ctrlKey && e.key === 'r') {
+				e.preventDefault();
+				triggerRescan();
 			}
 			if (e.ctrlKey && e.key === 'Tab') {
 				e.preventDefault();
@@ -268,6 +292,7 @@
 					await notify('Analecta', 'New entry saved.');
 				} else if (data.type === 'vault_rescanned') {
 					entryChangedTick.update((n) => n + 1);
+					vaultRescannedTick.update((n) => n + 1);
 				}
 			} catch {
 				// ignore malformed events

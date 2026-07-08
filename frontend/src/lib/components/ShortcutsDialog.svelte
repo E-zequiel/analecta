@@ -61,6 +61,10 @@
 					<div class="sp-keys"><kbd>Ctrl+L</kbd></div>
 					<div class="sp-desc">Add URL from clipboard</div>
 				</div>
+				<div class="sp-row">
+					<div class="sp-keys"><kbd>Ctrl+R</kbd></div>
+					<div class="sp-desc">Rescan vault</div>
+				</div>
 			</div>
 
 			<div class="sp-group">

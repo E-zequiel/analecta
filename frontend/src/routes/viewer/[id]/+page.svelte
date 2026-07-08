@@ -16,7 +16,7 @@
 	import '$lib/markdown/shiki-classes.css';
 	import { lastViewedId, pendingScrollRestore, scrollPositions, selectedTag } from '$lib/stores/ui';
 	import { ensureEntryTab, closeTab, openEntryTab, navigateInSectionTab } from '$lib/stores/tabs';
-	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
+	import { entryChangedTick, lastChangedEntry, vaultRescannedTick } from '$lib/stores/sse';
 	import { entryTitleIndex, ensureEntryTitleIndexLoaded } from '$lib/stores/entryTitles';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import {
@@ -211,6 +211,34 @@
 		if (changed && changed.id === untrack(() => entryId)) {
 			entry = changed;
 		}
+	});
+
+	// Re-read the file from disk after a vault rescan (manual Ctrl+R/Settings
+	// action, or the automatic startup sweep) picks up an edit made outside
+	// Analecta. Source-only — reconcile touches backlink_refs/FTS, not entry
+	// metadata — and no loading-state reset, so the reading view updates
+	// without a flash or scroll jump. The derived html effect below picks up
+	// the new source automatically.
+	$effect(() => {
+		void $vaultRescannedTick;
+		const id = untrack(() => entryId);
+		const path = untrack(() => entry?.file_path);
+		if (isNaN(id) || !path) return;
+
+		let cancelled = false;
+		readTextFile(path)
+			.then((src) => {
+				if (cancelled || untrack(() => entryId) !== id) return;
+				source = src;
+			})
+			.catch(() => {
+				// File may have been deleted/moved externally — keep showing
+				// the last-known content rather than flashing an error.
+			});
+
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	// Restore scroll position when returning from Settings.
