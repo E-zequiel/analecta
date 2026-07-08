@@ -899,6 +899,34 @@ def test_rename_tag_no_body_occurrence_no_file_write(index: VaultIndex, tmp_path
     assert src_file.read_text(encoding="utf-8") == "No hashtags here.\n"
 
 
+def test_rename_tag_clears_stale_backlink_cache(index: VaultIndex, tmp_path: Path):
+    """A ghost tag entry: cache says the body has the hashtag, body doesn't.
+
+    Simulates an entry that was edited outside the app (e.g. the hashtag
+    was removed manually) so backlink_refs no longer matches the file on
+    disk. rename_tag's own rewrite finds nothing to change, but it must
+    still reindex the entry so the stale row doesn't survive forever.
+    """
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("No hashtags here anymore.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index._conn.execute(
+        "INSERT INTO backlink_refs (source_id, target_text, is_hashtag,"
+        " pre, highlight, post) VALUES (?, 'ghost', 1, '', '#ghost', '')",
+        (entry_id,),
+    )
+    index._conn.commit()
+    assert index.get_body_hashtag_entry_ids("ghost") == [entry_id]
+
+    index.rename_tag("ghost", "renamed")
+
+    assert index.get_body_hashtag_entry_ids("ghost") == []
+    names = [n for n, _ in index.list_tags()]
+    assert "ghost" not in names
+
+
 def test_rename_tag_invalid_new_name_with_body_occurrences_raises(
     index: VaultIndex, tmp_path: Path
 ):
@@ -1108,6 +1136,34 @@ def test_delete_tag_no_body_occurrence_no_file_write(index: VaultIndex, tmp_path
     index.delete_tag("python")
 
     assert src_file.read_text(encoding="utf-8") == "No hashtags here.\n"
+
+
+def test_delete_tag_clears_stale_backlink_cache(index: VaultIndex, tmp_path: Path):
+    """Mirrors test_rename_tag_clears_stale_backlink_cache for delete_tag.
+
+    A backlink_refs row can outlive the literal hashtag it was indexed
+    from (e.g. the file was edited outside the app). delete_tag's own
+    neutralize pass finds nothing to wrap, but must still reindex so the
+    ghost tag doesn't keep showing up in the sidebar's tag list.
+    """
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("No hashtags here anymore.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index._conn.execute(
+        "INSERT INTO backlink_refs (source_id, target_text, is_hashtag,"
+        " pre, highlight, post) VALUES (?, 'ghost', 1, '', '#ghost', '')",
+        (entry_id,),
+    )
+    index._conn.commit()
+    assert index.get_body_hashtag_entry_ids("ghost") == [entry_id]
+
+    index.delete_tag("ghost")
+
+    assert index.get_body_hashtag_entry_ids("ghost") == []
+    names = [n for n, _ in index.list_tags()]
+    assert "ghost" not in names
 
 
 # ---------------------------------------------------------------------------
