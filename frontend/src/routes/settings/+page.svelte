@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { openDialog, updateVaultScope, relaunch, setCloseToTray } from '$lib/platform';
-	import { config as configApi } from '$lib/api/client';
+	import { config as configApi, system as systemApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 	import { tooltip } from '$lib/actions/tooltip';
 
@@ -34,6 +34,8 @@
 	let closeToTraySaved = $state(false);
 
 	let browsing = $state(false);
+	let rescanning = $state(false);
+	let rescanResult = $state('');
 
 	let uiFontTimer: ReturnType<typeof setTimeout> | null = null;
 	let readingFontTimer: ReturnType<typeof setTimeout> | null = null;
@@ -140,6 +142,23 @@
 			error = 'File picker unavailable — type the path directly in the field below.';
 		} finally {
 			browsing = false;
+		}
+	}
+
+	async function rescanVault() {
+		rescanning = true;
+		error = '';
+		rescanResult = '';
+		try {
+			// Unconditional — every entry in the vault is re-derived from its
+			// file, so this always reports the total entry count, not just
+			// how many were actually stale.
+			const { reindexed } = await systemApi.rescan();
+			rescanResult = `Rescanned ${reindexed} ${reindexed === 1 ? 'entry' : 'entries'}.`;
+		} catch (err) {
+			error = err instanceof Error ? err.message : String(err);
+		} finally {
+			rescanning = false;
 		}
 	}
 
@@ -344,6 +363,22 @@
 					{/if}
 				</div>
 			</div>
+		</section>
+
+		<section>
+			<h2>Maintenance</h2>
+			<div class="field toggle-field">
+				<label
+					for="rescan-vault"
+					use:tooltip={'Re-derive tags, links, and search content for any file edited outside Analecta'}
+				>
+					Rescan vault
+				</label>
+				<button id="rescan-vault" class="action-btn" onclick={rescanVault} disabled={rescanning}>
+					{rescanning ? 'Scanning…' : 'Rescan'}
+				</button>
+			</div>
+			{#if rescanResult}<p class="rescan-result">{rescanResult}</p>{/if}
 		</section>
 
 		<section>
@@ -779,5 +814,32 @@
 		color: var(--red);
 		font-size: 13px;
 		margin-bottom: 1rem;
+	}
+
+	.rescan-result {
+		margin: 0.5rem 0 0;
+		font-size: 12px;
+		color: var(--green);
+	}
+
+	.action-btn {
+		padding: 0.4rem 0.75rem;
+		background: var(--bg-highlight);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		color: var(--fg);
+		font-family: inherit;
+		font-size: 13px;
+		cursor: pointer;
+	}
+
+	.action-btn:hover:not(:disabled) {
+		border-color: var(--accent-dark);
+		color: var(--accent);
+	}
+
+	.action-btn:disabled {
+		opacity: 0.6;
+		cursor: default;
 	}
 </style>

@@ -253,6 +253,11 @@ class VaultIndex:
             )
             self._conn.commit()
 
+        # Runs every startup (not gated by schema_migrations) — catches any
+        # entry whose Markdown file was edited outside the app since the
+        # last reconcile.
+        self.reconcile_stale_entries()
+
     def _bootstrap_backlinks(self) -> None:
         """Populate backlink_refs for entries that have never been indexed.
 
@@ -1115,7 +1120,9 @@ class VaultIndex:
 
         Reads the entry's Markdown file, parses ``[[wikilinks]]`` and
         ``#hashtags``, clears any previously indexed refs for this source,
-        and inserts fresh rows into ``backlink_refs``.
+        and inserts fresh rows into ``backlink_refs``. Also stamps
+        ``entries.indexed_mtime`` with the file's current mtime, so
+        :meth:`reconcile_stale_entries` can tell this entry is caught up.
 
         Args:
             source_id: ID of the entry whose file to re-parse.
@@ -1131,6 +1138,7 @@ class VaultIndex:
 
         markdown = file_path.read_text(encoding="utf-8")
         refs = parse_refs(markdown)
+        mtime = file_path.stat().st_mtime
 
         self._conn.execute(
             "DELETE FROM backlink_refs WHERE source_id = ?", (source_id,)
@@ -1152,7 +1160,71 @@ class VaultIndex:
                     ref.post,
                 ),
             )
+        self._conn.execute(
+            "UPDATE entries SET indexed_mtime = ? WHERE id = ?", (mtime, source_id)
+        )
         self._conn.commit()
+
+    @_synchronized
+    def reconcile_stale_entries(self, *, force: bool = False) -> int:
+        """Re-derive backlinks and FTS content for entries edited outside the app.
+
+        Nothing re-scans an entry's Markdown file on its own — tag rename/
+        delete only reindex the entries their own (possibly stale)
+        ``backlink_refs`` cache points them to, and the editor only writes
+        FTS/backlink data on its own explicit save. An entry edited
+        directly on disk (another editor, a sync tool, a script) is never
+        picked up by either path, so its cached hashtag identities and
+        search content silently drift from the file's real content.
+
+        Compares each entry's current file mtime against
+        ``entries.indexed_mtime`` (stamped by :meth:`index_backlinks` and
+        :meth:`update_fts_content`); a mismatch — or a ``NULL`` value, e.g.
+        a row that predates this column — reindexes that entry's
+        ``backlink_refs`` and ``entries_fts`` row from the file's current
+        content. Entries whose file no longer exists are left untouched.
+
+        Called unconditionally (``force=False``) once per sidecar startup.
+        Mtime is a heuristic, not a guarantee: tools that preserve or
+        backdate mtime on write (some sync clients, ``cp -p``, ``rsync
+        -t``) can leave a real content change undetected between startups.
+        ``force=True`` — used by the manual "Rescan vault" action — skips
+        the mtime comparison and reindexes every entry, precisely to give
+        an escape hatch for that gap and for edits made while the sidecar
+        is already running.
+
+        Args:
+            force: Reindex every entry regardless of its recorded mtime.
+
+        Returns:
+            Number of entries reindexed.
+        """
+        rows = self._conn.execute(
+            "SELECT id, file_path, indexed_mtime FROM entries"
+        ).fetchall()
+
+        count = 0
+        for row in rows:
+            file_path = Path(row["file_path"])
+            try:
+                mtime = file_path.stat().st_mtime
+            except OSError:
+                continue
+            if (
+                not force
+                and row["indexed_mtime"] is not None
+                and mtime == row["indexed_mtime"]
+            ):
+                continue
+            entry_id = row["id"]
+            markdown = file_path.read_text(encoding="utf-8")
+            entry = self.get_entry(entry_id)
+            if entry is None:
+                continue
+            self.update_fts_content(entry_id, entry.title, markdown)
+            self.index_backlinks(entry_id)
+            count += 1
+        return count
 
     @_synchronized
     def get_backlinks(self, target_id: int) -> list[BacklinkRecord]:

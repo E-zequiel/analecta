@@ -1,15 +1,30 @@
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
 from importlib.metadata import version
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from analecta.api.deps import get_index
 from analecta.api.events import EventBus
+from analecta.storage.index import VaultIndex
 
 log = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class RescanOut(BaseModel):
+    """Result of a manual vault rescan.
+
+    Attributes:
+        reindexed: Number of entries whose backlinks/FTS content were
+            refreshed from their Markdown file.
+    """
+
+    reindexed: int
 
 
 @router.get("/system/health")
@@ -49,3 +64,25 @@ async def events(request: Request) -> EventSourceResponse:
                 yield {"data": json.dumps(event)}
 
     return EventSourceResponse(_gen())
+
+
+@router.post("/system/rescan")
+async def rescan(index: VaultIndex = Depends(get_index)) -> RescanOut:
+    """Manually re-derive backlinks and FTS content for every vault entry.
+
+    Runs the same reconciliation that fires automatically on sidecar
+    startup (:meth:`~analecta.storage.index.VaultIndex.reconcile_stale_entries`),
+    but unconditionally — every entry is reindexed from its current file,
+    regardless of its recorded mtime. Exposed as a user-triggered fallback
+    for edits made while the sidecar is already running (the startup sweep
+    can't see those) and for tools that preserve or backdate mtime on
+    write, which the startup sweep's mtime comparison can't detect either.
+
+    Args:
+        index: Injected VaultIndex singleton.
+
+    Returns:
+        The number of entries reindexed.
+    """
+    count = await asyncio.to_thread(index.reconcile_stale_entries, force=True)
+    return RescanOut(reindexed=count)
