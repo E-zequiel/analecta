@@ -150,11 +150,14 @@
 		error = '';
 		rescanResult = '';
 		try {
-			// Unconditional — every entry in the vault is re-derived from its
-			// file, so this always reports the total entry count, not just
-			// how many were actually stale.
-			const { reindexed } = await systemApi.rescan();
-			rescanResult = `Rescanned ${reindexed} ${reindexed === 1 ? 'entry' : 'entries'}.`;
+			// Every entry in the vault is re-derived from its file regardless
+			// of this count — `updated` reports how many were actually found
+			// out of sync, not how many were touched.
+			const { updated } = await systemApi.rescan();
+			rescanResult =
+				updated === 0
+					? 'No entries needed updating.'
+					: `Updated ${updated} ${updated === 1 ? 'entry' : 'entries'}.`;
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		} finally {

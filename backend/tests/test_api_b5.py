@@ -152,10 +152,10 @@ def test_events_200(tmp_path: Path, mocker: MockerFixture) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_rescan_200_returns_reindexed_count(client: TestClient) -> None:
+def test_rescan_200_returns_updated_count(client: TestClient) -> None:
     r = client.post("/api/v1/system/rescan")
     assert r.status_code == 200
-    assert r.json() == {"reindexed": 0}
+    assert r.json() == {"updated": 0}
 
 
 def test_rescan_reindexes_entry_edited_after_startup(tmp_path: Path) -> None:
@@ -188,7 +188,7 @@ def test_rescan_reindexes_entry_edited_after_startup(tmp_path: Path) -> None:
 
         r = c.post("/api/v1/system/rescan")
         assert r.status_code == 200
-        assert r.json() == {"reindexed": 1}
+        assert r.json() == {"updated": 1}
         assert index.get_body_hashtag_entry_ids("python") == []
 
 

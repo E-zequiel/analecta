@@ -1553,9 +1553,11 @@ def test_reconcile_stale_entries_treats_null_mtime_as_stale(
     assert index.get_body_hashtag_entry_ids("python") == [entry_id]
 
 
-def test_reconcile_stale_entries_force_reindexes_unmodified_file(
+def test_reconcile_stale_entries_force_reindexes_despite_clean_mtime(
     index: VaultIndex, tmp_path: Path
 ):
+    """force=True reindexes every entry even when mtime says nothing changed —
+    but the returned count still reflects mtime drift, not entries touched."""
     vault = tmp_path / "pages"
     vault.mkdir()
     src_file = vault / "article.md"
@@ -1563,9 +1565,21 @@ def test_reconcile_stale_entries_force_reindexes_unmodified_file(
     entry_id = index.add_entry(_entry(file_path=str(src_file)))
     index.index_backlinks(entry_id)
 
+    # A ghost backlink_refs row the cache shouldn't have, with indexed_mtime
+    # left matching the file's current (unchanged) mtime — clean by mtime.
+    index._conn.execute(
+        "INSERT INTO backlink_refs (source_id, target_text, is_hashtag,"
+        " pre, highlight, post) VALUES (?, 'ghost', 1, '', '#ghost', '')",
+        (entry_id,),
+    )
+    index._conn.commit()
+
     count = index.reconcile_stale_entries(force=True)
 
-    assert count == 1
+    assert (
+        index.get_body_hashtag_entry_ids("ghost") == []
+    )  # reindexed despite clean mtime
+    assert count == 0  # but not counted as stale — mtime never moved
 
 
 def test_reconcile_stale_entries_skips_missing_file(index: VaultIndex, tmp_path: Path):

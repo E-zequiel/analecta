@@ -20,11 +20,13 @@ class RescanOut(BaseModel):
     """Result of a manual vault rescan.
 
     Attributes:
-        reindexed: Number of entries whose backlinks/FTS content were
-            refreshed from their Markdown file.
+        updated: Number of entries found out of sync with their Markdown
+            file (mtime drift) and reindexed. Every entry in the vault is
+            actually reindexed regardless of this count — it reports how
+            many needed it, not how many were touched.
     """
 
-    reindexed: int
+    updated: int
 
 
 @router.get("/system/health")
@@ -82,7 +84,9 @@ async def rescan(index: VaultIndex = Depends(get_index)) -> RescanOut:
         index: Injected VaultIndex singleton.
 
     Returns:
-        The number of entries reindexed.
+        How many entries were found out of sync and reindexed — not how
+        many entries exist in the vault (see
+        :meth:`~analecta.storage.index.VaultIndex.reconcile_stale_entries`).
     """
     count = await asyncio.to_thread(index.reconcile_stale_entries, force=True)
-    return RescanOut(reindexed=count)
+    return RescanOut(updated=count)
