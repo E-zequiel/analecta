@@ -700,9 +700,9 @@ class VaultIndex:
         1. **Structural tags** (``entry_tags``/``tags``), matched via
            ``tags.normalized`` (``casefold`` identity) — same convention
            as :meth:`update_tags`/:meth:`list_tags`.
-        2. **Content hashtags** (``backlink_refs``), matched against
-           *tag* normalized the same way hashtags are normalized at
-           index time.
+        2. **Content hashtags** (``backlink_refs``), matched via
+           ``casefold`` — the same identity content hashtags are stored
+           under at index time (see :func:`~analecta.markdown.backlinks.parse_refs`).
 
         An entry that carries *tag* both structurally and as a content
         hashtag is only counted once.
@@ -730,7 +730,7 @@ class VaultIndex:
             FROM backlink_refs
             WHERE target_text = ? AND is_hashtag = 1
             """,
-            (normalize_tag(tag),),
+            (tag.casefold(),),
         ).fetchall()
 
         ids = {row[0] for row in structural_rows} | {row[0] for row in hashtag_rows}
@@ -747,13 +747,12 @@ class VaultIndex:
         otherwise resurrect the tag identity.
 
         A tag name only has a legitimate hashtag form when
-        ``normalize_tag(name) == name.casefold()`` — true for any name
-        built from the hashtag charset (letters/digits/underscore), false
-        for a symbol- or space-bearing name like ``"C++"``
-        (``normalize_tag("C++")`` folds to ``"c"``, a different identity
-        from the structural ``"c++"``). Returns an empty list rather than
-        spuriously matching a same-named hashtag for those — same
-        collision-avoidance rule documented on :meth:`get_entry_ids_by_tag`.
+        :func:`~analecta.markdown.backlinks.is_valid_hashtag_literal` accepts
+        it — false for a symbol- or space-bearing name like ``"C++"`` that
+        could never appear verbatim as ``#C++``. Returns an empty list
+        rather than spuriously matching a same-named hashtag for those —
+        same collision-avoidance rule documented on
+        :meth:`get_entry_ids_by_tag`.
 
         Args:
             name: Tag name to look up.
@@ -762,8 +761,9 @@ class VaultIndex:
             Sorted, deduplicated list of entry IDs. Empty if *name* has no
             valid hashtag form or no matching content hashtag exists.
         """
-        normalized = normalize_tag(name)
-        if normalized != name.casefold():
+        from analecta.markdown.backlinks import is_valid_hashtag_literal
+
+        if not is_valid_hashtag_literal(name):
             return []
         rows = self._conn.execute(
             """
@@ -771,7 +771,7 @@ class VaultIndex:
             FROM backlink_refs
             WHERE target_text = ? AND is_hashtag = 1
             """,
-            (normalized,),
+            (name.casefold(),),
         ).fetchall()
         return sorted(row[0] for row in rows)
 
@@ -902,10 +902,9 @@ class VaultIndex:
         content-only identity has no structural row to conflict with.
 
         Args:
-            old_name: Current tag name. Matched case-insensitively against
-                structural tags; matched via
-                :func:`~analecta.markdown.hashtags.normalize_tag` against
-                content hashtags.
+            old_name: Current tag name. Matched case-insensitively
+                (``casefold``) against both structural tags and content
+                hashtags.
             new_name: Replacement tag name, or the (case-insensitive)
                 target of a merge.
             merge: Required to proceed when *new_name*'s identity already
@@ -1011,7 +1010,7 @@ class VaultIndex:
             self._conn.commit()
 
         if hashtag_entry_ids:
-            target_normalized = normalize_tag(old_name)
+            target_normalized = old_name.casefold()
             for eid in hashtag_entry_ids:
                 entry = self.get_entry(eid)
                 if entry is None:
@@ -1053,9 +1052,9 @@ class VaultIndex:
         list) is fully removable too.
 
         Args:
-            name: Tag name to delete. Matched case-insensitively against
-                structural tags; matched via :func:`normalize_tag` against
-                content hashtags. Does nothing if neither exists.
+            name: Tag name to delete. Matched case-insensitively
+                (``casefold``) against both structural tags and content
+                hashtags. Does nothing if neither exists.
         """
         from analecta.markdown.backlinks import neutralize_hashtag_occurrences
 
@@ -1094,7 +1093,7 @@ class VaultIndex:
         self._conn.commit()
 
         if hashtag_entry_ids:
-            target_normalized = normalize_tag(name)
+            target_normalized = name.casefold()
             for eid in hashtag_entry_ids:
                 entry = self.get_entry(eid)
                 if entry is None:
