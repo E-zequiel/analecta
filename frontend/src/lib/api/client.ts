@@ -315,7 +315,7 @@ export const pkm = {
 };
 
 export const system = {
-	rescan(): Promise<{ reindexed: number }> {
-		return apiFetch<{ reindexed: number }>('/system/rescan', { method: 'POST' });
+	rescan(): Promise<{ updated: number }> {
+		return apiFetch<{ updated: number }>('/system/rescan', { method: 'POST' });
 	},
 };

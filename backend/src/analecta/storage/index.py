@@ -1187,34 +1187,46 @@ class VaultIndex:
         Called unconditionally (``force=False``) once per sidecar startup.
         Mtime is a heuristic, not a guarantee: tools that preserve or
         backdate mtime on write (some sync clients, ``cp -p``, ``rsync
-        -t``) can leave a real content change undetected between startups.
-        ``force=True`` — used by the manual "Rescan vault" action — skips
-        the mtime comparison and reindexes every entry, precisely to give
-        an escape hatch for that gap and for edits made while the sidecar
-        is already running.
+        -t``) can leave a real content change undetected. ``force=True`` —
+        used by the manual "Rescan vault" action — still reindexes every
+        entry regardless of its recorded mtime, precisely to give an
+        escape hatch for that gap and for edits made while the sidecar is
+        already running.
+
+        The returned count always means "entries whose mtime had drifted"
+        (mtime mismatch or never-indexed), never "entries reindexed" —
+        under ``force=True`` those two numbers diverge, since every entry
+        gets reindexed but only the mtime-drifted ones are counted. This
+        keeps the manual action's reported number meaningful ("N entries
+        were actually out of sync") instead of degenerating to "the size
+        of your vault" on every click. The one gap this doesn't close: a
+        force-triggered reindex that *does* pick up a real content change
+        whose mtime happened to be preserved is still silently counted as
+        0 — mtime is the only staleness signal available short of content
+        hashing, which this deliberately doesn't add.
 
         Args:
             force: Reindex every entry regardless of its recorded mtime.
 
         Returns:
-            Number of entries reindexed.
+            Number of entries whose recorded mtime didn't match the file
+            on disk (or had never been indexed) — not the number of
+            entries actually reindexed, which under ``force=True`` is
+            every entry in the vault.
         """
         rows = self._conn.execute(
             "SELECT id, file_path, indexed_mtime FROM entries"
         ).fetchall()
 
-        count = 0
+        stale_count = 0
         for row in rows:
             file_path = Path(row["file_path"])
             try:
                 mtime = file_path.stat().st_mtime
             except OSError:
                 continue
-            if (
-                not force
-                and row["indexed_mtime"] is not None
-                and mtime == row["indexed_mtime"]
-            ):
+            is_stale = row["indexed_mtime"] is None or mtime != row["indexed_mtime"]
+            if not force and not is_stale:
                 continue
             entry_id = row["id"]
             markdown = file_path.read_text(encoding="utf-8")
@@ -1223,8 +1235,9 @@ class VaultIndex:
                 continue
             self.update_fts_content(entry_id, entry.title, markdown)
             self.index_backlinks(entry_id)
-            count += 1
-        return count
+            if is_stale:
+                stale_count += 1
+        return stale_count
 
     @_synchronized
     def get_backlinks(self, target_id: int) -> list[BacklinkRecord]:
