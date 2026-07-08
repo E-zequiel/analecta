@@ -202,6 +202,39 @@ class TestParseRefs:
         refs = parse_refs("Visit https://example.com/path#section for more.\n")
         assert refs == []
 
+    def test_hashtag_spanish_accented_vowels(self) -> None:
+        # target_text is casefolded, not accent-stripped — accents are part
+        # of the tag's identity, not noise to fold away.
+        refs = parse_refs("Notas sobre #programación y #diseño.\n")
+        assert len(refs) == 2
+        assert refs[0].target_text == "programación"
+        assert refs[0].highlight == "#programación"
+        assert refs[1].target_text == "diseño"
+
+    def test_hashtag_leading_accented_vowel_and_ene_and_uml(self) -> None:
+        refs = parse_refs("Ver #Álvaro y #ñoño y #pingüino hoy.\n")
+        assert len(refs) == 3
+        assert refs[0].highlight == "#Álvaro"
+        assert refs[1].highlight == "#ñoño"
+        assert refs[2].highlight == "#pingüino"
+
+    def test_hashtag_hyphen_apostrophe_tilde_caret(self) -> None:
+        refs = parse_refs("Tags: #well-being #don't #note~1 #ref^2.\n")
+        assert len(refs) == 4
+        assert [r.highlight for r in refs] == [
+            "#well-being",
+            "#don't",
+            "#note~1",
+            "#ref^2",
+        ]
+
+    def test_hashtag_backtick_not_consumed_into_token(self) -> None:
+        # A literal backtick is never part of a hashtag's body — it still
+        # opens/closes inline code, so text after it stays masked.
+        refs = parse_refs("See #tag`code` here.\n")
+        assert len(refs) == 1
+        assert refs[0].highlight == "#tag"
+
     def test_multiple_occurrences_of_same_target(self) -> None:
         md = "## Intro\n\nSee [[Alpha]].\n\n## Details\n\nAlso [[Alpha]] here.\n"
         refs = parse_refs(md)
@@ -445,6 +478,36 @@ class TestIsValidHashtagLiteral:
 
     def test_empty_invalid(self) -> None:
         assert is_valid_hashtag_literal("") is False
+
+    def test_spanish_accented_vowels_valid(self) -> None:
+        assert is_valid_hashtag_literal("programación") is True
+
+    def test_leading_accented_vowel_valid(self) -> None:
+        assert is_valid_hashtag_literal("Álvaro") is True
+
+    def test_leading_ene_valid(self) -> None:
+        assert is_valid_hashtag_literal("ñoño") is True
+
+    def test_uml_valid(self) -> None:
+        assert is_valid_hashtag_literal("pingüino") is True
+
+    def test_hyphen_valid(self) -> None:
+        assert is_valid_hashtag_literal("well-being") is True
+
+    def test_apostrophe_valid(self) -> None:
+        assert is_valid_hashtag_literal("don't") is True
+
+    def test_tilde_valid(self) -> None:
+        assert is_valid_hashtag_literal("note~1") is True
+
+    def test_caret_valid(self) -> None:
+        assert is_valid_hashtag_literal("ref^2") is True
+
+    def test_backtick_invalid(self) -> None:
+        assert is_valid_hashtag_literal("tag`name") is False
+
+    def test_leading_hyphen_invalid(self) -> None:
+        assert is_valid_hashtag_literal("-tag") is False
 
 
 # ---------------------------------------------------------------------------

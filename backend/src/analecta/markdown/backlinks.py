@@ -11,11 +11,20 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from analecta.markdown.hashtags import normalize_tag
-
 _WIKILINK_RE = re.compile(r"\[\[([^\[\]|]+?)(?:\|[^\[\]]+?)?\]\]")
-_HASHTAG_RE = re.compile(r"(?<!\S)#([A-Za-z][A-Za-z0-9_]*)(?![A-Za-z0-9_])")
-_HASHTAG_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+
+# Leading char: ASCII letter or a Spanish accented vowel/eñe/ü (both cases).
+# Continuation: the above plus digits and _ - ' ~ ^. Backtick is deliberately
+# excluded — it's CommonMark's inline-code delimiter, and the tag-delete
+# mechanism (neutralize_hashtag_occurrences) relies on backticks being
+# categorically outside the hashtag charset to distinguish a neutralized
+# hashtag from a live one.
+_HASHTAG_FIRST = "A-Za-zÁÉÍÓÚÑÜáéíóúñü"
+_HASHTAG_REST = r"A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9_'~^-"
+_HASHTAG_RE = re.compile(
+    rf"(?<!\S)#([{_HASHTAG_FIRST}][{_HASHTAG_REST}]*)(?![{_HASHTAG_REST}])"
+)
+_HASHTAG_NAME_RE = re.compile(rf"^[{_HASHTAG_FIRST}][{_HASHTAG_REST}]*$")
 _HEADING_RE = re.compile(r"^#{1,6}\s+(.+)")
 _FENCE_RE = re.compile(r"^```")
 _FRONTMATTER_RE = re.compile(r"^---\n[\s\S]*?\n---\n", re.MULTILINE)
@@ -144,7 +153,7 @@ def parse_refs(markdown: str) -> list[ParsedRef]:
             tag_name = m.group(1)
             refs.append(
                 ParsedRef(
-                    target_text=normalize_tag(tag_name),
+                    target_text=tag_name.casefold(),
                     is_hashtag=True,
                     heading=current_heading,
                     pre=line[max(0, start - _CONTEXT_RADIUS) : start].strip(),
@@ -175,8 +184,8 @@ def _rewrite_hashtag_body(
 
     Args:
         markdown: Raw Markdown text to rewrite.
-        target_normalized: Normalized (:func:`normalize_tag`) hashtag
-            identity to match.
+        target_normalized: Casefolded hashtag identity to match (accents and
+            symbols are preserved — only case is folded).
         replace: Called with each matched span's original text; its return
             value replaces that span.
 
@@ -224,7 +233,7 @@ def _rewrite_hashtag_body(
         matches = [
             m
             for m in _HASHTAG_RE.finditer(masked)
-            if normalize_tag(m.group(1)) == target_normalized
+            if m.group(1).casefold() == target_normalized
         ]
         for m in reversed(matches):
             start, end = m.start(), m.end()
@@ -251,8 +260,8 @@ def neutralize_hashtag_occurrences(
 
     Args:
         markdown: Raw Markdown text to rewrite.
-        target_normalized: Normalized (:func:`normalize_tag`) hashtag
-            identity to neutralize.
+        target_normalized: Casefolded hashtag identity to neutralize (see
+            :func:`_rewrite_hashtag_body`).
 
     Returns:
         Tuple of ``(rewritten_markdown, occurrences_wrapped)``. Returns
@@ -277,8 +286,8 @@ def rename_hashtag_occurrences(
 
     Args:
         markdown: Raw Markdown text to rewrite.
-        target_normalized: Normalized (:func:`normalize_tag`) hashtag
-            identity to migrate.
+        target_normalized: Casefolded hashtag identity to migrate (see
+            :func:`_rewrite_hashtag_body`).
         new_name: Literal replacement text (without the leading ``#``).
 
     Returns:
@@ -294,7 +303,8 @@ def is_valid_hashtag_literal(name: str) -> bool:
     """Return whether *name* could appear verbatim as ``#name`` and parse as live.
 
     Mirrors :data:`_HASHTAG_RE`'s capture-group charset exactly (a leading
-    letter, then letters/digits/underscore), so a ``True`` result guarantees
+    letter — ASCII or a Spanish accented vowel/``ñ``/``ü`` — then
+    letters/digits/``_ - ' ~ ^``), so a ``True`` result guarantees
     :func:`rename_hashtag_occurrences`'s output round-trips through
     :func:`parse_refs`. Used to gate whether :meth:`VaultIndex.rename_tag`
     can migrate literal body-text occurrences to *name*, or must reject the

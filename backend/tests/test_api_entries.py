@@ -447,6 +447,56 @@ def test_rename_tag_invalid_new_name_with_body_occurrences_409(tmp_path: Path) -
     assert src_file.read_text(encoding="utf-8") == "Filed under #python.\n"
 
 
+def test_rename_tag_to_accented_name_migrates_body_hashtag(tmp_path: Path) -> None:
+    # Reproduces the reported bug at the HTTP layer: renaming an established
+    # tag (with a literal #hashtag occurrence in an entry's body) into a name
+    # containing Spanish accented characters used to 409; it must now 200.
+    vault = tmp_path / "vault"
+    pages = vault / "pages"
+    pages.mkdir(parents=True)
+    src_file = pages / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+
+    config = AppConfig(vault_path=vault)
+    with VaultIndex(config.vault_path / "analecta.db") as index:
+        entry_id = index.add_entry(
+            EntryRecord(
+                title="Article",
+                url="https://example.com/1",
+                file_path=str(src_file),
+                source_type="article",
+                created_at="2024-01-01T00:00:00+00:00",
+                updated_at="2024-01-01T00:00:00+00:00",
+            )
+        )
+        index.update_tags(entry_id, ["python"])
+        index.index_backlinks(entry_id)
+
+    with TestClient(_make_app(tmp_path)) as c:
+        r = c.put("/api/v1/tags/python", json={"new_name": "programación"})
+        assert r.status_code == 200
+        assert r.json() == {"name": "programación", "count": 1}
+
+    assert "#programación" in src_file.read_text(encoding="utf-8")
+
+
+def test_list_entries_filter_accented_tag(tmp_path: Path) -> None:
+    # Exercises the accented tag name through actual URL query-string
+    # encoding/decoding, not just the Python-level VaultIndex call.
+    with VaultIndex(
+        AppConfig(vault_path=tmp_path / "vault").vault_path / "analecta.db"
+    ) as index:
+        entry_id = _seed_entry(index, n=1)
+        index.update_tags(entry_id, ["café"])
+
+    with TestClient(_make_app(tmp_path)) as c:
+        r = c.get("/api/v1/entries", params={"tag": "café"})
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 1
+        assert data[0]["title"] == "Article 1"
+
+
 # ---------------------------------------------------------------------------
 # DELETE /tags/{name}
 # ---------------------------------------------------------------------------

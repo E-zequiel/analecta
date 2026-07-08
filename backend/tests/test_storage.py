@@ -948,6 +948,46 @@ def test_rename_tag_invalid_new_name_with_body_occurrences_raises(
     assert "C++" not in names
 
 
+def test_rename_tag_accented_new_name_with_body_occurrences_succeeds(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.update_tags(entry_id, ["python"])
+    index.index_backlinks(entry_id)
+
+    result = index.rename_tag("python", "programación")
+
+    assert result == ("programación", 1)
+    assert src_file.read_text(encoding="utf-8") == "Filed under #programación.\n"
+    tags = index.list_tags()
+    # The renamed structural tag and its just-migrated literal #hashtag
+    # occurrence must land on one identity, not fragment into a phantom
+    # ASCII-folded row alongside the accented one.
+    assert tags == [("programación", 1)]
+
+
+def test_accented_structural_tag_and_content_hashtag_unify(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Body mentions #café here.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.update_tags(entry_id, ["café"])
+    index.index_backlinks(entry_id)
+
+    # One entry carrying "café" both structurally and as a content hashtag
+    # must appear as a single unified tag, not split into "café" (structural,
+    # casefold identity) and "cafe" (content, accent-stripped identity).
+    assert index.list_tags() == [("café", 1)]
+    assert index.get_entry_ids_by_tag("café") == [entry_id]
+
+
 def test_rename_tag_invalid_new_name_without_body_occurrences_succeeds(
     index: VaultIndex,
 ):

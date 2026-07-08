@@ -5,7 +5,11 @@ interface HashtagMeta {
 	normalized: string;
 }
 
-const HASHTAG_BODY_RE = /^[A-Za-z][A-Za-z0-9_]*/;
+// Leading char: ASCII letter or a Spanish accented vowel/eñe/ü (both cases).
+// Continuation: the above plus digits and _ - ' ~ ^. Must mirror the
+// backend's _HASHTAG_RE (backlinks.py) exactly — backtick is deliberately
+// excluded, see that file's comment for why.
+const HASHTAG_BODY_RE = /^[A-Za-zÁÉÍÓÚÑÜáéíóúñü][A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9_'~^-]*/;
 
 // Parses inline #hashtags the same way as the backend's _HASHTAG_RE
 // (backlinks.py), but as a native markdown-it inline rule. Fenced blocks and

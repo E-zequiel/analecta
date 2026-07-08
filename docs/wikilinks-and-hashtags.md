@@ -42,7 +42,12 @@ and content hashtags) are unified for counting and lookup; see
 #some_topic
 ```
 
-- Body: `[A-Za-z][A-Za-z0-9_]*` — must start with a letter.
+- Body: `[A-Za-zÁÉÍÓÚÑÜáéíóúñü][A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9_'~^-]*` — must start
+  with a letter (ASCII or a Spanish accented vowel/`ñ`/`ü`); digits, `_`,
+  `-`, `'`, `~`, `^` may follow. Backtick is deliberately excluded — it's
+  CommonMark's inline-code delimiter, and `delete_tag`'s neutralization
+  mechanism (see below) relies on backticks being categorically outside the
+  hashtag charset.
 - Must not be preceded by a non-whitespace character — `foo#bar` and a `#fragment`
   inside a bare URL (`https://example.com/path#section`) are never treated as
   hashtags.
@@ -89,11 +94,23 @@ or re-extracted.
 
 ### Normalization (tag identity)
 
-`normalize_tag()` (`backend/src/analecta/markdown/hashtags.py`) converts a hashtag's
-raw text to its storage identity: Unicode NFKD → ASCII → lowercase → non-alphanumeric
-runs collapsed to a single underscore → leading/trailing underscores stripped. This is
-what's written to `backlink_refs.target_text` for hashtags, and what
-`get_entry_ids_by_tag`/`get_graph`/etc. key hashtag lookups on.
+A hashtag's storage identity is its raw captured text, `casefold()`-ed — nothing
+else. This is what's written to `backlink_refs.target_text` for hashtags, and what
+`get_entry_ids_by_tag`/`get_graph`/etc. key hashtag lookups on. It's deliberately
+accent- and symbol-*sensitive*: `café` and `cafe` are different tags, `well-being`
+and `well_being` are different tags — only case folds away. This matches the
+identity structural tags already use (`tags.normalized`, also a bare `casefold`),
+so a structural tag and a content hashtag with the exact same spelling always
+unify into one tag; spellings that differ by more than case do not.
+
+`normalize_tag()` (`backend/src/analecta/markdown/hashtags.py` — Unicode NFKD →
+ASCII → lowercase → non-alphanumeric runs collapsed to a single underscore) is a
+*different*, more aggressive slugifier reused for an unrelated purpose: matching a
+`[[wikilink]]`'s title against real entry titles in a punctuation/accent-tolerant
+way (`get_graph`, `get_subgraph`, backlink title resolution). It has not been used
+for hashtag identity since accented/symbol hashtags became parseable — reusing it
+there would silently fold `café` and `cafe` back into the same tag, which is
+exactly the behavior this section says hashtag identity does *not* have.
 
 ## Rendering (frontend)
 
@@ -129,25 +146,26 @@ Analecta has two ways to attach a tag identity to an entry:
   stored in `backlink_refs` (`is_hashtag = 1`).
 
 They are deliberately separate systems (a structural tag has no required body text;
-a content hashtag needs no Sidebar entry), but share one **normalized identity**:
-`tags.normalized` is a `casefold()` of the structural tag's display name, and content
-hashtags are already normalized at index time. An entry carrying `Python` structurally
-and `#python` in its body is the same tag for every counting/lookup purpose:
+a content hashtag needs no Sidebar entry), but share one **`casefold()` identity**
+(see [Normalization](#normalization-tag-identity) above) — `tags.normalized` for
+structural tags, `backlink_refs.target_text` for content hashtags. An entry carrying
+`Python` structurally and `#python` in its body is the same tag for every
+counting/lookup purpose:
 
 - `VaultIndex.list_tags()` (Sidebar TAGS grid, tag counts) — a **true union**: every
   entry that has the tag either structurally or as a content hashtag, deduplicated by
   entry id.
 - `VaultIndex.get_entry_ids_by_tag(tag)` (clicking into a tag, filtering by tag) —
   same true-union semantics.
-- `create_tag`/`rename_tag`/`delete_tag` — all look up by normalized identity, so
+- `create_tag`/`rename_tag`/`delete_tag` — all look up by `casefold()` identity, so
   creating "python" when "Python" already exists resolves to the existing tag instead
   of creating a case-duplicate.
 
 When both a structural tag and a content hashtag share an identity, the **structural
 tag's display casing wins** wherever a single name is shown (grid, connection groups).
-A normalized identity that strips symbols means a structural tag like `C++` and a
-hashtag `#c` are never accidentally unified — `normalize_tag("C++")` and `casefold`
-identity diverge enough that they stay distinct tags.
+Because identity is accent/symbol-*sensitive*, a structural tag like `C++` and a
+hashtag `#c` are never accidentally unified — `"C++".casefold()` and `"c".casefold()`
+are simply different strings.
 
 ### Deleting a tag neutralizes literal body text too
 
@@ -184,12 +202,13 @@ a tag with no structural row at all (a purely content-hashtag identity): renamin
 rewrites every occurrence the same way, with no structural table involved.
 
 `new_name` can only be migrated into body text if it's itself a valid bare hashtag
-token (a leading letter, then letters/digits/underscores — no symbols or spaces). If
-literal occurrences of the old identity exist in any entry's body and `new_name`
-doesn't qualify (e.g. renaming into `C++`), the rename is rejected outright (`409`)
-instead of silently leaving a split behind — edit the body text manually first, then
-retry the rename. A rename with no literal body-text occurrences at all is unaffected
-by this restriction, regardless of what `new_name` is.
+token — see the [Syntax](#hashtags) charset above (a leading letter, then
+letters/digits/`_ - ' ~ ^`; no backtick, no spaces, no other symbols). If literal
+occurrences of the old identity exist in any entry's body and `new_name` doesn't
+qualify (e.g. renaming into `C++`), the rename is rejected outright (`409`) instead
+of silently leaving a split behind — edit the body text manually first, then retry
+the rename. A rename with no literal body-text occurrences at all is unaffected by
+this restriction, regardless of what `new_name` is.
 
 Renaming a content-only tag (no structural row) into an identity that already exists
 *structurally* merges rather than conflicts — the mirror of the already-allowed
@@ -274,12 +293,12 @@ name, and vice versa.
 ## Known limitations
 
 - The reading view's `data-hashtag` value (and the TAGS-dashboard header it drives)
-  uses a simple `toLowerCase()` on the frontend, not the backend's full
-  `normalize_tag()`. For the character set hashtags are restricted to
-  (`[A-Za-z0-9_]`), this never affects *which* entries are found — the backend
-  re-normalizes independently for the actual query — but a rare edge case (e.g. a
-  hashtag with doubled or trailing underscores) can show the un-collapsed form in the
-  TAGS-dashboard header rather than backend's fully normalized display.
+  uses the frontend's `toLowerCase()`, while the backend keys hashtag identity on
+  `casefold()`. For every character the hashtag charset actually allows (ASCII
+  letters, Spanish accented vowels, `ñ`, `ü`, digits, `_ - ' ~ ^`), the two produce
+  identical output, so this is not a practical source of drift — unlike before this
+  charset widened, when the frontend's plain lowercase and the backend's
+  accent-stripping `normalize_tag()` genuinely disagreed on accented input.
 
 ## See also
 
