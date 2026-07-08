@@ -213,26 +213,33 @@
 		}
 	});
 
-	// Re-read the file from disk after a vault rescan (manual Ctrl+R/Settings
+	// Re-sync from the backend after a vault rescan (manual Ctrl+R/Settings
 	// action, or the automatic startup sweep) picks up an edit made outside
-	// Analecta. Source-only — reconcile touches backlink_refs/FTS, not entry
-	// metadata — and no loading-state reset, so the reading view updates
-	// without a flash or scroll jump. The derived html effect below picks up
-	// the new source automatically.
+	// Analecta. Re-fetches the entry too, not just the file — content_tags
+	// isn't stored on the row, it's resolved live from backlink_refs on every
+	// GET, so it goes stale exactly like source does; title/tags/flags/status
+	// ride along for free in the same request. No loading-state reset, so the
+	// reading view (and the Sidebar's per-entry tag filter, which reads
+	// $viewerEntry.content_tags) updates without a flash or scroll jump.
 	$effect(() => {
 		void $vaultRescannedTick;
 		const id = untrack(() => entryId);
-		const path = untrack(() => entry?.file_path);
-		if (isNaN(id) || !path) return;
+		if (isNaN(id)) return;
 
 		let cancelled = false;
-		readTextFile(path)
+		entriesApi
+			.get(id)
+			.then((e) => {
+				if (cancelled || untrack(() => entryId) !== id) return Promise.reject('cancelled');
+				entry = e;
+				return readTextFile(e.file_path);
+			})
 			.then((src) => {
-				if (cancelled || untrack(() => entryId) !== id) return;
+				if (cancelled) return;
 				source = src;
 			})
 			.catch(() => {
-				// File may have been deleted/moved externally — keep showing
+				// Entry/file may have been deleted externally — keep showing
 				// the last-known content rather than flashing an error.
 			});
 
