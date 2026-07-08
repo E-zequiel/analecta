@@ -1,3 +1,4 @@
+import os
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -144,6 +145,51 @@ def test_events_200(tmp_path: Path, mocker: MockerFixture) -> None:
         r = c.get("/api/v1/system/events")
     assert r.status_code == 200
     assert "text/event-stream" in r.headers.get("content-type", "")
+
+
+# ---------------------------------------------------------------------------
+# POST /system/rescan
+# ---------------------------------------------------------------------------
+
+
+def test_rescan_200_returns_reindexed_count(client: TestClient) -> None:
+    r = client.post("/api/v1/system/rescan")
+    assert r.status_code == 200
+    assert r.json() == {"reindexed": 0}
+
+
+def test_rescan_reindexes_entry_edited_after_startup(tmp_path: Path) -> None:
+    """The manual endpoint catches edits made while the sidecar is already
+    running — the one case the automatic startup sweep can't see."""
+    vault = tmp_path / "vault"
+    pages = vault / "pages"
+    pages.mkdir(parents=True)
+    src_file = pages / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+
+    app = _make_app(tmp_path)
+    with TestClient(app) as c:
+        index: VaultIndex = app.state.index
+        entry_id = index.add_entry(
+            EntryRecord(
+                title="Article",
+                url="https://example.com/article",
+                file_path=str(src_file),
+                source_type="article",
+                created_at="2024-01-01T00:00:00+00:00",
+                updated_at="2024-01-01T00:00:00+00:00",
+            )
+        )
+        index.index_backlinks(entry_id)
+
+        src_file.write_text("No hashtags anymore.\n", encoding="utf-8")
+        stat = src_file.stat()
+        os.utime(src_file, (stat.st_atime + 5, stat.st_mtime + 5))
+
+        r = c.post("/api/v1/system/rescan")
+        assert r.status_code == 200
+        assert r.json() == {"reindexed": 1}
+        assert index.get_body_hashtag_entry_ids("python") == []
 
 
 # ---------------------------------------------------------------------------

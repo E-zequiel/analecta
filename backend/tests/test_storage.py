@@ -1441,3 +1441,163 @@ def test_get_metrics_unread_not_counted(index: VaultIndex):
     assert index.get_metrics()["reads_week"] == 0
     assert index.get_metrics()["reads_month"] == 0
     assert index.get_metrics()["reads_year"] == 0
+
+
+# ---------------------------------------------------------------------------
+# reconcile_stale_entries — catches files edited outside the app
+# ---------------------------------------------------------------------------
+
+
+def _bump_mtime(path: Path, seconds: float = 5.0) -> None:
+    """Advance a file's mtime, simulating an external edit at a later time."""
+    import os
+
+    stat = path.stat()
+    os.utime(path, (stat.st_atime + seconds, stat.st_mtime + seconds))
+
+
+def test_index_backlinks_stamps_indexed_mtime(index: VaultIndex, tmp_path: Path):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("No links.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+
+    index.index_backlinks(entry_id)
+
+    row = index._conn.execute(
+        "SELECT indexed_mtime FROM entries WHERE id = ?", (entry_id,)
+    ).fetchone()
+    assert row["indexed_mtime"] == src_file.stat().st_mtime
+
+
+def test_reconcile_stale_entries_reindexes_externally_edited_file(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+
+    # Edited outside the app: hashtag removed, mtime bumped.
+    src_file.write_text("No hashtags anymore.\n", encoding="utf-8")
+    _bump_mtime(src_file)
+
+    count = index.reconcile_stale_entries()
+
+    assert count == 1
+    assert index.get_body_hashtag_entry_ids("python") == []
+
+
+def test_reconcile_stale_entries_refreshes_fts_content(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Original body.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+    index.update_fts_content(entry_id, "Test Entry", "Original body.\n")
+
+    src_file.write_text("Rewritten body mentions xylophone.\n", encoding="utf-8")
+    _bump_mtime(src_file)
+
+    index.reconcile_stale_entries()
+
+    rows = index._conn.execute(
+        "SELECT rowid FROM entries_fts WHERE entries_fts MATCH 'xylophone'"
+    ).fetchall()
+    assert [r[0] for r in rows] == [entry_id]
+
+
+def test_reconcile_stale_entries_skips_unmodified_file(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+    before = index._conn.execute(
+        "SELECT indexed_mtime FROM entries WHERE id = ?", (entry_id,)
+    ).fetchone()["indexed_mtime"]
+
+    count = index.reconcile_stale_entries()
+
+    assert count == 0
+    after = index._conn.execute(
+        "SELECT indexed_mtime FROM entries WHERE id = ?", (entry_id,)
+    ).fetchone()["indexed_mtime"]
+    assert after == before
+
+
+def test_reconcile_stale_entries_treats_null_mtime_as_stale(
+    index: VaultIndex, tmp_path: Path
+):
+    """Legacy rows predating the indexed_mtime column always get one pass."""
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    # Never indexed — indexed_mtime is NULL, unlike after a normal add_entry
+    # + index_backlinks flow.
+
+    count = index.reconcile_stale_entries()
+
+    assert count == 1
+    assert index.get_body_hashtag_entry_ids("python") == [entry_id]
+
+
+def test_reconcile_stale_entries_force_reindexes_unmodified_file(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.index_backlinks(entry_id)
+
+    count = index.reconcile_stale_entries(force=True)
+
+    assert count == 1
+
+
+def test_reconcile_stale_entries_skips_missing_file(index: VaultIndex, tmp_path: Path):
+    entry_id = index.add_entry(
+        _entry(file_path=str(tmp_path / "pages" / "does-not-exist.md"))
+    )
+
+    # Must not raise even though the file was never written.
+    count = index.reconcile_stale_entries()
+
+    assert count == 0
+    assert entry_id is not None
+
+
+def test_vaultindex_startup_reconciles_stale_entries(tmp_path: Path):
+    """The sweep also runs automatically on every VaultIndex construction."""
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+
+    db_path = tmp_path / "vault.db"
+    first = VaultIndex(db_path)
+    entry_id = first.add_entry(_entry(file_path=str(src_file)))
+    first.index_backlinks(entry_id)
+
+    src_file.write_text("No hashtags anymore.\n", encoding="utf-8")
+    _bump_mtime(src_file)
+    first.close()
+
+    second = VaultIndex(db_path)
+    try:
+        assert second.get_body_hashtag_entry_ids("python") == []
+    finally:
+        second.close()

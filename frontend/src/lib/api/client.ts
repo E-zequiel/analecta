@@ -313,3 +313,9 @@ export const pkm = {
 		return apiFetch<{ entry_id: number | null }>(`/pkm/parse-url?url=${encodeURIComponent(url)}`);
 	},
 };
+
+export const system = {
+	rescan(): Promise<{ reindexed: number }> {
+		return apiFetch<{ reindexed: number }>('/system/rescan', { method: 'POST' });
+	},
+};
