@@ -19,7 +19,7 @@ Initial public release.
 - Reading library — status-based organisation: Unread, Read, Bookmark, Gem, Archive.
 - Full-text search across titles and content powered by SQLite FTS5 (`Ctrl+K`).
 - Tag list, automatic bidirectional Linked Mentions, clickable `[[wikilink]]` rendering, and clickable `#hashtag` navigation to the TAGS dashboard across the vault. Tag identity is unified vault-wide and case-insensitive — `Python`, `python`, and `#PYTHON` all count as the same tag, while preserving whichever casing was curated first for display. Renaming a tag into another existing tag's name merges the two, with an explicit confirmation step since the merge can't be undone. Right-clicking a wikilink opens the context menu for the linked entry; middle-clicking a wikilink adds the linked entry to the right-sidebar entry stack without leaving the current reading view.
-- Vault reconciliation — files edited outside Analecta (another editor, a sync tool) are automatically re-derived for tags, links, and search content the next time the sidecar starts, plus a manual "Rescan vault" action in Settings for edits made while the app is already running.
+- Vault reconciliation — files edited outside Analecta (another editor, a sync tool) are automatically re-derived for tags, links, and search content the next time the sidecar starts, plus a manual "Rescan vault" action (`Ctrl+R`, also available in Settings) for edits made while the app is already running; an open reading view for the edited entry refreshes in place.
 - Manually connect related entries via a search-to-connect dialog.
 - Vault-wide knowledge graph, built with Sigma.js and graphology, and per-entry subgraph, built with d3-force.
 - Built-in Markdown editor with CodeMirror 6 and Tokyo Night theme.
