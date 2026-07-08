@@ -1020,7 +1020,13 @@ class VaultIndex:
                 )
                 if changed:
                     file_path.write_text(rewritten, encoding="utf-8")
-                    self.index_backlinks(eid)
+                # Reindex unconditionally, even when the body no longer
+                # contains the literal hashtag: hashtag_entry_ids comes from
+                # the backlink_refs cache, which can already be stale (e.g.
+                # the file was edited outside the app). Gating this on
+                # `changed` left such rows permanently stuck, since nothing
+                # else ever re-derives backlink_refs from the current body.
+                self.index_backlinks(eid)
 
         return canonical_name, len(self.get_entry_ids_by_tag(canonical_name))
 
@@ -1097,7 +1103,11 @@ class VaultIndex:
                 )
                 if wrapped:
                     file_path.write_text(rewritten, encoding="utf-8")
-                    self.index_backlinks(eid)
+                # Reindex unconditionally — see the matching comment in
+                # rename_tag. A stale backlink_refs row (body already
+                # doesn't contain the hashtag) must still be cleared even
+                # though there's nothing left to wrap.
+                self.index_backlinks(eid)
 
     @_synchronized
     def index_backlinks(self, source_id: int) -> None:
