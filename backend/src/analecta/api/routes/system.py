@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from analecta.api.deps import get_index
+from analecta.api.deps import get_event_bus, get_index
 from analecta.api.events import EventBus
 from analecta.storage.index import VaultIndex
 
@@ -69,7 +69,10 @@ async def events(request: Request) -> EventSourceResponse:
 
 
 @router.post("/system/rescan")
-async def rescan(index: VaultIndex = Depends(get_index)) -> RescanOut:
+async def rescan(
+    index: VaultIndex = Depends(get_index),
+    event_bus: EventBus = Depends(get_event_bus),
+) -> RescanOut:
     """Manually re-derive backlinks and FTS content for every vault entry.
 
     Runs the same reconciliation that fires automatically on sidecar
@@ -80,8 +83,15 @@ async def rescan(index: VaultIndex = Depends(get_index)) -> RescanOut:
     can't see those) and for tools that preserve or backdate mtime on
     write, which the startup sweep's mtime comparison can't detect either.
 
+    Publishes a ``vault_rescanned`` SSE event so already-open windows pick
+    up the change — a bulk reconciliation like this has no single changed
+    entry to report, so the frontend can't infer it happened the way it
+    does for a direct in-app edit, and would otherwise show stale tags/
+    links/search until the next manual refresh or restart.
+
     Args:
         index: Injected VaultIndex singleton.
+        event_bus: Injected SSE event bus.
 
     Returns:
         How many entries were found out of sync and reindexed — not how
@@ -89,4 +99,5 @@ async def rescan(index: VaultIndex = Depends(get_index)) -> RescanOut:
         :meth:`~analecta.storage.index.VaultIndex.reconcile_stale_entries`).
     """
     count = await asyncio.to_thread(index.reconcile_stale_entries, force=True)
+    event_bus.put_nowait({"type": "vault_rescanned"})
     return RescanOut(updated=count)
