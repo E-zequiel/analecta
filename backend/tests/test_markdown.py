@@ -10,12 +10,7 @@ from analecta.markdown.frontmatter import (
     build_template_block,
     update_linked,
 )
-from analecta.markdown.hashtags import (
-    append_tags,
-    find_heading_hashtags,
-    normalize_tag,
-    title_to_hashtag_key,
-)
+from analecta.markdown.hashtags import title_to_hashtag_key
 
 _CREATED_AT = "2024-01-15T10:00:00"
 
@@ -185,36 +180,6 @@ def test_convert_resolves_nextjs_image_proxy():
 
 
 # ---------------------------------------------------------------------------
-# normalize_tag
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("Python", "python"),
-        ("machine learning", "machine_learning"),
-        ("NLP/ML", "nlp_ml"),
-        ("C++", "c"),
-        ("Éclair", "eclair"),
-        ("  spaces  ", "spaces"),
-        ("already_snake", "already_snake"),
-        ("Multi  Spaces", "multi_spaces"),
-    ],
-)
-def test_normalize_tag(raw, expected):
-    assert normalize_tag(raw) == expected
-
-
-def test_normalize_tag_empty_string():
-    assert normalize_tag("") == ""
-
-
-def test_normalize_tag_only_special_chars():
-    assert normalize_tag("+++") == ""
-
-
-# ---------------------------------------------------------------------------
 # title_to_hashtag_key
 # ---------------------------------------------------------------------------
 
@@ -236,81 +201,16 @@ def test_title_to_hashtag_key(raw, expected):
     assert title_to_hashtag_key(raw) == expected
 
 
-def test_title_to_hashtag_key_preserves_accents_unlike_normalize_tag():
-    # The whole point of this function: unlike normalize_tag(), it must NOT
-    # collapse an accented title and its unaccented counterpart to the same
-    # key, since #café and #cafe are different hashtag identities.
+def test_title_to_hashtag_key_distinguishes_accents():
+    # #café and #cafe are different hashtag identities — an accent-stripping
+    # comparison would incorrectly collapse them to the same key.
     assert title_to_hashtag_key("Café") != title_to_hashtag_key("Cafe")
-    assert normalize_tag("Café") == normalize_tag("Cafe")
 
 
-def test_title_to_hashtag_key_preserves_symbols_unlike_normalize_tag():
-    assert title_to_hashtag_key("Well-Being") != normalize_tag("Well-Being")
-
-
-# ---------------------------------------------------------------------------
-# append_tags
-# ---------------------------------------------------------------------------
-
-
-def test_append_tags_adds_hash_prefix():
-    result = append_tags("Body text", ["python", "ai"])
-    assert "#python" in result
-    assert "#ai" in result
-
-
-def test_append_tags_on_separate_line():
-    result = append_tags("Body text", ["tag"])
-    lines = result.strip().splitlines()
-    assert lines[-1] == "#tag"
-
-
-def test_append_tags_empty_list_unchanged():
-    md = "Body text"
-    assert append_tags(md, []) == md
-
-
-def test_append_tags_normalizes_tags():
-    result = append_tags("Body", ["Machine Learning"])
-    assert "#machine_learning" in result
-
-
-def test_append_tags_skips_empty_normalized():
-    result = append_tags("Body", ["+++", "python"])
-    assert "#python" in result
-    assert "#++" not in result
-
-
-def test_append_tags_all_invalid_unchanged():
-    md = "Body"
-    assert append_tags(md, ["+++", "---"]) == md
-
-
-# ---------------------------------------------------------------------------
-# find_heading_hashtags
-# ---------------------------------------------------------------------------
-
-
-def test_find_heading_hashtags_detects_pattern():
-    md = "Some text\n##BadTag here"
-    found = find_heading_hashtags(md)
-    assert any("##BadTag" in f for f in found)
-
-
-def test_find_heading_hashtags_clean_document():
-    md = "## Proper Heading\n### Another\n\nBody text #goodtag"
-    assert find_heading_hashtags(md) == []
-
-
-def test_find_heading_hashtags_ignores_inline():
-    md = "Inline ##word in a paragraph"
-    assert find_heading_hashtags(md) == []
-
-
-def test_find_heading_hashtags_multiple():
-    md = "##First\n## OK heading\n##Second"
-    found = find_heading_hashtags(md)
-    assert len(found) == 2
+def test_title_to_hashtag_key_preserves_symbols():
+    # A hyphen is part of the hashtag charset — it must not fold to
+    # underscore the way an aggressive ASCII slugifier would.
+    assert title_to_hashtag_key("Well-Being") != "well_being"
 
 
 # ---------------------------------------------------------------------------

@@ -1617,7 +1617,8 @@ class VaultIndex:
                 edge_weights[tag_edge_key] = edge_weights.get(tag_edge_key, 0) + 1
 
         # Tag-hub: structured entry_tags for the focus entry, keyed by
-        # tags.normalized (never normalize_tag(name) — see get_graph).
+        # tags.normalized (an aggressive ASCII-slugify of the tag name would
+        # strip symbols/accents and drift from this identity — see get_graph).
         structural_tag_rows = self._conn.execute(
             """
             SELECT t.normalized
@@ -1799,8 +1800,9 @@ class VaultIndex:
 
         # Tag-hub edges from structured entry_tags (UI-assigned tags), keyed
         # by tags.normalized so these land on the same tag node as a content
-        # hashtag of the same identity. Never normalize_tag(name) here — it
-        # strips symbols and would collide e.g. "C++" with a "#c" hashtag.
+        # hashtag of the same identity. Never re-derive this via an
+        # aggressive ASCII-slugify normalizer — it strips symbols and would
+        # collide e.g. "C++" with a "#c" hashtag.
         tag_ref_rows = self._conn.execute(
             "SELECT et.entry_id, t.normalized"
             " FROM entry_tags et JOIN tags t ON t.id = et.tag_id"
