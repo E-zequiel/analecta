@@ -22,7 +22,7 @@ Analecta is a local Linux desktop application that turns any URL — article, Yo
 - **Local vault** — every entry is saved as a Markdown file in a directory you control, compatible with Logseq and other PKM tools.
 - **Reading library** — organize entries by status: Unread, Read, Bookmark, Gem, Archive.
 - **Full-text search** — fast search across titles and content (`Ctrl+K`), powered by SQLite FTS5.
-- **Tags & backlinks** — tag list, automatic bidirectional Linked Mentions, clickable `[[wikilink]]` rendering, and clickable `#hashtag` navigation to the TAGS dashboard across your vault.
+- **Tags & backlinks** — tag list, automatic bidirectional Linked Mentions, clickable `[[wikilink]]` rendering, and clickable `#hashtag` navigation to the TAGS dashboard across your vault. Tags and hashtags accept Spanish-accented letters and symbols, with case-insensitive but accent-sensitive identity (`café` ≠ `cafe`).
 - **Connections** — manually link related entries via a search-to-connect dialog.
 - **Knowledge graph** — interactive vault-wide graph, built with Sigma.js, and per-entry subgraph.
 - **Markdown editor** — built-in editor with CodeMirror 6 and Tokyo Night theme.
