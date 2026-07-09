@@ -118,19 +118,17 @@ to a title of "Machine Learning"). `get_backlinks`, `get_outgoing_links`,
 `get_subgraph`, and `get_graph` all key their title-side hashtag lookup on this
 function.
 
-`normalize_tag()` (`backend/src/analecta/markdown/hashtags.py` — Unicode NFKD →
-ASCII → lowercase → non-alphanumeric runs collapsed to a single underscore) is a
-*different*, more aggressive slugifier with one unrelated consumer: `append_tags()`,
-which would turn an arbitrary tag string into a guaranteed-valid bare hashtag
-literal — aggressively stripping accents and symbols is the point there, since the
-output must parse as a live hashtag no matter how the input tag was spelled. Neither
-`append_tags()` nor `normalize_tag()` is called from any route or pipeline as of this
-writing (`find_heading_hashtags()`, in the same module, is equally unwired) — kept as
-tested utility code, not dead weight to prune without checking first. Regardless of
-whether that call site ever lands, `normalize_tag()` must not be reused for
-hashtag-to-title resolution — doing so would silently fold `café` and `cafe` (or
-`Well-Being` and `Well_Being`) into the same match, which is
-exactly the behavior hashtag identity does *not* have.
+An earlier, more aggressive slugifier (`normalize_tag()`: Unicode NFKD → ASCII →
+lowercase → non-alphanumeric runs collapsed to a single underscore) used to live
+alongside `title_to_hashtag_key()` in the same module, along with its one consumer,
+`append_tags()`, and an unrelated unwired helper, `find_heading_hashtags()`. None of
+the three was called from any route or pipeline, so all three were removed on
+2026-07-09 rather than kept as untested-in-production dead weight. If a
+manual-tag-entry UI ever needs a guaranteed-valid bare hashtag literal from arbitrary
+input, that slugifier can be reintroduced — but it must never be reused for
+hashtag-to-title resolution: folding `café` and `cafe` (or `Well-Being` and
+`Well_Being`) into the same match is exactly the behavior hashtag identity does *not*
+have.
 
 ## Rendering (frontend)
 
@@ -338,7 +336,9 @@ tag-based connections for this one case than the vault-wide graph would suggest.
   letters, Spanish accented vowels, `ñ`, `ü`, digits, `_ - ' ~ ^`), the two produce
   identical output, so this is not a practical source of drift — unlike before this
   charset widened, when the frontend's plain lowercase and the backend's
-  accent-stripping `normalize_tag()` genuinely disagreed on accented input.
+  accent-stripping normalizer (since removed, see
+  [Normalization](#normalization-tag-identity) above) genuinely disagreed on
+  accented input.
 
 ## See also
 
