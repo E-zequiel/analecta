@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from analecta.api.deps import get_index
-from analecta.storage.index import VaultIndex
+from analecta.storage.index import InvalidTagNameError, VaultIndex
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -93,8 +93,15 @@ async def create_tag(
         of creating a duplicate — count may be nonzero even for a
         newly-created tag if content hashtags already reference this
         identity.
+
+    Raises:
+        HTTPException: 400 if ``body.name`` isn't a valid bare hashtag
+            token (contains symbols or spaces).
     """
-    name, count = await asyncio.to_thread(index.create_tag, body.name)
+    try:
+        name, count = await asyncio.to_thread(index.create_tag, body.name)
+    except InvalidTagNameError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return TagOut(name=name, count=count)
 
 
@@ -117,16 +124,18 @@ async def rename_tag(
         ``body.new_name``.
 
     Raises:
-        HTTPException: 409 if *new_name* already exists as another
-            structural tag and ``body.merge`` isn't ``True``, or if
-            body-text occurrences of *name* exist but can't be migrated to
-            the resolved destination name (see
+        HTTPException: 400 if ``body.new_name`` isn't a valid bare hashtag
+            token (contains symbols or spaces). 409 if ``body.new_name``
+            already exists as another structural tag and ``body.merge``
+            isn't ``True`` (see
             :meth:`~analecta.storage.index.VaultIndex.rename_tag`).
     """
     try:
         result = await asyncio.to_thread(
             index.rename_tag, name, body.new_name, merge=body.merge
         )
+    except InvalidTagNameError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if result is None:
