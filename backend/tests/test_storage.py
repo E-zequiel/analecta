@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from analecta.storage.index import EntryRecord, VaultIndex
+from analecta.storage.index import EntryRecord, InvalidTagNameError, VaultIndex
 from analecta.storage.vault import VaultManager, _slugify
 
 # ---------------------------------------------------------------------------
@@ -529,6 +529,23 @@ def test_create_tag_unifies_with_existing_hashtag_count(
     assert index.create_tag("python") == ("python", 1)
 
 
+def test_create_tag_invalid_name_raises(index: VaultIndex):
+    with pytest.raises(InvalidTagNameError, match="Cannot create"):
+        index.create_tag("C++")
+    names = [n for n, _ in index.list_tags()]
+    assert "C++" not in names
+
+
+@pytest.mark.parametrize("name", ["my tag", "`x`", "🎉", "", "   "])
+def test_create_tag_invalid_names_raise(index: VaultIndex, name: str):
+    with pytest.raises(InvalidTagNameError):
+        index.create_tag(name)
+
+
+def test_create_tag_valid_accented_name_succeeds(index: VaultIndex):
+    assert index.create_tag("café") == ("café", 0)
+
+
 def test_create_tag_idempotent(index: VaultIndex):
     index.create_tag("python")
     index.create_tag("python")  # should not raise
@@ -938,7 +955,7 @@ def test_rename_tag_invalid_new_name_with_body_occurrences_raises(
     index.update_tags(entry_id, ["python"])
     index.index_backlinks(entry_id)
 
-    with pytest.raises(ValueError, match="Cannot rename"):
+    with pytest.raises(InvalidTagNameError, match="Cannot rename"):
         index.rename_tag("python", "C++")
 
     # Nothing was written — neither the structural row nor the body text.
@@ -988,18 +1005,21 @@ def test_accented_structural_tag_and_content_hashtag_unify(
     assert index.get_entry_ids_by_tag("café") == [entry_id]
 
 
-def test_rename_tag_invalid_new_name_without_body_occurrences_succeeds(
+def test_rename_tag_invalid_new_name_without_body_occurrences_raises(
     index: VaultIndex,
 ):
-    # No body hashtag occurrence exists at all, so the hashtag-literal gate
-    # never fires — a structural-only rename into a symbol-bearing name is
-    # unaffected by this fix (same as it worked before).
+    # No body hashtag occurrence exists at all, but validation is now
+    # unconditional — a structural-only rename into a symbol-bearing name
+    # is rejected too, so every tag stays writable as a literal #hashtag.
     entry_id = index.add_entry(_entry())
     index.update_tags(entry_id, ["python"])
 
-    result = index.rename_tag("python", "C++")
+    with pytest.raises(InvalidTagNameError, match="Cannot rename"):
+        index.rename_tag("python", "C++")
 
-    assert result == ("C++", 1)
+    names = [n for n, _ in index.list_tags()]
+    assert "python" in names
+    assert "C++" not in names
 
 
 def test_delete_tag_removes_from_table(index: VaultIndex):

@@ -332,6 +332,13 @@ def test_create_tag_case_insensitive_returns_existing_canonical(
     assert r.json() == {"name": "python", "count": 1}
 
 
+def test_create_tag_invalid_name_400(client: TestClient) -> None:
+    r = client.post("/api/v1/tags", json={"name": "C++"})
+    assert r.status_code == 400
+    tags = client.get("/api/v1/tags").json()
+    assert tags == []
+
+
 # ---------------------------------------------------------------------------
 # PUT /tags/{name}
 # ---------------------------------------------------------------------------
@@ -418,7 +425,7 @@ def test_rename_tag_migrates_body_hashtag(tmp_path: Path) -> None:
     assert "#py" in src_file.read_text(encoding="utf-8")
 
 
-def test_rename_tag_invalid_new_name_with_body_occurrences_409(tmp_path: Path) -> None:
+def test_rename_tag_invalid_new_name_with_body_occurrences_400(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     pages = vault / "pages"
     pages.mkdir(parents=True)
@@ -442,9 +449,22 @@ def test_rename_tag_invalid_new_name_with_body_occurrences_409(tmp_path: Path) -
 
     with TestClient(_make_app(tmp_path)) as c:
         r = c.put("/api/v1/tags/python", json={"new_name": "C++"})
-        assert r.status_code == 409
+        assert r.status_code == 400
 
     assert src_file.read_text(encoding="utf-8") == "Filed under #python.\n"
+
+
+def test_rename_tag_invalid_new_name_without_body_occurrences_400(
+    seeded_client: TestClient,
+) -> None:
+    # No body hashtag occurrence exists, but validation is unconditional —
+    # a structural-only rename into a symbol-bearing name is rejected too.
+    r = seeded_client.put("/api/v1/tags/python", json={"new_name": "C++"})
+    assert r.status_code == 400
+    tags = seeded_client.get("/api/v1/tags").json()
+    names = [t["name"] for t in tags]
+    assert "python" in names
+    assert "C++" not in names
 
 
 def test_rename_tag_to_accented_name_migrates_body_hashtag(tmp_path: Path) -> None:

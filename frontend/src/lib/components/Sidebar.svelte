@@ -143,6 +143,7 @@
 	let newTagExpanded = $state(false);
 	let newTagName = $state('');
 	let newTagInputEl = $state<HTMLInputElement | null>(null);
+	let createError = $state<string | null>(null);
 	let editingTag = $state<string | null>(null);
 	let editTagValue = $state('');
 	let editTagInputEl = $state<HTMLInputElement | null>(null);
@@ -383,15 +384,20 @@
 		const name = newTagName.trim();
 		if (!name) {
 			newTagExpanded = false;
+			createError = null;
 			return;
 		}
+		createError = null;
 		try {
 			await tagsApi.create(name);
 			newTagName = '';
 			newTagExpanded = false;
 			await fetchTags();
-		} catch {
-			// duplicate or other error — ignore
+		} catch (e) {
+			// e.g. name isn't a valid hashtag token — keep the input open
+			// and surface the backend's own message instead of failing
+			// silently.
+			createError = e instanceof ApiError ? e.message : 'Create failed.';
 		}
 	}
 
@@ -630,6 +636,7 @@
 						e.stopPropagation();
 						newTagExpanded = !newTagExpanded;
 						if (newTagExpanded) newTagName = '';
+						createError = null;
 					}}
 					use:tooltip={'Create tag'}
 					aria-label="Create tag"
@@ -650,13 +657,22 @@
 							if (e.key === 'Enter') {
 								e.preventDefault();
 								createTag();
-							} else if (e.key === 'Escape') newTagExpanded = false;
+							} else if (e.key === 'Escape') {
+								newTagExpanded = false;
+								createError = null;
+							}
 						}}
 						onblur={() => {
-							if (!newTagName.trim()) newTagExpanded = false;
+							if (!newTagName.trim()) {
+								newTagExpanded = false;
+								createError = null;
+							}
 						}}
 					/>
 				</div>
+				{#if createError}
+					<div class="tag-op-error"><TriangleAlert size={11} />{createError}</div>
+				{/if}
 			{/if}
 
 			<div class="section-entries tags-section-entries">

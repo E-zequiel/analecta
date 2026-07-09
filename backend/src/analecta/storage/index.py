@@ -164,6 +164,16 @@ def _synchronized[**P, R](
     return wrapper
 
 
+class InvalidTagNameError(ValueError):
+    """Raised when a tag name can't parse as a live inline ``#hashtag``.
+
+    Every tag created or renamed through the UI must round-trip through
+    :func:`~analecta.markdown.backlinks.is_valid_hashtag_literal`, so it can
+    always be written as a literal ``#hashtag`` in an entry body. Raised by
+    :meth:`VaultIndex.create_tag` and :meth:`VaultIndex.rename_tag`.
+    """
+
+
 class VaultIndex:
     """SQLite-backed index for vault entries with FTS5 full-text search.
 
@@ -843,7 +853,20 @@ class VaultIndex:
             than creating a duplicate. Otherwise creates the tag and
             returns ``(name, count)`` — count may be nonzero if content
             hashtags already reference this identity.
+
+        Raises:
+            InvalidTagNameError: If *name* isn't a valid bare hashtag token
+                (contains symbols or spaces), so it could never be written
+                as a literal ``#name`` in an entry body.
         """
+        from analecta.markdown.backlinks import is_valid_hashtag_literal
+
+        if not is_valid_hashtag_literal(name):
+            raise InvalidTagNameError(
+                f"Cannot create tag '{name}': not a valid hashtag name "
+                "(no spaces or symbols other than _ - ' ~ ^)."
+            )
+
         key = name.casefold()
         row = self._conn.execute(
             "SELECT name FROM tags WHERE normalized = ?", (key,)
@@ -920,12 +943,12 @@ class VaultIndex:
             content hashtag with *old_name*'s identity exists (no-op).
 
         Raises:
+            InvalidTagNameError: If *new_name* isn't a valid bare hashtag
+                token (contains symbols or spaces) — every tag must stay
+                writable as a literal ``#name``, structural or not.
             ValueError: If a structural tag with *new_name*'s
                 case-insensitive identity already exists and *merge* is
-                not ``True``, or if body-text occurrences of *old_name*
-                exist but the resolved canonical name isn't a valid bare
-                hashtag token (contains symbols or spaces) and so can't be
-                migrated.
+                not ``True``.
         """
         from analecta.markdown.backlinks import (
             is_valid_hashtag_literal,
@@ -941,6 +964,23 @@ class VaultIndex:
         if tag_row is None and not hashtag_entry_ids:
             return None
 
+        if not is_valid_hashtag_literal(new_name):
+            if hashtag_entry_ids:
+                noun = (
+                    "entry contains"
+                    if len(hashtag_entry_ids) == 1
+                    else "entries contain"
+                )
+                raise InvalidTagNameError(
+                    f"Cannot rename to '{new_name}': {len(hashtag_entry_ids)} "
+                    f"{noun} '#{old_name}' as literal body text, which can't be "
+                    "migrated to a name with symbols or spaces."
+                )
+            raise InvalidTagNameError(
+                f"Cannot rename to '{new_name}': not a valid hashtag name "
+                "(no spaces or symbols other than _ - ' ~ ^)."
+            )
+
         new_key = new_name.casefold()
         dest_row = None
         if tag_row is not None:
@@ -953,17 +993,6 @@ class VaultIndex:
                 raise ValueError(f"Tag '{new_name}' already exists")
 
         canonical_name = dest_row["name"] if dest_row is not None else new_name
-
-        if hashtag_entry_ids and not is_valid_hashtag_literal(canonical_name):
-            noun = (
-                "entry contains" if len(hashtag_entry_ids) == 1 else "entries contain"
-            )
-            raise ValueError(
-                f"Cannot rename to '{canonical_name}': {len(hashtag_entry_ids)} "
-                f"{noun} '#{old_name}' as literal body text, which can't be "
-                "migrated to a name with symbols or spaces. Edit the body "
-                "text manually first."
-            )
 
         if tag_row is not None:
             tag_id = tag_row["id"]
