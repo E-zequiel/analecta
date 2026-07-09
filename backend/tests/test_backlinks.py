@@ -553,7 +553,9 @@ class TestVaultIndexBacklinks:
         assert results[0].highlight == "#python"
         db.close()
 
-    def test_hashtag_matches_titled_entry_via_normalize(self, tmp_path: Path) -> None:
+    def test_hashtag_matches_titled_entry_via_space_bridging(
+        self, tmp_path: Path
+    ) -> None:
         vault = tmp_path / "vault" / "pages"
         vault.mkdir(parents=True)
 
@@ -568,6 +570,59 @@ class TestVaultIndexBacklinks:
 
         assert len(results) == 1
         assert results[0].source_id == src_id
+        db.close()
+
+    def test_hashtag_matches_accented_titled_entry(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        target_id = _seed(db, n=1, title="Café")
+        src_file = vault / "article-2.md"
+        src_file.write_text("Great post about #café.\n", encoding="utf-8")
+        src_id = _seed(db, n=2, file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+        results = db.get_backlinks(target_id)
+
+        assert len(results) == 1
+        assert results[0].source_id == src_id
+        db.close()
+
+    def test_hashtag_matches_hyphenated_titled_entry(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        target_id = _seed(db, n=1, title="Well-Being")
+        src_file = vault / "article-2.md"
+        src_file.write_text("Great post about #well-being.\n", encoding="utf-8")
+        src_id = _seed(db, n=2, file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+        results = db.get_backlinks(target_id)
+
+        assert len(results) == 1
+        assert results[0].source_id == src_id
+        db.close()
+
+    def test_hashtag_does_not_cross_match_accented_and_unaccented_titles(
+        self, tmp_path: Path
+    ) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        accented_id = _seed(db, n=1, title="Café", file_path=str(vault / "cafe-1.md"))
+        plain_id = _seed(db, n=2, title="Cafe", file_path=str(vault / "cafe-2.md"))
+        src_file = vault / "article-3.md"
+        src_file.write_text("Referencing #cafe here.\n", encoding="utf-8")
+        src_id = _seed(db, n=3, file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+
+        assert [r.source_id for r in db.get_backlinks(plain_id)] == [src_id]
+        assert db.get_backlinks(accented_id) == []
         db.close()
 
     def test_no_self_backlinks(self, tmp_path: Path) -> None:
@@ -704,6 +759,40 @@ class TestVaultIndexOutgoingLinks:
         target_id = _seed(db, n=1, title="Machine Learning")
         src_file = vault / "article-2.md"
         src_file.write_text("Topic: #machine_learning is key.\n", encoding="utf-8")
+        src_id = _seed(db, n=2, file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+        results = db.get_outgoing_links(src_id)
+
+        assert len(results) == 1
+        assert results[0].target_id == target_id
+        db.close()
+
+    def test_hashtag_resolves_to_accented_titled_entry(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        target_id = _seed(db, n=1, title="Café")
+        src_file = vault / "article-2.md"
+        src_file.write_text("Great post about #café.\n", encoding="utf-8")
+        src_id = _seed(db, n=2, file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+        results = db.get_outgoing_links(src_id)
+
+        assert len(results) == 1
+        assert results[0].target_id == target_id
+        db.close()
+
+    def test_hashtag_resolves_to_hyphenated_titled_entry(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        target_id = _seed(db, n=1, title="Well-Being")
+        src_file = vault / "article-2.md"
+        src_file.write_text("Great post about #well-being.\n", encoding="utf-8")
         src_id = _seed(db, n=2, file_path=str(src_file))
 
         db.index_backlinks(src_id)

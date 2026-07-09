@@ -148,6 +148,71 @@ def test_hashtag_resolving_to_entry_creates_both_entry_and_tag_edge(
     assert len(tag_nodes) == 1
 
 
+def test_hashtag_resolving_to_accented_entry_creates_both_edges(
+    tmp_path: Path,
+) -> None:
+    src_path = tmp_path / "src.md"
+    src_path.write_text("Great post about #café", encoding="utf-8")
+    tgt_path = tmp_path / "tgt.md"
+    tgt_path.write_text("Coffee shop content.", encoding="utf-8")
+
+    with VaultIndex(tmp_path / "db.sqlite") as idx:
+        src_id = _seed(idx, n=1, title="Source", file_path=str(src_path))
+        tgt_id = _seed(idx, n=2, title="Café", file_path=str(tgt_path))
+        idx.index_backlinks(src_id)
+
+        _, edges = idx.get_graph()
+
+    edge_pairs = {(e.source, e.target) for e in edges}
+    assert (f"entry:{src_id}", f"entry:{tgt_id}") in edge_pairs
+    assert (f"entry:{src_id}", "tag:café") in edge_pairs
+
+
+def test_hashtag_resolving_to_hyphenated_entry_creates_both_edges(
+    tmp_path: Path,
+) -> None:
+    src_path = tmp_path / "src.md"
+    src_path.write_text("Great post about #well-being", encoding="utf-8")
+    tgt_path = tmp_path / "tgt.md"
+    tgt_path.write_text("Wellness content.", encoding="utf-8")
+
+    with VaultIndex(tmp_path / "db.sqlite") as idx:
+        src_id = _seed(idx, n=1, title="Source", file_path=str(src_path))
+        tgt_id = _seed(idx, n=2, title="Well-Being", file_path=str(tgt_path))
+        idx.index_backlinks(src_id)
+
+        _, edges = idx.get_graph()
+
+    edge_pairs = {(e.source, e.target) for e in edges}
+    assert (f"entry:{src_id}", f"entry:{tgt_id}") in edge_pairs
+    assert (f"entry:{src_id}", "tag:well-being") in edge_pairs
+
+
+def test_hashtag_does_not_cross_resolve_accented_and_unaccented_titles(
+    tmp_path: Path,
+) -> None:
+    # "Café" and "Cafe" must never collapse to the same title-matching key —
+    # #cafe should resolve only to the entry actually spelled "Cafe".
+    accented_path = tmp_path / "accented.md"
+    accented_path.write_text("Café content.", encoding="utf-8")
+    plain_path = tmp_path / "plain.md"
+    plain_path.write_text("Cafe content.", encoding="utf-8")
+    src_path = tmp_path / "src.md"
+    src_path.write_text("Referencing #cafe here.", encoding="utf-8")
+
+    with VaultIndex(tmp_path / "db.sqlite") as idx:
+        accented_id = _seed(idx, n=1, title="Café", file_path=str(accented_path))
+        plain_id = _seed(idx, n=2, title="Cafe", file_path=str(plain_path))
+        src_id = _seed(idx, n=3, title="Source", file_path=str(src_path))
+        idx.index_backlinks(src_id)
+
+        _, edges = idx.get_graph()
+
+    edge_pairs = {(e.source, e.target) for e in edges}
+    assert (f"entry:{src_id}", f"entry:{plain_id}") in edge_pairs
+    assert (f"entry:{src_id}", f"entry:{accented_id}") not in edge_pairs
+
+
 def test_unresolved_hashtag_creates_virtual_tag_node(tmp_path: Path) -> None:
     src_path = tmp_path / "src.md"
     src_path.write_text("Discussing #machine_learning today.", encoding="utf-8")
@@ -353,6 +418,27 @@ def test_subgraph_outlink_hashtag_resolving_to_entry_creates_both_edges(
         (f"entry:{src_id}", f"entry:{tgt_id}"),
         (f"entry:{src_id}", "tag:python_programming"),
     }
+
+
+def test_subgraph_outlink_hashtag_resolving_to_accented_entry(
+    tmp_path: Path,
+) -> None:
+    src_path = tmp_path / "src.md"
+    src_path.write_text("Great post about #café", encoding="utf-8")
+    tgt_path = tmp_path / "tgt.md"
+    tgt_path.write_text("Coffee shop content.", encoding="utf-8")
+
+    with VaultIndex(tmp_path / "db.sqlite") as idx:
+        src_id = _seed(idx, n=1, title="Source", file_path=str(src_path))
+        tgt_id = _seed(idx, n=2, title="Café", file_path=str(tgt_path))
+        idx.index_backlinks(src_id)
+        result = idx.get_subgraph(src_id)
+
+    assert result is not None
+    _, edges = result
+    edge_pairs = {(e.source, e.target) for e in edges}
+    assert (f"entry:{src_id}", f"entry:{tgt_id}") in edge_pairs
+    assert (f"entry:{src_id}", "tag:café") in edge_pairs
 
 
 def test_subgraph_outlink(tmp_path: Path) -> None:
