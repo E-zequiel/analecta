@@ -119,7 +119,9 @@ def test_unresolved_wikilink_skipped(tmp_path: Path) -> None:
     assert edges == []
 
 
-def test_hashtag_resolving_to_entry_creates_edge(tmp_path: Path) -> None:
+def test_hashtag_resolving_to_entry_creates_both_entry_and_tag_edge(
+    tmp_path: Path,
+) -> None:
     src_path = tmp_path / "src.md"
     src_path.write_text("Great post #python_programming", encoding="utf-8")
     tgt_path = tmp_path / "tgt.md"
@@ -134,10 +136,16 @@ def test_hashtag_resolving_to_entry_creates_edge(tmp_path: Path) -> None:
 
     node_ids = {n.node_id for n in nodes}
     assert f"entry:{tgt_id}" in node_ids
+    assert "tag:python_programming" in node_ids
     assert any(
         e.source == f"entry:{src_id}" and e.target == f"entry:{tgt_id}" for e in edges
     )
-    assert not any(n.kind == "tag" for n in nodes)
+    assert any(
+        e.source == f"entry:{src_id}" and e.target == "tag:python_programming"
+        for e in edges
+    )
+    tag_nodes = [n for n in nodes if n.kind == "tag"]
+    assert len(tag_nodes) == 1
 
 
 def test_unresolved_hashtag_creates_virtual_tag_node(tmp_path: Path) -> None:
@@ -317,6 +325,36 @@ def test_subgraph_focus_always_included(tmp_path: Path) -> None:
     assert edges == []
 
 
+def test_subgraph_outlink_hashtag_resolving_to_entry_creates_both_edges(
+    tmp_path: Path,
+) -> None:
+    src_path = tmp_path / "src.md"
+    src_path.write_text("Great post #python_programming", encoding="utf-8")
+    tgt_path = tmp_path / "tgt.md"
+    tgt_path.write_text("Python Programming content.", encoding="utf-8")
+
+    with VaultIndex(tmp_path / "db.sqlite") as idx:
+        src_id = _seed(idx, n=1, title="Source", file_path=str(src_path))
+        tgt_id = _seed(idx, n=2, title="Python Programming", file_path=str(tgt_path))
+        idx.index_backlinks(src_id)
+        result = idx.get_subgraph(src_id)
+
+    assert result is not None
+    nodes, edges = result
+    node_ids = {n.node_id for n in nodes}
+    assert f"entry:{tgt_id}" in node_ids
+    assert "tag:python_programming" in node_ids
+    edge_pairs = {(e.source, e.target) for e in edges}
+    assert (f"entry:{src_id}", f"entry:{tgt_id}") in edge_pairs
+    assert (f"entry:{src_id}", "tag:python_programming") in edge_pairs
+    # The target entry carries neither the structural tag nor the hashtag
+    # itself, so it must not surface again as a spurious tag-hub neighbor.
+    assert edge_pairs == {
+        (f"entry:{src_id}", f"entry:{tgt_id}"),
+        (f"entry:{src_id}", "tag:python_programming"),
+    }
+
+
 def test_subgraph_outlink(tmp_path: Path) -> None:
     src_md = tmp_path / "src.md"
     src_md.write_text("See [[Target]].", encoding="utf-8")
@@ -393,6 +431,49 @@ def test_subgraph_unresolved_hashtag_creates_tag_node(tmp_path: Path) -> None:
     assert any(
         e.source == f"entry:{eid}" and e.target == "tag:machine_learning" for e in edges
     )
+
+
+def test_subgraph_inbound_hashtag_resolving_to_focus_title_has_no_fanout(
+    tmp_path: Path,
+) -> None:
+    """An inbound #FocusTitle keeps its own tag node/edge on the referencing
+    entry (B), but must not fan out to unrelated entries sharing that tag
+    elsewhere in the vault (C) — that vault-wide view is get_graph()'s job,
+    not get_subgraph()'s. Also asserts no synthetic focus->tag edge appears.
+    """
+    focus_md = tmp_path / "focus.md"
+    focus_md.write_text("Focus content, no tags of its own.", encoding="utf-8")
+    b_md = tmp_path / "b.md"
+    b_md.write_text("Mentions #Python here.", encoding="utf-8")
+    c_md = tmp_path / "c.md"
+    c_md.write_text("Unrelated content.", encoding="utf-8")
+
+    with VaultIndex(tmp_path / "db.sqlite") as idx:
+        focus_id = _seed(idx, n=1, title="Python", file_path=str(focus_md))
+        b_id = _seed(idx, n=2, title="Entry B", file_path=str(b_md))
+        c_id = _seed(idx, n=3, title="Entry C", file_path=str(c_md))
+        idx.index_backlinks(b_id)
+        idx.update_tags(c_id, ["python"])
+
+        sub_result = idx.get_subgraph(focus_id)
+        graph_nodes, graph_edges = idx.get_graph()
+
+    assert sub_result is not None
+    sub_nodes, sub_edges = sub_result
+    sub_node_ids = {n.node_id for n in sub_nodes}
+    assert "tag:python" in sub_node_ids
+    sub_edge_pairs = {(e.source, e.target) for e in sub_edges}
+    assert (f"entry:{b_id}", "tag:python") in sub_edge_pairs
+    assert (f"entry:{focus_id}", "tag:python") not in sub_edge_pairs
+    assert f"entry:{c_id}" not in sub_node_ids
+
+    # get_graph()'s vault-wide view, by contrast, does fan tag:python out to
+    # C — proving the asymmetry above is intentional, not accidentally
+    # suppressed everywhere.
+    graph_node_ids = {n.node_id for n in graph_nodes}
+    assert f"entry:{c_id}" in graph_node_ids
+    graph_edge_pairs = {(e.source, e.target) for e in graph_edges}
+    assert (f"entry:{c_id}", "tag:python") in graph_edge_pairs
 
 
 # ---------------------------------------------------------------------------

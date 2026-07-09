@@ -290,6 +290,23 @@ string described above (`tag:{normalized}`), so an entry connected to a tag only
 through a hashtag still appears as a neighbor of a structural tag node of the same
 name, and vice versa.
 
+### A resolving hashtag always keeps its own tag node too
+
+A `#hashtag` whose text happens to match another entry's title resolves to that
+entry as a wikilink-style connection *and* still keeps its own tag node/edge — the
+two are not mutually exclusive. For example, `#Python` in an entry's body, next to
+an entry titled "Python", produces both `entry → entry:Python` and
+`entry → tag:python` in the graph.
+
+This has one asymmetry between the two endpoints, by design: in the full vault
+graph, `tag:python` fans out to every other entry carrying that tag anywhere in the
+vault. In a given entry's local subgraph, an *inbound* hashtag that resolves to the
+focus entry's own title still shows its tag node and the referencing entry's edge to
+it, but does **not** fan out to unrelated entries sharing that tag elsewhere, and
+does **not** add a synthetic focus → tag edge — the focus entry never authored that
+hashtag just by sharing its title with it. So a local subgraph can show fewer
+tag-based connections for this one case than the vault-wide graph would suggest.
+
 ## Known limitations
 
 - The reading view's `data-hashtag` value (and the TAGS-dashboard header it drives)
