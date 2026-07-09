@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Concatenate
 
-from analecta.markdown.hashtags import normalize_tag
+from analecta.markdown.hashtags import title_to_hashtag_key
 
 _ALLOWED_SORT_COLS: frozenset[str] = frozenset({"title", "created_at"})
 _ALLOWED_SORT_DIRS: frozenset[str] = frozenset({"asc", "desc"})
@@ -1243,8 +1243,9 @@ class VaultIndex:
         """Return all entries that link to *target_id*.
 
         Resolves ``backlink_refs`` against the current ``entries`` table.
-        Wikilinks are matched by lowercased title; hashtags by normalized
-        (snake_case) title.
+        Wikilinks are matched by lowercased title; hashtags by
+        :func:`~analecta.markdown.hashtags.title_to_hashtag_key`, the same
+        casefold-based identity hashtags themselves use.
 
         Args:
             target_id: ID of the entry to query backlinks for.
@@ -1260,7 +1261,7 @@ class VaultIndex:
             return []
 
         title_lower = target_row["title"].lower()
-        title_slug = normalize_tag(target_row["title"])
+        title_slug = title_to_hashtag_key(target_row["title"])
 
         rows = self._conn.execute(
             """
@@ -1326,7 +1327,8 @@ class VaultIndex:
             row["title"].lower(): (row["id"], row["title"]) for row in entry_rows
         }
         slug_to_entry: dict[str, tuple[int, str]] = {
-            normalize_tag(row["title"]): (row["id"], row["title"]) for row in entry_rows
+            title_to_hashtag_key(row["title"]): (row["id"], row["title"])
+            for row in entry_rows
         }
 
         rows = self._conn.execute(
@@ -1492,7 +1494,7 @@ class VaultIndex:
             title.lower(): eid for eid, (title, _) in entries.items()
         }
         slug_to_id: dict[str, int] = {
-            normalize_tag(title): eid for eid, (title, _) in entries.items()
+            title_to_hashtag_key(title): eid for eid, (title, _) in entries.items()
         }
 
         node_map: dict[str, GraphNodeRecord] = {}
@@ -1571,7 +1573,7 @@ class VaultIndex:
 
         # Inlinks: entries whose backlink_refs resolve to focus_id
         title_lower = focus_title.lower()
-        title_slug = normalize_tag(focus_title)
+        title_slug = title_to_hashtag_key(focus_title)
         in_rows = self._conn.execute(
             """
             SELECT br.source_id, br.target_text, br.is_hashtag
@@ -1753,7 +1755,7 @@ class VaultIndex:
             title.lower(): eid for eid, (title, _) in entries.items()
         }
         slug_to_id: dict[str, int] = {
-            normalize_tag(title): eid for eid, (title, _) in entries.items()
+            title_to_hashtag_key(title): eid for eid, (title, _) in entries.items()
         }
 
         refs = self._conn.execute(

@@ -10,7 +10,12 @@ from analecta.markdown.frontmatter import (
     build_template_block,
     update_linked,
 )
-from analecta.markdown.hashtags import append_tags, find_heading_hashtags, normalize_tag
+from analecta.markdown.hashtags import (
+    append_tags,
+    find_heading_hashtags,
+    normalize_tag,
+    title_to_hashtag_key,
+)
 
 _CREATED_AT = "2024-01-15T10:00:00"
 
@@ -207,6 +212,40 @@ def test_normalize_tag_empty_string():
 
 def test_normalize_tag_only_special_chars():
     assert normalize_tag("+++") == ""
+
+
+# ---------------------------------------------------------------------------
+# title_to_hashtag_key
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Python", "python"),
+        ("Machine Learning", "machine_learning"),
+        ("Multi  Spaces", "multi_spaces"),
+        ("  Padded  ", "padded"),
+        ("Café", "café"),
+        ("Well-Being", "well-being"),
+        ("Don't Stop", "don't_stop"),
+        ("already_snake", "already_snake"),
+    ],
+)
+def test_title_to_hashtag_key(raw, expected):
+    assert title_to_hashtag_key(raw) == expected
+
+
+def test_title_to_hashtag_key_preserves_accents_unlike_normalize_tag():
+    # The whole point of this function: unlike normalize_tag(), it must NOT
+    # collapse an accented title and its unaccented counterpart to the same
+    # key, since #café and #cafe are different hashtag identities.
+    assert title_to_hashtag_key("Café") != title_to_hashtag_key("Cafe")
+    assert normalize_tag("Café") == normalize_tag("Cafe")
+
+
+def test_title_to_hashtag_key_preserves_symbols_unlike_normalize_tag():
+    assert title_to_hashtag_key("Well-Being") != normalize_tag("Well-Being")
 
 
 # ---------------------------------------------------------------------------

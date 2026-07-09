@@ -103,14 +103,34 @@ identity structural tags already use (`tags.normalized`, also a bare `casefold`)
 so a structural tag and a content hashtag with the exact same spelling always
 unify into one tag; spellings that differ by more than case do not.
 
+`[[Wikilink]]` resolution is a plain, exact `.lower()` comparison against entry
+titles — no separate normalizer involved.
+
+Resolving a `#hashtag` *against an entry title* (the "a hashtag whose text happens
+to match another entry's title" case below) is a different comparison from hashtag
+*identity* itself, and needs its own function: `title_to_hashtag_key()`
+(`backend/src/analecta/markdown/hashtags.py`) folds a title into the same
+`casefold()`-only identity space hashtags use — preserving accents and the
+hashtag charset's symbols exactly like `target_text` does — with one unavoidable
+exception: no valid hashtag can contain a space, so whitespace runs are collapsed
+to a single underscore before casefolding (this is why `#machine_learning` resolves
+to a title of "Machine Learning"). `get_backlinks`, `get_outgoing_links`,
+`get_subgraph`, and `get_graph` all key their title-side hashtag lookup on this
+function.
+
 `normalize_tag()` (`backend/src/analecta/markdown/hashtags.py` — Unicode NFKD →
 ASCII → lowercase → non-alphanumeric runs collapsed to a single underscore) is a
-*different*, more aggressive slugifier reused for an unrelated purpose: matching a
-`[[wikilink]]`'s title against real entry titles in a punctuation/accent-tolerant
-way (`get_graph`, `get_subgraph`, backlink title resolution). It has not been used
-for hashtag identity since accented/symbol hashtags became parseable — reusing it
-there would silently fold `café` and `cafe` back into the same tag, which is
-exactly the behavior this section says hashtag identity does *not* have.
+*different*, more aggressive slugifier with one unrelated consumer: `append_tags()`,
+which would turn an arbitrary tag string into a guaranteed-valid bare hashtag
+literal — aggressively stripping accents and symbols is the point there, since the
+output must parse as a live hashtag no matter how the input tag was spelled. Neither
+`append_tags()` nor `normalize_tag()` is called from any route or pipeline as of this
+writing (`find_heading_hashtags()`, in the same module, is equally unwired) — kept as
+tested utility code, not dead weight to prune without checking first. Regardless of
+whether that call site ever lands, `normalize_tag()` must not be reused for
+hashtag-to-title resolution — doing so would silently fold `café` and `cafe` (or
+`Well-Being` and `Well_Being`) into the same match, which is
+exactly the behavior hashtag identity does *not* have.
 
 ## Rendering (frontend)
 
@@ -296,7 +316,10 @@ A `#hashtag` whose text happens to match another entry's title resolves to that
 entry as a wikilink-style connection *and* still keeps its own tag node/edge — the
 two are not mutually exclusive. For example, `#Python` in an entry's body, next to
 an entry titled "Python", produces both `entry → entry:Python` and
-`entry → tag:python` in the graph.
+`entry → tag:python` in the graph. This match is computed via
+`title_to_hashtag_key()` (see [Normalization](#normalization-tag-identity) above),
+so it holds for the full hashtag charset, not just plain ASCII words — `#café`
+resolves to a title of "Café", `#well-being` to "Well-Being".
 
 This has one asymmetry between the two endpoints, by design: in the full vault
 graph, `tag:python` fans out to every other entry carrying that tag anywhere in the
