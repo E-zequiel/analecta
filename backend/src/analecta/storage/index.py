@@ -1457,6 +1457,16 @@ class VaultIndex:
         always present as a node even when it has no connections. Returns
         ``None`` if *focus_id* does not exist.
 
+        A hashtag resolving to an entry's title always keeps its own tag
+        node/edge alongside the entry edge (see :meth:`get_graph`). This
+        holds for the focus's own outlinks. For an *inbound* hashtag that
+        happens to resolve to the focus's own title, the referencing entry
+        still gets its tag node/edge — but it is not folded into the tag-hub
+        fan-out (no unrelated vault-wide neighbors are pulled in) and no
+        synthetic focus->tag edge is added, since the focus never authored
+        that hashtag. This makes ``get_subgraph()`` locally narrower than
+        ``get_graph()`` for this one case, by design.
+
         Args:
             focus_id: ID of the focal entry.
 
@@ -1534,7 +1544,17 @@ class VaultIndex:
                         kind="entry",
                         source_type=t_src_type,
                     )
+                key = (focus_node_id, target_node_id)
+                edge_weights[key] = edge_weights.get(key, 0) + 1
             else:
+                # A hashtag always keeps its own tag node/edge — and, if it
+                # also resolves to an existing entry's title, gets a second,
+                # independent entry->entry edge alongside it (see get_graph).
+                tag_node_id = ensure_tag_node(target_text)
+                focus_tag_keys.add(target_text)
+                tag_edge_key = (focus_node_id, tag_node_id)
+                edge_weights[tag_edge_key] = edge_weights.get(tag_edge_key, 0) + 1
+
                 target_entry_id = slug_to_id.get(target_text)
                 if target_entry_id is not None and target_entry_id != focus_id:
                     target_node_id = f"entry:{target_entry_id}"
@@ -1546,18 +1566,15 @@ class VaultIndex:
                             kind="entry",
                             source_type=t_src_type,
                         )
-                else:
-                    target_node_id = ensure_tag_node(target_text)
-                    focus_tag_keys.add(target_text)
-            key = (focus_node_id, target_node_id)
-            edge_weights[key] = edge_weights.get(key, 0) + 1
+                    key = (focus_node_id, target_node_id)
+                    edge_weights[key] = edge_weights.get(key, 0) + 1
 
         # Inlinks: entries whose backlink_refs resolve to focus_id
         title_lower = focus_title.lower()
         title_slug = normalize_tag(focus_title)
         in_rows = self._conn.execute(
             """
-            SELECT br.source_id
+            SELECT br.source_id, br.target_text, br.is_hashtag
             FROM backlink_refs br
             JOIN entries e ON e.id = br.source_id
             WHERE e.id != ?
@@ -1570,6 +1587,8 @@ class VaultIndex:
         ).fetchall()
         for row in in_rows:
             src_id: int = row[0]
+            ref_target_text: str = row[1]
+            ref_is_hashtag: bool = bool(row[2])
             src_node_id = f"entry:{src_id}"
             if src_node_id not in node_map:
                 s_title, s_src_type = entries[src_id]
@@ -1581,6 +1600,19 @@ class VaultIndex:
                 )
             key = (src_node_id, focus_node_id)
             edge_weights[key] = edge_weights.get(key, 0) + 1
+
+            # A hashtag that happens to resolve to the focus entry's own
+            # title still keeps its own tag node/edge on the referencing
+            # entry (src -> tag), matching get_graph()'s "always both"
+            # rule. Deliberately NOT added to focus_tag_keys — that would
+            # fan out to every unrelated entry sharing the tag elsewhere in
+            # the vault, which only get_graph()'s vault-wide view should do.
+            # Deliberately no synthetic focus->tag edge either — the focus
+            # never authored this hashtag just by sharing its title.
+            if ref_is_hashtag:
+                tag_node_id = ensure_tag_node(ref_target_text)
+                tag_edge_key = (src_node_id, tag_node_id)
+                edge_weights[tag_edge_key] = edge_weights.get(tag_edge_key, 0) + 1
 
         # Tag-hub: structured entry_tags for the focus entry, keyed by
         # tags.normalized (never normalize_tag(name) — see get_graph).
@@ -1695,12 +1727,15 @@ class VaultIndex:
 
         Resolves ``backlink_refs`` against the current ``entries`` table using
         the same title-matching rules as :meth:`get_backlinks`. Wikilinks that
-        do not resolve to an existing entry are skipped. Unresolved hashtags
-        produce virtual tag nodes (``tag:{normalized}``). A structural tag and
-        a content hashtag of the same identity share one node — see
-        :class:`GraphNodeRecord`. Multiple occurrences of the same
-        source→target pair are collapsed into a single weighted edge. Entries
-        with no connections (isolated nodes) are excluded.
+        do not resolve to an existing entry are skipped. Every hashtag always
+        produces its own tag node (``tag:{normalized}``) and edge; if the
+        hashtag *also* resolves to an existing entry's title, a second,
+        independent entry->entry edge is added alongside it — the two are not
+        mutually exclusive. A structural tag and a content hashtag of the
+        same identity share one node — see :class:`GraphNodeRecord`. Multiple
+        occurrences of the same source→target pair are collapsed into a
+        single weighted edge. Entries with no connections (isolated nodes)
+        are excluded.
 
         Returns:
             Tuple of ``(nodes, edges)``.  Nodes include both ``entry:`` and
@@ -1743,16 +1778,22 @@ class VaultIndex:
                 if target_id is None or target_id == source_id:
                     continue
                 target_node = f"entry:{target_id}"
+                key = (source_node, target_node)
+                edge_weights[key] = edge_weights.get(key, 0) + 1
             else:
+                # A hashtag always keeps its own tag node/edge — and, if it
+                # additionally resolves to an existing entry's title, gets a
+                # second, independent entry->entry edge alongside it.
+                tag_node = f"tag:{target_text}"
+                virtual_tags.add(target_text)
+                tag_edge_key = (source_node, tag_node)
+                edge_weights[tag_edge_key] = edge_weights.get(tag_edge_key, 0) + 1
+
                 target_id = slug_to_id.get(target_text)
                 if target_id is not None and target_id != source_id:
                     target_node = f"entry:{target_id}"
-                else:
-                    target_node = f"tag:{target_text}"
-                    virtual_tags.add(target_text)
-
-            key = (source_node, target_node)
-            edge_weights[key] = edge_weights.get(key, 0) + 1
+                    key = (source_node, target_node)
+                    edge_weights[key] = edge_weights.get(key, 0) + 1
 
         # Tag-hub edges from structured entry_tags (UI-assigned tags), keyed
         # by tags.normalized so these land on the same tag node as a content
