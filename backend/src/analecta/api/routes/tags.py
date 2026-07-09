@@ -79,14 +79,20 @@ async def create_tag(
     body: TagCreateIn,
     index: VaultIndex = Depends(get_index),
 ) -> TagOut:
-    """Create a standalone tag with no entries.
+    """Create a tag, or resolve to an existing identity.
 
     Args:
-        body: Tag name to create.
+        body: Tag name to create. No-ops if a tag with the same
+            case-insensitive identity already exists.
         index: Injected VaultIndex singleton.
 
     Returns:
-        The tag as it exists in the database (count=0 if newly created).
+        The tag as it exists in the database. If a tag with this
+        case-insensitive identity already existed, returns its existing
+        display name and current structural+hashtag union count instead
+        of creating a duplicate — count may be nonzero even for a
+        newly-created tag if content hashtags already reference this
+        identity.
     """
     name, count = await asyncio.to_thread(index.create_tag, body.name)
     return TagOut(name=name, count=count)
