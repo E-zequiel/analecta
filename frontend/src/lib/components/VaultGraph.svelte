@@ -280,7 +280,13 @@
 					size: 1,
 				});
 			} catch {
-				// skip edges referencing nodes not in the graph
+				// UndirectedGraph rejects a second addEdge() between the same
+				// pair — hit whenever a bidirectional connection (mutual
+				// wikilinks, or an explicit `linked:` connection, which is
+				// always written to both entries) produces both directed
+				// refs. The first call already created the (correct, single)
+				// undirected edge, so the reciprocal is a harmless no-op, not
+				// a dropped connection.
 			}
 		}
 

@@ -165,11 +165,14 @@ class OutgoingLinksResultOut(BaseModel):
 
 
 class HashtagGroupOut(BaseModel):
-    """Entries sharing a single content hashtag with the queried entry.
+    """Entries sharing a tag identity with the queried entry, structural or content.
 
     Attributes:
-        hashtag: Normalized hashtag text (e.g. ``python``).
-        entries: Other entries that contain this hashtag in their content.
+        hashtag: Tag identity name. Uses the structural tag's display
+            casing when one exists anywhere in the vault, otherwise the
+            raw lowercase hashtag form.
+        entries: Other entries that carry this tag identity, either as a
+            structural tag or as a content hashtag.
     """
 
     hashtag: str
@@ -190,7 +193,9 @@ class GraphNodeOut(BaseModel):
     """A node in the vault connection graph.
 
     Attributes:
-        node_id: Prefixed stable identifier — ``entry:{int_id}`` or ``tag:{name}``.
+        node_id: Prefixed stable identifier — ``entry:{int_id}`` or
+            ``tag:{normalized}`` (``casefold`` identity, shared by a
+            structural tag and a content hashtag of the same name).
         label: Display label (entry title or ``#tagname``).
         kind: Node kind: ``entry`` or ``tag``.
         source_type: Entry source type or ``None`` for virtual tag nodes.
@@ -420,9 +425,11 @@ async def get_entries_graph(
 ) -> GraphResultOut:
     """Return all connected nodes and weighted edges for the vault graph.
 
-    Isolated entries (no backlink connections) are excluded. Unresolved
-    hashtags produce virtual tag nodes. Wikilinks without a matching entry
-    are silently skipped.
+    Entries with no connections at all — neither backlink refs nor a
+    structural tag — are excluded. Every hashtag always produces its own
+    tag node, whether or not it also resolves to a matching entry title (a
+    resolving hashtag additionally gets an entry->entry edge). Wikilinks
+    without a matching entry are silently skipped.
 
     Args:
         index: Injected VaultIndex singleton.
@@ -604,11 +611,13 @@ async def get_entry_hashtag_connections(
     entry_id: int,
     index: VaultIndex = Depends(get_index),
 ) -> HashtagConnectionsOut:
-    """Return other entries grouped by shared content hashtag.
+    """Return other entries grouped by shared tag identity, structural or content.
 
-    For each hashtag in *entry_id*'s ``backlink_refs``, finds all other
-    entries whose ``backlink_refs`` contain the same hashtag.  Groups are
-    ordered by hashtag; entries within each group are ordered by title.
+    Gathers every tag identity *entry_id* carries — structural
+    (``entry_tags``) or content (its own ``backlink_refs`` hashtags) —
+    then finds peer entries carrying each identity through either
+    mechanism. Groups are ordered by tag; entries within each group are
+    ordered by title.
 
     Args:
         entry_id: Source entry id.
