@@ -965,17 +965,11 @@ class VaultIndex:
             return None
 
         if not is_valid_hashtag_literal(new_name):
-            if hashtag_entry_ids:
-                noun = (
-                    "entry contains"
-                    if len(hashtag_entry_ids) == 1
-                    else "entries contain"
-                )
-                raise InvalidTagNameError(
-                    f"Cannot rename to '{new_name}': {len(hashtag_entry_ids)} "
-                    f"{noun} '#{old_name}' as literal body text, which can't be "
-                    "migrated to a name with symbols or spaces."
-                )
+            # Same message regardless of whether old_name also has literal
+            # #hashtag occurrences in entry bodies: the rename fails purely
+            # because new_name is invalid, not because of those occurrences
+            # (they'd migrate fine under any valid name), so the reason
+            # given must not vary with an unrelated fact.
             raise InvalidTagNameError(
                 f"Cannot rename to '{new_name}': not a valid hashtag name "
                 "(no spaces or symbols other than _ - ' ~ ^)."

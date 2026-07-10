@@ -7,6 +7,7 @@
 		entries as entriesApi,
 		tags as tagsApi,
 		config as configApi,
+		ApiError,
 		type Entry,
 		type Tag,
 		type SubgraphResult,
@@ -27,7 +28,7 @@
 	import LocalGraph from '$lib/components/LocalGraph.svelte';
 	import VaultGraph from '$lib/components/VaultGraph.svelte';
 	import { tooltip } from '$lib/actions/tooltip';
-	import { Eye, EyeClosed, Bookmark, Gem, Archive } from '@lucide/svelte';
+	import { Eye, EyeClosed, Bookmark, Gem, Archive, TriangleAlert } from '@lucide/svelte';
 
 	let entryList = $state<Entry[]>([]);
 	let loading = $state(false);
@@ -44,6 +45,8 @@
 	let tagContextMenuEl = $state<HTMLElement | null>(null);
 	let editingTagName = $state<string | null>(null);
 	let editingTagValue = $state('');
+	let renameError = $state<string | null>(null);
+	let renameErrorTimer: ReturnType<typeof setTimeout> | undefined;
 
 	// Collecta dashboard state
 	let collectaMetrics = $state<{
@@ -269,16 +272,27 @@
 	}
 
 	async function renameTagDashboard(oldName: string, newName: string) {
-		editingTagName = null;
 		const trimmed = newName.trim();
-		if (!trimmed || trimmed === oldName) return;
+		if (!trimmed || trimmed === oldName) {
+			editingTagName = null;
+			renameError = null;
+			return;
+		}
+		renameError = null;
 		try {
 			await tagsApi.rename(oldName, trimmed);
+			editingTagName = null;
 			if ($selectedTag === oldName) selectedTag.set(trimmed);
 			if (expandedTag === oldName) expandedTag = trimmed;
 			await refreshTagGrid();
 			entryChangedTick.update((n) => n + 1);
-		} catch {}
+		} catch (e) {
+			// keep the chip in edit mode and surface the backend's own
+			// message instead of failing silently.
+			renameError = e instanceof ApiError ? e.message : 'Rename failed.';
+			clearTimeout(renameErrorTimer);
+			renameErrorTimer = setTimeout(() => (renameError = null), 10_000);
+		}
 	}
 
 	async function deleteTagDashboard(name: string) {
@@ -634,6 +648,7 @@
 											renameTagDashboard(tag.name, editingTagValue);
 										} else if (e.key === 'Escape') {
 											editingTagName = null;
+											renameError = null;
 										}
 									}}
 									onblur={() => renameTagDashboard(tag.name, editingTagValue)}
@@ -655,6 +670,10 @@
 						{/each}
 					{/if}
 				</div>
+
+				{#if renameError}
+					<div class="tag-op-error"><TriangleAlert size={13.25} />{renameError}</div>
+				{/if}
 
 				{#if expandedTag}
 					<div class="tag-entry-list">
@@ -757,6 +776,7 @@
 					onclick={() => {
 						editingTagName = tagContextMenu!.tag;
 						editingTagValue = tagContextMenu!.tag;
+						renameError = null;
 						tagContextMenu = null;
 					}}
 				>
@@ -951,12 +971,12 @@
 	}
 
 	.tag-chip-name {
-		font-size: 12.25px;
+		font-size: 13px;
 		color: var(--fg);
 	}
 
 	.tag-chip-count {
-		font-size: 12.25px;
+		font-size: 13px;
 		color: var(--fg-muted);
 		background: var(--bg-highlight);
 		border-radius: 10px;
@@ -974,9 +994,23 @@
 		border-radius: 20px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 12.25px;
+		font-size: 13.25px;
 		outline: none;
 		min-width: 80px;
+	}
+
+	.tag-op-error {
+		display: flex;
+		align-items: flex-start;
+		gap: 4px;
+		color: var(--yellow);
+		font-size: 13.25px;
+		line-height: 1.35;
+	}
+
+	.tag-op-error :global(svg) {
+		flex-shrink: 0;
+		margin-top: 2px;
 	}
 
 	.tag-context-menu {
