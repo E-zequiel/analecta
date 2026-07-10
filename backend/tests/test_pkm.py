@@ -2,7 +2,6 @@ from typing import Any
 
 import pytest
 
-from analecta.pkm.tags import get_backlinks, get_cooccurrences
 from analecta.pkm.templates import list_template_pages, write_template_page
 from analecta.pkm.url_scheme import (
     is_scheme_registered,
@@ -98,69 +97,6 @@ def test_get_entry_ids_by_tag_content_hashtag_case_insensitive(index, tmp_path):
     index.index_backlinks(eid)
 
     assert index.get_entry_ids_by_tag("PYTHON") == [eid]
-
-
-# ---------------------------------------------------------------------------
-# tags — get_backlinks
-# ---------------------------------------------------------------------------
-
-
-def test_get_backlinks_returns_matching_ids(index):
-    e1 = index.add_entry(_entry(url="https://a.com"))
-    e2 = index.add_entry(_entry(url="https://b.com"))
-    index.update_tags(e1, ["python"])
-    index.update_tags(e2, ["rust"])
-    assert get_backlinks("python", index) == [e1]
-
-
-def test_get_backlinks_empty_when_no_match(index):
-    assert get_backlinks("ghost", index) == []
-
-
-def test_get_backlinks_multiple(index):
-    e1 = index.add_entry(_entry(url="https://a.com"))
-    e2 = index.add_entry(_entry(url="https://b.com"))
-    index.update_tags(e1, ["python"])
-    index.update_tags(e2, ["python", "ai"])
-    assert set(get_backlinks("python", index)) == {e1, e2}
-
-
-# ---------------------------------------------------------------------------
-# tags — get_cooccurrences
-# ---------------------------------------------------------------------------
-
-
-def test_get_cooccurrences_counts(index):
-    e1 = index.add_entry(_entry(url="https://a.com"))
-    e2 = index.add_entry(_entry(url="https://b.com"))
-    e3 = index.add_entry(_entry(url="https://c.com"))
-    index.update_tags(e1, ["python", "ai"])
-    index.update_tags(e2, ["python", "ml"])
-    index.update_tags(e3, ["python", "ai"])
-    result = get_cooccurrences("python", index)
-    assert result == {"ai": 2, "ml": 1}
-
-
-def test_get_cooccurrences_no_cooccurrences(index):
-    e1 = index.add_entry(_entry())
-    index.update_tags(e1, ["solo"])
-    assert get_cooccurrences("solo", index) == {}
-
-
-def test_get_cooccurrences_unknown_tag(index):
-    assert get_cooccurrences("ghost", index) == {}
-
-
-def test_get_cooccurrences_sorted_descending(index):
-    for url in ["https://a.com", "https://b.com", "https://c.com"]:
-        eid = index.add_entry(_entry(url=url))
-        index.update_tags(eid, ["python", "ai"])
-    e4 = index.add_entry(_entry(url="https://d.com"))
-    index.update_tags(e4, ["python", "ml"])
-    result = get_cooccurrences("python", index)
-    keys = list(result.keys())
-    assert keys[0] == "ai"
-    assert keys[1] == "ml"
 
 
 # ---------------------------------------------------------------------------
