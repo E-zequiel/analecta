@@ -177,7 +177,9 @@ counting/lookup purpose:
   same true-union semantics.
 - `create_tag`/`rename_tag`/`delete_tag` — all look up by `casefold()` identity, so
   creating "python" when "Python" already exists resolves to the existing tag instead
-  of creating a case-duplicate.
+  of creating a case-duplicate. `create_tag`/`rename_tag` also validate every name
+  against the hashtag charset unconditionally (see below), so a tag can never be
+  created or renamed into a name that could never be written as a live `#hashtag`.
 
 When both a structural tag and a content hashtag share an identity, the **structural
 tag's display casing wins** wherever a single name is shown (grid, connection groups).
@@ -219,14 +221,22 @@ markup changes — because the goal is migration, not severance. This also appli
 a tag with no structural row at all (a purely content-hashtag identity): renaming it
 rewrites every occurrence the same way, with no structural table involved.
 
-`new_name` can only be migrated into body text if it's itself a valid bare hashtag
-token — see the [Syntax](#hashtags) charset above (a leading letter, then
-letters/digits/`_ - ' ~ ^`; no backtick, no spaces, no other symbols). If literal
-occurrences of the old identity exist in any entry's body and `new_name` doesn't
-qualify (e.g. renaming into `C++`), the rename is rejected outright (`409`) instead
-of silently leaving a split behind — edit the body text manually first, then retry
-the rename. A rename with no literal body-text occurrences at all is unaffected by
-this restriction, regardless of what `new_name` is.
+Every tag name — created fresh via `create_tag` or renamed into via `rename_tag`,
+structural-only or not — must itself be a valid bare hashtag token: see the
+[Syntax](#hashtags) charset above (a leading letter, then letters/digits/
+`_ - ' ~ ^`; no backtick, no spaces, no other symbols). This is enforced
+unconditionally by `is_valid_hashtag_literal`, which raises `InvalidTagNameError`
+(HTTP `400`) on failure — even when there's no literal `#hashtag` occurrence in any
+entry body to migrate, so a purely structural tag can never be created or renamed
+into a name (e.g. `C++`, `my tag`) that could never be written as a live hashtag.
+The error message distinguishes the two cases: if literal occurrences of *old_name*
+exist in entry bodies, it names how many entries would be orphaned by the rename;
+otherwise it just reports the name as invalid.
+
+On the frontend, `Sidebar.svelte`'s create/rename inputs surface this validation
+inline — a rejected name keeps the input open and shows the backend's error message
+next to it (with a warning icon) instead of failing silently, the same treatment the
+merge-collision confirm/cancel row gets (see below).
 
 Renaming a content-only tag (no structural row) into an identity that already exists
 *structurally* merges rather than conflicts — the mirror of the already-allowed
@@ -255,11 +265,11 @@ writes something — the structural row, `tags_json`, and any freshly-migrated b
 `#hashtag` occurrences all end up spelled exactly as the destination tag already was,
 not however the new name was typed into the rename input. This matches the
 sticky-first-seen convention used everywhere else in the tag system, and avoids a
-merge silently re-casing an already-established tag vault-wide. If literal body-text
-occurrences of the old identity exist and the destination's name isn't a valid bare
-hashtag token (e.g. merging into a symbol-bearing tag like `C++`), the merge is
-rejected the same way an ordinary rename is (see above) — the body text can't be
-migrated to the destination's name, so nothing is written.
+merge silently re-casing an already-established tag vault-wide. If the typed
+`new_name` itself isn't a valid bare hashtag token (e.g. merging into a
+symbol-bearing tag like `C++`), the merge is rejected the same way an ordinary
+rename is (see above) — unconditionally, whether or not literal body-text
+occurrences of the old identity exist to migrate.
 
 The content-only-into-structural case above does **not** require `merge: true` — a
 content-only identity has no structural row to protect, so there's nothing to
@@ -343,7 +353,9 @@ tag-based connections for this one case than the vault-wide graph would suggest.
 ## See also
 
 - `frontend/src/lib/components/RightSidebar.svelte` — Connections panel implementation.
+- `frontend/src/lib/components/Sidebar.svelte` — TAGS section CRUD, incl. inline
+  create/rename validation-error display and merge-collision confirmation.
 - `frontend/src/lib/stores/entryTitles.ts` — wikilink title resolution index.
 - `backend/src/analecta/storage/index.py` — `get_backlinks`, `get_outgoing_links`,
   `get_hashtag_connections`, `list_tags`, `get_entry_ids_by_tag`, `get_graph`,
-  `get_subgraph`.
+  `get_subgraph`, `create_tag`, `rename_tag`.
