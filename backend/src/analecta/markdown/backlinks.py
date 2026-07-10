@@ -11,7 +11,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-_WIKILINK_RE = re.compile(r"\[\[([^\[\]|]+?)(?:\|[^\[\]]+?)?\]\]")
+# Alias group is 0+ (not 1+): [[Title|]] must still match so it gets
+# indexed, matching the frontend renderer's alias-or-title fallback.
+_WIKILINK_RE = re.compile(r"\[\[([^\[\]|]+?)(?:\|[^\[\]]*?)?\]\]")
 
 # Leading char: ASCII letter or a Spanish accented vowel/eñe/ü (both cases).
 # Continuation: the above plus digits and _ - ' ~ ^. Backtick is deliberately

@@ -32,6 +32,8 @@ and content hashtags) are unified for counting and lookup; see
 - `Title` is matched against real entry titles, case-insensitively.
 - With `|Alias`, the alias is displayed instead of the title, but the title is still
   what's resolved against.
+- An empty or whitespace-only alias (`[[Title|]]`, `[[Title|   ]]`) is tolerated and
+  falls back to displaying the title — same as `[[Title]]` with no pipe at all.
 - A wikilink whose title matches no entry is **unresolved** — it still renders, but
   styled as inert (see [Rendering](#rendering-frontend)).
 
