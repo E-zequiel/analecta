@@ -24,7 +24,7 @@
 		X,
 	} from '@lucide/svelte';
 	import { writable } from 'svelte/store';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { clipboardReadText } from '$lib/platform';
 	import {
 		entries as entriesApi,
@@ -110,9 +110,13 @@
 	const currentEntryTagSet = $derived(
 		new Set([...(activeDisplayEntry?.tags ?? []), ...(activeDisplayEntry?.content_tags ?? [])])
 	);
+	// A tag created via the Sidebar has no entry associations yet, so the per-entry
+	// filter below would hide it until it's actually applied to something — surface
+	// it anyway so creation always has visible, immediate feedback.
+	const justCreatedTagNames = new SvelteSet<string>();
 	const displayTagList = $derived(
 		activeDisplayEntry && $activeSection !== 'collecta'
-			? tagList.filter((t) => currentEntryTagSet.has(t.name))
+			? tagList.filter((t) => currentEntryTagSet.has(t.name) || justCreatedTagNames.has(t.name))
 			: tagList
 	);
 
@@ -389,7 +393,8 @@
 		}
 		createError = null;
 		try {
-			await tagsApi.create(name);
+			const created = await tagsApi.create(name);
+			justCreatedTagNames.add(created.name);
 			newTagName = '';
 			newTagExpanded = false;
 			await fetchTags();
