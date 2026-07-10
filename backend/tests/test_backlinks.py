@@ -81,6 +81,17 @@ class TestParseRefs:
         assert refs[0].target_text == "python tutorial"
         assert refs[0].highlight == "[[Python Tutorial|this guide]]"
 
+    def test_wikilink_empty_alias_still_indexed(self) -> None:
+        refs = parse_refs("See [[Python Tutorial|]] for details.")
+        assert len(refs) == 1
+        assert refs[0].target_text == "python tutorial"
+        assert refs[0].highlight == "[[Python Tutorial|]]"
+
+    def test_wikilink_whitespace_alias_still_indexed(self) -> None:
+        refs = parse_refs("See [[Python Tutorial|   ]] for details.")
+        assert len(refs) == 1
+        assert refs[0].target_text == "python tutorial"
+
     def test_hashtag_basic(self) -> None:
         refs = parse_refs("Great article about #python and its ecosystem.")
         assert len(refs) == 1
@@ -749,6 +760,24 @@ class TestVaultIndexOutgoingLinks:
         assert results[0].target_id == target_id
         assert results[0].target_title == "Python Tutorial"
         assert results[0].highlight == "[[Python Tutorial]]"
+        db.close()
+
+    def test_wikilink_empty_alias_resolves_to_target(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        target_id = _seed(db, n=1, title="Python Tutorial")
+        src_file = vault / "article-2.md"
+        src_file.write_text("See [[Python Tutorial|]] for details.\n", encoding="utf-8")
+        src_id = _seed(db, n=2, file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+        results = db.get_outgoing_links(src_id)
+
+        assert len(results) == 1
+        assert results[0].target_id == target_id
+        assert results[0].target_title == "Python Tutorial"
         db.close()
 
     def test_hashtag_resolves_to_titled_entry(self, tmp_path: Path) -> None:
