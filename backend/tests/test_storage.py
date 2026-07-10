@@ -955,7 +955,7 @@ def test_rename_tag_invalid_new_name_with_body_occurrences_raises(
     index.update_tags(entry_id, ["python"])
     index.index_backlinks(entry_id)
 
-    with pytest.raises(InvalidTagNameError, match="Cannot rename"):
+    with pytest.raises(InvalidTagNameError, match="not a valid hashtag name"):
         index.rename_tag("python", "C++")
 
     # Nothing was written — neither the structural row nor the body text.
