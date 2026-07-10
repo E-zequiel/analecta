@@ -12,6 +12,7 @@ from analecta.storage.index import (
     EntryRecord,
     GraphEdgeRecord,
     GraphNodeRecord,
+    InvalidTagNameError,
     VaultIndex,
 )
 
@@ -506,7 +507,10 @@ async def patch_entry(
         The updated entry.
 
     Raises:
-        HTTPException: 404 if the entry does not exist.
+        HTTPException: 404 if the entry does not exist. 400 if
+            ``body.tags`` contains a name that isn't a valid bare hashtag
+            token and doesn't already exist as a tag identity (see
+            :meth:`~analecta.storage.index.VaultIndex.update_tags`).
     """
     record = await asyncio.to_thread(index.get_entry, entry_id)
     if record is None:
@@ -514,7 +518,10 @@ async def patch_entry(
     if (new_status := body.status) is not None:
         await asyncio.to_thread(index.update_status, entry_id, new_status)
     if (new_tags := body.tags) is not None:
-        await asyncio.to_thread(index.update_tags, entry_id, new_tags)
+        try:
+            await asyncio.to_thread(index.update_tags, entry_id, new_tags)
+        except InvalidTagNameError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     if (new_flags := body.flags) is not None:
         await asyncio.to_thread(index.update_flags, entry_id, new_flags)
     if (fts := body.fts) is not None:
