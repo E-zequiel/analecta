@@ -211,6 +211,17 @@ def test_patch_entry_tags(seeded_client: TestClient) -> None:
     assert set(r.json()["tags"]) == {"rust", "wasm"}
 
 
+def test_patch_entry_tags_invalid_new_name_400(seeded_client: TestClient) -> None:
+    entry_id = seeded_client.get("/api/v1/entries").json()[0]["id"]
+    r = seeded_client.patch(
+        f"/api/v1/entries/{entry_id}", json={"tags": ["rust", "C++"]}
+    )
+    assert r.status_code == 400
+    # Rejected atomically — the entry's tags (seeded as ["python"]) are
+    # untouched; neither "rust" nor "C++" was associated.
+    assert seeded_client.get(f"/api/v1/entries/{entry_id}").json()["tags"] == ["python"]
+
+
 def test_patch_entry_flags(seeded_client: TestClient) -> None:
     entry_id = seeded_client.get("/api/v1/entries").json()[0]["id"]
     r = seeded_client.patch(f"/api/v1/entries/{entry_id}", json={"flags": ["bookmark"]})

@@ -167,10 +167,19 @@ def _synchronized[**P, R](
 class InvalidTagNameError(ValueError):
     """Raised when a tag name can't parse as a live inline ``#hashtag``.
 
-    Every tag created or renamed through the UI must round-trip through
-    :func:`~analecta.markdown.backlinks.is_valid_hashtag_literal`, so it can
-    always be written as a literal ``#hashtag`` in an entry body. Raised by
-    :meth:`VaultIndex.create_tag` and :meth:`VaultIndex.rename_tag`.
+    No *new* tag identity may ever be minted (structurally, via any of
+    :meth:`VaultIndex.create_tag`, :meth:`VaultIndex.rename_tag`, or
+    :meth:`VaultIndex.update_tags`) unless it round-trips through
+    :func:`~analecta.markdown.backlinks.is_valid_hashtag_literal` — so every
+    freshly-created tag can always be written as a literal ``#hashtag`` in an
+    entry body. A pre-existing identity that fails this check (e.g. one left
+    over from before this rule existed) is tolerated and freely
+    re-associable — the check only fires when the name would otherwise
+    create a *new* row in ``tags``. :meth:`VaultIndex.rename_tag` has one
+    additional trigger regardless of whether the destination already exists:
+    when the rename would also migrate literal ``#hashtag`` body text (see
+    its docstring), because a body occurrence can never encode an identity
+    this checks rejects.
     """
 
 
@@ -610,10 +619,40 @@ class VaultIndex:
         already exists reuses that row rather than creating a
         case-duplicate; the first-seen display casing sticks.
 
+        A name that doesn't already exist as a tag identity must be a valid
+        bare hashtag literal — see :class:`InvalidTagNameError`. A name that
+        already exists (structural or content-hashtag-only, including a
+        legacy identity that predates this rule) is always tolerated and
+        freely re-associable, since associating an entry with it mints
+        nothing new. Validated up front, before any mutation, so a rejected
+        call never leaves the entry's tags in a partially-updated state.
+
         Args:
             entry_id: Target row id.
-            tags: New list of tag name strings.
+            tags: New list of tag name strings — replaces the entry's
+                entire tag set.
+
+        Raises:
+            InvalidTagNameError: If any name in *tags* isn't a valid bare
+                hashtag token and doesn't already exist as a tag identity.
         """
+        from analecta.markdown.backlinks import is_valid_hashtag_literal
+
+        invalid_new = [
+            name
+            for name in tags
+            if not is_valid_hashtag_literal(name)
+            and self._conn.execute(
+                "SELECT 1 FROM tags WHERE normalized = ?", (name.casefold(),)
+            ).fetchone()
+            is None
+        ]
+        if invalid_new:
+            raise InvalidTagNameError(
+                f"Cannot add tag '{invalid_new[0]}': not a valid hashtag name "
+                "(no spaces or symbols other than _ - ' ~ ^)."
+            )
+
         self._conn.execute(
             "UPDATE entries SET tags_json = ?, updated_at = ? WHERE id = ?",
             (json.dumps(tags, ensure_ascii=False), _now(), entry_id),
@@ -844,7 +883,10 @@ class VaultIndex:
 
         Args:
             name: Tag name to create. No-ops if a tag with the same
-                case-insensitive identity already exists.
+                case-insensitive identity already exists — including one
+                that isn't itself a valid hashtag literal (a pre-existing
+                identity is tolerated regardless of how it got there; only
+                *minting a new* identity is charset-checked).
 
         Returns:
             Tuple of ``(canonical_name, count)``. If a tag with this
@@ -856,22 +898,22 @@ class VaultIndex:
 
         Raises:
             InvalidTagNameError: If *name* isn't a valid bare hashtag token
-                (contains symbols or spaces), so it could never be written
+                (contains symbols or spaces) and no tag with this identity
+                exists yet — a brand-new identity must always be writable
                 as a literal ``#name`` in an entry body.
         """
-        from analecta.markdown.backlinks import is_valid_hashtag_literal
-
-        if not is_valid_hashtag_literal(name):
-            raise InvalidTagNameError(
-                f"Cannot create tag '{name}': not a valid hashtag name "
-                "(no spaces or symbols other than _ - ' ~ ^)."
-            )
-
         key = name.casefold()
         row = self._conn.execute(
             "SELECT name FROM tags WHERE normalized = ?", (key,)
         ).fetchone()
         if row is None:
+            from analecta.markdown.backlinks import is_valid_hashtag_literal
+
+            if not is_valid_hashtag_literal(name):
+                raise InvalidTagNameError(
+                    f"Cannot create tag '{name}': not a valid hashtag name "
+                    "(no spaces or symbols other than _ - ' ~ ^)."
+                )
             self._conn.execute(
                 "INSERT INTO tags (name, normalized) VALUES (?, ?)", (name, key)
             )
@@ -924,6 +966,21 @@ class VaultIndex:
         as :meth:`delete_tag`; that path is unaffected by *merge* since a
         content-only identity has no structural row to conflict with.
 
+        *new_name*'s charset is validated only when it would actually
+        matter: either it mints a brand-new tag identity (no row with this
+        normalized form exists yet), or *old_name* has literal ``#hashtag``
+        body occurrences that would need migrating. A destination identity
+        that already exists in ``tags`` — however it got there, including a
+        legacy name that predates this rule — is tolerated when there's no
+        body text to migrate, since renaming into it associates rather than
+        mints. But it can never be tolerated when body text *does* need
+        migrating: writing an invalid literal like ``#C++`` into an entry
+        body would mis-parse on the next re-index (``_HASHTAG_RE`` stops at
+        ``+``), silently splitting the body occurrence from the structural
+        identity it was meant to follow — the one case where "tolerate a
+        pre-existing non-hashtag-form identity" is not a policy choice but
+        would corrupt data, so it's rejected unconditionally instead.
+
         Args:
             old_name: Current tag name. Matched case-insensitively
                 (``casefold``) against both structural tags and content
@@ -944,8 +1001,9 @@ class VaultIndex:
 
         Raises:
             InvalidTagNameError: If *new_name* isn't a valid bare hashtag
-                token (contains symbols or spaces) — every tag must stay
-                writable as a literal ``#name``, structural or not.
+                token (contains symbols or spaces) and either it would mint
+                a new tag identity, or *old_name* has literal body
+                occurrences that would need migrating to it.
             ValueError: If a structural tag with *new_name*'s
                 case-insensitive identity already exists and *merge* is
                 not ``True``.
@@ -964,18 +1022,25 @@ class VaultIndex:
         if tag_row is None and not hashtag_entry_ids:
             return None
 
-        if not is_valid_hashtag_literal(new_name):
-            # Same message regardless of whether old_name also has literal
-            # #hashtag occurrences in entry bodies: the rename fails purely
-            # because new_name is invalid, not because of those occurrences
-            # (they'd migrate fine under any valid name), so the reason
-            # given must not vary with an unrelated fact.
+        new_key = new_name.casefold()
+        mints_new = (
+            self._conn.execute(
+                "SELECT 1 FROM tags WHERE normalized = ?", (new_key,)
+            ).fetchone()
+            is None
+        )
+
+        if (mints_new or hashtag_entry_ids) and not is_valid_hashtag_literal(new_name):
+            # Same message regardless of which trigger fired — whether
+            # new_name would mint a new identity or old_name has literal
+            # #hashtag occurrences to migrate, the rename fails purely
+            # because new_name is invalid, so the reason given must not
+            # vary with an unrelated fact.
             raise InvalidTagNameError(
                 f"Cannot rename to '{new_name}': not a valid hashtag name "
                 "(no spaces or symbols other than _ - ' ~ ^)."
             )
 
-        new_key = new_name.casefold()
         dest_row = None
         if tag_row is not None:
             tag_id = tag_row["id"]

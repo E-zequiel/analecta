@@ -96,7 +96,9 @@ async def create_tag(
 
     Raises:
         HTTPException: 400 if ``body.name`` isn't a valid bare hashtag
-            token (contains symbols or spaces).
+            token (contains symbols or spaces) and no tag with this
+            identity exists yet — a pre-existing identity is tolerated
+            regardless of charset.
     """
     try:
         name, count = await asyncio.to_thread(index.create_tag, body.name)
@@ -125,10 +127,12 @@ async def rename_tag(
 
     Raises:
         HTTPException: 400 if ``body.new_name`` isn't a valid bare hashtag
-            token (contains symbols or spaces). 409 if ``body.new_name``
-            already exists as another structural tag and ``body.merge``
-            isn't ``True`` (see
-            :meth:`~analecta.storage.index.VaultIndex.rename_tag`).
+            token (contains symbols or spaces) and either it would mint a
+            new tag identity, or ``name`` has literal body occurrences that
+            would need migrating to it (see
+            :meth:`~analecta.storage.index.VaultIndex.rename_tag`). 409 if
+            ``body.new_name`` already exists as another structural tag and
+            ``body.merge`` isn't ``True``.
     """
     try:
         result = await asyncio.to_thread(

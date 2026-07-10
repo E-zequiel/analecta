@@ -1,5 +1,6 @@
 """Tests for VaultIndex.get_graph() and GET /entries/graph."""
 
+import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -36,6 +37,42 @@ def _seed(
             updated_at="2024-01-01T00:00:00+00:00",
         )
     )
+
+
+def _insert_legacy_tag(index: VaultIndex, entry_id: int, name: str) -> None:
+    """Associate *entry_id* with a structural tag *name* bypassing validation.
+
+    Simulates a tag minted before ``is_valid_hashtag_literal`` enforcement
+    existed on this path (e.g. a symbol-bearing name like ``"C++"``) —
+    ``update_tags`` itself can no longer create one, so tests that need such
+    a fixture insert it directly. See the identical helper in
+    ``test_storage.py`` for the full rationale.
+    """
+    key = name.casefold()
+    row = index._conn.execute(
+        "SELECT id FROM tags WHERE normalized = ?", (key,)
+    ).fetchone()
+    if row is None:
+        cur = index._conn.execute(
+            "INSERT INTO tags (name, normalized) VALUES (?, ?)", (name, key)
+        )
+        tag_id = cur.lastrowid
+    else:
+        tag_id = row[0]
+    index._conn.execute(
+        "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) VALUES (?, ?)",
+        (entry_id, tag_id),
+    )
+    entry = index.get_entry(entry_id)
+    assert entry is not None
+    tags = json.loads(entry.tags_json)
+    if name not in tags:
+        tags.append(name)
+    index._conn.execute(
+        "UPDATE entries SET tags_json = ? WHERE id = ?",
+        (json.dumps(tags, ensure_ascii=False), entry_id),
+    )
+    index._conn.commit()
 
 
 def _write_md(path: str, content: str) -> None:
@@ -767,7 +804,7 @@ def test_symbol_bearing_tag_does_not_collide_with_stripped_hashtag(
     with VaultIndex(tmp_path / "db.sqlite") as idx:
         struct_id = _seed(idx, n=1, title="Structural Entry", file_path=str(struct_md))
         hashtag_id = _seed(idx, n=2, title="Hashtag Entry", file_path=str(hashtag_md))
-        idx.update_tags(struct_id, ["C++"])
+        _insert_legacy_tag(idx, struct_id, "C++")
         idx.index_backlinks(hashtag_id)
         nodes, edges = idx.get_graph()
         subgraph = idx.get_subgraph(struct_id)

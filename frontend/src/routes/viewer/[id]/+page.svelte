@@ -3,11 +3,12 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { openUrl, confirm, readTextFile } from '$lib/platform';
-	import { ChevronDown, ChevronRight } from '@lucide/svelte';
+	import { ChevronDown, ChevronRight, TriangleAlert } from '@lucide/svelte';
 	import {
 		entries as entriesApi,
 		tags as tagsApi,
 		config as configApi,
+		ApiError,
 		type Entry,
 		type Tag,
 	} from '$lib/api/client';
@@ -116,6 +117,7 @@
 	let error = $state('');
 
 	let newTagInput = $state('');
+	let tagAddError = $state<string | null>(null);
 	let allTags = $state<Tag[]>([]);
 	let tagsContainerEl = $state<HTMLElement | null>(null);
 	let tagAddInputEl = $state<HTMLInputElement | null>(null);
@@ -202,7 +204,11 @@
 	}
 
 	$effect(() => {
-		if ($viewerTagsOpen) fetchAllTags();
+		if ($viewerTagsOpen) {
+			fetchAllTags();
+		} else {
+			tagAddError = null;
+		}
 	});
 
 	// Sync entry state when an external patch (e.g. context menu) updates this entry.
@@ -460,13 +466,24 @@
 	async function addTag(name: string) {
 		if (!entry || !name.trim()) return;
 		const trimmed = name.trim();
-		newTagInput = '';
 		showAllSuggestions = false;
-		if (!entry.tags.includes(trimmed)) {
+		tagAddError = null;
+		if (entry.tags.includes(trimmed)) {
+			newTagInput = '';
+			setTimeout(() => tagAddInputEl?.focus(), 0);
+			return;
+		}
+		try {
 			const addedEntry = await entriesApi.patch(entry.id, { tags: [...entry.tags, trimmed] });
 			entry = addedEntry;
+			newTagInput = '';
 			lastChangedEntry.set(addedEntry);
 			entryChangedTick.update((n) => n + 1);
+		} catch (e) {
+			// e.g. name isn't a valid hashtag token and doesn't already exist —
+			// keep the input open and surface the backend's own message
+			// instead of failing silently.
+			tagAddError = e instanceof ApiError ? e.message : 'Add tag failed.';
 		}
 		setTimeout(() => tagAddInputEl?.focus(), 0);
 	}
@@ -681,6 +698,9 @@
 					} else if (e.key === 'Escape') viewerTagsOpen.set(false);
 				}}
 			/>
+			{#if tagAddError}
+				<div class="tag-op-error"><TriangleAlert size={13.25} />{tagAddError}</div>
+			{/if}
 			{#if tagSuggestions.length > 0}
 				<div class="tag-suggestions">
 					{#each tagSuggestions as s (s)}
@@ -1111,6 +1131,21 @@
 
 	.tag-add-input:focus {
 		border-color: var(--accent-dark);
+	}
+
+	.tag-op-error {
+		display: flex;
+		align-items: flex-start;
+		gap: 4px;
+		padding: 4px 2px 0;
+		color: var(--yellow);
+		font-size: var(--font-size-sublabel);
+		line-height: 1.35;
+	}
+
+	.tag-op-error :global(svg) {
+		flex-shrink: 0;
+		margin-top: 2px;
 	}
 
 	.tag-suggestions {

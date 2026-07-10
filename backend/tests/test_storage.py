@@ -353,6 +353,42 @@ def test_update_tags_sets_json(index: VaultIndex):
     assert json.loads(entry.tags_json) == ["python", "sqlite"]
 
 
+def _insert_legacy_tag(index: VaultIndex, entry_id: int, name: str) -> None:
+    """Associate *entry_id* with a structural tag *name* bypassing validation.
+
+    Simulates a tag that was minted before ``is_valid_hashtag_literal``
+    enforcement existed on this path (or predates the "iff minting new"
+    rule entirely) — e.g. a symbol-bearing name like ``"C++"``. Mirrors
+    exactly what :meth:`VaultIndex.update_tags` used to do unconditionally,
+    since that's genuinely how such a legacy row could end up in the table.
+    """
+    key = name.casefold()
+    row = index._conn.execute(
+        "SELECT id FROM tags WHERE normalized = ?", (key,)
+    ).fetchone()
+    if row is None:
+        cur = index._conn.execute(
+            "INSERT INTO tags (name, normalized) VALUES (?, ?)", (name, key)
+        )
+        tag_id = cur.lastrowid
+    else:
+        tag_id = row[0]
+    index._conn.execute(
+        "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) VALUES (?, ?)",
+        (entry_id, tag_id),
+    )
+    entry = index.get_entry(entry_id)
+    assert entry is not None
+    tags = json.loads(entry.tags_json)
+    if name not in tags:
+        tags.append(name)
+    index._conn.execute(
+        "UPDATE entries SET tags_json = ? WHERE id = ?",
+        (json.dumps(tags, ensure_ascii=False), entry_id),
+    )
+    index._conn.commit()
+
+
 def _live_tag_count(index: VaultIndex, name: str) -> int:
     row = index._conn.execute(
         """
@@ -563,6 +599,18 @@ def test_create_tag_case_insensitive_noop(index: VaultIndex):
     assert row_count == 1
 
 
+def test_create_tag_tolerates_existing_legacy_invalid_identity(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    _insert_legacy_tag(index, entry_id, "C++")
+
+    # "C++" already exists (however it got there) — create_tag must not
+    # re-validate an identity that isn't being minted, mirroring how it
+    # already no-ops for a pre-existing *valid* name.
+    result = index.create_tag("C++")
+
+    assert result == ("C++", 1)
+
+
 def test_update_tags_case_insensitive_reuses_existing_row(index: VaultIndex):
     e1 = index.add_entry(_entry(url="https://a.com"))
     index.update_tags(e1, ["Python"])
@@ -577,6 +625,54 @@ def test_update_tags_case_insensitive_reuses_existing_row(index: VaultIndex):
     # Display casing stays the first-seen one; both entries count toward it.
     pairs = dict(index.list_tags())
     assert pairs == {"Python": 2}
+
+
+def test_update_tags_new_invalid_name_raises(index: VaultIndex):
+    entry_id = index.add_entry(_entry())
+    with pytest.raises(InvalidTagNameError, match="Cannot add tag 'C\\+\\+'"):
+        index.update_tags(entry_id, ["python", "C++"])
+    # Rejected atomically — neither tag was associated, and tags_json is
+    # untouched (still the entry's original empty list).
+    entry = index.get_entry(entry_id)
+    assert entry is not None
+    assert json.loads(entry.tags_json) == []
+    assert index.get_entry_ids_by_tag("python") == []
+
+
+def test_update_tags_tolerates_legacy_invalid_tag_when_adding_valid_one(
+    index: VaultIndex,
+):
+    entry_id = index.add_entry(_entry())
+    _insert_legacy_tag(index, entry_id, "C++")
+
+    # Adding a brand-new *valid* tag to an entry that already carries a
+    # legacy invalid one must not be blocked by the legacy tag's presence
+    # in the same list — this is the lockup the "mint-new-only" rule exists
+    # to avoid.
+    index.update_tags(entry_id, ["C++", "python"])
+
+    names = [n for n, _ in index.list_tags()]
+    assert "C++" in names
+    assert "python" in names
+
+
+def test_update_tags_tolerates_removing_valid_tag_leaving_legacy_invalid_one(
+    index: VaultIndex,
+):
+    entry_id = index.add_entry(_entry())
+    _insert_legacy_tag(index, entry_id, "C++")
+    index.update_tags(entry_id, ["C++", "python"])
+
+    # Removing "python" leaves only the legacy invalid "C++" in the list —
+    # must succeed, not re-reject "C++" as if it were being minted fresh.
+    # (The orphaned "python" tags-table row is left standing with a zero
+    # count, exactly like any other tag with no entries — see
+    # test_create_tag — so we assert on actual association, not raw
+    # presence in list_tags()'s name list.)
+    index.update_tags(entry_id, ["C++"])
+
+    assert index.get_entry_ids_by_tag("C++") == [entry_id]
+    assert index.get_entry_ids_by_tag("python") == []
 
 
 def test_rename_tag_updates_table(index: VaultIndex):
@@ -890,7 +986,7 @@ def test_rename_tag_symbol_bearing_old_name_does_not_touch_unrelated_hashtag(
     index.index_backlinks(entry_id)
 
     structural_id = index.add_entry(_entry(url="https://a.com"))
-    index.update_tags(structural_id, ["C++"])
+    _insert_legacy_tag(index, structural_id, "C++")
 
     index.rename_tag("C++", "cpp")
 
@@ -1008,9 +1104,11 @@ def test_accented_structural_tag_and_content_hashtag_unify(
 def test_rename_tag_invalid_new_name_without_body_occurrences_raises(
     index: VaultIndex,
 ):
-    # No body hashtag occurrence exists at all, but validation is now
-    # unconditional — a structural-only rename into a symbol-bearing name
-    # is rejected too, so every tag stays writable as a literal #hashtag.
+    # No body hashtag occurrence exists, and "C++" doesn't already exist as
+    # a tag identity anywhere — the rename would mint it fresh, so it's
+    # rejected (validation fires on "mints a new identity", not
+    # unconditionally; see the legacy-tolerance test below for the
+    # complementary case where "C++" already exists).
     entry_id = index.add_entry(_entry())
     index.update_tags(entry_id, ["python"])
 
@@ -1020,6 +1118,55 @@ def test_rename_tag_invalid_new_name_without_body_occurrences_raises(
     names = [n for n, _ in index.list_tags()]
     assert "python" in names
     assert "C++" not in names
+
+
+def test_rename_tag_tolerates_existing_legacy_invalid_identity_without_body(
+    index: VaultIndex,
+):
+    entry_id = index.add_entry(_entry())
+    index.update_tags(entry_id, ["python"])
+    other_id = index.add_entry(_entry(url="https://b.com"))
+    _insert_legacy_tag(index, other_id, "C++")
+
+    # "C++" already exists as another structural tag, so this is a merge
+    # (requires merge=True on its own, unrelated to charset validity — see
+    # the merge-collision tests elsewhere). The charset check specifically
+    # must not pile an *additional* rejection on top: there's no body text
+    # to migrate, so renaming into "C++" associates rather than mints, and
+    # is tolerated even though "C++" itself isn't a valid hashtag literal.
+    result = index.rename_tag("python", "C++", merge=True)
+
+    assert result == ("C++", 2)
+    assert index.get_entry_ids_by_tag("python") == []
+    assert index.get_entry_ids_by_tag("C++") == sorted([entry_id, other_id])
+
+
+def test_rename_tag_rejects_existing_legacy_invalid_identity_with_body_occurrences(
+    index: VaultIndex, tmp_path: Path
+):
+    vault = tmp_path / "pages"
+    vault.mkdir()
+    src_file = vault / "article.md"
+    src_file.write_text("Filed under #python.\n", encoding="utf-8")
+    entry_id = index.add_entry(_entry(file_path=str(src_file)))
+    index.update_tags(entry_id, ["python"])
+    index.index_backlinks(entry_id)
+    other_id = index.add_entry(_entry(url="https://b.com"))
+    _insert_legacy_tag(index, other_id, "C++")
+
+    # "C++" already exists, but old_name has a literal #python body
+    # occurrence that would need migrating to "#C++" — that would mis-parse
+    # on the next reindex (stops at "+"), splitting the body occurrence
+    # from the structural identity. Tolerating a pre-existing invalid
+    # identity is a policy choice everywhere except here, where it would
+    # corrupt data — so this is rejected unconditionally, unlike the
+    # no-body-occurrences case above.
+    with pytest.raises(InvalidTagNameError, match="Cannot rename"):
+        index.rename_tag("python", "C++")
+
+    assert src_file.read_text(encoding="utf-8") == "Filed under #python.\n"
+    names = [n for n, _ in index.list_tags()]
+    assert "python" in names
 
 
 def test_delete_tag_removes_from_table(index: VaultIndex):
@@ -1174,7 +1321,7 @@ def test_delete_tag_symbol_bearing_name_does_not_touch_unrelated_hashtag(
     index.index_backlinks(entry_id)
 
     structural_id = index.add_entry(_entry(url="https://a.com"))
-    index.update_tags(structural_id, ["C++"])
+    _insert_legacy_tag(index, structural_id, "C++")
 
     index.delete_tag("C++")
 

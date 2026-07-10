@@ -672,7 +672,7 @@
 					/>
 				</div>
 				{#if createError}
-					<div class="tag-op-error"><TriangleAlert size={11} />{createError}</div>
+					<div class="tag-op-error"><TriangleAlert size={13.25} />{createError}</div>
 				{/if}
 			{/if}
 
@@ -702,7 +702,7 @@
 								>
 							</div>
 							{#if mergeError}
-								<div class="tag-op-error"><TriangleAlert size={11} />{mergeError}</div>
+								<div class="tag-op-error"><TriangleAlert size={13.25} />{mergeError}</div>
 							{/if}
 						</div>
 					{:else if deletingTag === tag.name}
@@ -713,7 +713,7 @@
 									class="tag-delete-body-count"
 									use:tooltip={`${deletingTagBodyCount} ${deletingTagBodyCount === 1 ? 'entry contains' : 'entries contain'} this as literal text in their body — it won't be removed, just converted to inline code`}
 								>
-									<TriangleAlert size={11} />{deletingTagBodyCount}
+									<TriangleAlert size={13.25} />{deletingTagBodyCount}
 								</span>
 							{/if}
 							<button
@@ -765,7 +765,7 @@
 							>
 						</div>
 						{#if renameError}
-							<div class="tag-op-error"><TriangleAlert size={11} />{renameError}</div>
+							<div class="tag-op-error"><TriangleAlert size={13.25} />{renameError}</div>
 						{/if}
 					{:else}
 						<div class="tag-item">
