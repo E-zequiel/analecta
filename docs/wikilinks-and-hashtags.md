@@ -379,6 +379,23 @@ tag-based connections for this one case than the vault-wide graph would suggest.
   accent-stripping normalizer (since removed, see
   [Normalization](#normalization-tag-identity) above) genuinely disagreed on
   accented input.
+- Wikilink title resolution is a separate, unrelated split from the hashtag one
+  above: the backend (`get_backlinks`/`get_outgoing_links`/`get_subgraph`/
+  `get_graph`) matches on Python `.lower()`, the frontend's `entryTitleIndex`
+  (`entryTitles.ts`) independently matches the same titles on JS `.toLowerCase()`
+  — and unlike hashtags, entry titles are arbitrary Unicode, not a restricted
+  charset, so "identical output" can't be claimed the same way. An exhaustive
+  per-codepoint comparison of the two (every codepoint 0x0–0x10FFFF, plus
+  Greek final-sigma word forms as the standard context-sensitive casing trap)
+  found agreement everywhere except 28 codepoints belonging to an extinct
+  historical script and a handful of rare Latin Extended-D letters — present in
+  one runtime's Unicode tables but not yet the other's, not an algorithmic
+  disagreement. Real web-page titles will never contain these. Even for those
+  28, resolution only breaks under a compound condition: the title contains one
+  of them *and* a `[[wikilink]]` references it in case-mismatched form on that
+  exact character — within either language alone, title and reference always go
+  through the same lowering, so the divergent codepoint by itself never desyncs
+  anything. Not a practical source of drift.
 
 ## See also
 
