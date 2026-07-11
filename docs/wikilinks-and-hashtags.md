@@ -412,6 +412,23 @@ tag-based connections for this one case than the vault-wide graph would suggest.
   exact character — within either language alone, title and reference always go
   through the same lowering, so the divergent codepoint by itself never desyncs
   anything. Not a practical source of drift.
+- **Performance, not correctness:** `entries.title` has no index — only `url` is
+  indexed (`UNIQUE`). `get_outgoing_links` and `get_subgraph` each resolve a
+  single entry's references by loading the *entire* `entries` table and
+  rebuilding a title→id lookup from scratch on every call — cost is linear in
+  vault size, not in how many references the entry actually has, and grows
+  without bound as the vault grows. `get_outgoing_links` short-circuits this
+  when the entry has no outgoing references of its own (the common case, since
+  `[[wikilinks]]` are manual authoring, not something extraction produces) —
+  the full scan only runs when there's something to actually resolve.
+  `get_subgraph` has no equivalent short-circuit. `get_graph` also scans every
+  entry on every call, but that cost is inherent rather than wasted work — it
+  builds the whole vault graph, so it genuinely needs every entry. `get_backlinks`
+  is the outlier that stays flat regardless of vault size, because it matches
+  against `backlink_refs.target_text`, which *is* indexed
+  (`idx_backlink_refs_target`) and normalized at write time — the same trick
+  isn't available to the other three without adding an equivalent indexed,
+  normalized representation of `entries.title`.
 
 ## See also
 
