@@ -192,6 +192,22 @@ Because identity is accent/symbol-*sensitive*, a structural tag like `C++` and a
 hashtag `#c` are never accidentally unified — `"C++".casefold()` and `"c".casefold()`
 are simply different strings.
 
+### Why `EntryOut.tags` isn't the true union
+
+`GET`/`PATCH` entry responses (`EntryOut`) expose `tags` (structural only) and
+`content_tags` (this entry's own content hashtags) as two separate fields, even
+though every other tag surface above (`list_tags`, `get_entry_ids_by_tag`, the
+graph) treats the two as one union. This split is deliberate, not an oversight:
+the reading view's inline "Add tag…" box (`addTag`/`removeTag` in
+`viewer/[id]/+page.svelte`) does a read-modify-write PATCH straight off
+`entry.tags`, and `update_tags` replaces an entry's entire `entry_tags` set on
+every call — it has no concept of "add one tag," only "here is the entry's whole
+tag list now." If `tags` were the true union, every add/remove would silently
+promote every content-only hashtag already on that entry into a real structural
+`entry_tags` row. Unifying the two fields would first require changing
+`update_tags` to a delta operation instead of full-replace — a real redesign, not
+a small tweak, and not worth doing without a concrete reason to.
+
 ### Deleting a tag neutralizes literal body text too
 
 The literal `#hashtag` text in an article's body is otherwise never rewritten (see

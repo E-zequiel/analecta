@@ -474,6 +474,11 @@
 			return;
 		}
 		try {
+			// entry.tags only — never entry.content_tags. update_tags() on the
+			// backend is a full replace, so sending content hashtags back
+			// through this PATCH would mint each of them a real entry_tags
+			// row. See "Why EntryOut.tags isn't the true union" in
+			// docs/wikilinks-and-hashtags.md.
 			const addedEntry = await entriesApi.patch(entry.id, { tags: [...entry.tags, trimmed] });
 			entry = addedEntry;
 			newTagInput = '';
@@ -490,6 +495,7 @@
 
 	async function removeTag(name: string) {
 		if (!entry) return;
+		// entry.tags only — see the comment in addTag() above.
 		const removedEntry = await entriesApi.patch(entry.id, {
 			tags: entry.tags.filter((t) => t !== name),
 		});

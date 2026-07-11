@@ -70,7 +70,10 @@ class EntryOut(BaseModel):
         created_at: ISO 8601 creation timestamp.
         updated_at: ISO 8601 last-update timestamp.
         status: Entry status string.
-        tags: List of structural tag names (Tags UI-assigned).
+        tags: List of structural tag names (Tags UI-assigned). Deliberately
+            kept separate from content_tags, not unioned — see "Why
+            EntryOut.tags isn't the true union" in
+            docs/wikilinks-and-hashtags.md before merging the two fields.
         content_tags: List of content hashtags found in this entry's own
             Markdown, regardless of whether any other entry shares them.
         flags: List of flag strings (e.g. bookmark, gem).

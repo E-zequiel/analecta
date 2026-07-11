@@ -627,6 +627,12 @@ class VaultIndex:
         nothing new. Validated up front, before any mutation, so a rejected
         call never leaves the entry's tags in a partially-updated state.
 
+        This is a full replace, not a delta — there is no "add one tag"
+        variant. Callers must pass structural tag names only, never a
+        content-hashtag union: replaying an entry's content_tags back through
+        here would mint a real entry_tags row for each one. See "Why
+        EntryOut.tags isn't the true union" in docs/wikilinks-and-hashtags.md.
+
         Args:
             entry_id: Target row id.
             tags: New list of tag name strings — replaces the entry's
