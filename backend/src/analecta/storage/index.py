@@ -1409,6 +1409,11 @@ class VaultIndex:
         resolve to a real entry (unresolved wikilinks, hashtags with no
         matching entry) are skipped — there is nothing to navigate to.
 
+        Returns early, without scanning ``entries``, when *source_id* has no
+        outgoing refs of its own. When it does, resolution still scans every
+        entry to build a title lookup — no title index exists to do this more
+        narrowly. See "Known limitations" in ``docs/wikilinks-and-hashtags.md``.
+
         Args:
             source_id: ID of the entry to query outgoing links for.
 
@@ -1416,15 +1421,11 @@ class VaultIndex:
             List of :class:`OutgoingLinkRecord` ordered by target title then
             document position.
         """
-        entry_rows = self._conn.execute("SELECT id, title FROM entries").fetchall()
-        lower_title_to_entry: dict[str, tuple[int, str]] = {
-            row["title"].lower(): (row["id"], row["title"]) for row in entry_rows
-        }
-        slug_to_entry: dict[str, tuple[int, str]] = {
-            title_to_hashtag_key(row["title"]): (row["id"], row["title"])
-            for row in entry_rows
-        }
-
+        # Query this entry's own refs (indexed on source_id, so this is
+        # cheap and vault-size-independent) before paying for the
+        # unindexed full-table title scan below. Most entries have no
+        # outgoing wikilinks/hashtags at all, so this early exit skips the
+        # expensive part entirely for the common case.
         rows = self._conn.execute(
             """
             SELECT target_text, is_hashtag, heading, pre, highlight, post
@@ -1434,6 +1435,17 @@ class VaultIndex:
             """,
             (source_id,),
         ).fetchall()
+        if not rows:
+            return []
+
+        entry_rows = self._conn.execute("SELECT id, title FROM entries").fetchall()
+        lower_title_to_entry: dict[str, tuple[int, str]] = {
+            row["title"].lower(): (row["id"], row["title"]) for row in entry_rows
+        }
+        slug_to_entry: dict[str, tuple[int, str]] = {
+            title_to_hashtag_key(row["title"]): (row["id"], row["title"])
+            for row in entry_rows
+        }
 
         results: list[OutgoingLinkRecord] = []
         for row in rows:
@@ -1562,6 +1574,10 @@ class VaultIndex:
         synthetic focus->tag edge is added, since the focus never authored
         that hashtag. This makes ``get_subgraph()`` locally narrower than
         ``get_graph()`` for this one case, by design.
+
+        Scans every entry to resolve titles, unconditionally — no title
+        index exists to do this more narrowly. See "Known limitations" in
+        ``docs/wikilinks-and-hashtags.md``.
 
         Args:
             focus_id: ID of the focal entry.
@@ -1833,6 +1849,10 @@ class VaultIndex:
         occurrences of the same source→target pair are collapsed into a
         single weighted edge. Entries with no connections (isolated nodes)
         are excluded.
+
+        Scans every entry on every call — inherent, not wasted work, since
+        building the whole vault graph genuinely needs every entry. See
+        "Known limitations" in ``docs/wikilinks-and-hashtags.md``.
 
         Returns:
             Tuple of ``(nodes, edges)``.  Nodes include both ``entry:`` and

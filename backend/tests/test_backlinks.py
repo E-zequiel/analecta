@@ -831,6 +831,22 @@ class TestVaultIndexOutgoingLinks:
         assert results[0].target_id == target_id
         db.close()
 
+    def test_no_own_refs_returns_empty(self, tmp_path: Path) -> None:
+        """Entry with no wikilinks/hashtags at all — the early-exit path
+        (queried before the entries-table scan, see get_outgoing_links)."""
+        vault = tmp_path / "vault" / "pages"
+        vault.mkdir(parents=True)
+
+        db = VaultIndex(tmp_path / "vault" / "analecta.db")
+        _seed(db, n=1, title="Other Entry")
+        src_file = vault / "article-2.md"
+        src_file.write_text("No links or tags in this body at all.\n", encoding="utf-8")
+        src_id = _seed(db, n=2, file_path=str(src_file))
+
+        db.index_backlinks(src_id)
+        assert db.get_outgoing_links(src_id) == []
+        db.close()
+
     def test_unresolved_wikilink_skipped(self, tmp_path: Path) -> None:
         vault = tmp_path / "vault" / "pages"
         vault.mkdir(parents=True)
