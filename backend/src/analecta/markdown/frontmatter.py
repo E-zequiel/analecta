@@ -78,24 +78,3 @@ def build_frontmatter(content: ExtractedContent, created_at: str) -> str:
             data[field] = content.metadata[field]
     body = yaml.dump(data, allow_unicode=True, sort_keys=False)
     return f"---\n{body}---\n"
-
-
-def build_template_block(source_type: str) -> str:
-    """Build a Logseq page template block for *source_type*.
-
-    The returned block uses Logseq's ``template::`` property so it can be
-    inserted via the template picker in Logseq/Obsidian.
-
-    Args:
-        source_type: One of ``"article"``, ``"youtube"``, ``"substack"``,
-            ``"x"``.
-
-    Returns:
-        Markdown string with the template block.
-    """
-    return (
-        f"- template:: analecta_{source_type}\n"
-        "  template-including-parent:: false\n"
-        "  - ## Summary\n"
-        "  - ## Notes\n"
-    )
