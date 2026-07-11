@@ -2,7 +2,6 @@ from typing import Any
 
 import pytest
 
-from analecta.pkm.templates import list_template_pages, write_template_page
 from analecta.pkm.url_scheme import (
     is_scheme_registered,
     make_url,
@@ -97,48 +96,6 @@ def test_get_entry_ids_by_tag_content_hashtag_case_insensitive(index, tmp_path):
     index.index_backlinks(eid)
 
     assert index.get_entry_ids_by_tag("PYTHON") == [eid]
-
-
-# ---------------------------------------------------------------------------
-# templates
-# ---------------------------------------------------------------------------
-
-
-def test_write_template_page_creates_file(tmp_path):
-    path = write_template_page(tmp_path, "article")
-    assert path.exists()
-    assert path.name == "template-article.md"
-
-
-def test_write_template_page_content_has_source_type(tmp_path):
-    path = write_template_page(tmp_path, "youtube")
-    assert "analecta_youtube" in path.read_text()
-
-
-@pytest.mark.parametrize("source_type", ["article", "youtube", "substack", "x"])
-def test_write_template_page_all_source_types(tmp_path, source_type):
-    path = write_template_page(tmp_path, source_type)
-    assert path.exists()
-
-
-def test_list_template_pages_empty_vault(tmp_path):
-    assert list_template_pages(tmp_path) == []
-
-
-def test_list_template_pages_finds_written(tmp_path):
-    write_template_page(tmp_path, "article")
-    write_template_page(tmp_path, "youtube")
-    pages = list_template_pages(tmp_path)
-    names = [p.name for p in pages]
-    assert "template-article.md" in names
-    assert "template-youtube.md" in names
-
-
-def test_list_template_pages_sorted(tmp_path):
-    write_template_page(tmp_path, "youtube")
-    write_template_page(tmp_path, "article")
-    pages = list_template_pages(tmp_path)
-    assert pages[0].name < pages[1].name
 
 
 # ---------------------------------------------------------------------------

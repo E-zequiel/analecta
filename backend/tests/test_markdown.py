@@ -5,11 +5,7 @@ import yaml
 
 from analecta.extraction.core import ExtractedContent
 from analecta.markdown.converter import MarkdownConverter
-from analecta.markdown.frontmatter import (
-    build_frontmatter,
-    build_template_block,
-    update_linked,
-)
+from analecta.markdown.frontmatter import build_frontmatter, update_linked
 from analecta.markdown.hashtags import title_to_hashtag_key
 
 _CREATED_AT = "2024-01-15T10:00:00"
@@ -98,22 +94,6 @@ def test_frontmatter_omits_absent_metadata_fields():
     assert "author:" not in fm
     assert "description:" not in fm
     assert "published:" not in fm
-
-
-# ---------------------------------------------------------------------------
-# build_template_block
-# ---------------------------------------------------------------------------
-
-
-def test_template_block_contains_source_type():
-    block = build_template_block("article")
-    assert "analecta_article" in block
-
-
-def test_template_block_has_template_property():
-    block = build_template_block("youtube")
-    assert "template::" in block
-    assert "analecta_youtube" in block
 
 
 # ---------------------------------------------------------------------------
