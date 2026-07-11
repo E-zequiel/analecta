@@ -337,14 +337,6 @@ def test_update_status(index: VaultIndex):
     assert entry.status == "read"
 
 
-def test_soft_delete_sets_deleted_status(index: VaultIndex):
-    entry_id = index.add_entry(_entry())
-    index.soft_delete(entry_id)
-    entry = index.get_entry(entry_id)
-    assert entry is not None
-    assert entry.status == "deleted"
-
-
 def test_update_tags_sets_json(index: VaultIndex):
     entry_id = index.add_entry(_entry())
     index.update_tags(entry_id, ["python", "sqlite"])

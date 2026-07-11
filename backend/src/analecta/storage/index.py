@@ -105,7 +105,7 @@ class EntryRecord:
         source_type: One of ``article``, ``youtube``, ``substack``, ``x``.
         created_at: ISO 8601 timestamp.
         updated_at: ISO 8601 timestamp.
-        status: Entry status (unread/read/favorite/deleted/to_recommend).
+        status: Entry status (unread/read).
         tags_json: JSON-encoded list of tag name strings.
         id: Database row id; ``None`` before insertion.
     """
@@ -681,15 +681,6 @@ class VaultIndex:
                 (entry_id, tag_id),
             )
         self._conn.commit()
-
-    @_synchronized
-    def soft_delete(self, entry_id: int) -> None:
-        """Mark an entry as deleted without removing it from the database.
-
-        Args:
-            entry_id: Target row id.
-        """
-        self.update_status(entry_id, "deleted")
 
     @_synchronized
     def hard_delete(self, entry_id: int) -> None:
