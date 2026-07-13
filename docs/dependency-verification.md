@@ -97,6 +97,25 @@ pnpm verifies the downloaded tarball's hash against the registry's
 step doesn't trust the hash from step 1 blindly, it's independently re-derived
 from the actual bytes pnpm downloaded.
 
+**Multi-package bumps: dedupe before trusting the lockfile.** When one
+`package.json` edit bumps several packages that share a transitive or peer
+dependency (e.g. `@codemirror/state`/`@codemirror/view`, consumed both
+directly and as a peer dependency of a theme package), a plain `pnpm install`
+can leave the *old* version's lockfile entries in place alongside the new
+ones — a satisfied range doesn't force re-resolution. Run:
+
+```bash
+mise exec -- pnpm dedupe
+```
+
+immediately after `pnpm install` whenever a bump touches more than one
+package in the same dependency family. This isn't optional cleanup: an
+orphaned old-version entry can produce a real bug that step 4 below won't
+catch, because that check only verifies the *new* tarball, not that the *old*
+one is gone from the graph. See the
+[worked example](#worked-example-pnpm-dedupe-after-a-multi-package-bump)
+below.
+
 ### 4. Post-install — cross-check the lockfile
 
 ```bash
@@ -108,6 +127,10 @@ differ, do not proceed — abort and investigate the discrepancy before merging.
 This value is what pnpm verified the tarball against, written into a file
 that's committed and diffable — so any subsequent `pnpm install` on a
 different machine gets the same guarantee without re-running this procedure.
+
+Run this check against the lockfile state *after* any `pnpm dedupe` from step
+3 — a hash check against a lockfile that dedupe is about to rewrite verifies
+an artifact you won't end up committing.
 
 ## Worked example (npm / pnpm)
 
@@ -128,6 +151,41 @@ $ grep -A 1 "@uiw/codemirror-theme-tokyo-night-day@4.25.10" pnpm-lock.yaml
 ```
 
 Hash from step 1 matches the lockfile from step 4 — verified.
+
+## Worked example: `pnpm dedupe` after a multi-package bump
+
+Pinning `frontend/package.json` to exact versions (2026-07-13) bumped
+`@codemirror/state` (6.6.0 → 6.7.0) and `@codemirror/view` (6.42.0 → 6.43.4)
+alongside several other direct dependencies. After `pnpm install`, both the
+old and new versions were still live in `pnpm-lock.yaml`.
+`@uiw/codemirror-theme-tokyo-night` (already exact-pinned, untouched by this
+bump) declares `state`/`view` as peer dependencies; pnpm kept a
+peer-qualified instance of the theme package built against each version pair
+instead of converging on the new one alone.
+
+The break surfaced in `svelte-check`, not in step 4's hash check:
+
+```
+Type 'import(".../@codemirror+view@6.42.0/.../index").KeyBinding' is not
+assignable to type 'import(".../@codemirror+view@6.43.4/.../index").KeyBinding'.
+  ...
+    Types have separate declarations of a private property 'flags'.
+```
+
+TypeScript treats `SelectionRange` from the two `@codemirror/state` module
+instances as distinct nominal types — structurally identical, but different
+classes because they came from two separately resolved packages. A second
+plain `pnpm install` reported `Already up to date` and did not fix it;
+`pnpm dedupe` re-resolved the graph, dropped the orphaned `6.6.0`/`6.42.0`
+entries from `pnpm-lock.yaml`, and the type error disappeared.
+
+**Why step 4 (hash cross-check) didn't catch this:** it verifies that the
+*new* pinned version's tarball hash matches the registry — which it did,
+correctly. It says nothing about whether an *old* version is still
+resolvable elsewhere in the graph. The only check that actually catches this
+class of bug is a real build/typecheck — the same principle as the "run the
+actual build" rule under [Removing a dependency](#removing-a-dependency)
+below, extended here to version bumps rather than only removals.
 
 ## Procedure (Python / uv)
 
