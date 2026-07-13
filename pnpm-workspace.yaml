@@ -25,3 +25,8 @@ overrides:
   # GHSA-g8m3-5g58-fq7m + GHSA-vxpw-j846-p89q + GHSA-p88m-4jfj-68fv + GHSA-35p6-xmwp-9g52.
   # Scoped to node-gyp (6.x consumer). @electron/get uses a separate 7.x branch — see @electron/get>undici above.
   'node-gyp>undici': '6.27.0'
+  # Socket obfuscatedFile/supplyChainRisk flag on the 1.11.1 minified bundle (package/dist/emnapi.min.mjs),
+  # confidence 0.9 but Socket's own analyst note found no malicious behavior (dynamic Function used only for
+  # environment capability probing). 1.11.2 doesn't reproduce the flag. Transitive via
+  # @rolldown/binding-wasm32-wasi (optional WASM fallback binding for Vite's Rolldown bundler).
+  '@emnapi/runtime': '1.11.2'
