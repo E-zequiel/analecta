@@ -149,7 +149,7 @@ grep -E '"[^"]+": *"[\^~><]' frontend/package.json electron/package.json package
 
 A hit here is a policy violation: it lets a future `pnpm update` — or a plain `pnpm install` if the range is later loosened upstream — silently move the resolved version without a reviewable one-line `package.json` diff, the same audit-trail gap the exact-pin policy exists to close. **`pnpm add <pkg>@<version> --save-exact` does not reliably strip a pre-existing range operator on a cross-major bump** — observed leaving `^8.0.0` in place after bumping `@babel/runtime` from `^7`. Do not assume the flag alone guarantees the pin; verify the resulting `package.json` line.
 
-**Remediation:** Edit the specifier directly to the exact version, then run `pnpm install --filter <workspace>` to re-sync the lockfile.
+**Remediation:** Edit the specifier directly to the exact version, then run `pnpm install --filter <workspace>` to re-sync the lockfile. If the fix bumps more than one package that shares a transitive or peer dependency, `pnpm install` alone can leave the old version's entries orphaned in `pnpm-lock.yaml` — follow with `pnpm dedupe` and verify with a real build/typecheck, not just the lockfile hash check. See the [`pnpm dedupe` worked example](../../docs/dependency-verification.md#worked-example-pnpm-dedupe-after-a-multi-package-bump) in `docs/dependency-verification.md` for a case where this produced a real `svelte-check` type error that the hash check alone did not catch.
 
 Severity: **LOW** (audit-trail/reviewability gap, not a direct exploit vector — same class as the missing `packageManager` field check above)
 
