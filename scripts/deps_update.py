@@ -299,11 +299,19 @@ def update_node(
             continue
 
         if _ensure_exact_specifier(_WORKSPACE_DIR[workspace], name, latest):
-            resync = _run(["pnpm", "install", "--filter", workspace], cwd=REPO_ROOT)
+            # --no-frozen-lockfile: this resync intentionally updates the
+            # lockfile, but pnpm defaults frozen-lockfile to on in CI (CI=true),
+            # which rejects any install that would change it.
+            resync = _run(
+                ["pnpm", "install", "--filter", workspace, "--no-frozen-lockfile"],
+                cwd=REPO_ROOT,
+            )
             if resync.returncode != 0:
+                # pnpm reports ERR_PNPM_OUTDATED_LOCKFILE etc. on stdout, not stderr.
+                detail = resync.stderr.strip() or resync.stdout.strip()
                 print(
                     f"::error::{name}: lockfile resync failed after exact-pin fix"
-                    f" — {resync.stderr.strip()}"
+                    f" — {detail}"
                 )
                 had_error = True
                 continue
