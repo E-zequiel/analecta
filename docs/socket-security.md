@@ -110,6 +110,14 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 
 ## Resolved CVEs
 
+### 2026-07-13
+
+| Package | CVE | Fix |
+|---------|-----|-----|
+| `soupsieve@2.8.3` | GHSA-2wc2-fm75-p42x (CVSS 7.5 HIGH, memory exhaustion via large comma-separated CSS selector lists), GHSA-836r-79rf-4m37 (CVSS 7.5 HIGH, ReDoS in the attribute-value regex) | `[tool.uv] constraint-dependencies = ["soupsieve>=2.8.4"]` in `backend/pyproject.toml`. Architecture note: Analecta's own code never calls `.select()`/`.select_one()`/`soupsieve.compile()` (confirmed via grep across `backend/src/`, `readability-lxml`, `trafilatura`) — the vulnerable input is the *selector string*, which is always hardcoded, never attacker-controlled. Low exploitability; fixed anyway since the patch is free (2.8.3 → 2.8.4, no functional change). |
+| `lxml-html-clean@0.4.4` | GHSA-4jhm-jv67-739f (CVSS 8.2 HIGH, `Cleaner` does not strip `javascript:` URLs from `xlink:href` when `safe_attrs_only=False`) | `[tool.uv] constraint-dependencies = ["lxml-html-clean>=0.4.5"]` in `backend/pyproject.toml`. Unlike soupsieve above, the vulnerable configuration is confirmed live: `readability-lxml` (a direct extraction dependency, transitively pulling `lxml[html-clean]`) calls `Cleaner(..., safe_attrs_only=False, ...)` in `readability/cleaners.py`, on HTML fetched from arbitrary user-supplied URLs. Frontend's `markdown-it` is configured with `html: false` (`frontend/src/lib/markdown/renderer.ts`), which happens to keep any surviving payload from executing in the reading view — that's an incidental downstream mitigation, not a substitute for the fix. |
+| `@emnapi/runtime@1.11.1` | — (Socket `obfuscatedFile`/`supplyChainRisk`, no CVE; confidence 0.9 on `package/dist/emnapi.min.mjs`) | `overrides: {'@emnapi/runtime': '1.11.2'}` in `pnpm-workspace.yaml`. Socket's own analyst note found no malicious behavior — dynamic `Function` use limited to environment capability probing, same shape as other WASM-runtime false positives in this catalog. 1.11.2 doesn't reproduce the flag. Transitive via `@rolldown/binding-wasm32-wasi` (optional WASM fallback binding for Vite's Rolldown bundler). Same resolution pattern as the `js-yaml@4.2.0` entry below (2026-07-03): a version bump clears the flag rather than a permanent "Ignore." |
+
 ### 2026-07-03
 
 | Package | CVE | Fix |

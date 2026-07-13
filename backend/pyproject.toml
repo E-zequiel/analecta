@@ -26,11 +26,24 @@ Homepage = "https://github.com/E-zequiel/analecta"
 Repository = "https://github.com/E-zequiel/analecta"
 
 [tool.uv]
-# CVE-2026-54283 (HIGH, request.form() DoS), CVE-2026-48818 (StaticFiles SSRF,
-# Windows-only), CVE-2026-48817 (HTTPEndpoint getattr dispatch), CVE-2026-54282
-# (request.url.hostname poisoning). starlette is a transitive dep (fastapi,
-# sse-starlette); fastapi only requires >=0.46.0, so a floor here is sufficient.
-constraint-dependencies = ["starlette>=1.3.1"]
+constraint-dependencies = [
+    # CVE-2026-54283 (HIGH, request.form() DoS), CVE-2026-48818 (StaticFiles
+    # SSRF, Windows-only), CVE-2026-48817 (HTTPEndpoint getattr dispatch),
+    # CVE-2026-54282 (request.url.hostname poisoning). starlette is a
+    # transitive dep (fastapi, sse-starlette); fastapi only requires
+    # >=0.46.0, so a floor here is sufficient.
+    "starlette>=1.3.1",
+    # GHSA-2wc2-fm75-p42x (HIGH 7.5, memory exhaustion via large
+    # comma-separated CSS selector lists), GHSA-836r-79rf-4m37 (HIGH 7.5,
+    # ReDoS in the attribute-value regex). soupsieve is a transitive dep of
+    # beautifulsoup4.
+    "soupsieve>=2.8.4",
+    # GHSA-4jhm-jv67-739f (CVSS 8.2, Cleaner does not strip javascript: URLs
+    # from xlink:href with safe_attrs_only=False). lxml-html-clean is a
+    # transitive dep of readability-lxml (via lxml[html-clean]), which uses
+    # exactly that Cleaner configuration in readability/cleaners.py.
+    "lxml-html-clean>=0.4.5",
+]
 
 [project.scripts]
 analecta = "analecta:main"
