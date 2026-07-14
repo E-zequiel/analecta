@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx2
 import trafilatura
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, Comment, Tag
 from readability import Document
 
 from analecta.extraction.core import ExtractedContent, ExtractionError, SourceExtractor
@@ -150,7 +150,7 @@ _HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 def _strip_heading_classes(html: str) -> str:
     """Remove class attributes and noise wrappers from heading elements.
 
-    Three readability failure modes are addressed:
+    Four readability failure modes are addressed:
 
     1. **Class-based penalty** (Substack, GitHub, many platforms): utility
        classes like ``header-anchor-post`` on ``<h2>`` match readability's
@@ -170,10 +170,35 @@ def _strip_heading_classes(html: str) -> str:
        a heading inside a ``<div>`` that has no prose text beyond its link
        text is removed; if the ``<div>`` then contains only the heading, it
        is unwrapped.
+
+    4. **Self-referencing permalink anchor** (MDN and similar): the entire
+       heading text is wrapped in a single ``<a href="#{heading-id}">`` used
+       to render a hover permalink icon via CSS ``::before`` — there is no
+       real link semantic, but readability/trafilatura treat an all-link
+       heading as boilerplate and drop it whole. When a heading's only
+       meaningful child is an ``<a>`` whose ``href`` points back at the
+       heading's own ``id``, the anchor is unwrapped so the bare text
+       survives scoring.
     """
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup.find_all(_HEADING_TAGS):
         tag.attrs.pop("class", None)
+        heading_id = tag.get("id")
+        if heading_id:
+            meaningful = [
+                c
+                for c in tag.children
+                if not isinstance(c, Comment)
+                and (getattr(c, "name", None) or (isinstance(c, str) and c.strip()))
+            ]
+            if (
+                len(meaningful) == 1
+                and isinstance(meaningful[0], Tag)
+                and meaningful[0].name == "a"
+            ):
+                anchor = meaningful[0]
+                if anchor.get("href") == f"#{heading_id}":
+                    anchor.unwrap()
         # Remove empty or link-only children inside the heading itself.
         for child in tag.find_all(["div", "a"]):
             if not child.get_text(strip=True):

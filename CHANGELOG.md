@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Packaged Linux builds now show the correct taskbar/alt-tab label and icon on Wayland compositors — the app previously broadcast `analecta-electron` as its window identity instead of `analecta`.
 - Images with root-relative (`/foo.svg`) or protocol-relative (`//cdn.example.com/foo.svg`) `src` URLs are now resolved against the source article's URL before download, instead of leaking a broken path into the saved Markdown.
 - Extracted articles now record the post-redirect URL as their canonical source URL instead of the originally requested one, so a domain or scheme change mid-redirect (e.g. `http://` → `https://`, or a moved Substack post) no longer causes the image-resolution fix above to resolve relative asset paths against the wrong host.
+- Article headings are no longer silently dropped on sites (e.g. MDN) that wrap the entire heading text in a self-referencing permalink link — previously treated as a link-only heading and discarded during extraction.
 
 ## [0.3.1] - 2026-07-13
 
