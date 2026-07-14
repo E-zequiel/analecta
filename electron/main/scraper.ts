@@ -13,6 +13,7 @@ export interface RenderResult {
 	description?: string;
 	published?: string;
 	outer_html?: string;
+	final_url?: string;
 	error?: string;
 }
 
@@ -117,11 +118,13 @@ async function scrapeUrl(url: string): Promise<RenderResult> {
       author: r.author,
       description: r.description,
       published: r.published,
+      final_url: document.baseURI,
     });
   } catch (e) {
     return JSON.stringify({
       ok: false,
       outer_html: document.documentElement.outerHTML,
+      final_url: document.baseURI,
       error: String(e),
     });
   }

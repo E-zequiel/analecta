@@ -288,6 +288,20 @@ def _populate_metadata(metadata: dict[str, Any], meta: Any) -> None:
         metadata["published"] = str(meta.date)
 
 
+def _resolve_tier2_url(tier2_final_url: str | None, fallback: str) -> str:
+    """Return the browser-reported URL, or *fallback* if it isn't usable.
+
+    ``tier2_final_url`` (``document.baseURI`` from the render server) is only
+    trustworthy when navigation actually reached a real page — a failed or
+    timed-out navigation can leave ``about:blank`` or a ``chrome-error://``
+    value there, which would be a worse base than the httpx-resolved
+    ``fallback``.
+    """
+    if tier2_final_url and tier2_final_url.startswith(("http://", "https://")):
+        return tier2_final_url
+    return fallback
+
+
 def _build_from_defuddle(url: str, t: Tier2Result) -> ExtractedContent:
     """Construct an ``ExtractedContent`` from a successful Defuddle Tier 2 result."""
     metadata: dict[str, Any] = {"extractor": "defuddle"}
@@ -334,30 +348,39 @@ class ArticleExtractor(SourceExtractor):
             ExtractionError: If no extraction strategy succeeds.
             httpx2.HTTPStatusError: If the server returns a non-2xx response.
         """
-        html = await self._fetch(url)
-        result = self._parse(html, url)
+        html, final_url = await self._fetch(url)
+        result = self._parse(html, final_url)
 
         if _is_low_confidence(html, result.html):
             try:
                 from analecta.extraction.tier2 import render_url
 
+                # url not final_url: Chromium follows its own redirects.
                 tier2 = await render_url(url)
+                resolved_url = _resolve_tier2_url(tier2.final_url, final_url)
                 if tier2.ok and tier2.content:
-                    return _build_from_defuddle(url, tier2)
+                    return _build_from_defuddle(resolved_url, tier2)
                 if tier2.outer_html:
-                    return self._parse(tier2.outer_html, url)
+                    return self._parse(tier2.outer_html, resolved_url)
             except Exception:
                 pass
 
         return result
 
-    async def _fetch(self, url: str) -> str:
+    async def _fetch(self, url: str) -> tuple[str, str]:
+        """Fetch *url*, following redirects.
+
+        Returns:
+            Tuple of ``(html, final_url)`` — ``final_url`` is the
+            post-redirect URL (``response.url``), used as the base for
+            resolving relative asset paths and as the canonical article URL.
+        """
         async with httpx2.AsyncClient(
             follow_redirects=True, timeout=_TIMEOUT
         ) as client:
             response = await client.get(url, headers=_HEADERS)
             response.raise_for_status()
-            return response.text
+            return response.text, str(response.url)
 
     def _parse(self, html: str, url: str) -> ExtractedContent:
         meta = trafilatura.extract_metadata(html, default_url=url)

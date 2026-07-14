@@ -47,6 +47,7 @@ async def test_render_url_ok_maps_all_fields(monkeypatch, mocker):
             "author": "Alice",
             "description": "Desc",
             "published": "2024-01-01",
+            "final_url": "https://example.com/redirected",
         },
     )
     result = await render_url("https://example.com/article")
@@ -57,6 +58,7 @@ async def test_render_url_ok_maps_all_fields(monkeypatch, mocker):
     assert result.description == "Desc"
     assert result.published == "2024-01-01"
     assert result.outer_html is None
+    assert result.final_url == "https://example.com/redirected"
 
 
 @pytest.mark.asyncio
@@ -68,6 +70,7 @@ async def test_render_url_fallback_outer_html(monkeypatch, mocker):
     assert result.ok is False
     assert result.outer_html == "<html>fallback</html>"
     assert result.content is None
+    assert result.final_url is None
 
 
 @pytest.mark.asyncio
