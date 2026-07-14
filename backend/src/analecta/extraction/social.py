@@ -30,8 +30,10 @@ class SubstackExtractor(SourceExtractor):
                 or ``substack.com/inbox/post/<id>``.
 
         Returns:
-            ``ExtractedContent`` with ``source_type="substack"`` and
-            ``url`` set to the canonical URL.
+            ``ExtractedContent`` with ``source_type="substack"`` and ``url``
+            set to the fully-resolved post-fetch URL (``ArticleExtractor``'s
+            own redirect resolution runs after inbox-URL resolution, so this
+            is never staler than the canonical form).
 
         Raises:
             ExtractionError: If inbox URL cannot be resolved, or article
@@ -44,7 +46,7 @@ class SubstackExtractor(SourceExtractor):
         return ExtractedContent(
             title=result.title,
             html=result.html,
-            url=canonical,
+            url=result.url,
             source_type="substack",
             metadata={**result.metadata, "platform": "substack"},
         )

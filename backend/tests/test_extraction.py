@@ -11,6 +11,7 @@ from analecta.extraction.article import (
     _is_low_confidence,
     _populate_metadata,
     _rescue_linked_lists,
+    _resolve_tier2_url,
     _simplify_figure_images,
     _strip_heading_classes,
     _strip_loading_placeholders,
@@ -118,7 +119,11 @@ def test_extracted_content_defaults():
 
 @pytest.mark.asyncio
 async def test_article_extractor_trafilatura_path(mocker):
-    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_ARTICLE_HTML)
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_ARTICLE_HTML, "https://example.com/article"),
+    )
     result = await ArticleExtractor().extract("https://example.com/article")
     assert result.source_type == "article"
     assert result.url == "https://example.com/article"
@@ -127,7 +132,11 @@ async def test_article_extractor_trafilatura_path(mocker):
 
 @pytest.mark.asyncio
 async def test_article_extractor_readability_fallback(mocker):
-    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_SPARSE_HTML)
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_SPARSE_HTML, "https://example.com/sparse"),
+    )
     mocker.patch("analecta.extraction.article.trafilatura.extract", return_value=None)
     result = await ArticleExtractor().extract("https://example.com/sparse")
     assert result.source_type == "article"
@@ -137,10 +146,24 @@ async def test_article_extractor_readability_fallback(mocker):
 @pytest.mark.asyncio
 async def test_article_extractor_raises_on_empty_page(mocker):
     mocker.patch.object(
-        ArticleExtractor, "_fetch", return_value="<html><body></body></html>"
+        ArticleExtractor,
+        "_fetch",
+        return_value=("<html><body></body></html>", "https://example.com/empty"),
     )
     with pytest.raises(ExtractionError):
         await ArticleExtractor().extract("https://example.com/empty")
+
+
+@pytest.mark.asyncio
+async def test_article_extractor_url_reflects_redirect(mocker):
+    """result.url is the post-redirect URL, not the originally requested one."""
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_ARTICLE_HTML, "https://example.com/new-slug"),
+    )
+    result = await ArticleExtractor().extract("https://example.com/old-slug")
+    assert result.url == "https://example.com/new-slug"
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +293,11 @@ async def test_youtube_extractor_no_author_when_oembed_missing(mocker):
 
 @pytest.mark.asyncio
 async def test_substack_extractor_returns_substack_type(mocker):
-    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_ARTICLE_HTML)
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_ARTICLE_HTML, "https://example.substack.com/p/test"),
+    )
     result = await SubstackExtractor().extract("https://example.substack.com/p/test")
     assert result.source_type == "substack"
     assert result.metadata["platform"] == "substack"
@@ -288,7 +315,9 @@ async def test_substack_extractor_resolves_inbox_url(mocker):
     mocker.patch(
         "analecta.extraction.social.httpx2.AsyncClient", return_value=mock_client
     )
-    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_ARTICLE_HTML)
+    mocker.patch.object(
+        ArticleExtractor, "_fetch", return_value=(_ARTICLE_HTML, canonical)
+    )
 
     result = await SubstackExtractor().extract("https://substack.com/inbox/post/12345")
     assert result.source_type == "substack"
@@ -296,10 +325,33 @@ async def test_substack_extractor_resolves_inbox_url(mocker):
 
 
 @pytest.mark.asyncio
+async def test_substack_extractor_url_reflects_redirect_past_canonical(mocker):
+    """A redirect encountered *after* inbox resolution still updates url."""
+    canonical = "https://example.substack.com/p/my-post"
+    final = "https://example.substack.com/p/my-post-renamed"
+    mock_resp = mocker.MagicMock()
+    mock_resp.status_code = 302
+    mock_resp.headers = {"location": canonical}
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.head = mocker.AsyncMock(return_value=mock_resp)
+    mocker.patch(
+        "analecta.extraction.social.httpx2.AsyncClient", return_value=mock_client
+    )
+    mocker.patch.object(ArticleExtractor, "_fetch", return_value=(_ARTICLE_HTML, final))
+
+    result = await SubstackExtractor().extract("https://substack.com/inbox/post/12345")
+    assert result.url == final
+
+
+@pytest.mark.asyncio
 async def test_substack_extractor_canonical_url_skips_head_request(mocker):
     """Canonical *.substack.com URLs bypass the HEAD redirect step."""
     mock_client_class = mocker.patch("analecta.extraction.social.httpx2.AsyncClient")
-    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_ARTICLE_HTML)
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_ARTICLE_HTML, "https://example.substack.com/p/test"),
+    )
 
     await SubstackExtractor().extract("https://example.substack.com/p/test")
     mock_client_class.assert_not_called()
@@ -367,7 +419,11 @@ async def test_extract_dispatches_youtube(mocker):
 
 @pytest.mark.asyncio
 async def test_extract_dispatches_article(mocker):
-    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_ARTICLE_HTML)
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_ARTICLE_HTML, "https://example.com/article"),
+    )
     result = await extract("https://example.com/article")
     assert result.source_type == "article"
 
@@ -513,7 +569,11 @@ def test_build_from_defuddle_constructs_content():
 
 @pytest.mark.asyncio
 async def test_extract_uses_defuddle_on_low_confidence(mocker):
-    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_SCRIPT_HEAVY)
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_SCRIPT_HEAVY, "https://example.com/spa"),
+    )
     mocker.patch(
         "analecta.extraction.tier2.render_url",
         new=mocker.AsyncMock(
@@ -527,7 +587,11 @@ async def test_extract_uses_defuddle_on_low_confidence(mocker):
 
 @pytest.mark.asyncio
 async def test_extract_uses_outer_html_when_defuddle_fails(mocker):
-    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_SCRIPT_HEAVY)
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_SCRIPT_HEAVY, "https://example.com/spa"),
+    )
     mocker.patch(
         "analecta.extraction.tier2.render_url",
         new=mocker.AsyncMock(
@@ -541,13 +605,79 @@ async def test_extract_uses_outer_html_when_defuddle_fails(mocker):
 
 @pytest.mark.asyncio
 async def test_extract_falls_back_to_tier1_when_render_raises(mocker):
-    mocker.patch.object(ArticleExtractor, "_fetch", return_value=_ARTICLE_HTML)
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_ARTICLE_HTML, "https://example.com/article"),
+    )
     mocker.patch(
         "analecta.extraction.tier2.render_url",
         new=mocker.AsyncMock(side_effect=ExtractionError("no server")),
     )
     result = await ArticleExtractor().extract("https://example.com/article")
     assert result.source_type == "article"
+
+
+@pytest.mark.asyncio
+async def test_extract_uses_defuddle_with_redirect_resolved_url(mocker):
+    """Tier 2 gets the original URL, but result.url reflects httpx's resolution."""
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_SCRIPT_HEAVY, "https://example.com/final"),
+    )
+    mock_render = mocker.AsyncMock(
+        return_value=Tier2Result(ok=True, content="<p>Defuddle</p>", title="D")
+    )
+    mocker.patch("analecta.extraction.tier2.render_url", new=mock_render)
+    result = await ArticleExtractor().extract("https://example.com/original")
+    mock_render.assert_awaited_once_with("https://example.com/original")
+    assert result.url == "https://example.com/final"
+
+
+@pytest.mark.asyncio
+async def test_extract_uses_tier2_final_url_over_httpx_when_present(mocker):
+    """Browser-reported final_url (JS/redirect-aware) wins over httpx's resolution."""
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_SCRIPT_HEAVY, "https://example.com/httpx-final"),
+    )
+    mocker.patch(
+        "analecta.extraction.tier2.render_url",
+        new=mocker.AsyncMock(
+            return_value=Tier2Result(
+                ok=True,
+                content="<p>Defuddle</p>",
+                title="D",
+                final_url="https://example.com/browser-final",
+            )
+        ),
+    )
+    result = await ArticleExtractor().extract("https://example.com/original")
+    assert result.url == "https://example.com/browser-final"
+
+
+# ---------------------------------------------------------------------------
+# _resolve_tier2_url
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_tier2_url_prefers_valid_browser_url():
+    assert (
+        _resolve_tier2_url("https://example.com/final", "https://example.com/httpx")
+        == "https://example.com/final"
+    )
+
+
+@pytest.mark.parametrize(
+    "bad_url", [None, "", "about:blank", "chrome-error://chromewebdata/"]
+)
+def test_resolve_tier2_url_falls_back_on_unusable_value(bad_url):
+    assert (
+        _resolve_tier2_url(bad_url, "https://example.com/httpx")
+        == "https://example.com/httpx"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,10 @@ class Tier2Result:
         author: Author extracted by Defuddle.
         description: Meta description extracted by Defuddle.
         published: Publication date extracted by Defuddle.
+        final_url: The rendered page's ``document.baseURI`` — the browser's
+            own post-redirect (including client-side/JS redirects) URL.
+            ``None`` if the render server predates this field or navigation
+            failed before any document loaded.
     """
 
     ok: bool
@@ -32,6 +36,7 @@ class Tier2Result:
     author: str | None = None
     description: str | None = None
     published: str | None = None
+    final_url: str | None = None
 
 
 async def render_url(url: str) -> Tier2Result:
@@ -75,4 +80,5 @@ async def render_url(url: str) -> Tier2Result:
         author=_str("author"),
         description=_str("description"),
         published=_str("published"),
+        final_url=_str("final_url"),
     )
