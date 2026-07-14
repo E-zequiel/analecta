@@ -1067,3 +1067,60 @@ def test_strip_heading_classes_preserves_figure_sibling():
     soup = _BS(result, "html.parser")
     assert soup.find("figure") is not None
     assert soup.find("img") is not None
+
+
+def test_strip_heading_classes_unwraps_self_referencing_permalink_anchor():
+    # MDN wraps the entire heading text in a hover-permalink anchor whose
+    # href points back at the heading's own id. readability/trafilatura
+    # treat an all-link heading as boilerplate and drop it whole.
+    html = (
+        '<h2 id="key_concepts" class="heading">'
+        '<a class="heading-anchor" href="#key_concepts">Key concepts</a>'
+        "</h2>"
+    )
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    h2 = soup.find("h2")
+    assert h2 is not None
+    assert h2.find("a") is None
+    assert h2.get_text(strip=True) == "Key concepts"
+
+
+def test_strip_heading_classes_keeps_anchor_when_href_targets_different_id():
+    # Same shape, but the href does NOT match the heading's own id — a
+    # genuine cross-reference link, not a self-referencing permalink icon.
+    html = '<h2 id="alpha"><a href="#beta">Alpha</a></h2>'
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    h2 = soup.find("h2")
+    assert h2 is not None
+    assert h2.find("a") is not None
+    assert h2.get_text(strip=True) == "Alpha"
+
+
+def test_strip_heading_classes_keeps_self_referencing_anchor_when_heading_has_no_id():
+    # No id on the heading at all — nothing for the anchor to self-reference.
+    html = '<h2><a href="#key_concepts">Key concepts</a></h2>'
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    h2 = soup.find("h2")
+    assert h2 is not None
+    assert h2.find("a") is not None
+
+
+def test_strip_heading_classes_ignores_comment_when_counting_meaningful_children():
+    # MDN hydration comments (e.g. Lit's <!--lit-node 1-->) are NavigableString
+    # subclasses in BeautifulSoup and must not be miscounted as a second
+    # meaningful child, which would block the permalink-anchor unwrap.
+    html = (
+        '<h2 id="key_concepts">'
+        "<!--lit-node 1-->"
+        '<a href="#key_concepts">Key concepts</a>'
+        "</h2>"
+    )
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    h2 = soup.find("h2")
+    assert h2 is not None
+    assert h2.find("a") is None
+    assert h2.get_text(strip=True) == "Key concepts"
