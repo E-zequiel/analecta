@@ -12,6 +12,7 @@ from analecta.extraction.article import (
     _populate_metadata,
     _rescue_linked_lists,
     _resolve_tier2_url,
+    _reunite_intro_with_body,
     _simplify_figure_images,
     _strip_heading_classes,
     _strip_loading_placeholders,
@@ -951,6 +952,107 @@ def test_unwrap_sections_preserves_all_content():
     assert soup.find("h2") is not None
     assert soup.find("h3") is not None
     assert len(soup.find_all("p")) == 2
+
+
+# ---------------------------------------------------------------------------
+# _reunite_intro_with_body
+# ---------------------------------------------------------------------------
+
+
+def test_reunite_intro_with_body_mdn_shape_moves_paragraphs():
+    # MDN: <h1>+intro <p>s in one div, a TOC <aside> in between, real body
+    # in a sibling div — 3 siblings under <main>. readability scores the
+    # low-text intro div separately from the body and drops it.
+    html = (
+        "<main>"
+        '<div class="header"><h1>Title</h1>'
+        "<p>Intro sentence one.</p><p>Intro sentence two.</p></div>"
+        '<aside class="toc">Table of contents</aside>'
+        '<div class="body"><h2>Section</h2><p>Body content.</p></div>'
+        "</main>"
+    )
+    result = _reunite_intro_with_body(html)
+    soup = _BS(result, "html.parser")
+    header = soup.find("div", class_="header")
+    body = soup.find("div", class_="body")
+    assert [c.name for c in header.find_all(recursive=False)] == ["h1"]
+    body_children = body.find_all(recursive=False)
+    assert [c.get_text(strip=True) for c in body_children[:2]] == [
+        "Intro sentence one.",
+        "Intro sentence two.",
+    ]
+    # Original order preserved, and body's own content still follows.
+    assert body_children[2].name == "h2"
+
+
+def test_reunite_intro_with_body_works_without_intervening_aside():
+    # Same shape but header/body are directly adjacent siblings (no <aside>).
+    html = (
+        "<main>"
+        "<div><h1>Title</h1><p>Intro.</p></div>"
+        "<div><h2>Section</h2><p>Body content.</p></div>"
+        "</main>"
+    )
+    result = _reunite_intro_with_body(html)
+    soup = _BS(result, "html.parser")
+    divs = soup.find("main").find_all("div", recursive=False)
+    assert divs[0].find("p") is None
+    assert divs[1].find_all(recursive=False)[0].get_text(strip=True) == "Intro."
+
+
+def test_reunite_intro_with_body_noop_with_multiple_sibling_candidates():
+    # Substack shape: h1's parent has 2 non-chrome sibling divs (a visibility
+    # check + a buttons container), not the single real body — must not
+    # guess which one is the real content.
+    html = (
+        "<article>"
+        "<div><h1>Title</h1><p>Intro.</p></div>"
+        "<div>Visibility check</div>"
+        "<div>Buttons</div>"
+        "</article>"
+    )
+    result = _reunite_intro_with_body(html)
+    soup = _BS(result, "html.parser")
+    intro = soup.find("h1").parent
+    assert intro.find("p") is not None
+
+
+def test_reunite_intro_with_body_noop_when_intro_has_no_paragraphs():
+    # h1's own container has no <p> children to move (e.g. a masthead h1)
+    # even though exactly one sibling candidate exists.
+    html = (
+        "<article>"
+        "<div><h1>Site Name</h1></div>"
+        "<div><h2>Real content</h2><p>Body.</p></div>"
+        "</article>"
+    )
+    result = _reunite_intro_with_body(html)
+    soup = _BS(result, "html.parser")
+    body_div = soup.find_all("div")[1]
+    assert [c.name for c in body_div.find_all(recursive=False)] == ["h2", "p"]
+
+
+def test_reunite_intro_with_body_noop_when_no_h1():
+    html = "<main><div><h2>No h1 here</h2></div></main>"
+    result = _reunite_intro_with_body(html)
+    assert result == str(_BS(html, "html.parser"))
+
+
+def test_reunite_intro_with_body_prefers_main_scope_over_masthead_h1():
+    # A masthead <h1> outside <main> must not be mistaken for the article's
+    # own h1 — real MDN/Substack pages can carry a site-branding h1.
+    html = (
+        "<body>"
+        "<h1>Site Name</h1>"
+        "<main><div><h1>Article Title</h1><p>Intro.</p></div>"
+        "<div><h2>Body</h2><p>Content.</p></div></main>"
+        "</body>"
+    )
+    result = _reunite_intro_with_body(html)
+    soup = _BS(result, "html.parser")
+    main = soup.find("main")
+    intro = main.find("h1").parent
+    assert intro.find("p") is None
 
 
 # ---------------------------------------------------------------------------
