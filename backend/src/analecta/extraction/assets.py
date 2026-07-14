@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import re
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 import httpx2
 from bs4 import BeautifulSoup
@@ -139,13 +139,21 @@ class AssetDownloader:
     URL is kept so the pipeline never breaks.
     """
 
-    async def process(self, html: str, slug: str, vault_path: Path) -> str:
+    async def process(
+        self, html: str, slug: str, vault_path: Path, base_url: str = ""
+    ) -> str:
         """Download images in *html*, rewrite src attrs, return modified HTML.
 
         Args:
             html: Extracted HTML (M2 output).
             slug: Entry slug used as the asset subdirectory name.
             vault_path: Root vault directory.
+            base_url: The source article's URL, used to resolve root-relative
+                (``/foo.svg``) and protocol-relative (``//cdn.example.com/foo.svg``)
+                ``src`` values to absolute URLs before download — the same
+                resolution a browser applies. Pass ``""`` to skip resolution;
+                non-absolute ``src`` values then fail to download and are left
+                in the HTML unchanged.
 
         Returns:
             HTML with ``../assets/{slug}/...`` paths replacing remote src URLs
@@ -164,7 +172,15 @@ class AssetDownloader:
             follow_redirects=True, timeout=_TIMEOUT, headers=_HEADERS
         ) as client:
             results = await asyncio.gather(
-                *[self._download(url, asset_dir, client, sem) for url in urls],
+                *[
+                    self._download(
+                        urljoin(base_url, url) if base_url else url,
+                        asset_dir,
+                        client,
+                        sem,
+                    )
+                    for url in urls
+                ],
                 return_exceptions=True,
             )
 

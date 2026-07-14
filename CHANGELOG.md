@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Packaged Linux builds now show the correct taskbar/alt-tab label and icon on Wayland compositors — the app previously broadcast `analecta-electron` as its window identity instead of `analecta`.
+- Images with root-relative (`/foo.svg`) or protocol-relative (`//cdn.example.com/foo.svg`) `src` URLs are now resolved against the source article's URL before download, instead of leaking a broken path into the saved Markdown.
 
 ## [0.3.1] - 2026-07-13
 
