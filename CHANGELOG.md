@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Packaged Linux builds now show the correct taskbar/alt-tab label and icon on Wayland compositors — the app previously broadcast `analecta-electron` as its window identity instead of `analecta`.
+
 ## [0.3.1] - 2026-07-13
 
 Initial public release.
