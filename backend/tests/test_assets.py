@@ -306,3 +306,79 @@ async def test_process_creates_asset_directory(mocker, tmp_path):
     await AssetDownloader().process(html, "entry-slug", tmp_path)
 
     assert (tmp_path / "assets" / "entry-slug").is_dir()
+
+
+# ---------------------------------------------------------------------------
+# AssetDownloader.process — base_url resolution of relative img srcs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_process_resolves_root_relative_src_with_base_url(mocker, tmp_path):
+    filename = "abc123def45678.svg"
+    mock_download = mocker.patch.object(
+        AssetDownloader, "_download", return_value=filename
+    )
+
+    html = '<img src="/shared-assets/images/diagrams/position-area.svg">'
+    result = await AssetDownloader().process(
+        html,
+        "my-slug",
+        tmp_path,
+        base_url="https://developer.mozilla.org/en-US/docs/Web/CSS/anchor",
+    )
+
+    called_url = mock_download.call_args.args[0]
+    assert (
+        called_url
+        == "https://developer.mozilla.org/shared-assets/images/diagrams/position-area.svg"
+    )
+    assert f'src="../assets/my-slug/{filename}"' in result
+
+
+@pytest.mark.asyncio
+async def test_process_resolves_protocol_relative_src_with_base_url(mocker, tmp_path):
+    filename = "abc123def45678.png"
+    mock_download = mocker.patch.object(
+        AssetDownloader, "_download", return_value=filename
+    )
+
+    html = '<img src="//cdn.example.com/logo.png">'
+    result = await AssetDownloader().process(
+        html, "slug", tmp_path, base_url="https://example.com/article"
+    )
+
+    called_url = mock_download.call_args.args[0]
+    assert called_url == "https://cdn.example.com/logo.png"
+    assert f'src="../assets/slug/{filename}"' in result
+
+
+@pytest.mark.asyncio
+async def test_process_leaves_absolute_src_unchanged_with_base_url(mocker, tmp_path):
+    filename = "abc123def45678.jpg"
+    mock_download = mocker.patch.object(
+        AssetDownloader, "_download", return_value=filename
+    )
+
+    html = '<img src="https://other-cdn.example.com/photo.jpg">'
+    result = await AssetDownloader().process(
+        html, "slug", tmp_path, base_url="https://example.com/article"
+    )
+
+    called_url = mock_download.call_args.args[0]
+    assert called_url == "https://other-cdn.example.com/photo.jpg"
+    assert f'src="../assets/slug/{filename}"' in result
+
+
+@pytest.mark.asyncio
+async def test_process_leaves_relative_src_unresolved_without_base_url(
+    mocker, tmp_path
+):
+    mock_download = mocker.patch.object(AssetDownloader, "_download", return_value=None)
+
+    html = '<img src="/shared-assets/images/diagram.svg">'
+    result = await AssetDownloader().process(html, "slug", tmp_path)
+
+    called_url = mock_download.call_args.args[0]
+    assert called_url == "/shared-assets/images/diagram.svg"
+    assert 'src="/shared-assets/images/diagram.svg"' in result

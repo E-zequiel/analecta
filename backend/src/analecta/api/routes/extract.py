@@ -71,7 +71,7 @@ async def extract_url(
         page_path = vault.page_path(content.title, created_dt)
         slug = page_path.stem
         content.html = await AssetDownloader().process(
-            content.html, slug, vault.vault_path
+            content.html, slug, vault.vault_path, base_url=content.url
         )
 
         markdown = MarkdownConverter().convert(content, created_at)
