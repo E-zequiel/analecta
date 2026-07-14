@@ -58,18 +58,24 @@ function registerDevSchemeHandler(): void {
 app.setName('Analecta');
 app.setPath('userData', path.join(app.getPath('home'), '.config', 'analecta'));
 
-// On Wayland the compositor resolves the taskbar/alt-tab icon by matching the
-// xdg_toplevel app-id against a .desktop filename. In dev the file is
-// analecta-dev.desktop; production uses the binary name (analecta) which
-// electron-builder writes automatically.
+// On Wayland the compositor resolves the taskbar/alt-tab icon and label by
+// matching the xdg_toplevel app-id against a .desktop filename. Without an
+// explicit override, Electron broadcasts the raw electron/package.json "name"
+// ("analecta-electron") as the app-id in both dev and packaged builds — the
+// same underlying leak as the .deb Package: field fixed via
+// electron-builder.yml's deb.packageName (see
+// docs/electron-builder-linux-package-naming.md). setDesktopName is not in
+// the v42 type defs but is present in the runtime binary.
+if (process.platform === 'linux') {
+	const desktopFileName = app.isPackaged ? 'analecta.desktop' : 'analecta-dev.desktop';
+	(app as unknown as { setDesktopName(name: string): void }).setDesktopName(desktopFileName);
+}
+
 if (!app.isPackaged && process.platform === 'linux') {
-	// Align the Wayland xdg_toplevel app-id with the dev .desktop filename so the
-	// compositor can resolve the icon. setDesktopName is not in the v42 type defs
-	// but is present in the runtime binary.
-	(app as unknown as { setDesktopName(name: string): void }).setDesktopName('analecta-dev.desktop');
-	// Write the .desktop entry here (pre-ready) so the icon is available to the
-	// compositor before the first window opens. app.getPath/getAppPath are safe
-	// to call before ready.
+	// Write the dev .desktop entry here (pre-ready) so the icon is available to
+	// the compositor before the first window opens. app.getPath/getAppPath are
+	// safe to call before ready. Packaged builds already have their .desktop
+	// entry installed by electron-builder / the OS package manager.
 	registerDevSchemeHandler();
 }
 
