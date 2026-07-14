@@ -144,6 +144,53 @@ def _unwrap_sections(html: str) -> str:
     return str(soup)
 
 
+def _reunite_intro_with_body(html: str) -> str:
+    """Move the <h1>-adjacent intro <p> tags into the article body's sibling.
+
+    MDN (and similar reference-doc sites) puts the ``<h1>`` and its intro
+    paragraph(s) in one wrapper ``<div>``, with a TOC ``<aside>`` between it
+    and the real body content ``<div>`` — three siblings under ``<main>``.
+    readability-lxml scores each sibling as an independent candidate and
+    keeps only the highest-scoring one's subtree; the intro wrapper scores
+    far lower than the body (no headings, little text) and is discarded
+    wholesale even though it's genuine content. Reuniting the intro
+    paragraphs with the body sibling *before* scoring makes them one
+    candidate instead of two.
+
+    Deliberately narrow to avoid pulling real chrome (nav, ads, related-post
+    widgets) into the article on other sites: only fires when the ``<h1>``'s
+    parent has **exactly one** non-chrome (``_NAV_TAGS``) sibling *and* that
+    parent has direct ``<p>`` children to move. Only those ``<p>`` tags move
+    — never the ``<h1>`` itself (already handled separately via
+    ``doc.title()``; moving it would duplicate the title), never the
+    ``<aside>``/other siblings.
+
+    Relies on ``_unwrap_sections`` having already run: MDN wraps the intro
+    ``<p>`` tags in a ``<section>`` that must be flattened first, or they
+    won't be direct children of the ``<h1>``'s parent and this is a no-op.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    landmark = soup.find("main") or soup.find("article")
+    scope = landmark if isinstance(landmark, Tag) else soup
+    h1 = scope.find("h1")
+    if h1 is None:
+        return str(soup)
+    intro = h1.parent
+    if intro is None or intro.name not in {"div", "section"}:
+        return str(soup)
+    siblings = [s for s in intro.find_next_siblings() if isinstance(s, Tag)]
+    body_candidates = [s for s in siblings if s.name not in _NAV_TAGS]
+    if len(body_candidates) != 1:
+        return str(soup)
+    body = body_candidates[0]
+    intro_paragraphs = intro.find_all("p", recursive=False)
+    if not intro_paragraphs:
+        return str(soup)
+    for p in reversed(intro_paragraphs):
+        body.insert(0, p.extract())
+    return str(soup)
+
+
 _HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 
 
@@ -412,6 +459,7 @@ class ArticleExtractor(SourceExtractor):
         clean = _strip_hidden_elements(html)
         clean = _simplify_figure_images(clean)
         clean = _unwrap_sections(clean)
+        clean = _reunite_intro_with_body(clean)
         clean = _strip_heading_classes(clean)
         clean = _rescue_linked_lists(clean)
 
