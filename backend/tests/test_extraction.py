@@ -1,3 +1,4 @@
+import base64
 import json
 from types import SimpleNamespace
 from typing import Any
@@ -8,6 +9,8 @@ from youtube_transcript_api._transcripts import FetchedTranscriptSnippet
 from analecta.extraction.article import (
     ArticleExtractor,
     _build_from_defuddle,
+    _decode_shots,
+    _has_live_sample_placeholders,
     _is_low_confidence,
     _populate_metadata,
     _rescue_linked_lists,
@@ -468,6 +471,54 @@ def test_is_low_confidence_normal_content():
 
 
 # ---------------------------------------------------------------------------
+# _has_live_sample_placeholders
+# ---------------------------------------------------------------------------
+
+_MDN_LIVE_SAMPLE_IFRAME = (
+    '<iframe class="sample-code-frame" src="about:blank" '
+    'data-live-path="/en-US/docs/Web/CSS/Guides/Box_alignment/Overview/" '
+    'data-live-id="grid-align-items" loading="lazy"></iframe>'
+)
+
+
+def test_has_live_sample_placeholders_detects_mdn_iframe():
+    html = f"<html><body><main>{_MDN_LIVE_SAMPLE_IFRAME}</main></body></html>"
+    assert _has_live_sample_placeholders(html) is True
+
+
+def test_has_live_sample_placeholders_false_without_data_live_id():
+    html = '<iframe class="sample-code-frame" src="about:blank"></iframe>'
+    assert _has_live_sample_placeholders(html) is False
+
+
+def test_has_live_sample_placeholders_false_for_unrelated_iframe():
+    html = '<iframe class="other-frame" data-live-id="x"></iframe>'
+    assert _has_live_sample_placeholders(html) is False
+
+
+def test_has_live_sample_placeholders_false_for_plain_article():
+    assert _has_live_sample_placeholders(_ARTICLE_HTML) is False
+
+
+# ---------------------------------------------------------------------------
+# _decode_shots
+# ---------------------------------------------------------------------------
+
+
+def test_decode_shots_decodes_valid_base64():
+    encoded = base64.b64encode(b"png-bytes").decode()
+    assert _decode_shots({"shot-0": encoded}) == {"shot-0": b"png-bytes"}
+
+
+def test_decode_shots_drops_malformed_entries():
+    assert _decode_shots({"shot-0": "not-valid-base64!!"}) == {}
+
+
+def test_decode_shots_empty_map():
+    assert _decode_shots({}) == {}
+
+
+# ---------------------------------------------------------------------------
 # _try_nextjs_hydration
 # ---------------------------------------------------------------------------
 
@@ -563,9 +614,29 @@ def test_build_from_defuddle_constructs_content():
     assert result.metadata["published"] == "2024-06-01"
 
 
+def test_build_from_defuddle_decodes_shots_into_captured_images():
+    encoded = base64.b64encode(b"png-bytes").decode()
+    t = Tier2Result(ok=True, content="<p>x</p>", title="T", shots={"shot-0": encoded})
+    result = _build_from_defuddle("https://example.com", t)
+    assert result.captured_images == {"shot-0": b"png-bytes"}
+
+
+def test_build_from_defuddle_empty_captured_images_without_shots():
+    t = Tier2Result(ok=True, content="<p>x</p>", title="T")
+    result = _build_from_defuddle("https://example.com", t)
+    assert result.captured_images == {}
+
+
 # ---------------------------------------------------------------------------
 # ArticleExtractor.extract — Tier 2 paths
 # ---------------------------------------------------------------------------
+
+_HIGH_CONFIDENCE_WITH_LIVE_SAMPLE = (
+    "<html><body><article>"
+    + " ".join(["word"] * 250)
+    + _MDN_LIVE_SAMPLE_IFRAME
+    + "</article></body></html>"
+)
 
 
 @pytest.mark.asyncio
@@ -602,6 +673,69 @@ async def test_extract_uses_outer_html_when_defuddle_fails(mocker):
     result = await ArticleExtractor().extract("https://example.com/spa")
     assert result.source_type == "article"
     assert result.metadata.get("extractor") != "defuddle"
+
+
+@pytest.mark.asyncio
+async def test_extract_triggers_tier2_for_live_sample_despite_high_confidence(
+    mocker,
+):
+    """Fires Tier 2 for a page with plenty of real text, purely because of the
+    MDN live-sample placeholder — independent of _is_low_confidence."""
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(
+            _HIGH_CONFIDENCE_WITH_LIVE_SAMPLE,
+            "https://developer.mozilla.org/demo",
+        ),
+    )
+    mock_render = mocker.AsyncMock(
+        return_value=Tier2Result(ok=True, content="<p>Rendered</p>", title="D")
+    )
+    mocker.patch("analecta.extraction.tier2.render_url", new=mock_render)
+
+    result = await ArticleExtractor().extract("https://developer.mozilla.org/demo")
+
+    mock_render.assert_awaited_once()
+    assert result.metadata["extractor"] == "defuddle"
+
+
+@pytest.mark.asyncio
+async def test_extract_does_not_trigger_tier2_for_high_confidence_without_live_sample(
+    mocker,
+):
+    raw = "<html><body>" + _200_WORDS + "</body></html>"
+    mocker.patch.object(
+        ArticleExtractor, "_fetch", return_value=(raw, "https://example.com/article")
+    )
+    mock_render = mocker.AsyncMock()
+    mocker.patch("analecta.extraction.tier2.render_url", new=mock_render)
+
+    await ArticleExtractor().extract("https://example.com/article")
+
+    mock_render.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_extract_threads_captured_images_through_outer_html_fallback(mocker):
+    encoded = base64.b64encode(b"png-bytes").decode()
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_SCRIPT_HEAVY, "https://example.com/spa"),
+    )
+    mocker.patch(
+        "analecta.extraction.tier2.render_url",
+        new=mocker.AsyncMock(
+            return_value=Tier2Result(
+                ok=False,
+                outer_html=_ARTICLE_HTML,
+                shots={"shot-0": encoded},
+            )
+        ),
+    )
+    result = await ArticleExtractor().extract("https://example.com/spa")
+    assert result.captured_images == {"shot-0": b"png-bytes"}
 
 
 @pytest.mark.asyncio

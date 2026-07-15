@@ -10,6 +10,7 @@ from analecta.extraction.assets import (
     _normalize_graphics,
     _original_name,
     _resolve_nextjs_image,
+    _shot_id_from_url,
 )
 
 _HTML_WITH_IMAGES = (
@@ -306,6 +307,119 @@ async def test_process_creates_asset_directory(mocker, tmp_path):
     await AssetDownloader().process(html, "entry-slug", tmp_path)
 
     assert (tmp_path / "assets" / "entry-slug").is_dir()
+
+
+# ---------------------------------------------------------------------------
+# _shot_id_from_url
+# ---------------------------------------------------------------------------
+
+
+def test_shot_id_from_url_matches_placeholder():
+    assert (
+        _shot_id_from_url("https://analecta-shot.invalid/shot/shot-0.png") == "shot-0"
+    )
+
+
+def test_shot_id_from_url_returns_none_for_other_hosts():
+    assert _shot_id_from_url("https://example.com/shot/shot-0.png") is None
+
+
+def test_shot_id_from_url_returns_none_for_relative_url():
+    assert _shot_id_from_url("/shot/shot-0.png") is None
+
+
+# ---------------------------------------------------------------------------
+# AssetDownloader._download — Tier-2 screenshot placeholder resolution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_download_resolves_shot_from_captured_images(mocker, tmp_path):
+    data = b"fake-png-bytes"
+    sha = hashlib.sha256(data).hexdigest()
+
+    mock_client = mocker.AsyncMock()
+    asset_dir = tmp_path / "assets" / "slug"
+    asset_dir.mkdir(parents=True)
+
+    result = await AssetDownloader()._download(
+        "https://analecta-shot.invalid/shot/shot-0.png",
+        asset_dir,
+        mock_client,
+        asyncio.Semaphore(1),
+        {"shot-0": data},
+    )
+
+    assert result == f"{sha[:16]}.png"
+    assert (asset_dir / result).read_bytes() == data
+    mock_client.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_download_returns_none_for_unmapped_shot_id(mocker, tmp_path):
+    mock_client = mocker.AsyncMock()
+    asset_dir = tmp_path / "assets" / "slug"
+    asset_dir.mkdir(parents=True)
+
+    result = await AssetDownloader()._download(
+        "https://analecta-shot.invalid/shot/shot-0.png",
+        asset_dir,
+        mock_client,
+        asyncio.Semaphore(1),
+        {"shot-1": b"other bytes"},
+    )
+
+    assert result is None
+    mock_client.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_download_returns_none_for_shot_url_without_captured_images(
+    mocker, tmp_path
+):
+    mock_client = mocker.AsyncMock()
+    asset_dir = tmp_path / "assets" / "slug"
+    asset_dir.mkdir(parents=True)
+
+    result = await AssetDownloader()._download(
+        "https://analecta-shot.invalid/shot/shot-0.png",
+        asset_dir,
+        mock_client,
+        asyncio.Semaphore(1),
+    )
+
+    assert result is None
+    mock_client.get.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# AssetDownloader.process — Tier-2 screenshot placeholder resolution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_process_resolves_shot_placeholder_to_local_asset(tmp_path):
+    data = b"fake-png-bytes"
+    sha = hashlib.sha256(data).hexdigest()
+
+    html = '<img src="https://analecta-shot.invalid/shot/shot-0.png" alt="demo">'
+    result = await AssetDownloader().process(
+        html, "my-slug", tmp_path, captured_images={"shot-0": data}
+    )
+
+    filename = f"{sha[:16]}.png"
+    assert f'src="../assets/my-slug/{filename}"' in result
+    assert (tmp_path / "assets" / "my-slug" / filename).read_bytes() == data
+
+
+@pytest.mark.asyncio
+async def test_process_leaves_shot_placeholder_unchanged_without_matching_bytes(
+    tmp_path,
+):
+    html = '<img src="https://analecta-shot.invalid/shot/shot-0.png" alt="demo">'
+    result = await AssetDownloader().process(html, "my-slug", tmp_path)
+
+    assert 'src="https://analecta-shot.invalid/shot/shot-0.png"' in result
 
 
 # ---------------------------------------------------------------------------
