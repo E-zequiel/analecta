@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx2
 
@@ -27,6 +27,12 @@ class Tier2Result:
             own post-redirect (including client-side/JS redirects) URL.
             ``None`` if the render server predates this field or navigation
             failed before any document loaded.
+        shots: Base64-encoded PNG bytes for interactive embeds (e.g. MDN
+            live-code samples) captured via CDP before ``content``/
+            ``outer_html`` were read, keyed by the id embedded in each
+            placeholder ``<img src="https://analecta-shot.invalid/shot/{id}.png">``
+            already spliced into both. Empty when no known embed selector
+            matched anything on the page.
     """
 
     ok: bool
@@ -37,6 +43,7 @@ class Tier2Result:
     description: str | None = None
     published: str | None = None
     final_url: str | None = None
+    shots: dict[str, str] = field(default_factory=dict)
 
 
 async def render_url(url: str) -> Tier2Result:
@@ -72,6 +79,17 @@ async def render_url(url: str) -> Tier2Result:
         v = data.get(key)
         return str(v) if isinstance(v, str) else None
 
+    shots_raw = data.get("shots")
+    shots = (
+        {
+            k: v
+            for k, v in shots_raw.items()
+            if isinstance(k, str) and isinstance(v, str)
+        }
+        if isinstance(shots_raw, dict)
+        else {}
+    )
+
     return Tier2Result(
         ok=bool(data.get("ok", False)),
         content=_str("content"),
@@ -81,4 +99,5 @@ async def render_url(url: str) -> Tier2Result:
         description=_str("description"),
         published=_str("published"),
         final_url=_str("final_url"),
+        shots=shots,
     )

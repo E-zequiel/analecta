@@ -17,6 +17,25 @@ _IMG_TAG_RE = re.compile(r"<img\s[^>]+>", re.IGNORECASE)
 _SRC_ATTR_RE = re.compile(r'src=["\']([^"\']+)["\']', re.IGNORECASE)
 _ALT_ATTR_RE = re.compile(r"\balt=", re.IGNORECASE)
 
+# Reserved, non-resolvable (RFC 2606) host used by Tier 2's embed-capture pass
+# (see captureEmbedShots in electron/main/scraper.ts) to mark a screenshot
+# placeholder that must be resolved from already-in-memory bytes rather than
+# fetched over the network.
+_SHOT_HOST = "analecta-shot.invalid"
+
+
+def _shot_id_from_url(url: str) -> str | None:
+    """Return the capture id embedded in a Tier-2 screenshot placeholder URL.
+
+    Placeholder shape: ``https://analecta-shot.invalid/shot/{id}.png``.
+    Returns ``None`` for any URL on a different host, so callers fall through
+    to a normal network download.
+    """
+    if urlparse(url).hostname != _SHOT_HOST:
+        return None
+    return Path(urlparse(url).path).stem or None
+
+
 _CONTENT_TYPE_EXT: dict[str, str] = {
     "image/jpeg": ".jpg",
     "image/jpg": ".jpg",
@@ -140,7 +159,12 @@ class AssetDownloader:
     """
 
     async def process(
-        self, html: str, slug: str, vault_path: Path, base_url: str = ""
+        self,
+        html: str,
+        slug: str,
+        vault_path: Path,
+        base_url: str = "",
+        captured_images: dict[str, bytes] | None = None,
     ) -> str:
         """Download images in *html*, rewrite src attrs, return modified HTML.
 
@@ -154,6 +178,11 @@ class AssetDownloader:
                 resolution a browser applies. Pass ``""`` to skip resolution;
                 non-absolute ``src`` values then fail to download and are left
                 in the HTML unchanged.
+            captured_images: Screenshot bytes from ``ExtractedContent.captured_images``,
+                keyed by capture id. Resolves any
+                ``https://analecta-shot.invalid/shot/{id}.png`` placeholder
+                ``src`` (see Tier 2's embed-capture pass) from these bytes
+                instead of a network fetch.
 
         Returns:
             HTML with ``../assets/{slug}/...`` paths replacing remote src URLs
@@ -178,6 +207,7 @@ class AssetDownloader:
                         asset_dir,
                         client,
                         sem,
+                        captured_images,
                     )
                     for url in urls
                 ],
@@ -220,19 +250,33 @@ class AssetDownloader:
         asset_dir: Path,
         client: httpx2.AsyncClient,
         sem: asyncio.Semaphore,
+        captured_images: dict[str, bytes] | None = None,
     ) -> str | None:
         """Download *url*, validate MIME type, and save to *asset_dir*.
 
         Args:
-            url: Remote image URL.
+            url: Remote image URL, or a Tier-2 screenshot placeholder
+                (``https://analecta-shot.invalid/shot/{id}.png``).
             asset_dir: Destination directory for the downloaded file.
             client: Shared ``httpx2.AsyncClient`` instance.
             sem: Semaphore controlling concurrency.
+            captured_images: Screenshot bytes keyed by capture id, consulted
+                instead of the network when *url* is a screenshot placeholder.
 
         Returns:
             Filename (e.g. ``'abc123def456.png'``) on success, ``None`` on any
             failure or if the server returns a non-image Content-Type.
         """
+        shot_id = _shot_id_from_url(url)
+        if shot_id is not None:
+            data = (captured_images or {}).get(shot_id)
+            if data is None:
+                return None
+            sha256 = hashlib.sha256(data).hexdigest()
+            filename = f"{sha256[:16]}.png"
+            (asset_dir / filename).write_bytes(data)
+            return filename
+
         async with sem:
             try:
                 response = await client.get(url)

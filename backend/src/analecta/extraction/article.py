@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import re
 from typing import TYPE_CHECKING, Any
@@ -336,6 +338,20 @@ def _try_nextjs_hydration(html: str) -> str | None:
     return None
 
 
+def _has_live_sample_placeholders(raw_html: str) -> bool:
+    """Return True when *raw_html* has MDN-style live-code-sample placeholders.
+
+    MDN's client JS tears down the raw ``<iframe class="sample-code-frame"
+    data-live-id="...">`` placeholder shortly after load and replaces it with
+    a JS-only custom element (``<mdn-live-sample-result>``) whose real content
+    Tier 1 can never see, regardless of how much other text is on the page —
+    so this fires Tier 2's embed-capture pass independently of
+    ``_is_low_confidence``.
+    """
+    soup = BeautifulSoup(raw_html, "html.parser")
+    return bool(soup.select("iframe.sample-code-frame[data-live-id]"))
+
+
 def _is_low_confidence(raw_html: str, extracted_html: str) -> bool:
     """Return True when Tier 1 extraction likely missed JS-rendered content."""
     text = BeautifulSoup(extracted_html, "html.parser").get_text()
@@ -374,6 +390,22 @@ def _resolve_tier2_url(tier2_final_url: str | None, fallback: str) -> str:
     return fallback
 
 
+def _decode_shots(shots: dict[str, str]) -> dict[str, bytes]:
+    """Decode a ``Tier2Result.shots`` base64 map to raw PNG bytes, keyed by id.
+
+    Entries that fail to decode (malformed base64) are dropped rather than
+    raising — a lost screenshot degrades gracefully to a broken placeholder
+    image, matching ``AssetDownloader``'s existing silently-skip convention.
+    """
+    decoded: dict[str, bytes] = {}
+    for shot_id, data in shots.items():
+        try:
+            decoded[shot_id] = base64.b64decode(data)
+        except ValueError, binascii.Error:
+            continue
+    return decoded
+
+
 def _build_from_defuddle(url: str, t: Tier2Result) -> ExtractedContent:
     """Construct an ``ExtractedContent`` from a successful Defuddle Tier 2 result."""
     metadata: dict[str, Any] = {"extractor": "defuddle"}
@@ -389,6 +421,7 @@ def _build_from_defuddle(url: str, t: Tier2Result) -> ExtractedContent:
         url=url,
         source_type="article",
         metadata=metadata,
+        captured_images=_decode_shots(t.shots) if t.shots else {},
     )
 
 
@@ -423,7 +456,7 @@ class ArticleExtractor(SourceExtractor):
         html, final_url = await self._fetch(url)
         result = self._parse(html, final_url)
 
-        if _is_low_confidence(html, result.html):
+        if _is_low_confidence(html, result.html) or _has_live_sample_placeholders(html):
             try:
                 from analecta.extraction.tier2 import render_url
 
@@ -433,7 +466,10 @@ class ArticleExtractor(SourceExtractor):
                 if tier2.ok and tier2.content:
                     return _build_from_defuddle(resolved_url, tier2)
                 if tier2.outer_html:
-                    return self._parse(tier2.outer_html, resolved_url)
+                    parsed = self._parse(tier2.outer_html, resolved_url)
+                    if tier2.shots:
+                        parsed.captured_images = _decode_shots(tier2.shots)
+                    return parsed
             except Exception:
                 pass
 

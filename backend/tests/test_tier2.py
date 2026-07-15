@@ -82,3 +82,44 @@ async def test_render_url_non_string_values_become_none(monkeypatch, mocker):
     result = await render_url("https://example.com/bad")
     assert result.content is None
     assert result.title is None
+
+
+@pytest.mark.asyncio
+async def test_render_url_parses_shots_map(monkeypatch, mocker):
+    monkeypatch.setenv("ANALECTA_RENDER_PORT", "9999")
+    monkeypatch.setenv("ANALECTA_RENDER_TOKEN", "tok")
+    _mock_httpx(
+        mocker,
+        {
+            "ok": True,
+            "content": "<p>Body</p>",
+            "shots": {"shot-0": "base64data", "shot-1": "moredata"},
+        },
+    )
+    result = await render_url("https://example.com/article")
+    assert result.shots == {"shot-0": "base64data", "shot-1": "moredata"}
+
+
+@pytest.mark.asyncio
+async def test_render_url_defaults_to_empty_shots_when_absent(monkeypatch, mocker):
+    monkeypatch.setenv("ANALECTA_RENDER_PORT", "9999")
+    monkeypatch.setenv("ANALECTA_RENDER_TOKEN", "tok")
+    _mock_httpx(mocker, {"ok": True, "content": "<p>Body</p>"})
+    result = await render_url("https://example.com/article")
+    assert result.shots == {}
+
+
+@pytest.mark.asyncio
+async def test_render_url_drops_non_string_shot_values(monkeypatch, mocker):
+    monkeypatch.setenv("ANALECTA_RENDER_PORT", "9999")
+    monkeypatch.setenv("ANALECTA_RENDER_TOKEN", "tok")
+    _mock_httpx(
+        mocker,
+        {
+            "ok": True,
+            "content": "<p>Body</p>",
+            "shots": {"shot-0": "valid", "shot-1": 42},
+        },
+    )
+    result = await render_url("https://example.com/article")
+    assert result.shots == {"shot-0": "valid"}
