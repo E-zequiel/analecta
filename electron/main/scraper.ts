@@ -23,6 +23,19 @@ export interface RenderResult {
 
 let renderServer: http.Server | null = null;
 
+// A CDP command can hang indefinitely (never resolve, never reject) rather
+// than error out — a plain try/catch does not protect against that. Races
+// the given promise against a timer so a single stuck command degrades to a
+// rejection instead of hanging the whole render indefinitely.
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+	return Promise.race([
+		promise,
+		new Promise<T>((_resolve, reject) => {
+			setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+		}),
+	]);
+}
+
 // extraResources copies the bundle to {resources}/defuddle-browser.js in packaged builds.
 // In dev, __dirname is electron/dist/main/ so we go up two levels to electron/node_modules/.
 const defuddleBundlePath = app.isPackaged
@@ -128,42 +141,82 @@ async function captureEmbedShots(
 			}))
 		`)) as string;
 		const targets = JSON.parse(targetsJson) as EmbedTarget[];
+		console.error(`[scraper] captureEmbedShots: ${targets.length} target(s) found`);
 		if (targets.length === 0) return shots;
 
 		for (const t of targets) {
 			if (t.width <= 0 || t.height <= 0) continue;
+			console.error(`[scraper] capture ${t.id} start (${t.width}x${t.height} at ${t.x},${t.y})`);
 			try {
-				const result = (await dbg.sendCommand('Page.captureScreenshot', {
-					format: 'png',
-					clip: { x: t.x, y: t.y, width: t.width, height: t.height, scale: 1 },
-					captureBeyondViewport: true,
-				})) as { data: string };
+				const result = (await withTimeout(
+					dbg.sendCommand('Page.captureScreenshot', {
+						format: 'png',
+						clip: { x: t.x, y: t.y, width: t.width, height: t.height, scale: 1 },
+						captureBeyondViewport: true,
+					}),
+					8_000,
+					`capture ${t.id}`
+				)) as { data: string };
 				shots[t.id] = result.data;
-			} catch {
+				console.error(`[scraper] capture ${t.id} done`);
+			} catch (err) {
 				// Leave this one uncaptured — its element stays in the DOM as-is
-				// and the surrounding extraction still succeeds without it.
+				// and the surrounding extraction still succeeds without it. Also
+				// catches a timed-out capture (see withTimeout) — a stuck CDP
+				// command never rejects on its own, so without this race one
+				// bad capture would hang the entire render, not just itself.
+				console.error(`[scraper] capture ${t.id} failed: ${String(err)}`);
 			}
 		}
 
 		if (Object.keys(shots).length === 0) return shots;
 
 		const capturedIds = JSON.stringify(Object.keys(shots));
+		// Dimensions (for the width/height attrs below) and a per-capture index
+		// (for the alt text below) come from the same targets array used for
+		// capture, keyed by id — both are load-bearing against Defuddle's own
+		// post-processing, not cosmetic:
+		//  - Defuddle's findSmallImages/removeSmallImages heuristic measures
+		//    each <img>'s width/height (attribute, inline style, or, failing
+		//    those, computed/rendered size) and deletes anything under 33px on
+		//    either axis as a likely tracking pixel. A placeholder pointing at
+		//    a deliberately non-resolvable host never loads, so its rendered
+		//    size collapses well under that threshold unless the real captured
+		//    dimensions are supplied explicitly via width/height attributes.
+		//  - Defuddle's _deduplicateImages pass treats any run of <img>s that
+		//    share identical, non-empty alt text as responsive-image
+		//    alternates (e.g. <img>+<noscript><img> pairs) and collapses them
+		//    down to one, discarding the rest. A shared literal alt string
+		//    across multiple captures on the same page (e.g. several MDN
+		//    live-samples) triggers this and silently drops every capture but
+		//    the first — confirmed empirically. Suffixing a per-capture index
+		//    keeps the text meaningful while making it distinct.
+		const dims = JSON.stringify(
+			Object.fromEntries(
+				targets.map((t) => [t.id, { w: Math.round(t.width), h: Math.round(t.height) }])
+			)
+		);
 		await win.webContents.executeJavaScript(`
 			(() => {
 				const captured = new Set(${capturedIds});
-				Array.from(document.querySelectorAll('[data-analecta-embed-id]')).forEach((el) => {
+				const dims = ${dims};
+				Array.from(document.querySelectorAll('[data-analecta-embed-id]')).forEach((el, i) => {
 					const id = el.getAttribute('data-analecta-embed-id');
 					if (!captured.has(id) || !el.parentElement) return;
 					const img = document.createElement('img');
 					img.src = 'https://${SHOT_HOST}/shot/' + id + '.png';
-					img.alt = 'Interactive embed';
+					img.alt = 'Interactive embed ' + (i + 1);
+					img.setAttribute('width', String(dims[id].w));
+					img.setAttribute('height', String(dims[id].h));
 					el.parentElement.replaceChild(img, el);
 				});
 			})()
 		`);
+		console.error('[scraper] captureEmbedShots: splice done');
 
 		return shots;
-	} catch {
+	} catch (err) {
+		console.error(`[scraper] captureEmbedShots failed: ${String(err)}`);
 		return {};
 	}
 }
@@ -185,38 +238,21 @@ async function scrapeUrl(url: string): Promise<RenderResult> {
 	});
 
 	try {
+		// Navigate via loadURL, not the CDP Page.navigate + Page.lifecycleEvent
+		// "networkIdle" wait this used previously — confirmed hanging
+		// indefinitely on pages with recurring background network activity
+		// (e.g. MDN's Glean telemetry beacons), which never let networkIdle
+		// fire at all. loadURL()'s own promise already resolves/rejects on
+		// the page's load event, sidestepping that wait entirely.
+		await win.loadURL(url);
+		console.error(`[scraper] loadURL done: ${url}`);
+
 		const dbg = win.webContents.debugger;
 		dbg.attach('1.3');
 		await dbg.sendCommand('Page.enable');
-		await dbg.sendCommand('Network.enable');
-		await dbg.sendCommand('Page.setLifecycleEventsEnabled', { enabled: true });
-
-		await new Promise<void>((resolve, reject) => {
-			const timeout = setTimeout(() => resolve(), 30_000);
-
-			const onMessage = (_e: Electron.Event, method: string, params: Record<string, unknown>) => {
-				if (method === 'Page.lifecycleEvent' && params['name'] === 'networkIdle') {
-					clearTimeout(timeout);
-					dbg.removeListener('message', onMessage);
-					resolve();
-				}
-			};
-			dbg.on('message', onMessage);
-
-			win.webContents.once('did-fail-load', (_e, _code, desc) => {
-				clearTimeout(timeout);
-				dbg.removeListener('message', onMessage);
-				reject(new Error(`load-failed: ${desc}`));
-			});
-
-			dbg.sendCommand('Page.navigate', { url }).catch((err: unknown) => {
-				clearTimeout(timeout);
-				dbg.removeListener('message', onMessage);
-				reject(err instanceof Error ? err : new Error(String(err)));
-			});
-		});
 
 		const shots = await captureEmbedShots(win, dbg);
+		console.error(`[scraper] captureEmbedShots done: ${Object.keys(shots).length} shot(s)`);
 
 		const script =
 			defuddleBundle +
@@ -243,10 +279,14 @@ async function scrapeUrl(url: string): Promise<RenderResult> {
 })()`;
 
 		const resultJson = (await win.webContents.executeJavaScript(script)) as string;
+		console.error('[scraper] defuddle script done');
 		const result = JSON.parse(resultJson) as RenderResult;
 		if (Object.keys(shots).length > 0) result.shots = shots;
 		return result;
 	} catch (err) {
+		console.error(
+			`[scraper] scrapeUrl failed: ${err instanceof Error ? err.message : String(err)}`
+		);
 		return {
 			ok: false,
 			outer_html: '',

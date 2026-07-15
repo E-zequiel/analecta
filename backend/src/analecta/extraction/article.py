@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import logging
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,8 @@ from analecta.extraction.core import ExtractedContent, ExtractionError, SourceEx
 
 if TYPE_CHECKING:
     from analecta.extraction.tier2 import Tier2Result
+
+log = logging.getLogger(__name__)
 
 _HEADERS = {"User-Agent": "analecta/0.1.0 (+https://github.com/E-zequiel/analecta)"}
 _TIMEOUT = 30.0
@@ -464,14 +467,23 @@ class ArticleExtractor(SourceExtractor):
                 tier2 = await render_url(url)
                 resolved_url = _resolve_tier2_url(tier2.final_url, final_url)
                 if tier2.ok and tier2.content:
+                    if tier2.shots:
+                        placeholder_count = tier2.content.count("analecta-shot.invalid")
+                        log.info(
+                            "Tier 2 defuddle content for %s: %d shot(s) captured, "
+                            "%d placeholder(s) present in content",
+                            url,
+                            len(tier2.shots),
+                            placeholder_count,
+                        )
                     return _build_from_defuddle(resolved_url, tier2)
                 if tier2.outer_html:
                     parsed = self._parse(tier2.outer_html, resolved_url)
                     if tier2.shots:
                         parsed.captured_images = _decode_shots(tier2.shots)
                     return parsed
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("Tier 2 render failed for %s: %r", url, exc)
 
         return result
 

@@ -739,7 +739,36 @@ async def test_extract_threads_captured_images_through_outer_html_fallback(mocke
 
 
 @pytest.mark.asyncio
-async def test_extract_falls_back_to_tier1_when_render_raises(mocker):
+async def test_extract_logs_shot_placeholder_survival_in_defuddle_content(
+    mocker, caplog
+):
+    encoded = base64.b64encode(b"png-bytes").decode()
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_SCRIPT_HEAVY, "https://developer.mozilla.org/demo"),
+    )
+    mocker.patch(
+        "analecta.extraction.tier2.render_url",
+        new=mocker.AsyncMock(
+            return_value=Tier2Result(
+                ok=True,
+                content='<p><img src="https://analecta-shot.invalid/shot/shot-0.png"></p>',
+                title="D",
+                shots={"shot-0": encoded, "shot-1": encoded},
+            )
+        ),
+    )
+    with caplog.at_level("INFO"):
+        result = await ArticleExtractor().extract("https://developer.mozilla.org/demo")
+
+    assert result.captured_images == {"shot-0": b"png-bytes", "shot-1": b"png-bytes"}
+    assert "2 shot(s) captured" in caplog.text
+    assert "1 placeholder(s) present in content" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_extract_falls_back_to_tier1_when_render_raises(mocker, caplog):
     mocker.patch.object(
         ArticleExtractor,
         "_fetch",
@@ -749,8 +778,11 @@ async def test_extract_falls_back_to_tier1_when_render_raises(mocker):
         "analecta.extraction.tier2.render_url",
         new=mocker.AsyncMock(side_effect=ExtractionError("no server")),
     )
-    result = await ArticleExtractor().extract("https://example.com/article")
+    with caplog.at_level("WARNING"):
+        result = await ArticleExtractor().extract("https://example.com/article")
     assert result.source_type == "article"
+    assert "Tier 2 render failed" in caplog.text
+    assert "no server" in caplog.text
 
 
 @pytest.mark.asyncio
