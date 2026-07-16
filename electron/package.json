@@ -15,7 +15,7 @@
     "dist": "tsc && electron-builder --config ../electron-builder.yml --publish never"
   },
   "dependencies": {
-    "defuddle": "0.18.1",
+    "defuddle": "0.19.1",
     "electron-updater": "6.8.9"
   },
   "devDependencies": {

@@ -197,6 +197,8 @@ The Electron main process runs a lightweight HTTP server (`scraper.ts`) bound ex
 
 **Known limitation.** The filter applies to the entry URL supplied by the sidecar. Once Chromium has loaded the initial page, server-side redirects and JavaScript-triggered navigations are not re-validated. This is an accepted residual risk: the scraping `BrowserWindow` has no preload script and no IPC surface, so it cannot call back into the main process. Its only output is a serialized HTML string returned to the sidecar — there is no mechanism for a redirect to a local service to exfiltrate data back to a remote party.
 
+**Defuddle extractor network calls disabled (`useAsync: false`).** Defuddle's site-specific extractors (Reddit, Twitter/X, YouTube, etc.) can, by default (`useAsync: true`), call third-party APIs — e.g. FxTwitter — when the local DOM has no usable content. This is a separate network path from `validateScrapeUrl`'s blocklist above: it originates from inside the Defuddle bundle running in the page context, not from a navigation the render server itself initiates, so it is invisible to that filter. It's also the same extractor subsystem patched for a reflected-XSS advisory in Defuddle 0.19.1 ([GHSA-jg4p-g6xj-4qmf](https://github.com/kepano/defuddle/security/advisories/GHSA-jg4p-g6xj-4qmf)) — reason enough to keep it off even though `useAsync` itself isn't the vulnerable code. Analecta never relies on these extractors (its own YouTube/Substack handling covers that ground, and X/Twitter is a hard `NotImplementedError`, see `CLAUDE.md` § Hard Constraints), so disabling it in `scraper.ts`'s `new Defuddle(document, { url, useAsync: false })` call removes an unaudited egress path at no functional cost.
+
 ---
 
 ## Comparison with Tauri Capabilities

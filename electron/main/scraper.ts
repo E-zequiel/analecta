@@ -97,6 +97,95 @@ interface EmbedTarget {
 	height: number;
 }
 
+// Replica of defuddle@0.19.1's own RELATED_HEADING_PATTERN
+// (removals/content-patterns.js) — kept in sync manually, re-check this
+// against the installed package on every defuddle version bump. Matches
+// heading text Defuddle treats as boilerplate ("Related articles", "Read
+// next", "See also", etc.) and, on a match past a content-depth gate,
+// deletes that heading *and every following sibling up to the end of the
+// document* (removeTrailingWithCascade) — confirmed via
+// electron/node_modules/defuddle/dist/removals/content-patterns.js and
+// reproduced against a live MDN page. MDN's "See also" sections are genuine
+// curated cross-references, not blogspam, and land on this pattern's exact
+// wording, so this is a real content-loss false positive on reference-style
+// documentation sites, not a MDN-specific quirk.
+const RELATED_HEADING_PATTERN =
+	/^(?:related (?:posts?|articles?|content|stories|reads?|reading)|you (?:might|may|could) (?:also )?(?:like|enjoy|be interested in)|read (?:next|more|also)|further reading|see also|more (?:from .*|from|articles?|posts?|like this)|more to (?:read|explore)|explore more|about (?:the )?author|latest (?:news|events?|posts?|articles?|stories)(?:\s*[&+]\s*(?:news|events?|posts?|articles?|stories))?)$/i;
+
+// Zero-width space — not in the Unicode WhiteSpace category, so it survives
+// a .trim() call, but renders as nothing. Used to perturb a protected
+// heading's text just enough that Defuddle's exact-match RELATED_HEADING_PATTERN
+// no longer fires, without visibly changing the heading or pulling it out of
+// Defuddle's own cleanup pass (link absolutization, anchor unwrapping, etc.)
+// — verified in a defuddle/node sandbox that reattaching the raw section
+// afterward instead leaves it visibly inconsistent with the rest of the
+// output (root-relative hrefs, un-stripped self-referencing permalink
+// anchor). Stripped back out of the returned content in scrapeUrl below.
+const ZERO_WIDTH_MARKER = '​';
+
+/**
+ * Structurally distinguish a genuine in-site reference/cross-link section
+ * (MDN's "See also": a plain link list, same-domain, no imagery) from a
+ * blogspam "related posts" widget (thumbnail cards, mostly off-site links) —
+ * the two are indistinguishable by heading text alone, which is all
+ * Defuddle's own heuristic goes on. Only protects headings that already
+ * match RELATED_HEADING_PATTERN; every other heading is untouched.
+ *
+ * Never lets a failure here escape to the caller, same rationale as
+ * captureEmbedShots — this must degrade to "nothing protected" rather than
+ * sinking the whole render.
+ */
+async function protectReferenceSections(win: BrowserWindow): Promise<number> {
+	try {
+		const count = (await win.webContents.executeJavaScript(`
+			(() => {
+				const RELATED_HEADING_PATTERN = ${RELATED_HEADING_PATTERN.toString()};
+				const mainContent = document.querySelector('main') || document.body;
+				const headings = Array.from(mainContent.querySelectorAll('h2, h3, h4, h5, h6'));
+				let protectedCount = 0;
+				for (const heading of headings) {
+					const headingText = (heading.textContent || '').trim();
+					if (!RELATED_HEADING_PATTERN.test(headingText)) continue;
+
+					const level = Number(heading.tagName[1]);
+					const sectionEls = [];
+					let sib = heading.nextElementSibling;
+					while (sib) {
+						const m = /^H([1-6])$/.exec(sib.tagName);
+						if (m && Number(m[1]) <= level) break;
+						sectionEls.push(sib);
+						sib = sib.nextElementSibling;
+					}
+
+					const hasImages = sectionEls.some((el) => el.querySelector('img') || el.tagName === 'IMG');
+					if (hasImages) continue;
+
+					const links = sectionEls.flatMap((el) => Array.from(el.querySelectorAll('a[href]')));
+					if (links.length === 0) continue;
+					const pageHost = new URL(document.baseURI).hostname;
+					const sameDomainCount = links.filter((a) => {
+						try {
+							return new URL(a.getAttribute('href'), document.baseURI).hostname === pageHost;
+						} catch {
+							return false;
+						}
+					}).length;
+					if (sameDomainCount / links.length <= 0.5) continue;
+
+					heading.textContent = headingText + ${JSON.stringify(ZERO_WIDTH_MARKER)};
+					protectedCount++;
+				}
+				return protectedCount;
+			})()
+		`)) as number;
+		console.error(`[scraper] protectReferenceSections: ${count} section(s) protected`);
+		return count;
+	} catch (err) {
+		console.error(`[scraper] protectReferenceSections failed: ${String(err)}`);
+		return 0;
+	}
+}
+
 /**
  * Screenshot every element matching EMBED_SELECTORS via CDP, then replace each
  * one in the live DOM with a placeholder <img> pointing at a reserved,
@@ -254,14 +343,26 @@ async function scrapeUrl(url: string): Promise<RenderResult> {
 		const shots = await captureEmbedShots(win, dbg);
 		console.error(`[scraper] captureEmbedShots done: ${Object.keys(shots).length} shot(s)`);
 
+		await protectReferenceSections(win);
+
 		const script =
 			defuddleBundle +
 			`\n;(async () => {
   try {
-    const r = await new Defuddle(document, { url: ${JSON.stringify(url)} }).parseAsync();
+    // useAsync (Defuddle default: true) lets site-specific extractors reach
+    // out to third-party APIs (e.g. FxTwitter) when the local DOM has no
+    // usable content — an unaudited network call this render server's own
+    // URL blocklist (validateScrapeUrl) never sees, made from the same
+    // extractor subsystem patched for XSS in GHSA-jg4p-g6xj-4qmf. Analecta
+    // doesn't rely on any of Defuddle's async extractors (own YouTube/Substack
+    // handling; X/Twitter is a hard NotImplementedError), so disabling this
+    // costs nothing and closes an unreviewed egress path.
+    const r = await new Defuddle(document, { url: ${JSON.stringify(url)}, useAsync: false }).parseAsync();
     return JSON.stringify({
       ok: true,
-      content: r.content,
+      // Strip the zero-width markers protectReferenceSections stamped onto
+      // protected headings — invisible either way, but no reason to ship them.
+      content: r.content.replace(new RegExp(${JSON.stringify(ZERO_WIDTH_MARKER)}, 'g'), ''),
       title: r.title,
       author: r.author,
       description: r.description,
@@ -271,7 +372,10 @@ async function scrapeUrl(url: string): Promise<RenderResult> {
   } catch (e) {
     return JSON.stringify({
       ok: false,
-      outer_html: document.documentElement.outerHTML,
+      // protectReferenceSections mutated the live document before this ran —
+      // strip the same marker here too, or a protected heading's zero-width
+      // char rides into the Tier-1 fallback path and the saved vault file.
+      outer_html: document.documentElement.outerHTML.replace(new RegExp(${JSON.stringify(ZERO_WIDTH_MARKER)}, 'g'), ''),
       final_url: document.baseURI,
       error: String(e),
     });
