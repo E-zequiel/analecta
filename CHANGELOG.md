@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interactive live-code demos on MDN pages are now captured as a static image and saved into the vault instead of disappearing entirely — these are populated by client-side JavaScript after the page loads, so extraction previously had nothing to show for them.
 - The browser-rendered extraction pass no longer hangs and silently falls back to the lower-quality plain-HTML pass on pages with recurring background network activity (e.g. analytics beacons) — it was waiting for the page to go fully network-idle, which such pages never do.
 - Genuine cross-reference sections on reference-doc sites (e.g. MDN's "See also" list) are no longer stripped from the browser-rendered extraction pass, along with everything after them — previously misidentified as a blog-style "related posts" widget by a generic anti-boilerplate heuristic and deleted wholesale.
+- CSS code blocks on sites using the SyntaxHighlighter `brush: css` class convention (e.g. MDN) now keep their language label in the browser-rendered extraction pass, instead of coming out as an unlabeled code fence — a gap in the bundled rendering library's own language whitelist.
 
 ## [0.3.1] - 2026-07-13
 
