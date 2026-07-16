@@ -123,6 +123,14 @@ const RELATED_HEADING_PATTERN =
 // anchor). Stripped back out of the returned content in scrapeUrl below.
 const ZERO_WIDTH_MARKER = '​';
 
+// SyntaxHighlighter's classic "brush: LANG" class convention (still used by
+// MDN's code <pre> blocks, among other doc/blog platforms) writes the
+// language as two separate whitespace-split class tokens — "brush:" and the
+// language name — never as a single hyphenated token. Not MDN-specific: this
+// is SyntaxHighlighter's own naming, so any site still using it hits the
+// same gap.
+const BRUSH_LANGUAGE_PATTERN = /(?:^|\s)brush:\s*([\w+-]+)/i;
+
 /**
  * Structurally distinguish a genuine in-site reference/cross-link section
  * (MDN's "See also": a plain link list, same-domain, no imagery) from a
@@ -182,6 +190,70 @@ async function protectReferenceSections(win: BrowserWindow): Promise<number> {
 		return count;
 	} catch (err) {
 		console.error(`[scraper] protectReferenceSections failed: ${String(err)}`);
+		return 0;
+	}
+}
+
+/**
+ * Defuddle's own language detection (elements/code.js) only matches
+ * hyphenated class tokens (`language-css`, `brush-css`, etc.) via regex, so
+ * BRUSH_LANGUAGE_PATTERN's colon-separated form never fires there — it falls
+ * through to a bare-class-name lookup against Defuddle's own CODE_LANGUAGES
+ * whitelist instead. That whitelist has gaps: confirmed empirically that
+ * 'css' is absent while 'html' and 'json' are present, so `brush: css` code
+ * blocks come out with no language label at all while an otherwise-identical
+ * `brush: html` block on the same page labels correctly.
+ *
+ * Stamping data-lang here sidesteps the whitelist entirely — it's the
+ * highest-priority signal getCodeLanguage checks, read before any class
+ * inspection — so unlike the RELATED_HEADING_PATTERN replica above, this
+ * fix doesn't depend on Defuddle's internals and can't rot on a version
+ * bump.
+ *
+ * MDN's client JS hydrates the SSR `<pre class="brush: ...">` into a
+ * `<mdn-code-example>` custom element whose *open* shadow root re-creates
+ * the real `<pre>` — the light DOM keeps none (confirmed empirically via a
+ * headless Electron probe: document.querySelectorAll('pre') returns zero
+ * matches on this page, all 924 <code> elements are unrelated inline-code
+ * prose spans). This is not MDN-specific plumbing to special-case: Defuddle
+ * itself flattens shadow DOM the same way before running its own pipeline
+ * (see replaceShadowHost in its dist bundle, which reads
+ * shadowHost.shadowRoot.innerHTML into its working clone), so any site
+ * using shadow-DOM web components for code blocks hits the same gap this
+ * closes — walking open shadow roots is the general fix, matching the
+ * light-DOM traversal Defuddle does internally.
+ *
+ * Never lets a failure here escape to the caller, same rationale as
+ * protectReferenceSections and captureEmbedShots.
+ */
+async function labelSyntaxHighlighterLanguages(win: BrowserWindow): Promise<number> {
+	try {
+		const count = (await win.webContents.executeJavaScript(`
+			(() => {
+				const BRUSH_LANGUAGE_PATTERN = ${BRUSH_LANGUAGE_PATTERN.toString()};
+				const collectBrushPres = (root, acc) => {
+					acc.push(...root.querySelectorAll('pre[class*="brush:"]'));
+					for (const el of root.querySelectorAll('*')) {
+						if (el.shadowRoot) collectBrushPres(el.shadowRoot, acc);
+					}
+				};
+				const candidates = [];
+				collectBrushPres(document, candidates);
+				let stamped = 0;
+				for (const pre of candidates) {
+					if (pre.hasAttribute('data-lang')) continue;
+					const m = BRUSH_LANGUAGE_PATTERN.exec(pre.getAttribute('class') || '');
+					if (!m) continue;
+					pre.setAttribute('data-lang', m[1].toLowerCase());
+					stamped++;
+				}
+				return stamped;
+			})()
+		`)) as number;
+		console.error(`[scraper] labelSyntaxHighlighterLanguages: ${count} block(s) labeled`);
+		return count;
+	} catch (err) {
+		console.error(`[scraper] labelSyntaxHighlighterLanguages failed: ${String(err)}`);
 		return 0;
 	}
 }
@@ -344,6 +416,7 @@ async function scrapeUrl(url: string): Promise<RenderResult> {
 		console.error(`[scraper] captureEmbedShots done: ${Object.keys(shots).length} shot(s)`);
 
 		await protectReferenceSections(win);
+		await labelSyntaxHighlighterLanguages(win);
 
 		const script =
 			defuddleBundle +
