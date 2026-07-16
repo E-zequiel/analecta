@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Upgraded the bundled Defuddle rendering library to 0.19.1, patching a high-severity (CVSS 8.2) cross-site scripting vulnerability in its site-extractor output handling ([GHSA-jg4p-g6xj-4qmf](https://github.com/kepano/defuddle/security/advisories/GHSA-jg4p-g6xj-4qmf)).
+- Disabled Defuddle's `useAsync` option in the browser-rendered extraction pass, which previously allowed its site-specific extractors to silently call third-party APIs (e.g. FxTwitter) from inside the scraping window — a network path invisible to the render server's own URL blocklist, and part of the same extractor subsystem patched above. Analecta never relied on this (own YouTube/Substack handling; X/Twitter extraction is unimplemented by design), so this closes an unaudited egress path with no functional loss.
+
 ### Fixed
 
 - Packaged Linux builds now show the correct taskbar/alt-tab label and icon on Wayland compositors — the app previously broadcast `analecta-electron` as its window identity instead of `analecta`.
@@ -16,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The article's opening paragraph(s) are no longer silently dropped on reference-doc sites (e.g. MDN) that place the title and intro text in a separate sibling from the rest of the body content — previously treated as a low-value fragment and discarded in favor of the higher-scoring body section.
 - Interactive live-code demos on MDN pages are now captured as a static image and saved into the vault instead of disappearing entirely — these are populated by client-side JavaScript after the page loads, so extraction previously had nothing to show for them.
 - The browser-rendered extraction pass no longer hangs and silently falls back to the lower-quality plain-HTML pass on pages with recurring background network activity (e.g. analytics beacons) — it was waiting for the page to go fully network-idle, which such pages never do.
+- Genuine cross-reference sections on reference-doc sites (e.g. MDN's "See also" list) are no longer stripped from the browser-rendered extraction pass, along with everything after them — previously misidentified as a blog-style "related posts" widget by a generic anti-boilerplate heuristic and deleted wholesale.
 
 ## [0.3.1] - 2026-07-13
 
