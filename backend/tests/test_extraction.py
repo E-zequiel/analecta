@@ -10,10 +10,13 @@ from analecta.extraction.article import (
     ArticleExtractor,
     _build_from_defuddle,
     _decode_shots,
+    _expand_table_spans,
     _has_live_sample_placeholders,
     _is_low_confidence,
     _populate_metadata,
+    _readability_class_weight,
     _rescue_linked_lists,
+    _rescue_linked_tables,
     _resolve_tier2_url,
     _reunite_intro_with_body,
     _simplify_figure_images,
@@ -1027,6 +1030,199 @@ def test_rescue_linked_lists_density_just_below_threshold():
     result = _rescue_linked_lists(html)
     soup = _BS(result, "html.parser")
     assert soup.find("ul") is not None, "Low-density list must be preserved"
+
+
+# ---------------------------------------------------------------------------
+# _rescue_linked_tables
+# ---------------------------------------------------------------------------
+
+
+def test_rescue_linked_tables_flattens_high_density_table():
+    # MDN "Specifications"-shape: one header-only row, one row that's ~100%
+    # link text -> density well above 0.2 -> table dropped by readability.
+    html = (
+        '<figure class="table-container"><table>'
+        "<thead><tr><th>Specification</th></tr></thead>"
+        "<tbody><tr><td>"
+        '<a href="https://example.com/spec">Some Spec Level 4</a>'
+        "</td></tr></tbody>"
+        "</table></figure>"
+    )
+    result = _rescue_linked_tables(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("table") is None
+    assert soup.find("figure") is None, "empty wrapper figure should be unwrapped"
+    p = soup.find("p")
+    assert p is not None
+    anchor = p.find("a", href="https://example.com/spec")
+    assert anchor is not None
+    assert "Specification" not in soup.get_text(), (
+        "header-only row must not become a paragraph"
+    )
+
+
+def test_rescue_linked_tables_keeps_low_density_table():
+    html = (
+        "<table><tr><th>Name</th><th>Value</th></tr>"
+        "<tr><td>Some plain descriptive text</td><td>42</td></tr></table>"
+    )
+    result = _rescue_linked_tables(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("table") is not None
+
+
+def test_rescue_linked_tables_joins_multiple_cells_with_separator():
+    html = (
+        "<table><tr><th>A</th></tr>"
+        '<tr><td><a href="/x">Link text</a></td>'
+        '<td><a href="/y">More link text</a></td></tr></table>'
+    )
+    result = _rescue_linked_tables(html)
+    soup = _BS(result, "html.parser")
+    p = soup.find("p")
+    assert p is not None
+    assert " · " in p.get_text()
+
+
+def test_rescue_linked_tables_skips_positive_weight_table():
+    # class="article-table" matches readability's positiveRe -> weight=25,
+    # so readability's own "weight < 25" condition never fires regardless of
+    # link density -- rescuing this would flatten a table readability keeps.
+    html = (
+        '<table class="article-table"><tr><th>Spec</th></tr>'
+        "<tr><td>"
+        '<a href="https://example.com/spec">Some Spec Level 4</a>'
+        "</td></tr></table>"
+    )
+    result = _rescue_linked_tables(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("table") is not None, (
+        "positive-weight table must survive untouched"
+    )
+
+
+def test_readability_class_weight_matches_real_readability():
+    # Cross-checked against readability.readability.Document.class_weight
+    # called on the equivalent lxml element (see the memory entry for the
+    # exact values): article-table=25, no class=0, sidebar=-25, footer+article=0.
+    cases = [
+        ('<table class="article-table">', 25),
+        ("<table>", 0),
+        ('<table class="sidebar">', -25),
+        ('<table class="footer article">', 0),
+        ('<table id="main-content">', 25),
+    ]
+    for fragment, expected in cases:
+        soup = _BS(fragment + "</table>", "html.parser")
+        assert _readability_class_weight(soup.find("table")) == expected, fragment
+
+
+# ---------------------------------------------------------------------------
+# _expand_table_spans
+# ---------------------------------------------------------------------------
+
+
+def test_expand_table_spans_rowspan_shifts_correctly():
+    # Regression fixture for the real bug: rowspan on cols 0 and 2 across a
+    # group of rows, col 1 varying per row.
+    html = (
+        "<table><thead><tr><th>Order</th><th>Origin</th><th>Importance</th></tr></thead>"
+        "<tbody>"
+        '<tr><td rowspan="3">1</td><td>first</td><td rowspan="3">normal</td></tr>'
+        "<tr><td>second</td></tr>"
+        "<tr><td>third</td></tr>"
+        "</tbody></table>"
+    )
+    result = _expand_table_spans(html)
+    soup = _BS(result, "html.parser")
+    rows = soup.find_all("tr")
+    body_rows = rows[1:]
+    assert [c.get_text(strip=True) for c in body_rows[0].find_all(["td", "th"])] == [
+        "1",
+        "first",
+        "normal",
+    ]
+    assert [c.get_text(strip=True) for c in body_rows[1].find_all(["td", "th"])] == [
+        "1",
+        "second",
+        "normal",
+    ]
+    assert [c.get_text(strip=True) for c in body_rows[2].find_all(["td", "th"])] == [
+        "1",
+        "third",
+        "normal",
+    ]
+    # No rowspan/colspan attributes should survive on any cell.
+    assert not soup.find_all(attrs={"rowspan": True})
+    assert not soup.find_all(attrs={"colspan": True})
+
+
+def test_expand_table_spans_colspan_duplicates_within_row():
+    html = (
+        '<table><tr><td colspan="2">wide</td></tr><tr><td>a</td><td>b</td></tr></table>'
+    )
+    result = _expand_table_spans(html)
+    soup = _BS(result, "html.parser")
+    rows = soup.find_all("tr")
+    assert [c.get_text(strip=True) for c in rows[0].find_all("td")] == ["wide", "wide"]
+    assert [c.get_text(strip=True) for c in rows[1].find_all("td")] == ["a", "b"]
+
+
+def test_expand_table_spans_noop_without_spans():
+    html = "<table><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></table>"
+    result = _expand_table_spans(html)
+    soup = _BS(result, "html.parser")
+    rows = soup.find_all("tr")
+    assert [c.get_text(strip=True) for c in rows[0].find_all("td")] == ["a", "b"]
+    assert [c.get_text(strip=True) for c in rows[1].find_all("td")] == ["c", "d"]
+
+
+def test_expand_table_spans_preserves_content_across_multiple_tables():
+    html = (
+        '<table><tr><td rowspan="2">x</td><td>1</td></tr><tr><td>2</td></tr></table>'
+        "<table><tr><td>y</td><td>z</td></tr></table>"
+    )
+    result = _expand_table_spans(html)
+    soup = _BS(result, "html.parser")
+    tables = soup.find_all("table")
+    assert len(tables) == 2
+    first_rows = tables[0].find_all("tr")
+    assert [c.get_text(strip=True) for c in first_rows[1].find_all("td")] == ["x", "2"]
+    second_rows = tables[1].find_all("tr")
+    assert [c.get_text(strip=True) for c in second_rows[0].find_all("td")] == ["y", "z"]
+
+
+def test_expand_table_spans_survives_readability_link_density_and_min_length():
+    # End-to-end regression: confirms the real bug (misaligned columns after
+    # readability/markdownify, not a readability drop) by checking the fixed
+    # DOM shape directly, since the corruption here is a serialization issue,
+    # not a content-density one — readability itself passes this table
+    # through unchanged either way.
+    from readability import Document
+
+    html = (
+        "<html><body><article>"
+        "<p>Padding paragraph to give the surrounding article region enough "
+        "weight for readability to select it as the main content candidate.</p>"
+        "<table><thead><tr><th>Order</th><th>Origin</th><th>Importance</th></tr></thead>"
+        "<tbody>"
+        '<tr><td rowspan="2">1</td><td>first</td><td rowspan="2">normal</td></tr>'
+        "<tr><td>second</td></tr>"
+        "</tbody></table>"
+        "<p>Another padding paragraph, also long enough to keep this region "
+        "scored as the main content by readability's own algorithm.</p>"
+        "</article></body></html>"
+    )
+    fixed_html = _expand_table_spans(html)
+    summary = Document(fixed_html).summary() or ""
+    soup = _BS(summary, "html.parser")
+    rows = soup.find_all("tr")
+    body_rows = [r for r in rows if r.find("th") is None]
+    assert [c.get_text(strip=True) for c in body_rows[1].find_all("td")] == [
+        "1",
+        "second",
+        "normal",
+    ]
 
 
 # ---------------------------------------------------------------------------

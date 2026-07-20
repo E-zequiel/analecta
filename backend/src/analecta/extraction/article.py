@@ -11,6 +11,7 @@ import httpx2
 import trafilatura
 from bs4 import BeautifulSoup, Comment, Tag
 from readability import Document
+from readability.readability import REGEXES as _READABILITY_REGEXES
 
 from analecta.extraction.core import ExtractedContent, ExtractionError, SourceExtractor
 from analecta.extraction.http_identity import build_headers
@@ -87,9 +88,11 @@ def _simplify_figure_images(html: str) -> str:
 
 
 _NAV_TAGS = frozenset({"nav", "header", "footer", "aside"})
-# readability-lxml removes <ul>/<ol> when weight<25 AND link_density>0.2.
-# Rescue threshold matches that rule so no content list slips through.
-_LIST_RESCUE_DENSITY = 0.2
+# readability-lxml removes <ul>/<ol>/<table> (among other container tags) when
+# weight<25 AND link_density>0.2. Rescue threshold matches that rule so no
+# content list or table slips through. Shared by _rescue_linked_lists and
+# _rescue_linked_tables below.
+_LINK_DENSITY_RESCUE_THRESHOLD = 0.2
 
 # Matches sole-content loading placeholders left by client-side React components.
 # Allows "Loading", "Loading...", "Loading affected packages…" (≤3 words after
@@ -117,7 +120,7 @@ def _rescue_linked_lists(html: str) -> str:
         if not total.strip():
             continue
         link_chars = sum(len(a.get_text()) for a in ul.find_all("a"))
-        if link_chars / len(total) <= _LIST_RESCUE_DENSITY:
+        if link_chars / len(total) <= _LINK_DENSITY_RESCUE_THRESHOLD:
             continue
         for li in ul.find_all("li", recursive=False):
             p = soup.new_tag("p")
@@ -125,6 +128,190 @@ def _rescue_linked_lists(html: str) -> str:
                 p.append(child.extract())
             ul.insert_before(p)
         ul.decompose()
+    return str(soup)
+
+
+def _readability_class_weight(tag: Tag) -> int:
+    """Replicate readability.Document.class_weight for a bs4 Tag's class/id.
+
+    Mirrors only the class/id half of the real ``class_weight`` (not the
+    tag-name/custom-keyword terms, which this project's ``Document(clean)``
+    call never configures — ``positive_keywords``/``negative_keywords``
+    default to ``None``). A bs4 ``Tag``'s ``class`` attribute is a list, not
+    the plain string ``class_weight`` expects from an lxml element, so it
+    can't be called directly on one; this reimplements the same two regex
+    checks (``REGEXES["negativeRe"]``/``REGEXES["positiveRe"]``, imported
+    from the installed package so it can't drift from what real readability
+    actually matches on this version). Re-verify against
+    ``readability.readability.class_weight`` on any readability-lxml bump.
+    """
+    weight = 0
+    for feature in (tag.get("class"), tag.get("id")):
+        if not feature:
+            continue
+        feature_str = " ".join(feature) if isinstance(feature, list) else str(feature)
+        if _READABILITY_REGEXES["negativeRe"].search(feature_str):
+            weight -= 25
+        if _READABILITY_REGEXES["positiveRe"].search(feature_str):
+            weight += 25
+    return weight
+
+
+def _rescue_linked_tables(html: str) -> str:
+    """Flatten high-link-density <table>s into sibling <p> tags before readability.
+
+    readability-lxml's "too many links" rule (``weight < 25`` AND
+    ``link_density > 0.2``) applies to ``<table>`` the same way it applies to
+    ``<ul>``/``<ol>`` (see ``_rescue_linked_lists`` above) — a small reference
+    table whose cells are almost entirely link text (e.g. an MDN
+    "Specifications" table linking to a single spec) triggers it and the
+    whole table is silently dropped. Converting each non-header-only row to a
+    sibling ``<p>`` (cells joined with a middle-dot separator) preserves the
+    actual content, link included, even though the tabular layout doesn't
+    survive — readability never targets ``<p>`` individually. Header-only
+    rows (every cell a ``<th>``) are dropped rather than turned into a
+    redundant label paragraph.
+
+    Unlike ``_rescue_linked_lists``, this checks ``weight`` too (via
+    ``_readability_class_weight``), not link density alone: dissolving a
+    table's columnar structure into paragraphs is a much bigger loss than
+    dissolving a list's bullets, so a table readability would actually have
+    *kept* (an explicit positive-weight class/id, giving ``weight >= 25``)
+    must not be rescued just because it happens to be link-dense — that
+    would flatten a normal content/comparison table for no reason. Doesn't
+    account for readability's separate, weight-independent
+    "too-short-content" removal rule (see ``_unwrap_code_examples`` for that
+    one) — a table hit by both would need its own fix, not yet observed.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for table in soup.find_all("table"):
+        total = table.get_text()
+        if not total.strip():
+            continue
+        if _readability_class_weight(table) >= 25:
+            continue
+        link_chars = sum(len(a.get_text()) for a in table.find_all("a"))
+        if link_chars / len(total) <= _LINK_DENSITY_RESCUE_THRESHOLD:
+            continue
+        # Hoist past a <figure class="table-container">-style wrapper (if the
+        # table is its only tag child) so the rescued paragraphs don't end up
+        # trapped inside an otherwise-empty figure element.
+        parent = table.parent
+        anchor = table
+        if parent is not None and parent.name == "figure":
+            siblings = [
+                c for c in parent.find_all(True, recursive=False) if c is not table
+            ]
+            if not siblings:
+                anchor = parent
+        for row in table.find_all("tr"):
+            cells = row.find_all(["td", "th"], recursive=False)
+            if not cells or all(c.name == "th" for c in cells):
+                continue
+            p = soup.new_tag("p")
+            for i, cell in enumerate(cells):
+                if i > 0:
+                    p.append(" · ")
+                for child in list(cell.contents):
+                    p.append(child.extract())
+            anchor.insert_before(p)
+        anchor.decompose()
+    return str(soup)
+
+
+def _clone_cell(cell: Tag) -> Tag:
+    """Deep-clone a ``<td>``/``<th>`` tag, stripping any span attributes."""
+    clone = BeautifulSoup(str(cell), "html.parser").find(cell.name)
+    assert isinstance(clone, Tag)
+    for attr in ("rowspan", "colspan"):
+        if clone.has_attr(attr):
+            del clone[attr]
+    return clone
+
+
+def _expand_table_spans(html: str) -> str:
+    """Expand rowspan/colspan table cells into duplicate plain cells.
+
+    GFM/Markdown tables have no concept of merged cells, and markdownify's
+    table converter (confirmed empirically — no rowspan/colspan handling
+    anywhere in the installed package) converts each ``<tr>`` using exactly
+    the ``<td>``/``<th>`` elements it literally contains. A row whose merged
+    cells are inherited from an earlier row via ``rowspan`` therefore has too
+    few cells, and its remaining values shift into the wrong column once
+    rendered (e.g. MDN's "Complete cascade order" table, which uses
+    ``rowspan`` on the first and third columns to avoid repeating them for
+    every row in a group).
+
+    Rebuilds each ``<thead>``/``<tbody>``/``<tfoot>`` section (or the bare
+    ``<tr>`` children of a sectionless ``<table>``) as an explicit grid,
+    cloning a spanning cell's content into every row/column it visually
+    covers, then replaces the original cells. Cloned cells lose their span
+    attributes — each one now covers exactly one row/column. Lossy in that
+    repeated values become explicit rather than visually implied, but that
+    matches how a person reading the rendered table would fill in a merged
+    cell anyway, and is the standard approach other HTML-to-Markdown tools
+    use for this case.
+
+    Assumes a well-formed table where every row spans the same total column
+    count (true of realistic tables, including every case seen so far) —
+    that count is taken from the first row of each section, which by
+    construction can't yet have any pending rowspan from a previous row.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for table in soup.find_all("table"):
+        sections: list[list[Tag]] = []
+        for direct in table.find_all(["thead", "tbody", "tfoot"], recursive=False):
+            sections.append(direct.find_all("tr", recursive=False))
+        if not sections:
+            sections = [table.find_all("tr", recursive=False)]
+
+        for rows in sections:
+            if not rows:
+                continue
+            first_cells = rows[0].find_all(["td", "th"], recursive=False)
+            total_columns = sum(int(c.get("colspan", 1) or 1) for c in first_cells)
+            if total_columns == 0:
+                continue
+
+            # col -> [remaining rows this span still covers, source cell to clone]
+            pending: dict[int, list[Any]] = {}
+            for row in rows:
+                original_cells = row.find_all(["td", "th"], recursive=False)
+                cell_ptr = 0
+                col = 0
+                new_children: list[Tag] = []
+                while col < total_columns:
+                    if col in pending:
+                        remaining, source = pending[col]
+                        new_children.append(_clone_cell(source))
+                        if remaining > 1:
+                            pending[col] = [remaining - 1, source]
+                        else:
+                            del pending[col]
+                        col += 1
+                        continue
+                    if cell_ptr >= len(original_cells):
+                        # Malformed row (fewer real cells than the section's
+                        # column count) — stop rather than fabricate cells.
+                        break
+                    cell = original_cells[cell_ptr]
+                    cell_ptr += 1
+                    rowspan = int(cell.get("rowspan", 1) or 1)
+                    colspan = int(cell.get("colspan", 1) or 1)
+                    for i in range(colspan):
+                        if i == 0:
+                            for attr in ("rowspan", "colspan"):
+                                if cell.has_attr(attr):
+                                    del cell[attr]
+                            new_children.append(cell)
+                        else:
+                            new_children.append(_clone_cell(cell))
+                        if rowspan > 1:
+                            pending[col + i] = [rowspan - 1, cell]
+                    col += colspan
+                row.clear()
+                for c in new_children:
+                    row.append(c)
     return str(soup)
 
 
@@ -535,6 +722,8 @@ class ArticleExtractor(SourceExtractor):
         clean = _reunite_intro_with_body(clean)
         clean = _strip_heading_classes(clean)
         clean = _rescue_linked_lists(clean)
+        clean = _rescue_linked_tables(clean)
+        clean = _expand_table_spans(clean)
         clean = _unwrap_code_examples(clean)
 
         doc = Document(clean)
