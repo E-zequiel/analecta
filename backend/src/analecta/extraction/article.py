@@ -13,13 +13,13 @@ from bs4 import BeautifulSoup, Comment, Tag
 from readability import Document
 
 from analecta.extraction.core import ExtractedContent, ExtractionError, SourceExtractor
+from analecta.extraction.http_identity import build_headers
 
 if TYPE_CHECKING:
     from analecta.extraction.tier2 import Tier2Result
 
 log = logging.getLogger(__name__)
 
-_HEADERS = {"User-Agent": "analecta/0.1.0 (+https://github.com/E-zequiel/analecta)"}
 _TIMEOUT = 30.0
 _MIN_CONTENT_LEN = 100
 
@@ -498,7 +498,7 @@ class ArticleExtractor(SourceExtractor):
         async with httpx2.AsyncClient(
             follow_redirects=True, timeout=_TIMEOUT
         ) as client:
-            response = await client.get(url, headers=_HEADERS)
+            response = await client.get(url, headers=build_headers("document"))
             response.raise_for_status()
             return response.text, str(response.url)
 

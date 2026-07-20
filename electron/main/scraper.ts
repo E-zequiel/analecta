@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
 import crypto from 'node:crypto';
+import { buildChromeUserAgent } from './chrome-identity.js';
 
 export interface RenderResult {
 	ok: boolean;
@@ -383,7 +384,12 @@ async function captureEmbedShots(
 }
 
 async function scrapeUrl(url: string): Promise<RenderResult> {
-	const scrapingSession = session.fromPartition('persist:scraping', { cache: false });
+	// No `persist:` prefix — an in-memory partition that never touches disk and
+	// is gone on app restart, not a saved profile. Still one shared session
+	// object across scrapes within a single running instance (Electron reuses
+	// a partition by name), so cookies from one render remain available to a
+	// later one in the same run — see docs/privacy.md Known Residual Gaps.
+	const scrapingSession = session.fromPartition('scraping', { cache: false });
 
 	const win = new BrowserWindow({
 		show: false,
@@ -397,6 +403,12 @@ async function scrapeUrl(url: string): Promise<RenderResult> {
 			// No preload — scraping window has no IPC surface.
 		},
 	});
+
+	// Strip the Electron/app-identifying UA and present as a generic Chrome —
+	// the render window is a real Chromium engine, so this is the one place
+	// the herd-blending claim is actually true at the wire level, not just
+	// header-deep. See docs/privacy.md.
+	win.webContents.setUserAgent(buildChromeUserAgent());
 
 	try {
 		// Navigate via loadURL, not the CDP Page.navigate + Page.lifecycleEvent

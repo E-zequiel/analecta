@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { app, BrowserWindow } from 'electron';
 import { setVaultPath } from './vault-state.js';
+import { CHROME_MAJOR } from './chrome-identity.js';
 
 let sidecarProcess: ChildProcess | null = null;
 let cachedPort: number | null = null;
@@ -31,6 +32,9 @@ export function spawnSidecar(renderPort: number, renderToken: string): void {
 			...process.env,
 			ANALECTA_RENDER_PORT: String(renderPort),
 			ANALECTA_RENDER_TOKEN: renderToken,
+			// Single-sources the Chrome identity Tier 1 headers present with
+			// Electron's own bundled Chromium — see chrome-identity.ts.
+			ANALECTA_CHROME_MAJOR: CHROME_MAJOR,
 		},
 	});
 

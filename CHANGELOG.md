@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Upgraded the bundled Defuddle rendering library to 0.19.1, patching a high-severity (CVSS 8.2) cross-site scripting vulnerability in its site-extractor output handling ([GHSA-jg4p-g6xj-4qmf](https://github.com/kepano/defuddle/security/advisories/GHSA-jg4p-g6xj-4qmf)).
 - Disabled Defuddle's `useAsync` option in the browser-rendered extraction pass, which previously allowed its site-specific extractors to silently call third-party APIs (e.g. FxTwitter) from inside the scraping window — a network path invisible to the render server's own URL blocklist, and part of the same extractor subsystem patched above. Analecta never relied on this (own YouTube/Substack handling; X/Twitter extraction is unimplemented by design), so this closes an unaudited egress path with no functional loss.
+- Extraction requests no longer identify Analecta or its maintainer to the sites they fetch — the previous User-Agent embedded a personal GitHub URL on every request. Outbound requests now present as a generic, current Chrome on Linux, with a coherent header set (client hints, fetch metadata) to match, single-sourced from Electron's own bundled Chromium version so it can't go stale or drift between the direct-fetch and browser-rendered extraction paths. See `docs/privacy.md`.
+- The browser-rendered extraction window now presents as plain Chrome instead of leaking an Electron/app-identifying User-Agent, and WebRTC is now configured to route only through the same path as other traffic — intended to close a path where a page's own script could otherwise gather and leak the real IP independently of the User-Agent (pending manual verification, see `docs/privacy.md`).
+- The browser-rendered extraction window's session no longer persists to disk across app restarts — it previously used a named, disk-backed session partition with no expiry.
 
 ### Fixed
 
