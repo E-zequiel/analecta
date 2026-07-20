@@ -1,6 +1,6 @@
 # Privacy: Network Identity and IP Exposure
 
-This document states what Analecta actually protects when it fetches a URL, and what it doesn't yet — tracking the gap against the README's privacy claim ("No cloud sync, no subscription, no tracking. Truly private and yours.") so that claim is literally true rather than aspirational. It is not yet fully true: see Known Residual Gaps below, specifically Tier 2's lack of tracker blocking. It complements `docs/content-sanitization.md` (which covers code/markup injection, not network exposure) and `docs/electron-shell-security.md` (the Electron IPC/protocol/CSP surface).
+This document states what Analecta actually protects when it fetches a URL, tracking the posture against the README's privacy claim ("No cloud sync, no subscription, no tracking. Truly private and yours."). See Known Residual Gaps below for what's not yet closed. It complements `docs/content-sanitization.md` (which covers code/markup injection, not network exposure) and `docs/electron-shell-security.md` (the Electron IPC/protocol/CSP surface).
 
 **Scope.** This document covers the network identity Analecta presents to the sites it fetches, and how that exposure compares to browsing the same URL in a browser. It does not cover local vault file security (OS filesystem permissions, disk encryption) or content injection (see `docs/content-sanitization.md`).
 
@@ -13,9 +13,9 @@ Analecta fetches a URL through one of two paths, and they are not equally expose
 | | Tier 1 (`httpx2`) | Tier 2 (Electron/Chromium render) |
 |---|---|---|
 | What it is | A single GET, no JS execution, no subresource loading, no cookies | A real Chromium engine, used as a fallback for JS-heavy pages; must execute the page's JS for Defuddle to see the live DOM |
-| Exposure vs. a browser visit | **Strictly less** — third-party trackers, analytics, and fingerprinting scripts never run, because nothing on the page executes | **Matches vanilla Chrome** — same engine, same TLS/HTTP2/JS fingerprint. Does **not** match a hardened browser (e.g. Brave with Shields) — see Known Residual Gaps |
+| Exposure vs. a browser visit | **Strictly less** — third-party trackers, analytics, and fingerprinting scripts never run, because nothing on the page executes | Same engine, same TLS/HTTP2/JS fingerprint as vanilla Chrome, with known analytics/telemetry/tracking-pixel hosts blocked at the network level (see Tier 2 Tracker Blocking below) — closer to, but not identical to, a hardened browser like Brave with Shields (see Known Residual Gaps for the remaining gap) |
 
-This split is the honest answer to "does Analecta expose more than a browser": for the common path (Tier 1), no — less. For the Tier 2 fallback, it's on par with an unhardened Chrome, not yet on par with a tracker-blocking one.
+This split is the honest answer to "does Analecta expose more than a browser": for the common path (Tier 1), no — less. For the Tier 2 fallback, known trackers are blocked at the network level, same as a content-blocking browser would; what's not replicated is a full hardened-browser posture (fingerprint randomization, exhaustive ad/tracker coverage).
 
 ---
 
@@ -32,6 +32,18 @@ This split is the honest answer to "does Analecta expose more than a browser": f
 | WebRTC configured to route through the proxied path only | `app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp')`, `electron/main/index.ts`, set before `app.whenReady()` | The Tier 2 window executes arbitrary third-party page JS. A page can open an `RTCPeerConnection` with no permission prompt purely to gather ICE candidates and leak the real IP — even behind a VPN, if that VPN isn't a full system tunnel. Intended to close that vector app-wide. **Not yet confirmed working** — `appendSwitch` silently no-ops on an unrecognized flag, and nothing in the automated test suite exercises real WebRTC behavior (this project's convention is manual QA for anything Electron-visual). Needs a manual check: load a WebRTC-leak-test page in the scraping window and confirm no non-proxied UDP candidate appears. Treat as configured-but-unverified until that check happens. |
 
 **Explicitly not pursued: TLS/HTTP2 (JA3/JA4) fingerprint parity for Tier 1.** A real browser has no *hidden* TLS fingerprint from the site it's visiting — TLS fingerprinting is an anti-bot-detection concern, not a privacy-vs-a-browser concern, so closing it wouldn't move Analecta closer to the "no worse than a browser" bar. It would require a compiled dependency (e.g. `curl_cffi`) outside the `httpx2`-only stack rule, and even actively-maintained forks trail real Chrome's current version. Revisit only if extraction starts hitting anti-bot blocks in practice — a different problem than privacy parity.
+
+---
+
+## Tier 2 Tracker Blocking
+
+The Tier 2 render session (`electron/main/scraper.ts`) blocks network requests to hosts listed in a vendored copy of the [EasyPrivacy](https://easylist.to/) filter list (`electron/filters/easyprivacy.txt`), via `@ghostery/adblocker-electron` (`electron/main/tracker-blocking.ts`). The engine is constructed with `loadCosmeticFilters: false` and `loadCSPFilters: false` — Tier 2 is a headless window read programmatically by Defuddle, never shown to a person, so element-hiding CSS/JS injection would be pointless and risks perturbing the DOM right before it's read; and a filter-injected CSP tightening inline/eval script would risk suppressing the page's own hydration, which Tier 2 depends on Defuddle seeing (including the MDN live-sample elements `captureEmbedShots` screenshots). Only request-level blocking (`webRequest.onBeforeRequest`) is active. The blocker is constructed and enabled once, at render-server startup, not per extraction.
+
+**Deliberately EasyPrivacy only, not an ads list (EasyList).** The goal is closing a privacy gap, not ad removal — a broader list risks blocking page resources that Tier 2's own extraction depends on (including the MDN live-sample embed screenshots captured via `captureEmbedShots`).
+
+**The filter list is vendored, not fetched at runtime.** A filter-list auto-updater would itself be a periodic outbound call, contradicting the point of blocking trackers. `scripts/update_filter_list.py` refreshes the vendored copy on demand — run by hand, reviewed like a dependency bump, updated before a release. See `NOTICE` at the repo root for the list's own license and attribution.
+
+**Verified by matching the parsed engine against concrete URLs** (a known MDN telemetry-submit path is blocked; a same-page CSS asset and a third-party embed-iframe host are not) — not yet confirmed against a real Tier 2 render of a live page end to end. Per this project's convention of manual QA for Electron-runtime behavior, treat live-page extraction quality with blocking enabled as configured-but-unverified until checked.
 
 ---
 
@@ -57,7 +69,7 @@ No saved entry can reference a live remote image. `AssetDownloader` (`backend/sr
 
 Listed for honesty, not alarm — tracked as separate work, not folded into the invariants above:
 
-- **Tier 2 has no tracker/ad blocking.** Rendering a page executes its JS in full; any analytics beacon, tracking pixel, or fingerprinting script the page loads fires exactly as it would in an unhardened Chrome. A browser with Shields/uBlock-equivalent filtering blocks most of this by default; Analecta's Tier 2 window does not. Would need a maintained filter list (e.g. EasyPrivacy) and its own update path.
+- **Tier 2's tracker blocking covers EasyPrivacy's list only, not a fully hardened browser's posture.** Fingerprinting scripts and trackers absent from EasyPrivacy still execute; there's no fingerprint randomization, and no ad-blocking (deliberately, see Tier 2 Tracker Blocking above). A hardened browser's protection is broader than a single filter list.
 - **The Tier 2 render session (`scraping` partition, `electron/main/scraper.ts`) is a single session object shared across every render in a running instance**, not a fresh one per scrape. It is in-memory only, so it does not survive closing Analecta, but within one running instance, cookies set while rendering one site remain available to a later render of a different site, since both reuse the same named partition. Closing that fully would mean a fresh ephemeral partition per `scrapeUrl` call.
 
 ---

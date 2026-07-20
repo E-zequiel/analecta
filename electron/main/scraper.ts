@@ -5,6 +5,7 @@ import path from 'node:path';
 import net from 'node:net';
 import crypto from 'node:crypto';
 import { buildChromeUserAgent } from './chrome-identity.js';
+import { enableTrackerBlocking } from './tracker-blocking.js';
 
 export interface RenderResult {
 	ok: boolean;
@@ -383,13 +384,21 @@ async function captureEmbedShots(
 	}
 }
 
+// No `persist:` prefix — an in-memory partition that never touches disk and
+// is gone on app restart, not a saved profile. Still one shared session
+// object across scrapes within a single running instance (Electron reuses
+// a partition by name), so cookies from one render remain available to a
+// later one in the same run — see docs/privacy.md Known Residual Gaps.
+//
+// `session.fromPartition` returns the same cached Session object for every
+// call with this partition name, so getting it here and in startRenderServer
+// (to enable tracker blocking once) refers to one shared instance, not two.
+function getScrapingSession(): Electron.Session {
+	return session.fromPartition('scraping', { cache: false });
+}
+
 async function scrapeUrl(url: string): Promise<RenderResult> {
-	// No `persist:` prefix — an in-memory partition that never touches disk and
-	// is gone on app restart, not a saved profile. Still one shared session
-	// object across scrapes within a single running instance (Electron reuses
-	// a partition by name), so cookies from one render remain available to a
-	// later one in the same run — see docs/privacy.md Known Residual Gaps.
-	const scrapingSession = session.fromPartition('scraping', { cache: false });
+	const scrapingSession = getScrapingSession();
 
 	const win = new BrowserWindow({
 		show: false,
@@ -500,6 +509,10 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 export async function startRenderServer(): Promise<{ port: number; token: string }> {
 	const port = await findFreePort();
 	const token = crypto.randomUUID();
+
+	// Enabled once here, not per scrapeUrl call — parsing the filter list is
+	// measurable and enableBlockingInSession only needs to run once per session.
+	enableTrackerBlocking(getScrapingSession());
 
 	// eslint-disable-next-line @typescript-eslint/no-misused-promises
 	renderServer = http.createServer(async (req, res) => {
