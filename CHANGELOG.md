@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The browser-rendered extraction window now presents as plain Chrome instead of leaking an Electron/app-identifying User-Agent, and WebRTC is now configured to route only through the same path as other traffic — intended to close a path where a page's own script could otherwise gather and leak the real IP independently of the User-Agent (pending manual verification, see `docs/privacy.md`).
 - The browser-rendered extraction window's session no longer persists to disk across app restarts — it previously used a named, disk-backed session partition with no expiry.
 - A remote image that fails to download (network error, or a non-image response) now gets one retry and, if that also fails, is replaced with a local placeholder instead of keeping the original remote URL — a preserved URL would re-fetch, and re-expose the reading IP, every time the entry was reopened. A new "Localize remote images" action in Settings → Maintenance backfills any entries already saved with a live remote image reference from before this fix.
+- The reading view's Content Security Policy no longer permits loading images from arbitrary remote (`https:`) hosts — only local vault assets and inline data. Since extraction already localizes every image, this closes off the one remaining path (a hand-edited or otherwise unusual entry) by which a remote image reference could silently re-fetch and expose the reading IP.
 
 ### Fixed
 

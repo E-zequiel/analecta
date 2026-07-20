@@ -135,7 +135,7 @@ A CSP is applied to all responses via `session.defaultSession.webRequest.onHeade
 ```
 default-src    'self' app:;
 connect-src    'self' http://localhost:* app:;
-img-src        'self' app: analecta-file: data: blob: https:;
+img-src        'self' app: analecta-file: data: blob:;
 style-src-elem 'self' app:;
 style-src-attr 'none';
 font-src       'self' app:;
@@ -146,7 +146,7 @@ base-uri       'self';
 
 Key decisions:
 - `connect-src` allows `http://localhost:*` for the Python sidecar API. No external HTTP connections from the renderer.
-- `img-src` allows `analecta-file:` (vault images) and `https:` (remote article images). Remote images were a deliberate decision for the article reader; they are not blocked.
+- `img-src` allows only `analecta-file:` (vault images), `data:`/`blob:` (inline/decoded image data), and `app:` — no `https:`. `AssetDownloader` (`backend/src/analecta/extraction/assets.py`) localizes every image at extraction time, retrying once then falling back to a bundled placeholder on failure, so no entry should ever reference a live remote image; this directive makes that invariant enforced, not just assumed. See `docs/privacy.md` for the reasoning.
 - `object-src 'none'` blocks Flash and other plugin content.
 - `base-uri 'self'` prevents `<base>` tag injection from changing the document base URL.
 - `script-src` does **not** use `'unsafe-inline'`. SvelteKit injects one inline script per build (`__sveltekit_xyz = { base: "" }`). `protocols.ts` reads `index.html` at app startup, computes the SHA-256 hash of that script, and includes it in `script-src`. The hash is recomputed on every launch so it stays correct across builds without a separate build step.
