@@ -1,7 +1,9 @@
 """Asset downloader — M3 pipeline."""
 
 import asyncio
+import functools
 import hashlib
+import importlib.resources
 import re
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
@@ -13,10 +15,20 @@ from analecta.extraction.http_identity import build_headers
 
 _TIMEOUT = 30.0
 _MAX_CONCURRENT = 5
+_RETRY_DELAY_SECONDS = 1.0
 
 _IMG_TAG_RE = re.compile(r"<img\s[^>]+>", re.IGNORECASE)
 _SRC_ATTR_RE = re.compile(r'src=["\']([^"\']+)["\']', re.IGNORECASE)
 _ALT_ATTR_RE = re.compile(r"\balt=", re.IGNORECASE)
+
+# Matches CommonMark inline image syntax whose URL is absolute or
+# protocol-relative — the shape a saved Markdown entry can carry a live
+# remote reference in. Does not match reference-style ![alt][ref] links
+# (Analecta's own converter never emits them) and truncates at a literal
+# ')' inside the URL (occurs in some Wikimedia filenames) — both are
+# documented, currently-unhit limitations of the backfill path, not the
+# go-forward extraction path.
+_MD_IMAGE_RE = re.compile(r'!\[([^\]]*)\]\(((?:https?:)?//[^\s)]+)(?:\s+"[^"]*")?\)')
 
 # Reserved, non-resolvable (RFC 2606) host used by Tier 2's embed-capture pass
 # (see captureEmbedShots in electron/main/scraper.ts) to mark a screenshot
@@ -112,6 +124,59 @@ def _resolve_nextjs_image(src: str) -> str:
         return src
 
 
+@functools.lru_cache(maxsize=1)
+def _placeholder_bytes() -> bytes:
+    """Return the bundled 'image unavailable' placeholder SVG, cached.
+
+    Returns:
+        Raw SVG bytes, loaded once via ``importlib.resources`` (same
+        packaging convention as the ``.sql`` migrations in
+        ``storage/index.py``, so it survives PyInstaller's ``--onedir``
+        bundling — see ``backend.spec``'s ``datas`` entry).
+    """
+    resource = (
+        importlib.resources.files("analecta.extraction") / "static" / "broken-image.svg"
+    )
+    return resource.read_bytes()
+
+
+def _placeholder_filename() -> str:
+    """Return the deterministic filename the bundled placeholder is saved as.
+
+    Content-addressed like any other asset — since the placeholder's bytes
+    never change, its filename is stable, which lets callers recognize a
+    placeholder result without a separate marker (see
+    :meth:`AssetDownloader.localize_markdown`'s placeholder count).
+    """
+    return f"{hashlib.sha256(_placeholder_bytes()).hexdigest()[:16]}.svg"
+
+
+async def _try_fetch(client: httpx2.AsyncClient, url: str) -> tuple[bytes, str] | None:
+    """Attempt one GET of *url*, validating it's an image response.
+
+    Args:
+        client: Shared ``httpx2.AsyncClient`` instance.
+        url: Remote image URL.
+
+    Returns:
+        ``(content_bytes, extension)`` on success, ``None`` on any network
+        failure, non-2xx status, or non-image ``Content-Type``.
+    """
+    try:
+        response = await client.get(url)
+        response.raise_for_status()
+    except Exception:
+        return None
+
+    content_type = response.headers.get("content-type", "")
+    mime = content_type.split(";")[0].strip().lower()
+    if not mime.startswith("image/"):
+        return None
+
+    ext = _ext_from_content_type(content_type) or _ext_from_url(url) or ".bin"
+    return response.content, ext
+
+
 def _normalize_graphics(html: str) -> str:
     """Normalise image elements so ``_discover_images`` can find all real URLs.
 
@@ -155,8 +220,12 @@ class AssetDownloader:
     """Downloads images referenced in extracted HTML and rewrites src paths.
 
     Saved as ``{vault}/assets/{slug}/{sha256[:16]}.{ext}`` (content-addressed).
-    Non-image responses and network failures are silently skipped — the original
-    URL is kept so the pipeline never breaks.
+    A failed download (network error, non-2xx status, or a non-image
+    response) is retried once; if the retry also fails, the reference is
+    replaced with a bundled local placeholder image instead of the original
+    remote URL. A preserved remote URL would re-fetch — and re-expose the
+    reading IP — every time the entry is reopened, so no live remote
+    ``src`` is ever written into a saved entry.
     """
 
     async def process(
@@ -265,8 +334,13 @@ class AssetDownloader:
                 instead of the network when *url* is a screenshot placeholder.
 
         Returns:
-            Filename (e.g. ``'abc123def456.png'``) on success, ``None`` on any
-            failure or if the server returns a non-image Content-Type.
+            Filename of the downloaded image (e.g. ``'abc123def456.png'``).
+            A network download that fails twice in a row falls back to the
+            bundled placeholder's filename (see :meth:`_placeholder`) rather
+            than ``None``. ``None`` is only returned for a Tier-2 screenshot
+            placeholder URL with no matching bytes in *captured_images* — a
+            missing in-memory capture, not a network failure, so it isn't
+            covered by the placeholder fallback.
         """
         shot_id = _shot_id_from_url(url)
         if shot_id is not None:
@@ -279,23 +353,39 @@ class AssetDownloader:
             return filename
 
         async with sem:
-            try:
-                response = await client.get(url)
-                response.raise_for_status()
-            except Exception:
-                return None
+            result = await _try_fetch(client, url)
+            if result is None:
+                await asyncio.sleep(_RETRY_DELAY_SECONDS)
+                result = await _try_fetch(client, url)
+            if result is None:
+                return self._placeholder(asset_dir)
 
-            content_type = response.headers.get("content-type", "")
-            mime = content_type.split(";")[0].strip().lower()
-            if not mime.startswith("image/"):
-                return None
-
-            ext = _ext_from_content_type(content_type) or _ext_from_url(url) or ".bin"
-            data = response.content
+            data, ext = result
             sha256 = hashlib.sha256(data).hexdigest()
             filename = f"{sha256[:16]}{ext}"
             (asset_dir / filename).write_bytes(data)
             return filename
+
+    def _placeholder(self, asset_dir: Path) -> str:
+        """Write the bundled 'image unavailable' placeholder into *asset_dir*.
+
+        Content-addressed like a real download, so it renders through the
+        same ``analecta-file://`` path with no CSP/protocol changes. Reused
+        across every failed image in an entry (and across entries) rather
+        than duplicated, since the bytes — and therefore the hash — are
+        always identical.
+
+        Args:
+            asset_dir: Destination directory (created by the caller).
+
+        Returns:
+            Filename of the placeholder (e.g. ``'abc123def456.svg'``).
+        """
+        filename = _placeholder_filename()
+        path = asset_dir / filename
+        if not path.exists():
+            path.write_bytes(_placeholder_bytes())
+        return filename
 
     def _rewrite(self, html: str, url_map: dict[str, str], slug: str) -> str:
         """Replace img src values in *html* for URLs present in *url_map*.
@@ -332,3 +422,99 @@ class AssetDownloader:
             return new_tag
 
         return _IMG_TAG_RE.sub(_replace_tag, html)
+
+    async def localize_markdown(
+        self,
+        markdown: str,
+        slug: str,
+        vault_path: Path,
+        base_url: str = "",
+    ) -> tuple[str, bool, int]:
+        """Download remote images referenced in already-saved *markdown*.
+
+        Backfill counterpart to :meth:`process`. That method rewrites HTML
+        ``<img>`` tags *before* ``MarkdownConverter`` runs; by the time an
+        entry is saved to disk, any surviving remote reference is already
+        CommonMark ``![alt](url)`` syntax, which this method scans for and
+        localizes instead — reusing :meth:`_download` (and its retry/
+        placeholder fallback) as the shared core, rather than duplicating
+        it.
+
+        Args:
+            markdown: Saved entry content to scan.
+            slug: Entry slug — must match the ``assets/{slug}/`` directory
+                the entry's other images already live in (or would have,
+                had the original extraction fully succeeded).
+            vault_path: Root vault directory.
+            base_url: The entry's original source URL, used to resolve
+                protocol-relative (``//cdn.example.com/x.png``) image URLs
+                — same resolution :meth:`process` applies at extraction
+                time. Pass ``""`` to skip resolution.
+
+        Returns:
+            ``(rewritten_markdown, changed, placeholder_count)``.
+            *changed* is ``False`` when no remote image references were
+            found (the expected common case). *placeholder_count* is how
+            many of the rewritten references fell back to the local
+            placeholder rather than a successful re-download, so a caller
+            can distinguish "recovered" from "permanently unavailable"
+            instead of a single opaque count.
+        """
+        urls = list(dict.fromkeys(m.group(2) for m in _MD_IMAGE_RE.finditer(markdown)))
+        if not urls:
+            return markdown, False, 0
+
+        asset_dir = vault_path / "assets" / slug
+        asset_dir.mkdir(parents=True, exist_ok=True)
+
+        sem = asyncio.Semaphore(_MAX_CONCURRENT)
+        async with httpx2.AsyncClient(
+            follow_redirects=True, timeout=_TIMEOUT, headers=build_headers("image")
+        ) as client:
+            results = await asyncio.gather(
+                *[
+                    self._download(
+                        urljoin(base_url, url) if base_url else url,
+                        asset_dir,
+                        client,
+                        sem,
+                    )
+                    for url in urls
+                ],
+                return_exceptions=True,
+            )
+
+        url_map: dict[str, str] = {
+            url: filename
+            for url, filename in zip(urls, results, strict=False)
+            if isinstance(filename, str)
+        }
+        if not url_map:
+            return markdown, False, 0
+
+        placeholder_name = _placeholder_filename()
+        placeholder_count = sum(1 for f in url_map.values() if f == placeholder_name)
+
+        return self._rewrite_markdown(markdown, url_map, slug), True, placeholder_count
+
+    def _rewrite_markdown(
+        self, markdown: str, url_map: dict[str, str], slug: str
+    ) -> str:
+        """Replace ``![alt](url)`` image references in *markdown* for URLs in *url_map*.
+
+        Args:
+            markdown: Original Markdown content.
+            url_map: Mapping of remote URL to local filename.
+            slug: Entry slug used to build the relative asset path.
+
+        Returns:
+            Markdown with rewritten image references.
+        """
+
+        def _replace(m: re.Match[str]) -> str:
+            alt, url = m.group(1), m.group(2)
+            if url not in url_map:
+                return m.group(0)
+            return f"![{alt}](../assets/{slug}/{url_map[url]})"
+
+        return _MD_IMAGE_RE.sub(_replace, markdown)

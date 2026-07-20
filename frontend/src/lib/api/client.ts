@@ -318,4 +318,10 @@ export const system = {
 	rescan(): Promise<{ updated: number }> {
 		return apiFetch<{ updated: number }>('/system/rescan', { method: 'POST' });
 	},
+
+	localizeImages(): Promise<{ updated: number; placeholders: number }> {
+		return apiFetch<{ updated: number; placeholders: number }>('/system/localize-images', {
+			method: 'POST',
+		});
+	},
 };
