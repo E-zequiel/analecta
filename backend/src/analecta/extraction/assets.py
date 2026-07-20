@@ -9,7 +9,8 @@ from urllib.parse import parse_qs, unquote, urljoin, urlparse
 import httpx2
 from bs4 import BeautifulSoup
 
-_HEADERS = {"User-Agent": "analecta/0.1.0 (+https://github.com/E-zequiel/analecta)"}
+from analecta.extraction.http_identity import build_headers
+
 _TIMEOUT = 30.0
 _MAX_CONCURRENT = 5
 
@@ -198,7 +199,7 @@ class AssetDownloader:
 
         sem = asyncio.Semaphore(_MAX_CONCURRENT)
         async with httpx2.AsyncClient(
-            follow_redirects=True, timeout=_TIMEOUT, headers=_HEADERS
+            follow_redirects=True, timeout=_TIMEOUT, headers=build_headers("image")
         ) as client:
             results = await asyncio.gather(
                 *[

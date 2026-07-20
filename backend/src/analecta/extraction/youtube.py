@@ -10,6 +10,7 @@ from youtube_transcript_api import (
 )
 
 from analecta.extraction.core import ExtractedContent, ExtractionError, SourceExtractor
+from analecta.extraction.http_identity import build_headers
 
 _VIDEO_ID_PATTERNS = [
     r"youtube\.com/watch\?(?:.*&)?v=([^&]+)",
@@ -18,7 +19,6 @@ _VIDEO_ID_PATTERNS = [
 ]
 
 _OEMBED_URL = "https://www.youtube.com/oembed"
-_HEADERS = {"User-Agent": "Analecta/0.3"}
 _TIMEOUT = 8.0
 
 
@@ -42,7 +42,9 @@ async def _fetch_video_title(video_id: str) -> tuple[str, str | None]:
     """
     watch_url = f"https://www.youtube.com/watch?v={video_id}"
     try:
-        async with httpx2.AsyncClient(headers=_HEADERS, timeout=_TIMEOUT) as client:
+        async with httpx2.AsyncClient(
+            headers=build_headers("api"), timeout=_TIMEOUT
+        ) as client:
             resp = await client.get(
                 _OEMBED_URL, params={"url": watch_url, "format": "json"}
             )

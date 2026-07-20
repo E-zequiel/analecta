@@ -58,6 +58,15 @@ function registerDevSchemeHandler(): void {
 app.setName('Analecta');
 app.setPath('userData', path.join(app.getPath('home'), '.config', 'analecta'));
 
+// Must be set before app.ready. The Tier 2 render window executes arbitrary
+// third-party page JS (needed for Defuddle to see the live DOM), which can
+// open an RTCPeerConnection with no permission prompt just to gather ICE
+// candidates and leak the real IP behind a VPN — a page never needs to
+// request camera/mic for this. disable_non_proxied_udp forces WebRTC
+// through the same route as everything else, closing that vector for every
+// window in the app.
+app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
+
 // On Wayland the compositor resolves the taskbar/alt-tab icon and label by
 // matching the xdg_toplevel app-id against a .desktop filename. Without an
 // explicit override, Electron broadcasts the raw electron/package.json "name"
