@@ -128,6 +128,31 @@ def _rescue_linked_lists(html: str) -> str:
     return str(soup)
 
 
+def _unwrap_code_examples(html: str) -> str:
+    """Replace MDN's ``<div class="code-example">`` wrapper with its bare ``<pre>``.
+
+    MDN wraps every code sample as
+    ``<div class="code-example"><div class="example-header">…</div><pre>…</pre></div>``.
+    readability-lxml's own conditional cleaning drops any ``div`` (among other
+    container tags) whose total text content is under ``min_text_length`` (25
+    chars) and contains no ``<img>`` — usually decorative cruft, but it also
+    nukes a genuinely short one-line snippet (e.g. a single CSS declaration
+    illustrating one rule), since the wrapper's whole text — header label plus
+    code — is what gets measured. Replacing the wrapper with its bare ``<pre>``
+    removes it from that rule entirely: ``pre`` isn't one of the tags
+    readability applies conditional cleaning to. The language class
+    ``_lang_from_pre`` (``markdown/converter.py``) needs lives on the ``<pre>``
+    tag itself, not the discarded wrapper, so nothing is lost.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for wrapper in soup.find_all("div", class_="code-example"):
+        pre = wrapper.find("pre")
+        if pre is None:
+            continue
+        wrapper.replace_with(pre.extract())
+    return str(soup)
+
+
 def _unwrap_sections(html: str) -> str:
     """Unwrap <section> elements so their children are scored by readability as a unit.
 
@@ -510,6 +535,7 @@ class ArticleExtractor(SourceExtractor):
         clean = _reunite_intro_with_body(clean)
         clean = _strip_heading_classes(clean)
         clean = _rescue_linked_lists(clean)
+        clean = _unwrap_code_examples(clean)
 
         doc = Document(clean)
         readability_html = doc.summary() or ""

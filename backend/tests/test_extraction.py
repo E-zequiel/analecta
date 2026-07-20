@@ -20,6 +20,7 @@ from analecta.extraction.article import (
     _strip_heading_classes,
     _strip_loading_placeholders,
     _try_nextjs_hydration,
+    _unwrap_code_examples,
     _unwrap_sections,
 )
 from analecta.extraction.core import (
@@ -1026,6 +1027,111 @@ def test_rescue_linked_lists_density_just_below_threshold():
     result = _rescue_linked_lists(html)
     soup = _BS(result, "html.parser")
     assert soup.find("ul") is not None, "Low-density list must be preserved"
+
+
+# ---------------------------------------------------------------------------
+# _unwrap_code_examples
+# ---------------------------------------------------------------------------
+
+
+def test_unwrap_code_examples_hoists_bare_pre_and_drops_wrapper():
+    # MDN's shape: a short one-line snippet whose wrapper (header label +
+    # code) is under readability's 25-char min_text_length — the wrapper div
+    # would otherwise be silently dropped as "too short content, no image".
+    html = (
+        "<p>Some text.</p>"
+        '<div class="code-example">'
+        '<div class="example-header"><span class="language-name">css</span></div>'
+        '<pre class="brush: css notranslate"><code>margin-left: 3px;</code></pre>'
+        "</div>"
+        "<p>More text.</p>"
+    )
+    result = _unwrap_code_examples(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("div", class_="code-example") is None
+    assert soup.find("div", class_="example-header") is None
+    pre = soup.find("pre")
+    assert pre is not None
+    assert "margin-left: 3px;" in pre.get_text()
+
+
+def test_unwrap_code_examples_preserves_language_class():
+    html = (
+        '<div class="code-example">'
+        '<div class="example-header"><span class="language-name">css</span></div>'
+        '<pre class="brush: css notranslate"><code>li { margin-left: 0; }</code></pre>'
+        "</div>"
+    )
+    result = _unwrap_code_examples(html)
+    soup = _BS(result, "html.parser")
+    pre = soup.find("pre")
+    assert "brush:" in pre.get("class", [])
+    assert "css" in pre.get("class", [])
+
+
+def test_unwrap_code_examples_handles_multiple_wrappers():
+    html = (
+        '<div class="code-example">'
+        '<pre class="brush: css">a { color: red; }</pre>'
+        "</div>"
+        '<div class="code-example">'
+        '<pre class="brush: html">&lt;div&gt;&lt;/div&gt;</pre>'
+        "</div>"
+    )
+    result = _unwrap_code_examples(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("div", class_="code-example") is None
+    assert len(soup.find_all("pre")) == 2
+
+
+def test_unwrap_code_examples_noop_without_wrapper():
+    html = "<p>Intro.</p><pre><code>plain snippet</code></pre>"
+    result = _unwrap_code_examples(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("pre") is not None
+    assert soup.find("p") is not None
+
+
+def test_unwrap_code_examples_noop_wrapper_without_pre():
+    # A code-example-classed div with no <pre> inside (shouldn't happen on
+    # MDN, but the function must not raise or delete unrelated content).
+    html = '<div class="code-example"><p>No code here.</p></div>'
+    result = _unwrap_code_examples(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("div", class_="code-example") is not None
+    assert soup.find("p") is not None
+
+
+def test_unwrap_code_examples_survives_readability_min_text_length():
+    # Regression test for the actual bug: readability-lxml's sanitize() drops
+    # any div/table/ul/aside/header/footer/section under min_text_length (25
+    # chars, default) with no <img> — MDN's wrapper for a bare one-line
+    # declaration falls under that threshold. Confirms the fix defeats the
+    # heuristic end to end, not just that the DOM shape changes.
+    from readability import Document
+
+    html = (
+        "<html><body><article>"
+        "<p>Padding paragraph one to give the surrounding article enough "
+        "weight for readability to pick it as the main candidate region.</p>"
+        "<p>We then look at order of appearance. The second one wins.</p>"
+        '<div class="code-example">'
+        '<div class="example-header"><span class="language-name">css</span></div>'
+        '<pre class="brush: css notranslate"><code>margin-left: 3px;</code></pre>'
+        "</div>"
+        "<p>Padding paragraph two, also long enough to keep this region "
+        "scored as the main content candidate for readability's algorithm.</p>"
+        "</article></body></html>"
+    )
+
+    without_fix = Document(html).summary() or ""
+    assert "margin-left: 3px;" not in without_fix, (
+        "fixture doesn't reproduce the readability drop — adjust padding"
+    )
+
+    fixed_html = _unwrap_code_examples(html)
+    with_fix = Document(fixed_html).summary() or ""
+    assert "margin-left: 3px;" in with_fix
 
 
 # _strip_loading_placeholders
