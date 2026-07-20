@@ -43,7 +43,7 @@ The Tier 2 render session (`electron/main/scraper.ts`) blocks network requests t
 
 **The filter list is vendored, not fetched at runtime.** A filter-list auto-updater would itself be a periodic outbound call, contradicting the point of blocking trackers. `scripts/update_filter_list.py` refreshes the vendored copy on demand — run by hand, reviewed like a dependency bump, updated before a release. See `NOTICE` at the repo root for the list's own license and attribution.
 
-**Verified by matching the parsed engine against concrete URLs** (a known MDN telemetry-submit path is blocked; a same-page CSS asset and a third-party embed-iframe host are not) — not yet confirmed against a real Tier 2 render of a live page end to end. Per this project's convention of manual QA for Electron-runtime behavior, treat live-page extraction quality with blocking enabled as configured-but-unverified until checked.
+**Verified two ways.** The parsed engine matches concrete URLs correctly (a known MDN telemetry-submit path is blocked; a same-page CSS asset and the live-sample iframe path are not). A live Tier 2 extraction of a real MDN article with a live sample, run through the full Electron app, produces identical output to the same article extracted before tracker blocking existed — confirming the live-sample embed screenshot still captures correctly with blocking enabled.
 
 ---
 
