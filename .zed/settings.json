@@ -7,6 +7,13 @@
 // custom settings, run `zed: open default settings` from the
 // command palette (cmd-shift-p / ctrl-shift-p)
 {
+  "format_on_save": "on",
+  "colorize_brackets": true,
+  "inlay_hints": {
+    "show_background": true,
+    "enabled": true
+  },
+  "always_treat_brackets_as_autoclosed": true,
   "languages": {
     "Python": {
       "language_servers": ["basedpyright", "ruff"],
