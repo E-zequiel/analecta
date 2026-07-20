@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The browser-rendered extraction pass no longer hangs and silently falls back to the lower-quality plain-HTML pass on pages with recurring background network activity (e.g. analytics beacons) — it was waiting for the page to go fully network-idle, which such pages never do.
 - Genuine cross-reference sections on reference-doc sites (e.g. MDN's "See also" list) are no longer stripped from the browser-rendered extraction pass, along with everything after them — previously misidentified as a blog-style "related posts" widget by a generic anti-boilerplate heuristic and deleted wholesale.
 - CSS code blocks on sites using the SyntaxHighlighter `brush: css` class convention (e.g. MDN) now keep their language label in the browser-rendered extraction pass, instead of coming out as an unlabeled code fence — a gap in the bundled rendering library's own language whitelist.
+- Very short code examples (e.g. a single one-line CSS declaration, on MDN) are no longer silently dropped from the direct-fetch extraction pass — previously discarded by a generic content-density heuristic that treats short, imageless wrapper elements as decorative cruft.
 
 ## [0.3.1] - 2026-07-13
 
