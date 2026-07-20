@@ -25,8 +25,8 @@ This project splits verification by surface:
 `analecta.server.main()` (the real entrypoint, `cd backend && mise exec --
 uv run python -m analecta`) calls `load_config()` with no arguments, which
 always reads `~/.config/analecta/config.toml` — the user's real config,
-pointing at their real vault. **Never read or run against that path**
-(see project CLAUDE.md). There is no env var or CLI flag to override it.
+pointing at their real vault. **Never read or run against that path.**
+There is no env var or CLI flag to override it.
 
 ## The harness: real socket, scratch vault
 
