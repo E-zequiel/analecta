@@ -3,15 +3,25 @@ import hashlib
 
 import pytest
 
+import analecta.extraction.assets as assets_module
 from analecta.extraction.assets import (
     AssetDownloader,
     _ext_from_content_type,
     _ext_from_url,
     _normalize_graphics,
     _original_name,
+    _placeholder_bytes,
+    _placeholder_filename,
     _resolve_nextjs_image,
     _shot_id_from_url,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fast_retry(monkeypatch):
+    """Zero out the real retry delay so failure-path tests don't sleep for real."""
+    monkeypatch.setattr(assets_module, "_RETRY_DELAY_SECONDS", 0)
+
 
 _HTML_WITH_IMAGES = (
     "<html><body>"
@@ -192,7 +202,9 @@ async def test_download_saves_with_sha256_name(mocker, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_download_rejects_non_image_content_type(mocker, tmp_path):
+async def test_download_falls_back_to_placeholder_on_non_image_content_type(
+    mocker, tmp_path
+):
     mock_resp = mocker.Mock()
     mock_resp.raise_for_status = mocker.Mock()
     mock_resp.headers = {"content-type": "text/html"}
@@ -207,11 +219,13 @@ async def test_download_rejects_non_image_content_type(mocker, tmp_path):
     result = await AssetDownloader()._download(
         "https://example.com/page", asset_dir, mock_client, asyncio.Semaphore(1)
     )
-    assert result is None
+    assert result == _placeholder_filename()
+    assert (asset_dir / result).read_bytes() == _placeholder_bytes()
+    assert mock_client.get.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_download_returns_none_on_network_error(mocker, tmp_path):
+async def test_download_falls_back_to_placeholder_on_network_error(mocker, tmp_path):
     mock_client = mocker.AsyncMock()
     mock_client.get = mocker.AsyncMock(side_effect=Exception("network error"))
 
@@ -221,7 +235,72 @@ async def test_download_returns_none_on_network_error(mocker, tmp_path):
     result = await AssetDownloader()._download(
         "https://example.com/img.jpg", asset_dir, mock_client, asyncio.Semaphore(1)
     )
-    assert result is None
+    assert result == _placeholder_filename()
+    assert (asset_dir / result).read_bytes() == _placeholder_bytes()
+    assert mock_client.get.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_download_recovers_on_retry_after_transient_failure(mocker, tmp_path):
+    data = b"fake-image-bytes"
+    sha = hashlib.sha256(data).hexdigest()
+
+    mock_resp = mocker.Mock()
+    mock_resp.raise_for_status = mocker.Mock()
+    mock_resp.headers = {"content-type": "image/png"}
+    mock_resp.content = data
+
+    mock_client = mocker.AsyncMock()
+    mock_client.get = mocker.AsyncMock(side_effect=[Exception("transient"), mock_resp])
+
+    asset_dir = tmp_path / "assets" / "slug"
+    asset_dir.mkdir(parents=True)
+
+    result = await AssetDownloader()._download(
+        "https://example.com/img.png", asset_dir, mock_client, asyncio.Semaphore(1)
+    )
+
+    assert result == f"{sha[:16]}.png"
+    assert (asset_dir / result).read_bytes() == data
+    assert mock_client.get.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# AssetDownloader._placeholder
+# ---------------------------------------------------------------------------
+
+
+def test_placeholder_writes_file_and_returns_filename(tmp_path):
+    asset_dir = tmp_path / "assets" / "slug"
+    asset_dir.mkdir(parents=True)
+
+    filename = AssetDownloader()._placeholder(asset_dir)
+
+    assert filename == _placeholder_filename()
+    assert (asset_dir / filename).read_bytes() == _placeholder_bytes()
+
+
+def test_placeholder_is_idempotent(tmp_path):
+    asset_dir = tmp_path / "assets" / "slug"
+    asset_dir.mkdir(parents=True)
+
+    first = AssetDownloader()._placeholder(asset_dir)
+    second = AssetDownloader()._placeholder(asset_dir)
+
+    assert first == second
+    assert (asset_dir / first).read_bytes() == _placeholder_bytes()
+
+
+def test_placeholder_shared_filename_across_asset_dirs(tmp_path):
+    dir_a = tmp_path / "assets" / "slug-a"
+    dir_b = tmp_path / "assets" / "slug-b"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+
+    name_a = AssetDownloader()._placeholder(dir_a)
+    name_b = AssetDownloader()._placeholder(dir_b)
+
+    assert name_a == name_b
 
 
 @pytest.mark.asyncio
@@ -269,13 +348,18 @@ async def test_process_rewrites_src_to_local_path(mocker, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_process_fallback_preserves_original_url(mocker, tmp_path):
-    mocker.patch.object(AssetDownloader, "_download", return_value=None)
+async def test_process_rewrites_src_to_placeholder_on_download_failure(
+    mocker, tmp_path
+):
+    mocker.patch.object(
+        AssetDownloader, "_download", return_value=_placeholder_filename()
+    )
 
     html = '<img src="https://example.com/photo.jpg">'
     result = await AssetDownloader().process(html, "my-slug", tmp_path)
 
-    assert 'src="https://example.com/photo.jpg"' in result
+    assert f'src="../assets/my-slug/{_placeholder_filename()}"' in result
+    assert "https://example.com/photo.jpg" not in result
 
 
 @pytest.mark.asyncio
@@ -496,3 +580,144 @@ async def test_process_leaves_relative_src_unresolved_without_base_url(
     called_url = mock_download.call_args.args[0]
     assert called_url == "/shared-assets/images/diagram.svg"
     assert 'src="/shared-assets/images/diagram.svg"' in result
+
+
+# ---------------------------------------------------------------------------
+# AssetDownloader.localize_markdown
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_localize_markdown_noop_without_remote_refs(mocker, tmp_path):
+    mock_download = mocker.patch.object(AssetDownloader, "_download")
+
+    markdown = "# Title\n\n![local](../assets/slug/abc123.png)\n\nSome text.\n"
+    result, changed, placeholders = await AssetDownloader().localize_markdown(
+        markdown, "slug", tmp_path
+    )
+
+    assert result == markdown
+    assert changed is False
+    assert placeholders == 0
+    mock_download.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_localize_markdown_rewrites_absolute_url(mocker, tmp_path):
+    filename = "abc123def45678.png"
+    mocker.patch.object(AssetDownloader, "_download", return_value=filename)
+
+    markdown = "![a photo](https://example.com/photo.png)\n"
+    result, changed, placeholders = await AssetDownloader().localize_markdown(
+        markdown, "my-slug", tmp_path
+    )
+
+    assert result == f"![a photo](../assets/my-slug/{filename})\n"
+    assert changed is True
+    assert placeholders == 0
+
+
+@pytest.mark.asyncio
+async def test_localize_markdown_resolves_protocol_relative_with_base_url(
+    mocker, tmp_path
+):
+    filename = "abc123def45678.png"
+    mock_download = mocker.patch.object(
+        AssetDownloader, "_download", return_value=filename
+    )
+
+    markdown = "![logo](//upload.wikimedia.org/logo.png)\n"
+    result, changed, _ = await AssetDownloader().localize_markdown(
+        markdown, "slug", tmp_path, base_url="https://es.wikipedia.org/wiki/Foo"
+    )
+
+    called_url = mock_download.call_args.args[0]
+    assert called_url == "https://upload.wikimedia.org/logo.png"
+    assert f"../assets/slug/{filename}" in result
+    assert changed is True
+
+
+@pytest.mark.asyncio
+async def test_localize_markdown_counts_placeholders(mocker, tmp_path):
+    mocker.patch.object(
+        AssetDownloader, "_download", return_value=_placeholder_filename()
+    )
+
+    markdown = "![gone](https://example.com/dead.png)\n"
+    result, changed, placeholders = await AssetDownloader().localize_markdown(
+        markdown, "slug", tmp_path
+    )
+
+    assert changed is True
+    assert placeholders == 1
+    assert _placeholder_filename() in result
+
+
+@pytest.mark.asyncio
+async def test_localize_markdown_dedupes_repeated_url(mocker, tmp_path):
+    filename = "abc123def45678.png"
+    mock_download = mocker.patch.object(
+        AssetDownloader, "_download", return_value=filename
+    )
+
+    markdown = (
+        "![first](https://example.com/same.png)\n\n"
+        "![second](https://example.com/same.png)\n"
+    )
+    result, changed, _ = await AssetDownloader().localize_markdown(
+        markdown, "slug", tmp_path
+    )
+
+    assert mock_download.call_count == 1
+    assert result.count(f"../assets/slug/{filename}") == 2
+    assert changed is True
+
+
+@pytest.mark.asyncio
+async def test_localize_markdown_unchanged_when_download_maps_nothing(mocker, tmp_path):
+    # _download only returns None for an unresolved Tier-2 shot placeholder
+    # (no captured_images passed to localize_markdown) — an edge case, not a
+    # real remote image, but the URL still matches the discovery regex.
+    mocker.patch.object(AssetDownloader, "_download", return_value=None)
+
+    markdown = "![shot](https://analecta-shot.invalid/shot/shot-0.png)\n"
+    result, changed, placeholders = await AssetDownloader().localize_markdown(
+        markdown, "slug", tmp_path
+    )
+
+    assert result == markdown
+    assert changed is False
+    assert placeholders == 0
+
+
+@pytest.mark.asyncio
+async def test_localize_markdown_leaves_unmapped_url_unchanged(mocker, tmp_path):
+    filename = "abc123def45678.png"
+
+    async def fake_download(url, *_args, **_kwargs):
+        return None if "unresolved" in url else filename
+
+    mocker.patch.object(AssetDownloader, "_download", side_effect=fake_download)
+
+    markdown = (
+        "![ok](https://example.com/photo.png)\n\n"
+        "![gone](https://analecta-shot.invalid/shot/unresolved.png)\n"
+    )
+    result, changed, _ = await AssetDownloader().localize_markdown(
+        markdown, "slug", tmp_path
+    )
+
+    assert f"../assets/slug/{filename}" in result
+    assert "https://analecta-shot.invalid/shot/unresolved.png" in result
+    assert changed is True
+
+
+@pytest.mark.asyncio
+async def test_localize_markdown_creates_asset_directory(mocker, tmp_path):
+    filename = "abc123def45678.png"
+    mocker.patch.object(AssetDownloader, "_download", return_value=filename)
+
+    markdown = "![a photo](https://example.com/photo.png)\n"
+    await AssetDownloader().localize_markdown(markdown, "fresh-slug", tmp_path)
+
+    assert (tmp_path / "assets" / "fresh-slug").is_dir()

@@ -11,6 +11,7 @@ a = Analysis(  # pyright: ignore[reportUndefinedVariable]
     binaries=[],
     datas=[
         ('src/analecta/migrations/*.sql', 'analecta/migrations'),
+        ('src/analecta/extraction/static/*.svg', 'analecta/extraction/static'),
         # trafilatura reads settings.cfg at import time via Path(__file__).parent;
         # without this, configparser raises NoOptionError on min_extracted_size.
         *collect_data_files('trafilatura'),
