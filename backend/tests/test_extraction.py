@@ -1161,6 +1161,38 @@ def test_rescue_linked_tables_skips_positive_weight_table():
     )
 
 
+def test_rescue_linked_tables_link_with_br_survives_markdown_conversion():
+    # Real-world MDN "Specifications" shape: the cell's <a> wraps a spec title,
+    # a <br>, and a "# fragment" label -- reproduces the bug where flattening
+    # the <td> into a bare <p> strips the table-cell context markdownify needs
+    # to suppress the <br> to a space, producing a hard break that later broke
+    # the link (a second line starting with "#" parsed as an ATX heading).
+    from analecta.markdown.converter import MarkdownConverter
+
+    html = (
+        '<figure class="table-container"><table>'
+        "<thead><tr><th>Specification</th></tr></thead>"
+        "<tbody><tr><td>"
+        '<a href="https://drafts.csswg.org/css-cascade-5/#css-inheritance">'
+        "CSS Cascading and Inheritance Level 5<br># css-inheritance</a>"
+        "</td></tr></tbody>"
+        "</table></figure>"
+    )
+    rescued = _rescue_linked_tables(html)
+    content = ExtractedContent(
+        title="Inheritance",
+        html=rescued,
+        url="https://developer.mozilla.org/en-US/docs/Web/CSS/Inheritance",
+        source_type="article",
+    )
+    md = MarkdownConverter().convert(content, "2024-01-15T10:00:00")
+    assert (
+        "[CSS Cascading and Inheritance Level 5 # css-inheritance]"
+        "(https://drafts.csswg.org/css-cascade-5/#css-inheritance)" in md
+    )
+    assert "\n# css-inheritance" not in md
+
+
 def test_readability_class_weight_matches_real_readability():
     # Cross-checked against readability.readability.Document.class_weight
     # called on the equivalent lxml element (see the memory entry for the

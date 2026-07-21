@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Very short code examples (e.g. a single one-line CSS declaration, on MDN) are no longer silently dropped from the direct-fetch extraction pass — previously discarded by a generic content-density heuristic that treats short, imageless wrapper elements as decorative cruft.
 - Tables using `rowspan`/`colspan` to avoid repeating a value across grouped rows (e.g. MDN's cascade precedence table) no longer come out of the direct-fetch extraction pass with values shifted into the wrong column — the Markdown conversion had no concept of merged cells, so a row's remaining values collapsed into the leftmost columns instead of the ones they belonged to.
 - Small reference tables that are almost entirely link text (e.g. an MDN "Specifications" table linking to a single spec) are no longer silently dropped entirely from the direct-fetch extraction pass — previously caught by the same link-density heuristic already mitigated for lists, but not for tables.
+- Links inside reference-doc content (e.g. an MDN "Specifications" table) no longer get corrupted or broken apart when they contain an internal line break — the direct-fetch extraction pass previously left this as a literal newline in the Markdown, which downstream renderers treat as the start of a new block (heading, list item, etc.), splitting the link in two.
 
 ## [0.3.1] - 2026-07-13
 

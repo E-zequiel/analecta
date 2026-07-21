@@ -149,6 +149,25 @@ def test_convert_img_inside_heading_renders_as_image_syntax():
     assert "![cover-photo](https://cdn.example.com/img.png)" in md
 
 
+def test_convert_collapses_hard_break_inside_link_text():
+    # A <br> inside an <a> that isn't nested under a table/heading (e.g. after
+    # _rescue_linked_tables flattens a <td> into a bare <p>) produces a literal
+    # hard break ("  \n") in markdownify's output. Left uncollapsed, a second
+    # line starting with "#" gets parsed as an ATX heading and breaks the link.
+    content = _content(
+        html=(
+            '<p><a href="https://drafts.csswg.org/css-cascade-5/#css-inheritance">'
+            "CSS Cascading and Inheritance Level 5<br># css-inheritance</a></p>"
+        )
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert (
+        "[CSS Cascading and Inheritance Level 5 # css-inheritance]"
+        "(https://drafts.csswg.org/css-cascade-5/#css-inheritance)" in md
+    )
+    assert "\n# css-inheritance" not in md
+
+
 def test_convert_resolves_nextjs_image_proxy():
     encoded = "https%3A%2F%2Fcdn.example.com%2Fphoto.jpg"
     content = _content(
