@@ -362,30 +362,41 @@ def _unwrap_sections(html: str) -> str:
     return str(soup)
 
 
+_INTRO_CONTENT_TAGS = frozenset({"p", "ul", "ol", "table", "dl", "blockquote", "pre"})
+
+
 def _reunite_intro_with_body(html: str) -> str:
-    """Move the <h1>-adjacent intro <p> tags into the article body's sibling.
+    """Move the <h1>-adjacent intro content into the article body's sibling.
 
     MDN (and similar reference-doc sites) puts the ``<h1>`` and its intro
-    paragraph(s) in one wrapper ``<div>``, with a TOC ``<aside>`` between it
+    content in one wrapper ``<div>``, with a TOC ``<aside>`` between it
     and the real body content ``<div>`` — three siblings under ``<main>``.
     readability-lxml scores each sibling as an independent candidate and
     keeps only the highest-scoring one's subtree; the intro wrapper scores
     far lower than the body (no headings, little text) and is discarded
     wholesale even though it's genuine content. Reuniting the intro
-    paragraphs with the body sibling *before* scoring makes them one
+    content with the body sibling *before* scoring makes them one
     candidate instead of two.
+
+    Moves every direct ``_INTRO_CONTENT_TAGS`` child (``<p>``, ``<ul>``,
+    ``<ol>``, ``<table>``, ``<dl>``, ``<blockquote>``, ``<pre>``), not just
+    ``<p>`` — an MDN intro is commonly a paragraph followed by a ``<ul>``
+    enumerating the topic before a closing paragraph (e.g. the CSS
+    Inheritance article's "properties can be categorized in two types"
+    list); moving only the ``<p>`` tags orphans the ``<ul>`` in the
+    low-scoring wrapper, which readability then drops along with it.
 
     Deliberately narrow to avoid pulling real chrome (nav, ads, related-post
     widgets) into the article on other sites: only fires when the ``<h1>``'s
     parent has **exactly one** non-chrome (``_NAV_TAGS``) sibling *and* that
-    parent has direct ``<p>`` children to move. Only those ``<p>`` tags move
+    parent has direct content children to move. Only those content tags move
     — never the ``<h1>`` itself (already handled separately via
     ``doc.title()``; moving it would duplicate the title), never the
     ``<aside>``/other siblings.
 
     Relies on ``_unwrap_sections`` having already run: MDN wraps the intro
-    ``<p>`` tags in a ``<section>`` that must be flattened first, or they
-    won't be direct children of the ``<h1>``'s parent and this is a no-op.
+    content in a ``<section>`` that must be flattened first, or it won't be
+    a direct child of the ``<h1>``'s parent and this is a no-op.
     """
     soup = BeautifulSoup(html, "html.parser")
     landmark = soup.find("main") or soup.find("article")
@@ -401,11 +412,11 @@ def _reunite_intro_with_body(html: str) -> str:
     if len(body_candidates) != 1:
         return str(soup)
     body = body_candidates[0]
-    intro_paragraphs = intro.find_all("p", recursive=False)
-    if not intro_paragraphs:
+    intro_content = intro.find_all(_INTRO_CONTENT_TAGS, recursive=False)
+    if not intro_content:
         return str(soup)
-    for p in reversed(intro_paragraphs):
-        body.insert(0, p.extract())
+    for el in reversed(intro_content):
+        body.insert(0, el.extract())
     return str(soup)
 
 
