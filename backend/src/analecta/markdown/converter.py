@@ -20,6 +20,10 @@ _LANG_LABEL_CLASSES = re.compile(r"\blanguage-name\b")
 # "c++", "c#", "bash", etc. Used to detect bare <p>lang</p> label paragraphs.
 _LANG_HINT_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+\-#]{0,14}$")
 
+# Matches a hard line-break (markdownify's "  \n") or any other newline-containing
+# run of whitespace, so it can be collapsed to a single space inside link text.
+_INTERNAL_BREAK_RE = re.compile(r"[ \t]*\n[ \t]*")
+
 
 def _lang_from_pre(pre: Tag) -> str:
     """Extract language from a ``<pre>`` element's class list.
@@ -133,6 +137,20 @@ class _Converter(markdownify_lib.MarkdownConverter):
             lang = _get_lang(code, el)
             return f"\n\n```{lang}\n{code.get_text()}\n```\n\n"
         return f"\n\n```{_lang_from_pre(el)}\n{text.strip()}\n```\n\n"
+
+    def convert_a(self, el: Tag, text: str, **kwargs: Any) -> str:  # type: ignore[override]
+        # A <br> inside an <a> normally collapses to a space (markdownify suppresses
+        # hard breaks in "_inline" contexts like table cells). But content-rescue
+        # steps upstream (see _rescue_linked_tables/_rescue_linked_lists) can strip
+        # the table-cell ancestor that grants that context, leaving a literal hard
+        # break ("  \n") embedded in the link text. Left uncollapsed, a second line
+        # starting with "#", "-", ">", etc. gets parsed as block-level Markdown and
+        # breaks the link entirely. Collapse unconditionally so link text is always
+        # single-line, regardless of why the newline got there.
+        collapsed = _INTERNAL_BREAK_RE.sub(" ", text)
+        return super().convert_a(  # pyright: ignore[reportAttributeAccessIssue] — markdownify is untyped
+            el, collapsed, **kwargs
+        )
 
 
 def _md(**kwargs: Any) -> _Converter:
