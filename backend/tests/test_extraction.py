@@ -1513,6 +1513,35 @@ def test_reunite_intro_with_body_mdn_shape_moves_paragraphs():
     assert body_children[2].name == "h2"
 
 
+def test_reunite_intro_with_body_moves_interleaved_list():
+    # MDN CSS Inheritance shape: a <ul> sits between two intro <p>s. Moving
+    # only <p> tags orphans the <ul> in the low-scoring header div, where
+    # readability drops it. All three must move, in original order.
+    html = (
+        "<main>"
+        '<div class="header"><h1>Title</h1>'
+        "<p>Intro sentence.</p>"
+        "<p>Categorized in two types:</p>"
+        "<ul><li>inherited properties</li><li>non-inherited properties</li></ul>"
+        "<p>Trailing sentence.</p>"
+        "</div>"
+        '<div class="body"><h2>Section</h2><p>Body content.</p></div>'
+        "</main>"
+    )
+    result = _reunite_intro_with_body(html)
+    soup = _BS(result, "html.parser")
+    header = soup.find("div", class_="header")
+    body = soup.find("div", class_="body")
+    assert [c.name for c in header.find_all(recursive=False)] == ["h1"]
+    body_children = body.find_all(recursive=False)
+    assert [c.name for c in body_children[:4]] == ["p", "p", "ul", "p"]
+    assert body_children[2].find_all("li")[0].get_text(strip=True) == (
+        "inherited properties"
+    )
+    # Original order preserved, and body's own content still follows.
+    assert body_children[4].name == "h2"
+
+
 def test_reunite_intro_with_body_works_without_intervening_aside():
     # Same shape but header/body are directly adjacent siblings (no <aside>).
     html = (
