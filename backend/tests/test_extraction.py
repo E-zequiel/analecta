@@ -721,6 +721,66 @@ async def test_extract_does_not_trigger_tier2_for_high_confidence_without_live_s
 
 
 @pytest.mark.asyncio
+async def test_extract_skips_tier2_when_disabled_for_low_confidence(
+    mocker, monkeypatch
+):
+    monkeypatch.setenv("ANALECTA_DISABLE_TIER2", "1")
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_SCRIPT_HEAVY, "https://example.com/spa"),
+    )
+    mock_render = mocker.AsyncMock()
+    mocker.patch("analecta.extraction.tier2.render_url", new=mock_render)
+
+    result = await ArticleExtractor().extract("https://example.com/spa")
+
+    mock_render.assert_not_awaited()
+    assert result.metadata.get("extractor") != "defuddle"
+
+
+@pytest.mark.asyncio
+async def test_extract_skips_tier2_when_disabled_for_live_sample(mocker, monkeypatch):
+    monkeypatch.setenv("ANALECTA_DISABLE_TIER2", "true")
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(
+            _HIGH_CONFIDENCE_WITH_LIVE_SAMPLE,
+            "https://developer.mozilla.org/demo",
+        ),
+    )
+    mock_render = mocker.AsyncMock()
+    mocker.patch("analecta.extraction.tier2.render_url", new=mock_render)
+
+    result = await ArticleExtractor().extract("https://developer.mozilla.org/demo")
+
+    mock_render.assert_not_awaited()
+    assert result.metadata.get("extractor") != "defuddle"
+
+
+@pytest.mark.asyncio
+async def test_extract_disable_flag_falsy_value_does_not_disable_tier2(
+    mocker, monkeypatch
+):
+    monkeypatch.setenv("ANALECTA_DISABLE_TIER2", "0")
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_SCRIPT_HEAVY, "https://example.com/spa"),
+    )
+    mock_render = mocker.AsyncMock(
+        return_value=Tier2Result(ok=True, content="<p>Defuddle</p>", title="D")
+    )
+    mocker.patch("analecta.extraction.tier2.render_url", new=mock_render)
+
+    result = await ArticleExtractor().extract("https://example.com/spa")
+
+    mock_render.assert_awaited_once()
+    assert result.metadata["extractor"] == "defuddle"
+
+
+@pytest.mark.asyncio
 async def test_extract_threads_captured_images_through_outer_html_fallback(mocker):
     encoded = base64.b64encode(b"png-bytes").decode()
     mocker.patch.object(
