@@ -4,6 +4,7 @@ import base64
 import binascii
 import json
 import logging
+import os
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -671,7 +672,21 @@ class ArticleExtractor(SourceExtractor):
         html, final_url = await self._fetch(url)
         result = self._parse(html, final_url)
 
-        if _is_low_confidence(html, result.html) or _has_live_sample_placeholders(html):
+        low_confidence = _is_low_confidence(html, result.html)
+        live_sample = _has_live_sample_placeholders(html)
+        if low_confidence or live_sample:
+            if os.environ.get("ANALECTA_DISABLE_TIER2", "").strip().lower() in (
+                "1",
+                "true",
+            ):
+                log.info(
+                    "Tier 2 skipped (ANALECTA_DISABLE_TIER2 set) for %s "
+                    "(low_confidence=%s, live_sample=%s)",
+                    url,
+                    low_confidence,
+                    live_sample,
+                )
+                return result
             try:
                 from analecta.extraction.tier2 import render_url
 
