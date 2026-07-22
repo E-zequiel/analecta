@@ -178,6 +178,33 @@ def test_convert_resolves_nextjs_image_proxy():
     assert "/_next/image" not in md
 
 
+def test_convert_code_lang_attribute_on_code_element():
+    # Chakra UI's <Code> component (e.g. socket.dev's blog) has no
+    # language-* class at all — just a plain lang="" attribute on <code>.
+    content = _content(
+        html='<pre class="css-1gw6m10"><code lang="json" class="chakra-code">'
+        '{"a": 1}</code></pre>'
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```json\n" in md
+
+
+def test_convert_code_lang_attribute_on_bare_pre():
+    # Fallback path (convert_pre when there's no inner <code>): lang attribute
+    # lives directly on <pre>.
+    content = _content(html='<pre lang="python">print(1)</pre>')
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```python\n" in md
+
+
+def test_convert_language_class_takes_priority_over_lang_attribute():
+    content = _content(
+        html='<pre><code class="language-python" lang="javascript">x = 1</code></pre>'
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```python\n" in md
+
+
 # ---------------------------------------------------------------------------
 # title_to_hashtag_key
 # ---------------------------------------------------------------------------
