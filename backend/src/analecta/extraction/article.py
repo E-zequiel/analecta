@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import difflib
 import json
 import logging
 import os
@@ -523,6 +524,114 @@ def _strip_loading_placeholders(html: str) -> str:
     return str(soup)
 
 
+_DEK_MIN_LEN = 20
+_HERO_ALT_MATCH_RATIO = 0.7
+_HERO_SEARCH_MAX_DEPTH = 8
+_SKIP_SIBLING_TAGS = frozenset({"style", "script"})
+
+
+def _find_dek_paragraph(h1: Tag) -> Tag | None:
+    """Return the dek/standfirst <p> immediately after *h1*, if any.
+
+    Sites commonly place a one-sentence standfirst directly after the
+    ``<h1>``, inside the same header wrapper (e.g. milkroad.com's
+    ``newsletterArticleLayoutIntroLine``, socket.dev's Chakra-generated
+    ``<p>`` sibling). Only the first non-``<style>``/``<script>`` sibling is
+    checked — stray paragraphs further down the header (bylines, share
+    widgets) are deliberately not scanned for, to avoid false positives.
+    """
+    for sib in h1.find_next_siblings():
+        if not isinstance(sib, Tag):
+            continue
+        if sib.name in _SKIP_SIBLING_TAGS:
+            continue
+        if sib.name == "p" and len(sib.get_text(strip=True)) >= _DEK_MIN_LEN:
+            return sib
+        return None
+    return None
+
+
+def _find_hero_image(h1: Tag, title: str) -> Tag | None:
+    """Return an <img> near *h1* whose alt text matches *title*, if any.
+
+    On sites like socket.dev the hero image lives in the same orphaned
+    header branch as the dek (see ``_find_dek_paragraph``), several
+    ancestor levels above ``<h1>`` — a sibling of the title/dek block, not
+    a descendant of it. Walks up from ``<h1>`` looking for the first
+    ``<img>`` whose ``alt`` text closely matches the article title, which
+    is what distinguishes the actual hero image from other imagery in the
+    same branch (e.g. socket.dev's author avatar, which has no matching
+    alt text). Sites where the hero image has empty or generic alt text
+    are not rescued — that's a missed fix, not a false positive.
+    """
+    if not title:
+        return None
+    node: Tag | None = h1
+    for _ in range(_HERO_SEARCH_MAX_DEPTH):
+        node = node.parent
+        if node is None:
+            return None
+        for img in node.find_all("img"):
+            alt = str(img.get("alt") or "").strip()
+            if not alt:
+                continue
+            ratio = difflib.SequenceMatcher(
+                None, alt.lower(), title.strip().lower()
+            ).ratio()
+            if ratio >= _HERO_ALT_MATCH_RATIO:
+                return img
+        if node.name == "body":
+            return None
+    return None
+
+
+def _rescue_orphaned_header(raw_html: str, content: str, title: str) -> str:
+    """Prepend a dek paragraph / hero image dropped by readability's scoring.
+
+    readability-lxml and trafilatura each pick a single winning "body"
+    candidate. When a site's ``<h1>``, dek, and hero image live in a
+    header branch that is structurally separate from the real article body
+    (milkroad.com, socket.dev — confirmed by manual DOM inspection), that
+    whole branch loses the scoring and never reaches *content*, even though
+    it's genuine reader-facing content. Runs against *raw_html* —
+    independent of whichever candidate readability/trafilatura picked, the
+    same way title/author/description already bypass that scoring via
+    trafilatura metadata — and only prepends pieces confirmed missing from
+    *content*, so sites where the dek/hero is already part of the winning
+    candidate are untouched.
+    """
+    soup = BeautifulSoup(raw_html, "html.parser")
+    h1 = soup.find("h1")
+    if h1 is None or not isinstance(h1, Tag):
+        return content
+
+    pieces: list[str] = []
+
+    dek = _find_dek_paragraph(h1)
+    if dek is not None:
+        dek_text = dek.get_text(strip=True)
+        content_text = BeautifulSoup(content, "html.parser").get_text()
+        if dek_text and dek_text not in content_text:
+            clone = BeautifulSoup(str(dek), "html.parser").find("p")
+            if isinstance(clone, Tag):
+                clone.attrs = {}
+                pieces.append(str(clone))
+
+    hero = _find_hero_image(h1, title)
+    if hero is not None:
+        src = str(hero.get("src") or "")
+        if src and src not in content:
+            new_img = soup.new_tag("img", src=src)
+            alt = hero.get("alt")
+            if alt:
+                new_img["alt"] = alt
+            pieces.append(str(new_img))
+
+    if not pieces:
+        return content
+    return "".join(pieces) + content
+
+
 def _collect_text_from_obj(obj: Any, depth: int = 0) -> str:
     """Recursively collect text from a parsed JSON object into an HTML string."""
     if depth > 6:
@@ -802,6 +911,7 @@ class ArticleExtractor(SourceExtractor):
             raise ExtractionError(f"Could not extract content from {url}")
 
         title = (meta.title if meta else None) or doc.title() or ""
+        content = _rescue_orphaned_header(html, content, title)
         metadata = {"extractor": extractor}
         _populate_metadata(metadata, meta)
         return ExtractedContent(

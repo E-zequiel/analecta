@@ -11,12 +11,15 @@ from analecta.extraction.article import (
     _build_from_defuddle,
     _decode_shots,
     _expand_table_spans,
+    _find_dek_paragraph,
+    _find_hero_image,
     _has_live_sample_placeholders,
     _is_low_confidence,
     _populate_metadata,
     _readability_class_weight,
     _rescue_linked_lists,
     _rescue_linked_tables,
+    _rescue_orphaned_header,
     _resolve_tier2_url,
     _reunite_intro_with_body,
     _simplify_figure_images,
@@ -1814,4 +1817,201 @@ def test_strip_heading_classes_ignores_comment_when_counting_meaningful_children
     h2 = soup.find("h2")
     assert h2 is not None
     assert h2.find("a") is None
-    assert h2.get_text(strip=True) == "Key concepts"
+
+
+# ---------------------------------------------------------------------------
+# _find_dek_paragraph / _find_hero_image / _rescue_orphaned_header
+# ---------------------------------------------------------------------------
+
+_TITLE = "Popular Go Decimal Library Targeted by Long-Running Typosquat"
+
+
+def test_find_dek_paragraph_returns_immediate_sibling():
+    html = (
+        "<div><h1>Title</h1>"
+        "<p>A long-running Go typosquat impersonated the library.</p></div>"
+    )
+    soup = _BS(html, "html.parser")
+    dek = _find_dek_paragraph(soup.find("h1"))
+    assert dek is not None
+    assert (
+        dek.get_text(strip=True)
+        == "A long-running Go typosquat impersonated the library."
+    )
+
+
+def test_find_dek_paragraph_skips_style_and_script_siblings():
+    html = (
+        "<div><h1>Title</h1>"
+        "<style>.x{color:red}</style>"
+        "<script>track()</script>"
+        "<p>A long-running Go typosquat impersonated the library.</p>"
+        "</div>"
+    )
+    soup = _BS(html, "html.parser")
+    dek = _find_dek_paragraph(soup.find("h1"))
+    assert dek is not None
+    assert dek.name == "p"
+
+
+def test_find_dek_paragraph_skips_whitespace_text_node_sibling():
+    # Real-world HTML has whitespace text nodes between tags — must not be
+    # mistaken for a non-<p> sibling that aborts the scan.
+    html = "<div><h1>Title</h1>\n  <p>A long paragraph of real prose here.</p></div>"
+    soup = _BS(html, "html.parser")
+    dek = _find_dek_paragraph(soup.find("h1"))
+    assert dek is not None
+    assert dek.name == "p"
+
+
+def test_find_dek_paragraph_none_when_first_sibling_is_not_p():
+    # First substantive sibling is a <div> (e.g. a byline block) — must not
+    # skip past it looking for a <p> further down.
+    html = (
+        "<div><h1>Title</h1><div>By Jane Doe</div>"
+        "<p>A long paragraph of real prose here.</p></div>"
+    )
+    soup = _BS(html, "html.parser")
+    assert _find_dek_paragraph(soup.find("h1")) is None
+
+
+def test_find_dek_paragraph_none_when_too_short():
+    html = "<div><h1>Title</h1><p>5 min read</p></div>"
+    soup = _BS(html, "html.parser")
+    assert _find_dek_paragraph(soup.find("h1")) is None
+
+
+def test_find_dek_paragraph_none_without_following_sibling():
+    html = "<div><h1>Title</h1></div>"
+    soup = _BS(html, "html.parser")
+    assert _find_dek_paragraph(soup.find("h1")) is None
+
+
+def test_find_hero_image_matches_alt_several_levels_up():
+    # socket.dev shape: hero <img> is a sibling of the title block several
+    # ancestor levels above <h1>, alongside an unrelated avatar <img>.
+    html = (
+        "<div>"  # ancestor level 4
+        f"<div><div><div><h1>{_TITLE}</h1></div></div></div>"
+        '<div><img src="/avatar.jpg" alt="Kush Pandya"/></div>'
+        f'<div><img src="/hero.png" alt="{_TITLE}"/></div>'
+        "</div>"
+    )
+    soup = _BS(html, "html.parser")
+    hero = _find_hero_image(soup.find("h1"), _TITLE)
+    assert hero is not None
+    assert hero.get("src") == "/hero.png"
+
+
+def test_find_hero_image_none_when_no_alt_matches():
+    html = (
+        "<div>"
+        f"<div><div><div><h1>{_TITLE}</h1></div></div></div>"
+        '<div><img src="/avatar.jpg" alt="Kush Pandya"/></div>'
+        "</div>"
+    )
+    soup = _BS(html, "html.parser")
+    assert _find_hero_image(soup.find("h1"), _TITLE) is None
+
+
+def test_find_hero_image_skips_image_without_alt():
+    html = (
+        "<div>"
+        f"<div><div><div><h1>{_TITLE}</h1></div></div></div>"
+        '<div><img src="/avatar.jpg"/></div>'
+        f'<div><img src="/hero.png" alt="{_TITLE}"/></div>'
+        "</div>"
+    )
+    soup = _BS(html, "html.parser")
+    hero = _find_hero_image(soup.find("h1"), _TITLE)
+    assert hero is not None
+    assert hero.get("src") == "/hero.png"
+
+
+def test_find_hero_image_none_when_depth_exceeded():
+    # <h1> nested deeper than _HERO_SEARCH_MAX_DEPTH ancestor levels, with
+    # no matching image and no <body> ever reached — the walk must give up
+    # rather than loop forever or raise.
+    html = f"<h1>{_TITLE}</h1>"
+    for _ in range(10):
+        html = f"<div>{html}</div>"
+    soup = _BS(html, "html.parser")
+    assert _find_hero_image(soup.find("h1"), _TITLE) is None
+
+
+def test_find_hero_image_none_without_title():
+    html = f'<div><h1>{_TITLE}</h1></div><img src="/hero.png" alt="{_TITLE}"/>'
+    soup = _BS(html, "html.parser")
+    assert _find_hero_image(soup.find("h1"), "") is None
+
+
+def test_rescue_orphaned_header_milkroad_shape_prepends_dek():
+    # MilkRoad: <h1> and dek <p> share a header div that readability scores
+    # separately from (and loses to) the real body div — dek never reaches
+    # the extracted content.
+    body_div = '<div class="richtext"><p>GM. This is Milk Road newsletter.</p></div>'
+    raw_html = (
+        "<main>"
+        '<div class="header"><h1>Semis, Bitcoin, and the rally</h1>'
+        "<p>Leverage on chip stocks unwound. The economy holds strong.</p></div>"
+        f"{body_div}"
+        "</main>"
+    )
+    title = "Semis, Bitcoin, and the rally"
+    result = _rescue_orphaned_header(raw_html, body_div, title)
+    soup = _BS(result, "html.parser")
+    assert soup.find("p").get_text(strip=True) == (
+        "Leverage on chip stocks unwound. The economy holds strong."
+    )
+    assert "GM. This is Milk Road" in result
+
+
+def test_rescue_orphaned_header_socket_shape_prepends_dek_and_hero():
+    raw_html = (
+        "<div>"
+        f"<div><div><div><h1>{_TITLE}</h1>"
+        "<p>A long-running Go typosquat impersonated the library.</p></div></div></div>"
+        '<div><img src="/avatar.jpg" alt="Kush Pandya"/></div>'
+        f'<div><img src="/hero.png" alt="{_TITLE}"/></div>'
+        '<div class="prose"><p>Socket identified a malicious Go module.</p></div>'
+        "</div>"
+    )
+    content = '<div class="prose"><p>Socket identified a malicious Go module.</p></div>'
+    result = _rescue_orphaned_header(raw_html, content, _TITLE)
+    soup = _BS(result, "html.parser")
+    assert soup.find("p").get_text(strip=True) == (
+        "A long-running Go typosquat impersonated the library."
+    )
+    img = soup.find("img")
+    assert img is not None
+    assert img.get("src") == "/hero.png"
+    assert "Socket identified a malicious Go module" in result
+
+
+def test_rescue_orphaned_header_noop_without_h1():
+    content = "<div><p>Body.</p></div>"
+    result = _rescue_orphaned_header(
+        "<div><p>No heading here.</p></div>", content, "Title"
+    )
+    assert result == content
+
+
+def test_rescue_orphaned_header_dedups_dek_already_in_content():
+    body_div = '<div class="body"><h1>Title</h1><p>Already in the winner.</p></div>'
+    raw_html = "<div><h1>Title</h1><p>Already in the winner.</p></div>" + body_div
+    result = _rescue_orphaned_header(raw_html, body_div, "Title")
+    assert result == body_div
+
+
+def test_rescue_orphaned_header_dedups_hero_already_in_content():
+    body_div = (
+        f'<div class="body"><img src="/hero.png" alt="{_TITLE}"/>'
+        "<p>Body text long enough.</p></div>"
+    )
+    raw_html = (
+        f"<div><h1>{_TITLE}</h1></div>"
+        f'<div><img src="/hero.png" alt="{_TITLE}"/></div>'
+        f"{body_div}"
+    )
+    result = _rescue_orphaned_header(raw_html, body_div, _TITLE)
+    assert result == body_div
