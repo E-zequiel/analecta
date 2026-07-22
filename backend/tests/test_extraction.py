@@ -1,4 +1,5 @@
 import base64
+import difflib
 import json
 from types import SimpleNamespace
 from typing import Any
@@ -7,6 +8,7 @@ import pytest
 from youtube_transcript_api._transcripts import FetchedTranscriptSnippet
 
 from analecta.extraction.article import (
+    _HERO_ALT_MATCH_RATIO,
     ArticleExtractor,
     _build_from_defuddle,
     _decode_shots,
@@ -1945,6 +1947,65 @@ def test_find_hero_image_none_without_title():
     assert _find_hero_image(soup.find("h1"), "") is None
 
 
+def test_find_hero_image_matches_truncated_meta_title_prefix():
+    # socket.dev shape: the <title> tag (source of trafilatura's meta.title)
+    # is SEO-truncated with a trailing "…", but the hero <img>'s alt carries
+    # the full headline. The plain similarity ratio undershoots 0.7 even
+    # though the hero image is right there — the truncated-prefix fallback
+    # catches it instead. Deliberately compares against the passed-in
+    # *title*, not h1.get_text(): Substack renders the publication name as
+    # the page's first <h1>, not the article's own headline, so matching
+    # against h1 text directly would false-match a nearby publication-logo
+    # <img> on that site (see test_rescue_orphaned_header_ignores_wrong_h1...
+    # below for the regression this guards against).
+    full_title = (
+        "TrapDoor Crypto Stealer Supply Chain Attack Hits 34 Packages and "
+        "Hundreds of Versions Across npm, PyPI, and Crates.io"
+    )
+    truncated_title = "TrapDoor Crypto Stealer Supply Chain Attack Hits 34 Packages..."
+    assert (
+        difflib.SequenceMatcher(
+            None, truncated_title.lower(), full_title.lower()
+        ).ratio()
+        < _HERO_ALT_MATCH_RATIO
+    )
+    html = (
+        "<div>"
+        f"<div><div><div><h1>{full_title}</h1></div></div></div>"
+        '<div><img src="/avatar.jpg" alt="Someone"/></div>'
+        f'<div><img src="/hero.png" alt="{full_title}"/></div>'
+        "</div>"
+    )
+    soup = _BS(html, "html.parser")
+    hero = _find_hero_image(soup.find("h1"), truncated_title)
+    assert hero is not None
+    assert hero.get("src") == "/hero.png"
+
+
+def test_find_hero_image_truncated_prefix_does_not_match_unrelated_alt():
+    # The truncated-prefix fallback must still require an actual prefix
+    # match — it isn't a blanket "truncated title present" bypass.
+    html = (
+        "<div><h1>Some Article...</h1></div>"
+        '<div><img src="/logo.png" alt="Publication Logo"/></div>'
+    )
+    soup = _BS(html, "html.parser")
+    assert _find_hero_image(soup.find("h1"), "Some Article...") is None
+
+
+def test_find_hero_image_short_truncated_prefix_not_used_as_fallback():
+    # A short de-ellipsized prefix (below _TRUNCATED_PREFIX_MIN_LEN) is not
+    # accepted as a fallback match — real SEO truncation cuts a long
+    # headline down to ~60 chars, so a short prefix is more likely to
+    # spuriously prefix-match an unrelated image's alt text.
+    html = (
+        "<div><h1>Q&A...</h1></div>"
+        '<div><img src="/unrelated.png" alt="Q&A session banner graphic"/></div>'
+    )
+    soup = _BS(html, "html.parser")
+    assert _find_hero_image(soup.find("h1"), "Q&A...") is None
+
+
 def test_rescue_orphaned_header_milkroad_shape_prepends_dek():
     # MilkRoad: <h1> and dek <p> share a header div that readability scores
     # separately from (and loses to) the real body div — dek never reaches
@@ -1957,8 +2018,9 @@ def test_rescue_orphaned_header_milkroad_shape_prepends_dek():
         f"{body_div}"
         "</main>"
     )
-    title = "Semis, Bitcoin, and the rally"
-    result = _rescue_orphaned_header(raw_html, body_div, title)
+    result = _rescue_orphaned_header(
+        raw_html, body_div, "Semis, Bitcoin, and the rally"
+    )
     soup = _BS(result, "html.parser")
     assert soup.find("p").get_text(strip=True) == (
         "Leverage on chip stocks unwound. The economy holds strong."
@@ -1986,6 +2048,28 @@ def test_rescue_orphaned_header_socket_shape_prepends_dek_and_hero():
     assert img is not None
     assert img.get("src") == "/hero.png"
     assert "Socket identified a malicious Go module" in result
+
+
+def test_rescue_orphaned_header_ignores_wrong_h1_publication_name():
+    # Substack shape: the page's *first* <h1> is the publication name in the
+    # site header, not the article's own headline — soup.find("h1") in
+    # _rescue_orphaned_header picks that one. If hero matching compared
+    # against that h1's own text instead of the passed-in article *title*,
+    # it would false-match the small publication-logo <img> sitting nearby.
+    # Regression guard for that failure mode (caught 2026-07-22).
+    raw_html = (
+        "<div>"
+        "<div><h1>Viennese Civilization</h1>"
+        '<div><img src="/logo.png" alt="Viennese Civilization"/></div></div>'
+        '<div class="body"><h1>Money-Demand is very different</h1>'
+        "<p>Article body text long enough to survive.</p></div>"
+        "</div>"
+    )
+    content = '<div class="body"><p>Article body text long enough to survive.</p></div>'
+    result = _rescue_orphaned_header(
+        raw_html, content, "Money-Demand is very different"
+    )
+    assert "/logo.png" not in result
 
 
 def test_rescue_orphaned_header_noop_without_h1():

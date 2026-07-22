@@ -551,6 +551,10 @@ def _find_dek_paragraph(h1: Tag) -> Tag | None:
     return None
 
 
+_TITLE_TRUNCATION_SUFFIXES = ("...", "…")
+_TRUNCATED_PREFIX_MIN_LEN = 20
+
+
 def _find_hero_image(h1: Tag, title: str) -> Tag | None:
     """Return an <img> near *h1* whose alt text matches *title*, if any.
 
@@ -563,9 +567,34 @@ def _find_hero_image(h1: Tag, title: str) -> Tag | None:
     same branch (e.g. socket.dev's author avatar, which has no matching
     alt text). Sites where the hero image has empty or generic alt text
     are not rescued — that's a missed fix, not a false positive.
+
+    Deliberately compares against *title* (the article's extracted metadata
+    title), not ``h1.get_text()``: some sites (Substack) render more than one
+    ``<h1>`` on the page, and ``soup.find("h1")`` in ``_rescue_orphaned_header``
+    picks the *first* one — the publication name in Substack's header, not
+    the article's own headline — which would false-match against a small
+    publication-logo ``<img>`` sitting in the same branch.
+
+    A ``title`` that is itself SEO-truncated with a trailing "…" (e.g.
+    socket.dev's ``<title>`` tag) can undershoot the similarity ratio even
+    when the hero image's ``alt`` holds the full, untruncated headline. For
+    that case specifically — and only that case — also accept an ``alt``
+    that starts with the truncated title's text (minus the ellipsis). Only
+    applied when the de-ellipsized prefix is at least
+    ``_TRUNCATED_PREFIX_MIN_LEN`` chars — real SEO truncation cuts a long
+    headline down to ~60 chars, so a short prefix (e.g. a truncated "Q&A...")
+    is more likely to spuriously prefix-match an unrelated image's alt text.
     """
     if not title:
         return None
+    title = title.strip()
+    truncated_prefix = None
+    for suffix in _TITLE_TRUNCATION_SUFFIXES:
+        if title.endswith(suffix):
+            prefix = title[: -len(suffix)].strip().lower()
+            if len(prefix) >= _TRUNCATED_PREFIX_MIN_LEN:
+                truncated_prefix = prefix
+            break
     node: Tag | None = h1
     for _ in range(_HERO_SEARCH_MAX_DEPTH):
         node = node.parent
@@ -575,10 +604,10 @@ def _find_hero_image(h1: Tag, title: str) -> Tag | None:
             alt = str(img.get("alt") or "").strip()
             if not alt:
                 continue
-            ratio = difflib.SequenceMatcher(
-                None, alt.lower(), title.strip().lower()
-            ).ratio()
+            ratio = difflib.SequenceMatcher(None, alt.lower(), title.lower()).ratio()
             if ratio >= _HERO_ALT_MATCH_RATIO:
+                return img
+            if truncated_prefix and alt.lower().startswith(truncated_prefix):
                 return img
         if node.name == "body":
             return None
