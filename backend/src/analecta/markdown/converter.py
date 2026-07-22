@@ -26,11 +26,13 @@ _INTERNAL_BREAK_RE = re.compile(r"[ \t]*\n[ \t]*")
 
 
 def _lang_from_pre(pre: Tag) -> str:
-    """Extract language from a ``<pre>`` element's class list.
+    """Extract language from a ``<pre>`` element's class list or ``lang`` attribute.
 
     Handles:
     - ``class="language-python"``
     - ``class="brush: js notranslate"`` (CodeMirror / MDN style)
+    - ``lang="python"`` (Chakra UI ``<Code>`` style, e.g. socket.dev's blog —
+      no ``language-*`` class at all, just a plain ``lang`` attribute)
 
     Args:
         pre: The ``<pre>`` element.
@@ -46,7 +48,8 @@ def _lang_from_pre(pre: Tag) -> str:
                 return candidate
         if c.startswith("language-"):
             return c[9:]
-    return ""
+    lang_attr = pre.get("lang")
+    return str(lang_attr) if lang_attr else ""
 
 
 def _get_lang(code: Tag, pre: Tag) -> str:
@@ -63,6 +66,9 @@ def _get_lang(code: Tag, pre: Tag) -> str:
         s = str(c)
         if s.startswith("language-"):
             return s[9:]
+    lang_attr = code.get("lang")
+    if lang_attr:
+        return str(lang_attr)
     return _lang_from_pre(pre)
 
 

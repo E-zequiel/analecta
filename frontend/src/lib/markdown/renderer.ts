@@ -4,6 +4,7 @@ import taskLists from 'markdown-it-task-lists';
 import { fromHighlighter } from '@shikijs/markdown-it/core';
 import { createHighlighterCoreSync, type HighlighterGeneric } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
+import type { BuiltinLanguage } from 'shiki/types';
 import tokyoNight from '@shikijs/themes/tokyo-night';
 import langPython from '@shikijs/langs/python';
 import langBash from '@shikijs/langs/bash';
@@ -17,6 +18,7 @@ import langJava from '@shikijs/langs/java';
 import langC from '@shikijs/langs/c';
 import langSql from '@shikijs/langs/sql';
 import langYaml from '@shikijs/langs/yaml';
+import langJson from '@shikijs/langs/json';
 import { createStyleToClassTransformer } from './shiki-style-to-class.js';
 import wikilink, { type ResolveWikilinkTitle } from './wikilink';
 import hashtag from './hashtag';
@@ -37,6 +39,7 @@ const highlighter = createHighlighterCoreSync({
 		langC,
 		langSql,
 		langYaml,
+		langJson,
 	],
 	engine: createJavaScriptRegexEngine(),
 });
@@ -75,6 +78,16 @@ export function createRenderer(
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see above
 			fromHighlighter(highlighter as HighlighterGeneric<any, any>, {
 				theme: 'tokyo-night',
+				// A fenced code block whose language isn't in the loaded set (an
+				// extraction picked up a language not on our whitelist, or a
+				// non-code lang="" value like "en") throws inside Shiki's
+				// codeToHtml instead of degrading — this fallback keeps the
+				// renderer from crashing on those blocks. 'text' is a special
+				// pseudo-language Shiki accepts at runtime without loading a
+				// grammar for it, but BuiltinLanguage's type is just an alias
+				// for the bundled-grammar union, which omits it — another
+				// Shiki typing gap, same class as the highlighter cast above.
+				fallbackLanguage: 'text' as unknown as BuiltinLanguage,
 				transformers: [createStyleToClassTransformer()],
 			})
 		);
