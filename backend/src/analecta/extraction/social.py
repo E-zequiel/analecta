@@ -87,25 +87,3 @@ class SubstackExtractor(SourceExtractor):
         raise ExtractionError(
             f"Substack inbox URL did not redirect to a canonical post URL: {url}"
         )
-
-
-class XExtractor(SourceExtractor):
-    """X/Twitter extraction stub — not implemented.
-
-    Nitter is defunct. The X API requires authentication.
-    Implementing this extractor is deferred until a viable public path exists.
-    """
-
-    async def extract(self, url: str) -> ExtractedContent:
-        """Raise ``NotImplementedError`` for any X/Twitter URL.
-
-        Args:
-            url: X/Twitter status URL.
-
-        Raises:
-            NotImplementedError: Always. X extraction has no viable path.
-        """
-        raise NotImplementedError(
-            "X/Twitter extraction is not supported: Nitter is defunct and the X API "
-            f"requires authentication. URL recorded but not extracted: {url}"
-        )
