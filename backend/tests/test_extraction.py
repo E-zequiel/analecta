@@ -37,13 +37,26 @@ from analecta.extraction.core import (
     detect_source_type,
     extract,
 )
-from analecta.extraction.social import SubstackExtractor, XExtractor
+from analecta.extraction.social import SubstackExtractor
 from analecta.extraction.tier2 import Tier2Result
+from analecta.extraction.x import (
+    XExtractor,
+    _clean_tweet_text,
+    _display_text,
+    _extract_tweet_id,
+    _fetch_oembed,
+    _fetch_syndication,
+    _render_tweet_html,
+    _syndication_token,
+    _utf16_offset_to_codepoint,
+    _walk_reply_chain,
+)
 from analecta.extraction.youtube import (
     YouTubeExtractor,
     _extract_video_id,
     _fetch_video_title,
 )
+from analecta.markdown.backlinks import parse_refs
 
 # ---------------------------------------------------------------------------
 # Sample HTML that trafilatura can extract from
@@ -81,6 +94,8 @@ _SPARSE_HTML = "<html><body><div>" + "<p>word</p>" * 30 + "</div></body></html>"
         ("https://x.com/user/status/1", "x"),
         ("https://twitter.com/user/status/1", "x"),
         ("https://www.x.com/user/status/1", "x"),
+        ("https://mobile.twitter.com/user/status/1", "x"),
+        ("https://mobile.x.com/user/status/1", "x"),
         ("https://example.substack.com/p/post", "substack"),
         ("https://substack.com/inbox/post/123", "substack"),
         ("https://substack.com/p/some-post", "substack"),
@@ -403,13 +418,713 @@ async def test_substack_extractor_inbox_no_redirect_raises(mocker):
 
 # ---------------------------------------------------------------------------
 # XExtractor
+#
+# Fixtures below are real captured JSON from cdn.syndication.twimg.com (not
+# synthetic), fetched during planning against currently-live public tweets,
+# trimmed to only the fields XExtractor actually reads.
 # ---------------------------------------------------------------------------
+
+_TWEET_NASA_WALLOPS: dict[str, Any] = {
+    "__typename": "Tweet",
+    "id_str": "875083037872181254",
+    "text": (
+        "UPDATE: 4pm 6/14:  NASA Terrier Improved Malemute will launch no earlier "
+        "than 6/16, from 9:05 to 9:20 p.m. due to poor weather conditions. "
+        "https://t.co/8LLQsJw5pM"
+    ),
+    "display_text_range": [0, 138],
+    "created_at": "2017-06-14T20:10:29.000Z",
+    "entities": {},
+    "user": {
+        "id_str": "30258963",
+        "name": "NASA Wallops",
+        "screen_name": "NASAWallops",
+    },
+    "photos": [{"url": "https://pbs.twimg.com/media/DCTrTynXgAEwyNJ.jpg"}],
+    "mediaDetails": [
+        {
+            "type": "photo",
+            "expanded_url": "https://x.com/NASA_Wallops/status/875083037872181254/photo/1",
+            "media_url_https": "https://pbs.twimg.com/media/DCTrTynXgAEwyNJ.jpg",
+        }
+    ],
+}
+
+_TWEET_DUOLINGO: dict[str, Any] = {
+    "__typename": "Tweet",
+    "id_str": "848097704869851136",
+    "text": (
+        "Announcing the world's first Emoji course! Behold, the final chapter in "
+        "the evolution of human communication. ✏️🏋🚀: https://t.co/kGejjXiTGf "
+        "https://t.co/okK12CbvdQ"
+    ),
+    "display_text_range": [0, 141],
+    "created_at": "2017-04-01T09:00:24.000Z",
+    "entities": {
+        "urls": [
+            {
+                "indices": [116, 139],
+                "expanded_url": "http://emoji.duolingo.com",
+                "display_url": "emoji.duolingo.com",
+                "url": "https://t.co/kGejjXiTGf",
+            }
+        ]
+    },
+    "user": {"id_str": "107238136", "name": "Duolingo", "screen_name": "duolingo"},
+    "photos": [{"url": "https://pbs.twimg.com/media/C8UMXURXcAA1T3d.jpg"}],
+    "mediaDetails": [
+        {
+            "type": "photo",
+            "expanded_url": "https://x.com/duolingo/status/848097704869851136/photo/1",
+            "media_url_https": "https://pbs.twimg.com/media/C8UMXURXcAA1T3d.jpg",
+        }
+    ],
+}
+
+_TWEET_ARTEMIS: dict[str, Any] = {
+    "__typename": "Tweet",
+    "id_str": "1592721757294587905",
+    "text": (
+        "LIVE NOW: The #Artemis era of exploration begins today with @NASAArtemis "
+        "I, the first integrated test flight of the rocket and spacecraft that "
+        "will bring humanity to the Moon. Watch @NASA_SLS and @NASA_Orion embark "
+        "on their first voyage. https://t.co/Ngak08VFb0"
+    ),
+    "display_text_range": [0, 261],
+    "created_at": "2022-11-16T03:30:32.000Z",
+    "entities": {
+        "urls": [
+            {
+                "indices": [238, 261],
+                "expanded_url": "https://x.com/i/broadcasts/1jMKgLaeYoAGL",
+                "display_url": "x.com/i/broadcasts/1…",
+                "url": "https://t.co/Ngak08VFb0",
+            }
+        ],
+        "hashtags": [{"indices": [14, 22], "text": "Artemis"}],
+    },
+    "user": {"id_str": "11348282", "name": "NASA", "screen_name": "NASA"},
+}
+
+_TWEET_TOMBSTONE: dict[str, Any] = {
+    "__typename": "TweetTombstone",
+    "tombstone": {
+        "text": {"text": "This Post was deleted by the Post author. Learn more"}
+    },
+}
+
+_TWEET_SPACEX_REPLY: dict[str, Any] = {
+    "__typename": "Tweet",
+    "id_str": "1574541890120081409",
+    "text": (
+        "@NASA Congratulations on successfully crashing a spacecraft into an asteroid!"
+    ),
+    "display_text_range": [6, 77],
+    "created_at": "2022-09-26T23:30:14.000Z",
+    "entities": {},
+    "user": {"id_str": "34743251", "name": "SpaceX", "screen_name": "SpaceX"},
+    "in_reply_to_status_id_str": "1574539270987173903",
+}
+
+_TWEET_NASA_IMPACT: dict[str, Any] = {
+    "__typename": "Tweet",
+    "id_str": "1574539270987173903",
+    "text": (
+        "IMPACT SUCCESS! Watch from #DARTMIssion's DRACO Camera, as the vending "
+        "machine-sized spacecraft successfully collides with asteroid Dimorphos, "
+        "which is the size of a football stadium and poses no threat to Earth. "
+        "https://t.co/7bXipPkjWD"
+    ),
+    "display_text_range": [0, 212],
+    "created_at": "2022-09-26T23:19:50.000Z",
+    "entities": {"hashtags": [{"indices": [27, 39], "text": "DARTMIssion"}]},
+    "user": {"id_str": "11348282", "name": "NASA", "screen_name": "NASA"},
+    "photos": [],
+    "mediaDetails": [
+        {
+            "type": "video",
+            "expanded_url": "https://x.com/NASA/status/1574539270987173903/video/1",
+            "media_url_https": "https://pbs.twimg.com/media/Fdni7dwX0AgxyLv.jpg",
+        }
+    ],
+}
+
+# Real same-author 3-tweet thread (a numbered thread ending "/13", "/14",
+# "/fin"), tail carries real animated_gif media.
+_TWEET_GIF_ROOT: dict[str, Any] = {
+    "__typename": "Tweet",
+    "id_str": "1003318785330241537",
+    "text": (
+        "Consent needs to be an ongoing conversation. It needs to start before "
+        "you get naked, continue during sexy times, and honestly pillowtalk "
+        "retros are pretty great too\n\n"
+        "“But that's a lot of talking!”\n\n"
+        "Yes it is! And it's totally worth it /13 https://t.co/mIv1dKmeYP"
+    ),
+    "display_text_range": [0, 238],
+    "created_at": "2018-06-03T16:53:33.000Z",
+    "entities": {},
+    "user": {
+        "id_str": "330100136",
+        "name": "Danielle Leong",
+        "screen_name": "tsunamino",
+    },
+    "photos": [],
+    "mediaDetails": [
+        {
+            "type": "animated_gif",
+            "expanded_url": "https://x.com/tsunamino/status/1003318785330241537/photo/1",
+            "media_url_https": "https://pbs.twimg.com/tweet_video_thumb/DeyBHVAU0AAButJ.jpg",
+        }
+    ],
+}
+
+_TWEET_GIF_MIDDLE: dict[str, Any] = {
+    "__typename": "Tweet",
+    "id_str": "1003318790405304321",
+    "text": (
+        "If you can't have a conversation about what you like and don't like "
+        "with another person, sounds like you should work on that by yourself! "
+        "Maybe journal it or talk to your therapist. /14"
+    ),
+    "display_text_range": [0, 185],
+    "created_at": "2018-06-03T16:53:35.000Z",
+    "entities": {},
+    "user": {
+        "id_str": "330100136",
+        "name": "Danielle Leong",
+        "screen_name": "tsunamino",
+    },
+    "in_reply_to_status_id_str": "1003318785330241537",
+}
+
+_TWEET_GIF_TAIL: dict[str, Any] = {
+    "__typename": "Tweet",
+    "id_str": "1003318804619804672",
+    "text": "Hope this helps! Go forth and have good (consensual) sex /fin https://t.co/XgIno4tSLG",
+    "display_text_range": [0, 61],
+    "created_at": "2018-06-03T16:53:38.000Z",
+    "entities": {},
+    "user": {
+        "id_str": "330100136",
+        "name": "Danielle Leong",
+        "screen_name": "tsunamino",
+    },
+    "photos": [],
+    "mediaDetails": [
+        {
+            "type": "animated_gif",
+            "expanded_url": "https://x.com/tsunamino/status/1003318804619804672/photo/1",
+            "media_url_https": "https://pbs.twimg.com/tweet_video_thumb/DeyBINOUwAAbuif.jpg",
+        }
+    ],
+    "in_reply_to_status_id_str": "1003318790405304321",
+}
+
+_TWEET_QUOTE: dict[str, Any] = {
+    "__typename": "Tweet",
+    "id_str": "1562916200866267138",
+    "text": (
+        "Congresswoman Marjorie Taylor Greene had $183,504 in PPP loans "
+        "forgiven.\n\nhttps://t.co/4FoCymt8TB"
+    ),
+    "display_text_range": [0, 97],
+    "created_at": "2022-08-25T21:33:54.000Z",
+    "entities": {
+        "urls": [
+            {
+                "indices": [74, 97],
+                "expanded_url": (
+                    "https://x.com/Acyn/status/1562530929838436355"
+                    "?s=20&t=Anxeqtkb5PiVIELnC7dCoA"
+                ),
+                "display_url": "x.com/Acyn/status/15…",
+                "url": "https://t.co/4FoCymt8TB",
+            }
+        ]
+    },
+    "user": {
+        "id_str": "1323730225067339784",
+        "name": "The White House 46 Archived",
+        "screen_name": "WhiteHouse46",
+    },
+    "quoted_tweet": {
+        "id_str": "1562530929838436355",
+        "text": (
+            "Greene: For our government just to say ok your debt is completely "
+            "forgiven.. it's completely unfair https://t.co/V0yJWYSbot"
+        ),
+        "display_text_range": [0, 99],
+        "created_at": "2022-08-24T20:02:58.000Z",
+        "entities": {},
+        "user": {"id_str": "16635277", "name": "Acyn", "screen_name": "Acyn"},
+        "photos": [],
+        "mediaDetails": [
+            {
+                "type": "video",
+                "expanded_url": "https://x.com/Acyn/status/1562530929838436355/video/1",
+                "media_url_https": (
+                    "https://pbs.twimg.com/ext_tw_video_thumb/1562530825316380673"
+                    "/pu/img/6ARRpJDRacbuRi3P.jpg"
+                ),
+            }
+        ],
+    },
+}
+
+
+# --- _extract_tweet_id ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://x.com/user/status/123", "123"),
+        ("https://twitter.com/user/status/123", "123"),
+        ("https://mobile.twitter.com/user/status/123", "123"),
+        ("https://x.com/i/web/status/123", "123"),
+        ("https://x.com/user/statuses/123", "123"),
+        ("https://x.com/user/status/123?s=20", "123"),
+        ("https://example.com/not-a-tweet", None),
+        ("https://x.com/user", None),
+    ],
+)
+def test_extract_tweet_id(url, expected):
+    assert _extract_tweet_id(url) == expected
+
+
+# --- _syndication_token ------------------------------------------------------
+
+
+def test_syndication_token_real_id():
+    """Pinned against a real 19-digit id, not id 20 (whose token comes
+    entirely from the fractional branch and would stay green even if the
+    integer-conversion branch were broken)."""
+    assert _syndication_token("875083037872181254") == "24d5k5p19ji9z3qrg6p9cnmi"
+
+
+# --- _fetch_syndication (HTTP layer) ------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_x_extractor_raises_not_implemented():
-    with pytest.raises(NotImplementedError):
+async def test_fetch_syndication_treats_tombstone_as_unavailable(mocker):
+    """A tombstone (deleted/protected tweet) is a real 200 response without a
+    "text" field -- must not be mistaken for a successful fetch."""
+    mock_resp = mocker.MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = _TWEET_TOMBSTONE
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.get = mocker.AsyncMock(return_value=mock_resp)
+    mocker.patch("analecta.extraction.x.httpx2.AsyncClient", return_value=mock_client)
+
+    assert await _fetch_syndication("1629307668568633344") is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_syndication_success_returns_tweet_dict(mocker):
+    mock_resp = mocker.MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = _TWEET_NASA_WALLOPS
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.get = mocker.AsyncMock(return_value=mock_resp)
+    mocker.patch("analecta.extraction.x.httpx2.AsyncClient", return_value=mock_client)
+
+    result = await _fetch_syndication("875083037872181254")
+    assert result == _TWEET_NASA_WALLOPS
+
+
+@pytest.mark.asyncio
+async def test_fetch_syndication_non_200_returns_none(mocker):
+    mock_resp = mocker.MagicMock()
+    mock_resp.status_code = 404
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.get = mocker.AsyncMock(return_value=mock_resp)
+    mocker.patch("analecta.extraction.x.httpx2.AsyncClient", return_value=mock_client)
+
+    assert await _fetch_syndication("1") is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_syndication_network_error_returns_none(mocker):
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.get = mocker.AsyncMock(
+        side_effect=Exception("network error")
+    )
+    mocker.patch("analecta.extraction.x.httpx2.AsyncClient", return_value=mock_client)
+
+    assert await _fetch_syndication("1") is None
+
+
+# --- _fetch_oembed (HTTP layer) -----------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_oembed_success_returns_dict(mocker):
+    oembed_data = {"author_name": "Some Author", "html": "<blockquote></blockquote>"}
+    mock_resp = mocker.MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = oembed_data
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.get = mocker.AsyncMock(return_value=mock_resp)
+    mocker.patch("analecta.extraction.x.httpx2.AsyncClient", return_value=mock_client)
+
+    result = await _fetch_oembed("https://x.com/user/status/1")
+    assert result == oembed_data
+
+
+@pytest.mark.asyncio
+async def test_fetch_oembed_non_200_returns_none(mocker):
+    mock_resp = mocker.MagicMock()
+    mock_resp.status_code = 404
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.get = mocker.AsyncMock(return_value=mock_resp)
+    mocker.patch("analecta.extraction.x.httpx2.AsyncClient", return_value=mock_client)
+
+    assert await _fetch_oembed("https://x.com/user/status/1") is None
+
+
+# --- _utf16_offset_to_codepoint -----------------------------------------------
+
+
+def test_utf16_offset_to_codepoint_ascii_identity():
+    assert _utf16_offset_to_codepoint("hello", 3) == 3
+
+
+def test_utf16_offset_to_codepoint_astral_divergence():
+    """Two astral-plane emoji (each 2 UTF-16 units, 1 Python codepoint) before
+    the cut point make the UTF-16 offset and the codepoint offset diverge by
+    exactly 2 -- live-verified against the real Duolingo tweet during
+    planning."""
+    text = _TWEET_DUOLINGO["text"]
+    assert _utf16_offset_to_codepoint(text, 141) == 139
+
+
+# --- _clean_tweet_text / _display_text ---------------------------------------
+
+
+def test_display_text_reply_skips_leading_mention():
+    assert _display_text(_TWEET_SPACEX_REPLY).startswith("Congratulations")
+
+
+def test_clean_tweet_text_trims_trailing_media_link():
+    cleaned = _clean_tweet_text(_TWEET_NASA_WALLOPS)
+    assert "t.co" not in cleaned
+    assert cleaned.startswith("UPDATE: 4pm 6/14:")
+    assert cleaned.endswith("poor weather conditions.")
+
+
+def test_clean_tweet_text_handles_utf16_boundary_and_link_expansion():
+    """Regression guard for the UTF-16-vs-codepoint mixed-index-space finding:
+    astral emoji before both the cut point and an in-text link."""
+    cleaned = _clean_tweet_text(_TWEET_DUOLINGO)
+    assert "🚀" in cleaned
+    assert "t.co" not in cleaned
+    assert '<a href="http://emoji.duolingo.com">emoji.duolingo.com</a>' in cleaned
+    assert cleaned.endswith(
+        '<a href="http://emoji.duolingo.com">emoji.duolingo.com</a>'
+    )
+
+
+def test_clean_tweet_text_linkifies_hashtag_and_leaves_no_backlink():
+    from analecta.markdown.converter import MarkdownConverter
+
+    cleaned = _clean_tweet_text(_TWEET_ARTEMIS)
+    assert '<a href="https://x.com/hashtag/Artemis">#Artemis</a>' in cleaned
+
+    markdown = MarkdownConverter()._html_to_md(f"<p>{cleaned}</p>")
+    refs = parse_refs(markdown)
+    assert not any(r.is_hashtag for r in refs)
+
+
+def test_clean_tweet_text_reply_has_no_leading_mention_noise():
+    """Regression guard for the display_text_range[0] fix: every fixture used
+    elsewhere is a non-reply tweet with start=0, so this is the only case
+    that exercises a non-zero start."""
+    cleaned = _clean_tweet_text(_TWEET_SPACEX_REPLY)
+    assert not cleaned.startswith("@NASA")
+    assert cleaned.startswith("Congratulations")
+
+
+# --- _render_tweet_html -------------------------------------------------------
+
+
+def test_render_tweet_html_photo_becomes_img():
+    rendered = _render_tweet_html(_TWEET_NASA_WALLOPS)
+    assert (
+        '<img src="https://pbs.twimg.com/media/DCTrTynXgAEwyNJ.jpg" alt="">' in rendered
+    )
+
+
+def test_render_tweet_html_video_is_link_out_not_download():
+    rendered = _render_tweet_html(_TWEET_NASA_IMPACT)
+    assert "<img" not in rendered
+    assert (
+        '<a href="https://x.com/NASA/status/1574539270987173903/video/1">' in rendered
+    )
+
+
+def test_render_tweet_html_animated_gif_is_link_out_not_download():
+    rendered = _render_tweet_html(_TWEET_GIF_TAIL)
+    assert "<img" not in rendered
+    assert (
+        '<a href="https://x.com/tsunamino/status/1003318804619804672/photo/1">'
+        in rendered
+    )
+
+
+def test_render_tweet_html_quoted_tweet_nested_blockquote():
+    rendered = _render_tweet_html(_TWEET_QUOTE)
+    assert "<blockquote>" in rendered
+    assert "Greene" in rendered
+    assert (
+        '<a href="https://x.com/Acyn/status/1562530929838436355/video/1">' in rendered
+    )
+
+
+# --- _walk_reply_chain ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_walk_reply_chain_stops_at_root():
+    chain, complete = await _walk_reply_chain(_TWEET_NASA_WALLOPS)
+    assert chain == [_TWEET_NASA_WALLOPS]
+    assert complete is True
+
+
+@pytest.mark.asyncio
+async def test_walk_reply_chain_includes_one_cross_author_tweet(mocker):
+    mock_fetch = mocker.patch(
+        "analecta.extraction.x._fetch_syndication",
+        new=mocker.AsyncMock(return_value=_TWEET_NASA_IMPACT),
+    )
+    chain, complete = await _walk_reply_chain(_TWEET_SPACEX_REPLY)
+    assert [t["id_str"] for t in chain] == [
+        _TWEET_NASA_IMPACT["id_str"],
+        _TWEET_SPACEX_REPLY["id_str"],
+    ]
+    assert complete is True
+    mock_fetch.assert_called_once_with("1574539270987173903")
+
+
+@pytest.mark.asyncio
+async def test_walk_reply_chain_full_same_author_thread(mocker):
+    mocker.patch(
+        "analecta.extraction.x._fetch_syndication",
+        new=mocker.AsyncMock(side_effect=[_TWEET_GIF_MIDDLE, _TWEET_GIF_ROOT]),
+    )
+    chain, complete = await _walk_reply_chain(_TWEET_GIF_TAIL)
+    assert [t["id_str"] for t in chain] == [
+        _TWEET_GIF_ROOT["id_str"],
+        _TWEET_GIF_MIDDLE["id_str"],
+        _TWEET_GIF_TAIL["id_str"],
+    ]
+    assert complete is True
+
+
+@pytest.mark.asyncio
+async def test_walk_reply_chain_ambiguous_failure_marks_incomplete(mocker):
+    mocker.patch(
+        "analecta.extraction.x._fetch_syndication",
+        new=mocker.AsyncMock(return_value=None),
+    )
+    chain, complete = await _walk_reply_chain(_TWEET_GIF_TAIL)
+    assert chain == [_TWEET_GIF_TAIL]
+    assert complete is False
+
+
+@pytest.mark.asyncio
+async def test_walk_reply_chain_max_hops_cap_marks_incomplete(mocker):
+    looping_tweet = {**_TWEET_GIF_MIDDLE}  # always same author, always has a parent
+    mocker.patch(
+        "analecta.extraction.x._fetch_syndication",
+        new=mocker.AsyncMock(return_value=looping_tweet),
+    )
+    chain, complete = await _walk_reply_chain(_TWEET_GIF_TAIL, max_hops=3)
+    assert len(chain) == 4  # tail + 3 capped hops
+    assert complete is False
+
+
+# --- small helpers / edge cases -------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_syndication_malformed_json_returns_none(mocker):
+    mock_resp = mocker.MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.side_effect = ValueError("not json")
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.get = mocker.AsyncMock(return_value=mock_resp)
+    mocker.patch("analecta.extraction.x.httpx2.AsyncClient", return_value=mock_client)
+
+    assert await _fetch_syndication("1") is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_oembed_malformed_json_returns_none(mocker):
+    mock_resp = mocker.MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.side_effect = ValueError("not json")
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.get = mocker.AsyncMock(return_value=mock_resp)
+    mocker.patch("analecta.extraction.x.httpx2.AsyncClient", return_value=mock_client)
+
+    assert await _fetch_oembed("https://x.com/user/status/1") is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_oembed_missing_html_key_returns_none(mocker):
+    mock_resp = mocker.MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"author_name": "Someone"}
+    mock_client = mocker.AsyncMock()
+    mock_client.__aenter__.return_value.get = mocker.AsyncMock(return_value=mock_resp)
+    mocker.patch("analecta.extraction.x.httpx2.AsyncClient", return_value=mock_client)
+
+    assert await _fetch_oembed("https://x.com/user/status/1") is None
+
+
+def test_render_tweet_html_video_without_expanded_url_falls_back_to_permalink():
+    tweet = {
+        **_TWEET_NASA_WALLOPS,
+        "id_str": "999",
+        "user": {"screen_name": "someone"},
+        "mediaDetails": [{"type": "video"}],
+    }
+    rendered = _render_tweet_html(tweet)
+    assert '<a href="https://x.com/someone/status/999">' in rendered
+
+
+def test_render_tweet_html_skips_photo_without_url():
+    tweet = {**_TWEET_NASA_WALLOPS, "photos": [{}]}
+    rendered = _render_tweet_html(tweet)
+    assert "<img" not in rendered
+
+
+def test_display_text_no_range_returns_raw_text():
+    assert _display_text({"text": "no range here"}) == "no range here"
+
+
+def test_format_author_missing_name_falls_back_to_screen_name():
+    from analecta.extraction.x import _format_author
+
+    assert _format_author({"user": {"screen_name": "onlyhandle"}}) == "onlyhandle"
+    assert _format_author({"user": {}}) == ""
+
+
+def test_build_title_empty_text_uses_fallback():
+    from analecta.extraction.x import _build_title
+
+    assert _build_title("   ", "fallback title") == "fallback title"
+
+
+def test_oembed_paragraphs_falls_back_to_plain_text_without_blockquote():
+    from analecta.extraction.x import _oembed_paragraphs
+
+    assert _oembed_paragraphs({"html": "<p>just a paragraph</p>"}) == [
+        "just a paragraph"
+    ]
+    assert _oembed_paragraphs({"html": ""}) == []
+
+
+# --- XExtractor.extract (end-to-end) ------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_x_extractor_syndication_success(mocker):
+    mocker.patch(
+        "analecta.extraction.x._fetch_syndication",
+        new=mocker.AsyncMock(return_value=_TWEET_NASA_WALLOPS),
+    )
+    result = await XExtractor().extract(
+        "https://x.com/NASA_Wallops/status/875083037872181254"
+    )
+    assert result.source_type == "x"
+    assert result.metadata["fetch_method"] == "syndication"
+    assert "thread_length" not in result.metadata
+    assert result.metadata["author"] == "NASA Wallops (@NASAWallops)"
+    assert '<img src="https://pbs.twimg.com/media/DCTrTynXgAEwyNJ.jpg"' in result.html
+
+
+@pytest.mark.asyncio
+async def test_x_extractor_thread_walk_end_to_end(mocker):
+    mocker.patch(
+        "analecta.extraction.x._fetch_syndication",
+        new=mocker.AsyncMock(
+            side_effect=[_TWEET_GIF_TAIL, _TWEET_GIF_MIDDLE, _TWEET_GIF_ROOT]
+        ),
+    )
+    result = await XExtractor().extract(
+        "https://x.com/tsunamino/status/1003318804619804672"
+    )
+    assert result.metadata["thread_length"] == 3
+    assert result.metadata["author"] == "Danielle Leong (@tsunamino)"
+    assert "Thread may be incomplete" not in result.html
+    assert (
+        "/13" in result.html
+        or "Consent needs to be an ongoing conversation" in result.html
+    )
+    assert "/fin" in result.html
+
+
+@pytest.mark.asyncio
+async def test_x_extractor_incomplete_thread_marker(mocker):
+    mocker.patch(
+        "analecta.extraction.x._fetch_syndication",
+        new=mocker.AsyncMock(side_effect=[_TWEET_GIF_TAIL, None]),
+    )
+    result = await XExtractor().extract(
+        "https://x.com/tsunamino/status/1003318804619804672"
+    )
+    assert "Thread may be incomplete" in result.html
+
+
+@pytest.mark.asyncio
+async def test_x_extractor_falls_back_to_oembed_on_tombstone(mocker):
+    mocker.patch(
+        "analecta.extraction.x._fetch_syndication",
+        new=mocker.AsyncMock(return_value=None),
+    )
+    mocker.patch(
+        "analecta.extraction.x._fetch_oembed",
+        new=mocker.AsyncMock(
+            return_value={
+                "author_name": "Some Author",
+                "html": (
+                    '<blockquote class="twitter-tweet">'
+                    "<p>Fallback tweet text</p>"
+                    "&mdash; Some Author (@someauthor)"
+                    "</blockquote>"
+                ),
+            }
+        ),
+    )
+    result = await XExtractor().extract("https://x.com/user/status/1629307668568633344")
+    assert result.metadata["fetch_method"] == "oembed_fallback"
+    assert "Fetched via oEmbed fallback" in result.html
+    assert "Fallback tweet text" in result.html
+    assert result.metadata["author"] == "Some Author"
+
+
+@pytest.mark.asyncio
+async def test_x_extractor_raises_when_both_paths_fail(mocker):
+    mocker.patch(
+        "analecta.extraction.x._fetch_syndication",
+        new=mocker.AsyncMock(return_value=None),
+    )
+    mocker.patch(
+        "analecta.extraction.x._fetch_oembed",
+        new=mocker.AsyncMock(return_value=None),
+    )
+    with pytest.raises(ExtractionError, match="123"):
         await XExtractor().extract("https://x.com/user/status/123")
+
+
+@pytest.mark.asyncio
+async def test_x_extractor_unparseable_url_raises_without_network(mocker):
+    mock_fetch = mocker.patch("analecta.extraction.x._fetch_syndication")
+    with pytest.raises(ExtractionError):
+        await XExtractor().extract("https://x.com/user")
+    mock_fetch.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -442,9 +1157,13 @@ async def test_extract_dispatches_article(mocker):
 
 
 @pytest.mark.asyncio
-async def test_extract_dispatches_x_raises():
-    with pytest.raises(NotImplementedError):
-        await extract("https://x.com/user/status/123")
+async def test_extract_dispatches_x(mocker):
+    mocker.patch(
+        "analecta.extraction.x._fetch_syndication",
+        new=mocker.AsyncMock(return_value=_TWEET_NASA_WALLOPS),
+    )
+    result = await extract("https://x.com/NASA_Wallops/status/875083037872181254")
+    assert result.source_type == "x"
 
 
 # ---------------------------------------------------------------------------
