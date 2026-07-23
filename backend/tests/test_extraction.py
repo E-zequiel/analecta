@@ -1556,16 +1556,17 @@ to keep the surrounding container's text-to-link ratio high.</p>
 
 
 @pytest.mark.asyncio
-async def test_article_extractor_skips_tweet_embed_resolution_when_tier2_disabled(
+async def test_article_extractor_still_resolves_tweet_embeds_when_tier2_disabled(
     mocker, monkeypatch
 ):
-    """ANALECTA_DISABLE_TIER2 also gates embedded-tweet resolution, at the
-    user's request: one flag for "no extra outbound calls beyond the bare
-    article fetch" during a Tier-1-only reading session, not two."""
+    """ANALECTA_DISABLE_TIER2 gates Chromium rendering only. Embedded-tweet
+    resolution is a Tier 1 technique (no browser) and must keep running
+    with the flag set — otherwise the Tier-1-only experiment can't cover
+    embedded tweets at all."""
     monkeypatch.setenv("ANALECTA_DISABLE_TIER2", "1")
     mock_resolve = mocker.patch(
         "analecta.extraction.article.resolve_embedded_tweets",
-        new=mocker.AsyncMock(),
+        new=mocker.AsyncMock(return_value=_ARTICLE_HTML),
     )
     mocker.patch.object(
         ArticleExtractor,
@@ -1575,7 +1576,7 @@ async def test_article_extractor_skips_tweet_embed_resolution_when_tier2_disable
 
     await ArticleExtractor().extract("https://example.com/article")
 
-    mock_resolve.assert_not_called()
+    mock_resolve.assert_called_once_with(_ARTICLE_HTML)
 
 
 def test_resolved_tweet_embed_survives_real_parse():

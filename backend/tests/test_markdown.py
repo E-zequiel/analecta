@@ -205,6 +205,40 @@ def test_convert_language_class_takes_priority_over_lang_attribute():
     assert "```python\n" in md
 
 
+def test_convert_pandoc_sourcecode_class_on_pre_and_code():
+    # Pandoc-generated static sites (arthurrump.com and similar) mark up code
+    # blocks as <pre class="sourceCode html"><code class="sourceCode html">
+    # — no "language-*" prefix, just a bare sibling class next to "sourceCode".
+    content = _content(
+        html='<pre class="sourceCode html"><code class="sourceCode html">'
+        "&lt;p&gt;hi&lt;/p&gt;</code></pre>"
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```html\n" in md
+
+
+def test_convert_pandoc_sourcecode_with_line_numbers():
+    # Pandoc adds "numberSource"/"numberLines" modifier classes when line
+    # numbering is enabled — must not be mistaken for the language itself.
+    content = _content(
+        html='<pre class="numberSource sourceCode python numberLines">'
+        '<code class="sourceCode python">print(1)</code></pre>'
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```python\n" in md
+
+
+def test_convert_bare_sourcecode_class_has_no_language():
+    # Pandoc fences with an unspecified/unrecognized language get just
+    # class="sourceCode" with no language sibling — must not crash and must
+    # not fabricate a language.
+    content = _content(
+        html='<pre class="sourceCode"><code class="sourceCode">plain text</code></pre>'
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```\nplain text\n```" in md
+
+
 # ---------------------------------------------------------------------------
 # title_to_hashtag_key
 # ---------------------------------------------------------------------------
