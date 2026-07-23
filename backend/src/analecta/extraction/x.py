@@ -324,17 +324,19 @@ def _render_tweet_html(tweet: dict[str, Any]) -> str:
 async def _walk_reply_chain(
     tweet: dict[str, Any], max_hops: int = _MAX_HOPS
 ) -> tuple[list[dict[str, Any]], bool]:
-    """Walk upward from *tweet*, collecting its reply-to-parent ancestors.
+    """Walk upward from *tweet*, collecting every reply-to-parent ancestor to the root.
 
-    Always fetches and includes the immediate parent, regardless of
-    authorship. Continues walking only while each new parent shares the
-    same author as the tweet that replied to it; the moment a parent's
-    author differs, that one tweet is included and the walk stops — a walk
-    can never include more than one cross-author tweet, since including one
-    is exactly the condition that ends it. This makes pasting the last
-    tweet of a same-author thread pull in the entire thread, while pasting
-    a reply to someone else's tweet pulls in exactly that one tweet of
-    context.
+    Fetches and includes each successive parent via
+    ``in_reply_to_status_id_str``, regardless of authorship — the walk
+    doesn't stop or care when an ancestor's author differs from its
+    child's. Pasting any tweet in a reply chain therefore pulls in the
+    full ancestor chain up to the conversation's true root, however many
+    different authors that chain passes through along the way. (Earlier
+    behavior stopped at the first author change, including just one tweet
+    of cross-author context; that ceiling was a deliberate scope choice,
+    not a technical one, and the user asked for it removed so an
+    Upward walk always behaves like the same-author case: full chain,
+    every time.)
 
     Args:
         tweet: The originally-fetched tweet (already includes its own
@@ -345,9 +347,9 @@ async def _walk_reply_chain(
 
     Returns:
         A tuple of ``(chain, complete)``. ``chain`` is root-first and
-        always includes at least *tweet*. ``complete`` is ``True`` when the
-        walk ended cleanly (root reached, or a cross-author boundary was
-        included and the walk stopped there) and ``False`` when it ended
+        always includes at least *tweet*. ``complete`` is ``True`` when
+        the walk ended cleanly (root reached — no further
+        ``in_reply_to_status_id_str``) and ``False`` when it ended
         ambiguously (a hop's fetch failed — which may mean a deleted
         parent, or may mean a transient failure against an endpoint known
         to fail unpredictably) or hit ``max_hops``.
@@ -366,12 +368,6 @@ async def _walk_reply_chain(
 
         chain.append(parent)
         hops += 1
-
-        parent_user = parent.get("user") or {}
-        current_user = current.get("user") or {}
-        if parent_user.get("id_str") != current_user.get("id_str"):
-            return list(reversed(chain)), True
-
         current = parent
 
     return list(reversed(chain)), False

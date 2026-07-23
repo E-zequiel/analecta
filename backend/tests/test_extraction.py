@@ -560,6 +560,35 @@ _TWEET_NASA_IMPACT: dict[str, Any] = {
     ],
 }
 
+# Synthetic 3-tweet chain, three distinct authors throughout (Alice -> Bob ->
+# Charlie), used to prove _walk_reply_chain climbs through every author
+# change to the true root instead of stopping at the first one.
+_TWEET_CROSSAUTHOR_ROOT: dict[str, Any] = {
+    "id_str": "9003",
+    "text": "Original post from Alice",
+    "display_text_range": [0, 25],
+    "entities": {},
+    "user": {"id_str": "1", "name": "Alice", "screen_name": "alice"},
+}
+
+_TWEET_CROSSAUTHOR_MIDDLE: dict[str, Any] = {
+    "id_str": "9002",
+    "text": "Reply from Bob",
+    "display_text_range": [0, 15],
+    "entities": {},
+    "user": {"id_str": "2", "name": "Bob", "screen_name": "bob"},
+    "in_reply_to_status_id_str": "9003",
+}
+
+_TWEET_CROSSAUTHOR_TAIL: dict[str, Any] = {
+    "id_str": "9001",
+    "text": "Reply from Charlie",
+    "display_text_range": [0, 19],
+    "entities": {},
+    "user": {"id_str": "3", "name": "Charlie", "screen_name": "charlie"},
+    "in_reply_to_status_id_str": "9002",
+}
+
 # Real same-author 3-tweet thread (a numbered thread ending "/13", "/14",
 # "/fin"), tail carries real animated_gif media.
 _TWEET_GIF_ROOT: dict[str, Any] = {
@@ -967,7 +996,12 @@ async def test_walk_reply_chain_stops_at_root():
 
 
 @pytest.mark.asyncio
-async def test_walk_reply_chain_includes_one_cross_author_tweet(mocker):
+async def test_walk_reply_chain_includes_cross_author_parent(mocker):
+    """A cross-author parent is included same as a same-author one; this walk
+    stops because ``_TWEET_NASA_IMPACT`` has no further parent (genuine
+    root), not because its author differs from the SpaceX reply's — see
+    ``test_walk_reply_chain_continues_past_cross_author_tweet`` for a chain
+    that keeps climbing through multiple author changes."""
     mock_fetch = mocker.patch(
         "analecta.extraction.x._fetch_syndication",
         new=mocker.AsyncMock(return_value=_TWEET_NASA_IMPACT),
@@ -979,6 +1013,27 @@ async def test_walk_reply_chain_includes_one_cross_author_tweet(mocker):
     ]
     assert complete is True
     mock_fetch.assert_called_once_with("1574539270987173903")
+
+
+@pytest.mark.asyncio
+async def test_walk_reply_chain_continues_past_cross_author_tweet(mocker):
+    """Regression guard for the 2026-07-23 ceiling removal: the walk used to
+    stop at the first author change, including exactly one cross-author
+    tweet. It must now keep climbing through as many author changes as the
+    chain actually has, all the way to the true root."""
+    mocker.patch(
+        "analecta.extraction.x._fetch_syndication",
+        new=mocker.AsyncMock(
+            side_effect=[_TWEET_CROSSAUTHOR_MIDDLE, _TWEET_CROSSAUTHOR_ROOT]
+        ),
+    )
+    chain, complete = await _walk_reply_chain(_TWEET_CROSSAUTHOR_TAIL)
+    assert [t["id_str"] for t in chain] == [
+        _TWEET_CROSSAUTHOR_ROOT["id_str"],
+        _TWEET_CROSSAUTHOR_MIDDLE["id_str"],
+        _TWEET_CROSSAUTHOR_TAIL["id_str"],
+    ]
+    assert complete is True
 
 
 @pytest.mark.asyncio
