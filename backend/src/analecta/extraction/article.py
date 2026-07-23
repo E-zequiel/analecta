@@ -775,12 +775,14 @@ def _decode_shots(shots: dict[str, str]) -> dict[str, bytes]:
 def _tier2_disabled() -> bool:
     """Whether ``ANALECTA_DISABLE_TIER2`` is set.
 
-    Also gates embedded-tweet resolution (``tweet_embeds.py``), at the
-    user's explicit request: both are network-calling enhancements layered
-    on top of the bare Tier 1 fetch+parse path (Chromium rendering and,
-    respectively, per-embed syndication lookups), not the core path itself,
-    so one flag disabling both keeps a "pure Tier 1, no extra outbound
-    calls" reading session a single toggle rather than two.
+    Gates Chromium rendering only. Embedded-tweet resolution
+    (``tweet_embeds.py``) is a Tier 1 technique — no browser, same
+    syndication fetch ``x.py``'s standalone extractor already runs
+    unconditionally — so it is no longer tied to this flag (reversed
+    2026-07-23, same day it was introduced: the flag is being exercised to
+    test whether Tier 1 alone, including this resolver, can cover
+    extraction without Chromium at all, which requires the resolver to run
+    precisely when this flag is set).
     """
     return os.environ.get("ANALECTA_DISABLE_TIER2", "").strip().lower() in (
         "1",
@@ -836,8 +838,7 @@ class ArticleExtractor(SourceExtractor):
             httpx2.HTTPStatusError: If the server returns a non-2xx response.
         """
         html, final_url = await self._fetch(url)
-        if not _tier2_disabled():
-            html = await resolve_embedded_tweets(html)
+        html = await resolve_embedded_tweets(html)
         result = self._parse(html, final_url)
 
         low_confidence = _is_low_confidence(html, result.html)

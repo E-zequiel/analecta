@@ -31,6 +31,8 @@ def _lang_from_pre(pre: Tag) -> str:
     Handles:
     - ``class="language-python"``
     - ``class="brush: js notranslate"`` (CodeMirror / MDN style)
+    - ``class="sourceCode html"`` (Pandoc-generated static sites — the
+      language is a bare sibling class, not a prefixed one)
     - ``lang="python"`` (Chakra UI ``<Code>`` style, e.g. socket.dev's blog —
       no ``language-*`` class at all, just a plain ``lang`` attribute)
 
@@ -48,6 +50,10 @@ def _lang_from_pre(pre: Tag) -> str:
                 return candidate
         if c.startswith("language-"):
             return c[9:]
+    if "sourceCode" in pre_classes:
+        for c in pre_classes:
+            if c not in ("sourceCode", "numberSource", "numberLines"):
+                return c
     lang_attr = pre.get("lang")
     return str(lang_attr) if lang_attr else ""
 
