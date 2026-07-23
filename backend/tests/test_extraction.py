@@ -41,6 +41,7 @@ from analecta.extraction.social import SubstackExtractor
 from analecta.extraction.tier2 import Tier2Result
 from analecta.extraction.x import (
     XExtractor,
+    _author_line_html,
     _clean_tweet_text,
     _display_text,
     _extract_tweet_id,
@@ -914,6 +915,45 @@ def test_render_tweet_html_quoted_tweet_nested_blockquote():
     assert (
         '<a href="https://x.com/Acyn/status/1562530929838436355/video/1">' in rendered
     )
+
+
+def test_render_tweet_html_starts_with_author_line():
+    rendered = _render_tweet_html(_TWEET_NASA_WALLOPS)
+    assert rendered.startswith(
+        '<p><strong><a href="https://x.com/NASAWallops">NASA Wallops '
+        "(@NASAWallops)</a></strong></p>"
+    )
+
+
+def test_render_tweet_html_quoted_tweet_has_own_nested_author_line():
+    """Both the outer tweet and its quote get their own attribution, so a
+    reader can tell the two authors apart without leaving the blockquote."""
+    rendered = _render_tweet_html(_TWEET_QUOTE)
+    assert (
+        '<a href="https://x.com/WhiteHouse46">The White House 46 Archived '
+        "(@WhiteHouse46)</a>" in rendered
+    )
+    assert '<a href="https://x.com/Acyn">Acyn (@Acyn)</a>' in rendered
+
+
+# --- _author_line_html --------------------------------------------------------
+
+
+def test_author_line_html_bold_and_linked_to_profile():
+    assert _author_line_html(_TWEET_NASA_WALLOPS) == (
+        '<p><strong><a href="https://x.com/NASAWallops">NASA Wallops '
+        "(@NASAWallops)</a></strong></p>"
+    )
+
+
+def test_author_line_html_no_screen_name_omits_link():
+    assert _author_line_html({"user": {"name": "Solo Name"}}) == (
+        "<p><strong>Solo Name</strong></p>"
+    )
+
+
+def test_author_line_html_no_user_returns_empty_string():
+    assert _author_line_html({}) == ""
 
 
 # --- _walk_reply_chain ---------------------------------------------------------

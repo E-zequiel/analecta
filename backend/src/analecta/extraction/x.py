@@ -282,6 +282,12 @@ def _tweet_permalink(tweet: dict[str, Any]) -> str:
 def _render_tweet_html(tweet: dict[str, Any]) -> str:
     """Render one tweet (and its quoted tweet, if any) to an HTML block.
 
+    Every rendered block — the top-level tweet, each entry in a reply
+    chain, and any quoted tweet — opens with a bold, profile-linked author
+    line (see ``_author_line_html``), so a reader can tell whose words
+    follow without cross-referencing the frontmatter, which only names the
+    root tweet's author.
+
     Video and animated-GIF media are rendered as a link out to the tweet's
     media permalink rather than downloaded: X does not serve real ``.gif``
     files (an ``animated_gif``-typed entry is a static ``.jpg`` poster plus
@@ -294,7 +300,7 @@ def _render_tweet_html(tweet: dict[str, Any]) -> str:
     Returns:
         An HTML fragment for this tweet.
     """
-    parts = [f"<p>{_clean_tweet_text(tweet)}</p>"]
+    parts = [_author_line_html(tweet), f"<p>{_clean_tweet_text(tweet)}</p>"]
 
     for photo in tweet.get("photos") or []:
         src = photo.get("url")
@@ -378,6 +384,27 @@ def _format_author(tweet: dict[str, Any]) -> str:
     if name and screen_name:
         return f"{name} (@{screen_name})"
     return name or screen_name
+
+
+def _author_line_html(tweet: dict[str, Any]) -> str:
+    """Render a bold, profile-linked author attribution for one tweet.
+
+    Args:
+        tweet: A syndication tweet dict.
+
+    Returns:
+        An HTML ``<p>`` fragment, or ``""`` if the tweet has neither a
+        display name nor a screen name to show.
+    """
+    author = _format_author(tweet)
+    if not author:
+        return ""
+    label = html.escape(author)
+    screen_name = (tweet.get("user") or {}).get("screen_name")
+    if screen_name:
+        href = html.escape(f"https://x.com/{screen_name}", quote=True)
+        label = f'<a href="{href}">{label}</a>'
+    return f"<p><strong>{label}</strong></p>"
 
 
 def _build_title(text: str, fallback: str) -> str:
