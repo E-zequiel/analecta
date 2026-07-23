@@ -61,6 +61,20 @@ Every `http(s)://` link inside a saved entry — including the "View video on X"
 
 ---
 
+## Embedded Tweet Resolution
+
+Tier 1 article extraction (`backend/src/analecta/extraction/tweet_embeds.py`) resolves classic Twitter/X widget embeds — a `blockquote.twitter-tweet` or a `platform.{twitter,x}.com/embed/Tweet.html` iframe found in an article's own static HTML — into fully rendered tweet content, using the same `cdn.syndication.twimg.com` endpoint the standalone X extractor (`extraction/x.py`) already calls.
+
+**The exposure shift this introduces, stated plainly.** Standalone X extraction only ever contacts `cdn.syndication.twimg.com` when the user directly pastes an X/Twitter URL to extract — an explicit action. Embedded-tweet resolution makes that same request *implicitly*: reading any third-party article that happens to embed a tweet now discloses to X (via IP, at fetch time) that this article was read, for every embedded tweet on the page, whether or not the user has any interest in that specific tweet. No new third-party host is contacted — same endpoint, same `build_headers("api")` identity headers as the existing X path, no `Referer` header (never set anywhere in `http_identity.py`, so the article's URL itself doesn't leak alongside the tweet request) — but the *trigger* changes from a direct user action to article content the user didn't choose tweet-by-tweet.
+
+**Opt-out shares the existing `ANALECTA_DISABLE_TIER2` flag, deliberately, rather than a second switch.** Setting it also skips embedded-tweet resolution entirely (`article.py::_tier2_disabled`) — both are network-calling enhancements layered on top of the bare Tier 1 fetch+parse path, not the core path itself, so a reading session run with the flag set gets a single "no extra outbound calls beyond the article's own host" mode instead of needing to track two flags. The name doesn't literally describe this second effect; that's accepted rather than renaming an existing, already-documented flag for one new caller.
+
+**The failure path adds no further exposure.** When a tweet fails to fetch (deleted, rate-limited, network error), resolution falls back to reshaping the embed's own already-present static fallback text (or, for an iframe with no fallback text, a bare permalink) rather than retrying against a second endpoint (e.g. oEmbed) — one exposure event per embed, never two.
+
+**Concurrency is bounded**, same idiom as `AssetDownloader`'s image downloads (`asyncio.Semaphore`, capped at 5 concurrent requests) — a resource-use bound, not a privacy control in itself, but it keeps an embed-heavy article from firing a burst of simultaneous requests at X's CDN.
+
+---
+
 ## IP Exposure and VPNs
 
 **Under a system-level VPN, Analecta and a browser are exposed identically — automatically, no Analecta-side configuration.** A system VPN (a native desktop app — Brave's own VPN, Mullvad, ProtonVPN, WireGuard, OpenVPN client) rewrites the OS routing table below the application layer. It does not distinguish which process opened a socket: `httpx2`, Electron/Chromium, and a browser all egress through the same tunnel. Analecta's code has no interface, DNS, or proxy pinning that would bypass this (verified by inspection of `electron/main/*.ts` — no `session.setProxy`/custom resolver/interface binding exists).

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from bs4 import BeautifulSoup, Tag
 from youtube_transcript_api._transcripts import FetchedTranscriptSnippet
 
 from analecta.extraction.article import (
@@ -39,6 +40,13 @@ from analecta.extraction.core import (
 )
 from analecta.extraction.social import SubstackExtractor
 from analecta.extraction.tier2 import Tier2Result
+from analecta.extraction.tweet_embeds import (
+    _iframe_fallback_link,
+    _iframe_tweet_id,
+    _permalink_from_blockquote,
+    _reshape_fallback_blockquote,
+    resolve_embedded_tweets,
+)
 from analecta.extraction.x import (
     XExtractor,
     _author_line_html,
@@ -1312,6 +1320,296 @@ async def test_x_extractor_unparseable_url_raises_without_network(mocker):
     with pytest.raises(ExtractionError):
         await XExtractor().extract("https://x.com/user")
     mock_fetch.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# tweet_embeds: resolving classic Twitter/X widget embeds inside article HTML
+# ---------------------------------------------------------------------------
+
+_BLOCKQUOTE_NASA_WALLOPS = (
+    '<blockquote class="twitter-tweet"><p lang="en" dir="ltr">'
+    "UPDATE: 4pm 6/14: NASA Terrier Improved Malemute will launch no earlier "
+    "than 6/16, from 9:05 to 9:20 p.m. due to poor weather conditions. "
+    '<a href="https://t.co/8LLQsJw5pM">https://t.co/8LLQsJw5pM</a></p>'
+    "&mdash; NASA Wallops (@NASAWallops) "
+    '<a href="https://twitter.com/NASAWallops/status/875083037872181254'
+    '?ref_src=twsrc%5Etfw">June 14, 2017</a>'
+    "</blockquote>"
+)
+
+_ARTICLE_WITH_BLOCKQUOTE_EMBED = f"""
+<article>
+<h1>Some Article</h1>
+<p>Real prose before the embed, several sentences long so a realistic
+extraction scoring pass has enough surrounding text to work with.</p>
+{_BLOCKQUOTE_NASA_WALLOPS}
+<p>Real prose after the embed, continuing the discussion at similar length.</p>
+</article>
+"""
+
+_IFRAME_EMBED = (
+    '<iframe src="https://platform.x.com/embed/Tweet.html'
+    '?id=875083037872181254&theme=light"></iframe>'
+)
+
+
+def test_iframe_tweet_id_matches_twitter_and_x_hosts():
+    assert (
+        _iframe_tweet_id("https://platform.twitter.com/embed/Tweet.html?id=123")
+        == "123"
+    )
+    assert (
+        _iframe_tweet_id("https://platform.x.com/embed/Tweet.html?id=456&theme=dark")
+        == "456"
+    )
+
+
+def test_iframe_tweet_id_none_for_unrelated_host():
+    assert _iframe_tweet_id("https://www.youtube.com/embed/abc") is None
+    assert _iframe_tweet_id("https://platform.x.com/widgets.js") is None
+    assert _iframe_tweet_id("") is None
+
+
+def test_permalink_from_blockquote_finds_status_link():
+    bq = BeautifulSoup(_BLOCKQUOTE_NASA_WALLOPS, "html.parser").find("blockquote")
+    assert isinstance(bq, Tag)
+    permalink = _permalink_from_blockquote(bq)
+    assert permalink is not None
+    assert "875083037872181254" in permalink
+
+
+def test_permalink_from_blockquote_none_without_status_link():
+    bq = BeautifulSoup(
+        '<blockquote class="twitter-tweet"><p>no links here</p></blockquote>',
+        "html.parser",
+    ).find("blockquote")
+    assert isinstance(bq, Tag)
+    assert _permalink_from_blockquote(bq) is None
+
+
+def test_reshape_fallback_blockquote_escapes_text_and_links_permalink():
+    bq = BeautifulSoup(_BLOCKQUOTE_NASA_WALLOPS, "html.parser").find("blockquote")
+    assert isinstance(bq, Tag)
+    reshaped = _reshape_fallback_blockquote(bq)
+    assert "NASA Terrier Improved Malemute" in reshaped
+    assert 'href="https://twitter.com/NASAWallops/status/875083037872181254' in reshaped
+    assert "View tweet on X" in reshaped
+    assert "twitter-tweet" not in reshaped
+
+
+def test_iframe_fallback_link_builds_i_web_status_url():
+    link = _iframe_fallback_link("875083037872181254")
+    assert link == (
+        '<p><a href="https://x.com/i/web/status/875083037872181254">'
+        "View tweet on X</a></p>"
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_embedded_tweets_noop_without_embeds(mocker):
+    mock_fetch = mocker.patch("analecta.extraction.tweet_embeds._fetch_syndication")
+    html = "<article><p>no embeds here</p></article>"
+    assert await resolve_embedded_tweets(html) == html
+    mock_fetch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resolve_embedded_tweets_blockquote_success_renders_author_text_and_photo(
+    mocker,
+):
+    mocker.patch(
+        "analecta.extraction.tweet_embeds._fetch_syndication",
+        new=mocker.AsyncMock(return_value=_TWEET_NASA_WALLOPS),
+    )
+    out = await resolve_embedded_tweets(_ARTICLE_WITH_BLOCKQUOTE_EMBED)
+    assert "NASA Wallops" in out
+    assert "NASA Terrier Improved Malemute" in out
+    assert "DCTrTynXgAEwyNJ.jpg" in out
+    assert "twitter-tweet" not in out
+
+
+@pytest.mark.asyncio
+async def test_resolve_embedded_tweets_blockquote_failure_falls_back_to_reshaped_text(
+    mocker,
+):
+    mocker.patch(
+        "analecta.extraction.tweet_embeds._fetch_syndication",
+        new=mocker.AsyncMock(return_value=None),
+    )
+    out = await resolve_embedded_tweets(_ARTICLE_WITH_BLOCKQUOTE_EMBED)
+    assert "NASA Terrier Improved Malemute" in out
+    assert "View tweet on X" in out
+    assert "twitter-tweet" not in out
+
+
+@pytest.mark.asyncio
+async def test_resolve_embedded_tweets_iframe_success_renders_tweet(mocker):
+    mocker.patch(
+        "analecta.extraction.tweet_embeds._fetch_syndication",
+        new=mocker.AsyncMock(return_value=_TWEET_NASA_WALLOPS),
+    )
+    out = await resolve_embedded_tweets(f"<article>{_IFRAME_EMBED}</article>")
+    assert "NASA Wallops" in out
+    assert "<iframe" not in out
+
+
+@pytest.mark.asyncio
+async def test_resolve_embedded_tweets_iframe_failure_falls_back_to_permalink_only(
+    mocker,
+):
+    mocker.patch(
+        "analecta.extraction.tweet_embeds._fetch_syndication",
+        new=mocker.AsyncMock(return_value=None),
+    )
+    out = await resolve_embedded_tweets(f"<article>{_IFRAME_EMBED}</article>")
+    assert "https://x.com/i/web/status/875083037872181254" in out
+    assert "<iframe" not in out
+
+
+@pytest.mark.asyncio
+async def test_resolve_embedded_tweets_malformed_blockquote_without_id_is_noop(mocker):
+    """A twitter-tweet blockquote with no parseable status link (malformed
+    markup) yields zero targets — must not crash, must not fetch, must
+    return the html unchanged."""
+    mock_fetch = mocker.patch("analecta.extraction.tweet_embeds._fetch_syndication")
+    html = (
+        '<article><blockquote class="twitter-tweet">'
+        "<p>no status link</p></blockquote></article>"
+    )
+    assert await resolve_embedded_tweets(html) == html
+    mock_fetch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resolve_embedded_tweets_ignores_unrelated_iframe(mocker):
+    mock_fetch = mocker.patch("analecta.extraction.tweet_embeds._fetch_syndication")
+    html = (
+        '<article><iframe src="https://www.youtube.com/embed/abc"></iframe></article>'
+    )
+    assert await resolve_embedded_tweets(html) == html
+    mock_fetch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resolve_embedded_tweets_multiple_embeds_preserve_order(mocker):
+    second_blockquote = _BLOCKQUOTE_NASA_WALLOPS.replace(
+        "875083037872181254", "848097704869851136"
+    )
+    html = f"""
+<article>
+{_BLOCKQUOTE_NASA_WALLOPS}
+<p>separator</p>
+{second_blockquote}
+</article>
+"""
+
+    async def fake_fetch(tweet_id):
+        return (
+            _TWEET_NASA_WALLOPS if tweet_id == "875083037872181254" else _TWEET_DUOLINGO
+        )
+
+    mocker.patch(
+        "analecta.extraction.tweet_embeds._fetch_syndication",
+        new=mocker.AsyncMock(side_effect=fake_fetch),
+    )
+    out = await resolve_embedded_tweets(html)
+    first_pos = out.find("NASA Wallops")
+    separator_pos = out.find("separator")
+    second_pos = out.find(_TWEET_DUOLINGO["user"]["name"])
+    assert -1 < first_pos < separator_pos < second_pos
+
+
+@pytest.mark.asyncio
+async def test_article_extractor_resolves_blockquote_embed_end_to_end(mocker):
+    article_html = f"""
+<html><body><article>
+<h1>Some Article Title</h1>
+<p>This is the first paragraph of a real article with enough substantive
+prose to make readability treat this as the main content candidate,
+several sentences long, discussing the topic in depth so it scores well
+above the noise threshold readability applies when picking the article
+body over navigation or boilerplate.</p>
+<p>Here is a second paragraph continuing the discussion with more detail
+about the topic, again long enough to contribute meaningfully to the
+text density score readability computes for this container element.</p>
+{_BLOCKQUOTE_NASA_WALLOPS}
+<p>And here is the paragraph that follows the embedded tweet, continuing
+the article's argument with further explanation and additional sentences
+to keep the surrounding container's text-to-link ratio high.</p>
+</article></body></html>
+"""
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(article_html, "https://example.com/article"),
+    )
+    mocker.patch(
+        "analecta.extraction.tweet_embeds._fetch_syndication",
+        new=mocker.AsyncMock(return_value=_TWEET_NASA_WALLOPS),
+    )
+
+    result = await ArticleExtractor().extract("https://example.com/article")
+
+    assert "NASA Wallops" in result.html
+    assert "NASA Terrier Improved Malemute" in result.html
+    assert "twitter-tweet" not in result.html
+
+
+@pytest.mark.asyncio
+async def test_article_extractor_skips_tweet_embed_resolution_when_tier2_disabled(
+    mocker, monkeypatch
+):
+    """ANALECTA_DISABLE_TIER2 also gates embedded-tweet resolution, at the
+    user's request: one flag for "no extra outbound calls beyond the bare
+    article fetch" during a Tier-1-only reading session, not two."""
+    monkeypatch.setenv("ANALECTA_DISABLE_TIER2", "1")
+    mock_resolve = mocker.patch(
+        "analecta.extraction.article.resolve_embedded_tweets",
+        new=mocker.AsyncMock(),
+    )
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_ARTICLE_HTML, "https://example.com/article"),
+    )
+
+    await ArticleExtractor().extract("https://example.com/article")
+
+    mock_resolve.assert_not_called()
+
+
+def test_resolved_tweet_embed_survives_real_parse():
+    """Regression guard: locks in the empirical finding that a *resolved*
+    embed (this module's replacement shape) survives real readability/
+    trafilatura scoring, unlike the raw oEmbed blockquote it replaces (which
+    readability drops outright and trafilatura sometimes corrupts) — see
+    module docstring in ``tweet_embeds.py``."""
+    resolved_embed = (
+        "<blockquote><p><strong>"
+        '<a href="https://x.com/NASAWallops">NASA Wallops (@NASAWallops)</a>'
+        "</strong><br>NASA Terrier Improved Malemute will launch no earlier "
+        "than 6/16.</p></blockquote>"
+    )
+    article_html = f"""
+<html><body><article>
+<h1>Some Article Title</h1>
+<p>This is the first paragraph of a real article with enough substantive
+prose to make readability treat this as the main content candidate,
+several sentences long, discussing the topic in depth so it scores well
+above the noise threshold readability applies when picking the article
+body over navigation or boilerplate.</p>
+<p>Here is a second paragraph continuing the discussion with more detail
+about the topic, again long enough to contribute meaningfully to the
+text density score readability computes for this container element.</p>
+{resolved_embed}
+<p>And here is the paragraph that follows the embedded tweet, continuing
+the article's argument with further explanation and additional sentences
+to keep the surrounding container's text-to-link ratio high.</p>
+</article></body></html>
+"""
+    result = ArticleExtractor()._parse(article_html, "https://example.com/article")
+    assert "NASA Terrier Improved Malemute" in result.html
+    assert "NASA Wallops" in result.html
 
 
 # ---------------------------------------------------------------------------
