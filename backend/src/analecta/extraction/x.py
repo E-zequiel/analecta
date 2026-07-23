@@ -210,11 +210,23 @@ def _clean_tweet_text(tweet: dict[str, Any]) -> str:
     Duolingo tweet. No further conversion is applied to them here, only a
     shift into the sliced text's local coordinates.
 
+    X's ``text`` field carries the author's real line breaks verbatim
+    (live-verified: a tweet with visible paragraph breaks on x.com comes
+    back with literal ``\n``/``\n\n`` in ``text``). Left as plain ``\n``,
+    they'd sit inside a single ``<p>`` and markdownify collapses any
+    whitespace run in a text node to one ``\n`` — a Markdown soft break,
+    which renders as a plain space unless the renderer opts into
+    ``breaks: true``. Converting each ``\n`` to ``<br>`` here makes
+    markdownify emit a real hard break (two trailing spaces) instead, so
+    the line break survives regardless of the renderer's soft-break
+    setting.
+
     Args:
         tweet: A syndication tweet dict.
 
     Returns:
-        HTML-safe text (plain text escaped, entities replaced by ``<a>`` tags).
+        HTML-safe text (plain text escaped, entities replaced by ``<a>``
+        tags, line breaks turned into ``<br>``).
     """
     text = tweet.get("text") or ""
     range_ = tweet.get("display_text_range")
@@ -258,7 +270,7 @@ def _clean_tweet_text(tweet: dict[str, Any]) -> str:
         pieces.append(fragment)
         cursor = e
     pieces.append(html.escape(displayed[cursor:]))
-    return "".join(pieces)
+    return "".join(pieces).replace("\n", "<br>")
 
 
 def _tweet_permalink(tweet: dict[str, Any]) -> str:
