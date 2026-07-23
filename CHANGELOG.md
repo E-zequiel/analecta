@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- X/Twitter extraction — paste a tweet URL (`Ctrl+L`) to capture it as clean Markdown, via X's syndication endpoint with an official-oEmbed fallback for endpoint drift. No headless-browser rendering involved. Pulls in the tweet's full reply chain when the replies are by the same author, plus one tweet of context when it replies to someone else. Video and animated-GIF media link out to X rather than being downloaded (X doesn't serve real `.gif` files). Tweet hashtags render as plain links and are kept out of Analecta's own tag/backlink system. A tweet's own line breaks are preserved as hard breaks in the saved Markdown, matching how they appear on x.com.
+- X/Twitter extraction — paste a tweet URL (`Ctrl+L`) to capture it as clean Markdown, via X's syndication endpoint with an official-oEmbed fallback for endpoint drift. No headless-browser rendering involved. Pulls in the tweet's full reply chain when the replies are by the same author, plus one tweet of context when it replies to someone else. Video and animated-GIF media link out to X rather than being downloaded (X doesn't serve real `.gif` files). Tweet hashtags render as plain links and are kept out of Analecta's own tag/backlink system. A tweet's own line breaks are preserved as hard breaks in the saved Markdown, matching how they appear on x.com. Every tweet block — the main tweet, each entry in a reply chain, and any quoted tweet — opens with a bold, profile-linked author name, so it's clear at a glance whose words follow.
 
 ### Security
 
