@@ -290,7 +290,11 @@ def _render_tweet_html(tweet: dict[str, Any]) -> str:
     chain, and any quoted tweet — opens with a bold, profile-linked author
     line (see ``_author_line_html``), so a reader can tell whose words
     follow without cross-referencing the frontmatter, which only names the
-    root tweet's author.
+    root tweet's author. The author line and the tweet text share a single
+    ``<p>`` (joined by ``<br>``) rather than two separate paragraphs, so
+    markdownify renders them on consecutive lines with no blank line
+    between — a paragraph break there would read as if the byline were its
+    own block, detached from the words that follow it.
 
     Video and animated-GIF media are rendered as a link out to the tweet's
     media permalink rather than downloaded: X does not serve real ``.gif``
@@ -317,7 +321,13 @@ def _render_tweet_html(tweet: dict[str, Any]) -> str:
     Returns:
         An HTML fragment for this tweet.
     """
-    parts = [_author_line_html(tweet), f"<p>{_clean_tweet_text(tweet)}</p>"]
+    author_line = _author_line_html(tweet)
+    tweet_text = _clean_tweet_text(tweet)
+    if author_line:
+        first_block = f"<p>{author_line}<br>{tweet_text}</p>"
+    else:
+        first_block = f"<p>{tweet_text}</p>"
+    parts = [first_block]
     if tweet.get("note_tweet"):
         parts.append(_NOTE_TWEET_TRUNCATED_NOTE)
 
@@ -404,11 +414,16 @@ def _format_author(tweet: dict[str, Any]) -> str:
 def _author_line_html(tweet: dict[str, Any]) -> str:
     """Render a bold, profile-linked author attribution for one tweet.
 
+    Returns the inline fragment only, not wrapped in its own ``<p>`` — the
+    caller (``_render_tweet_html``) shares a single paragraph between this
+    and the tweet text, joined by ``<br>``, so the two sit on consecutive
+    lines with no blank line between them.
+
     Args:
         tweet: A syndication tweet dict.
 
     Returns:
-        An HTML ``<p>`` fragment, or ``""`` if the tweet has neither a
+        An HTML ``<strong>`` fragment, or ``""`` if the tweet has neither a
         display name nor a screen name to show.
     """
     author = _format_author(tweet)
@@ -419,7 +434,7 @@ def _author_line_html(tweet: dict[str, Any]) -> str:
     if screen_name:
         href = html.escape(f"https://x.com/{screen_name}", quote=True)
         label = f'<a href="{href}">{label}</a>'
-    return f"<p><strong>{label}</strong></p>"
+    return f"<strong>{label}</strong>"
 
 
 def _build_title(text: str, fallback: str) -> str:
@@ -477,7 +492,7 @@ class XExtractor(SourceExtractor):
             html_parts: list[str] = []
             if not complete:
                 html_parts.append(_INCOMPLETE_THREAD_NOTE)
-            html_parts.extend(_render_tweet_html(t) for t in chain)
+            html_parts.append("<hr>".join(_render_tweet_html(t) for t in chain))
 
             metadata: dict[str, Any] = {
                 "author": _format_author(root),
