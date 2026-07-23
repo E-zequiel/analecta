@@ -17,6 +17,7 @@ from readability.readability import REGEXES as _READABILITY_REGEXES
 
 from analecta.extraction.core import ExtractedContent, ExtractionError, SourceExtractor
 from analecta.extraction.http_identity import build_headers
+from analecta.extraction.tweet_embeds import resolve_embedded_tweets
 
 if TYPE_CHECKING:
     from analecta.extraction.tier2 import Tier2Result
@@ -771,6 +772,22 @@ def _decode_shots(shots: dict[str, str]) -> dict[str, bytes]:
     return decoded
 
 
+def _tier2_disabled() -> bool:
+    """Whether ``ANALECTA_DISABLE_TIER2`` is set.
+
+    Also gates embedded-tweet resolution (``tweet_embeds.py``), at the
+    user's explicit request: both are network-calling enhancements layered
+    on top of the bare Tier 1 fetch+parse path (Chromium rendering and,
+    respectively, per-embed syndication lookups), not the core path itself,
+    so one flag disabling both keeps a "pure Tier 1, no extra outbound
+    calls" reading session a single toggle rather than two.
+    """
+    return os.environ.get("ANALECTA_DISABLE_TIER2", "").strip().lower() in (
+        "1",
+        "true",
+    )
+
+
 def _build_from_defuddle(url: str, t: Tier2Result) -> ExtractedContent:
     """Construct an ``ExtractedContent`` from a successful Defuddle Tier 2 result."""
     metadata: dict[str, Any] = {"extractor": "defuddle"}
@@ -819,15 +836,14 @@ class ArticleExtractor(SourceExtractor):
             httpx2.HTTPStatusError: If the server returns a non-2xx response.
         """
         html, final_url = await self._fetch(url)
+        if not _tier2_disabled():
+            html = await resolve_embedded_tweets(html)
         result = self._parse(html, final_url)
 
         low_confidence = _is_low_confidence(html, result.html)
         live_sample = _has_live_sample_placeholders(html)
         if low_confidence or live_sample:
-            if os.environ.get("ANALECTA_DISABLE_TIER2", "").strip().lower() in (
-                "1",
-                "true",
-            ):
+            if _tier2_disabled():
                 log.info(
                     "Tier 2 skipped (ANALECTA_DISABLE_TIER2 set) for %s "
                     "(low_confidence=%s, live_sample=%s)",
@@ -854,7 +870,8 @@ class ArticleExtractor(SourceExtractor):
                         )
                     return _build_from_defuddle(resolved_url, tier2)
                 if tier2.outer_html:
-                    parsed = self._parse(tier2.outer_html, resolved_url)
+                    outer_html = await resolve_embedded_tweets(tier2.outer_html)
+                    parsed = self._parse(outer_html, resolved_url)
                     if tier2.shots:
                         parsed.captured_images = _decode_shots(tier2.shots)
                     return parsed
