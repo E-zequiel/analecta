@@ -513,6 +513,16 @@ _TWEET_TOMBSTONE: dict[str, Any] = {
     },
 }
 
+_TWEET_MULTILINE: dict[str, Any] = {
+    "__typename": "Tweet",
+    "id_str": "2077347509769269312",
+    "text": ("Line one \n\nLine two \n\n Line three https://t.co/QLINib63jk"),
+    "display_text_range": [0, 34],
+    "created_at": "2026-07-15T11:00:16.000Z",
+    "entities": {},
+    "user": {"id_str": "1", "name": "Lunaticoin", "screen_name": "lunaticoin"},
+}
+
 _TWEET_SPACEX_REPLY: dict[str, Any] = {
     "__typename": "Tweet",
     "id_str": "1574541890120081409",
@@ -843,6 +853,31 @@ def test_clean_tweet_text_reply_has_no_leading_mention_noise():
     cleaned = _clean_tweet_text(_TWEET_SPACEX_REPLY)
     assert not cleaned.startswith("@NASA")
     assert cleaned.startswith("Congratulations")
+
+
+def test_clean_tweet_text_converts_newlines_to_br():
+    """Regression guard: X's ``text`` carries the author's real line breaks
+    verbatim (live-verified against x.com/lunaticoin/status/2077347509769269312).
+    Left as plain ``\\n``, markdownify collapses them into a Markdown soft
+    break, which renders as a space rather than a line break."""
+    cleaned = _clean_tweet_text(_TWEET_MULTILINE)
+    assert "\n" not in cleaned
+    assert cleaned == "Line one <br><br>Line two <br><br> Line three "
+
+
+def test_clean_tweet_text_newlines_survive_as_hard_breaks_in_markdown():
+    """End-to-end: the <br> from _clean_tweet_text must reach markdownify as
+    a real hard break (trailing double-space), not collapse away, so the
+    final rendered Markdown still shows the line break regardless of the
+    renderer's soft-break setting."""
+    from analecta.markdown.converter import MarkdownConverter
+
+    rendered = _render_tweet_html(_TWEET_MULTILINE)
+    markdown = MarkdownConverter()._html_to_md(rendered)
+    assert "  \n" in markdown
+    assert "Line one" in markdown
+    assert "Line two" in markdown
+    assert "Line three" in markdown
 
 
 # --- _render_tweet_html -------------------------------------------------------
