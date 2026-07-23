@@ -970,8 +970,17 @@ def test_render_tweet_html_starts_with_author_line():
     rendered = _render_tweet_html(_TWEET_NASA_WALLOPS)
     assert rendered.startswith(
         '<p><strong><a href="https://x.com/NASAWallops">NASA Wallops '
-        "(@NASAWallops)</a></strong></p>"
+        "(@NASAWallops)</a></strong><br>"
     )
+
+
+def test_render_tweet_html_author_line_and_text_share_one_paragraph():
+    """Regression guard: author line and tweet text must share a single
+    ``<p>`` (joined by ``<br>``), not two separate paragraphs — otherwise
+    markdownify renders a blank line between the byline and the text."""
+    rendered = _render_tweet_html(_TWEET_NASA_WALLOPS)
+    assert "</strong></p><p>" not in rendered
+    assert "</strong><br>" in rendered
 
 
 def test_render_tweet_html_quoted_tweet_has_own_nested_author_line():
@@ -1005,14 +1014,14 @@ def test_render_tweet_html_normal_tweet_has_no_truncation_marker():
 
 def test_author_line_html_bold_and_linked_to_profile():
     assert _author_line_html(_TWEET_NASA_WALLOPS) == (
-        '<p><strong><a href="https://x.com/NASAWallops">NASA Wallops '
-        "(@NASAWallops)</a></strong></p>"
+        '<strong><a href="https://x.com/NASAWallops">NASA Wallops '
+        "(@NASAWallops)</a></strong>"
     )
 
 
 def test_author_line_html_no_screen_name_omits_link():
     assert _author_line_html({"user": {"name": "Solo Name"}}) == (
-        "<p><strong>Solo Name</strong></p>"
+        "<strong>Solo Name</strong>"
     )
 
 
@@ -1229,6 +1238,19 @@ async def test_x_extractor_thread_walk_end_to_end(mocker):
         or "Consent needs to be an ongoing conversation" in result.html
     )
     assert "/fin" in result.html
+    assert result.html.count("<hr>") == 2
+
+
+@pytest.mark.asyncio
+async def test_x_extractor_single_tweet_has_no_separator(mocker):
+    mocker.patch(
+        "analecta.extraction.x._fetch_syndication",
+        new=mocker.AsyncMock(return_value=_TWEET_NASA_WALLOPS),
+    )
+    result = await XExtractor().extract(
+        "https://x.com/NASA_Wallops/status/875083037872181254"
+    )
+    assert "<hr>" not in result.html
 
 
 @pytest.mark.asyncio
