@@ -589,6 +589,26 @@ _TWEET_CROSSAUTHOR_TAIL: dict[str, Any] = {
     "in_reply_to_status_id_str": "9002",
 }
 
+# Real Note Tweet (X's long-form composer, over the legacy ~280-char limit) —
+# live-captured shape from x.com/Pontifex/status/2073354181797097723:
+# syndication's text/display_text_range only carry the legacy-length preview,
+# and note_tweet is just an opaque object reference, not the full body.
+_TWEET_NOTE_TRUNCATED: dict[str, Any] = {
+    "__typename": "Tweet",
+    "id_str": "2073354181797097723",
+    "text": (
+        "Defending human life also includes welcoming, protecting and assisting "
+        "immigrants, whose hopes, sacrifices and contribution have formed part of "
+        "the history of this country from its very beginning.  In every "
+        "generation, those who have arrived seeking freedom, opportunity and a"
+    ),
+    "display_text_range": [0, 276],
+    "created_at": "2026-07-04T10:32:11.000Z",
+    "entities": {},
+    "user": {"id_str": "1", "name": "Pope Leo XIV", "screen_name": "Pontifex"},
+    "note_tweet": {"id": "Tm90ZVR3ZWV0UmVzdWx0czoyMDczMzU0MTgxNzMwMDA0OTky"},
+}
+
 # Real same-author 3-tweet thread (a numbered thread ending "/13", "/14",
 # "/fin"), tail carries real animated_gif media.
 _TWEET_GIF_ROOT: dict[str, Any] = {
@@ -963,6 +983,21 @@ def test_render_tweet_html_quoted_tweet_has_own_nested_author_line():
         "(@WhiteHouse46)</a>" in rendered
     )
     assert '<a href="https://x.com/Acyn">Acyn (@Acyn)</a>' in rendered
+
+
+def test_render_tweet_html_note_tweet_gets_visible_truncation_marker():
+    """Regression guard for the 2026-07-23 truncation finding: a Note Tweet's
+    text is silently cut mid-sentence by the syndication endpoint itself
+    (not something Analecta does) — the fix is to make that visible, not
+    to chase the full text via a fragile undocumented scrape."""
+    rendered = _render_tweet_html(_TWEET_NOTE_TRUNCATED)
+    assert "Tweet truncated" in rendered
+    assert "long-form tweets" in rendered
+
+
+def test_render_tweet_html_normal_tweet_has_no_truncation_marker():
+    rendered = _render_tweet_html(_TWEET_NASA_WALLOPS)
+    assert "Tweet truncated" not in rendered
 
 
 # --- _author_line_html --------------------------------------------------------
