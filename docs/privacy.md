@@ -53,6 +53,14 @@ No saved entry can reference a live remote image. `AssetDownloader` (`backend/sr
 
 ---
 
+## External Links
+
+Every `http(s)://` link inside a saved entry — including the "View video on X" links X/Twitter extraction leaves in place instead of downloading video/animated-GIF media (see local Hard Constraints) — opens in the OS's default browser, not inside Analecta's own process. The reading view intercepts every link click (`frontend/src/routes/viewer/[id]/+page.svelte::handleContentClick`), calls `preventDefault()`, and routes it through the `open-url` IPC channel (`electron/main/ipc.ts`), which validates the scheme (`http:`/`https:` only, see `docs/electron-shell-security.md`) before calling `shell.openExternal`.
+
+**Why a link is not the same exposure as an embedded resource.** Unlike an `<img src>` (Image Egress, above), a link never fetches anything on its own — nothing happens until the user clicks it. And once clicked, the request happens entirely outside Analecta: no Tier 1/Tier 2 identity headers, no EasyPrivacy tracker blocking, no Analecta-managed session applies, because Analecta's own code never makes that request. It is the same exposure as the user typing that URL into their own browser directly — governed by whatever VPN/browser habits they already have (see IP Exposure and VPNs, below), not by anything Analecta does or doesn't do.
+
+---
+
 ## IP Exposure and VPNs
 
 **Under a system-level VPN, Analecta and a browser are exposed identically — automatically, no Analecta-side configuration.** A system VPN (a native desktop app — Brave's own VPN, Mullvad, ProtonVPN, WireGuard, OpenVPN client) rewrites the OS routing table below the application layer. It does not distinguish which process opened a socket: `httpx2`, Electron/Chromium, and a browser all egress through the same tunnel. Analecta's code has no interface, DNS, or proxy pinning that would bypass this (verified by inspection of `electron/main/*.ts` — no `session.setProxy`/custom resolver/interface binding exists).
