@@ -26,6 +26,10 @@ _INCOMPLETE_THREAD_NOTE = (
 _OEMBED_FALLBACK_NOTE = (
     "<p><em>Fetched via oEmbed fallback — media unavailable.</em></p>"
 )
+_NOTE_TWEET_TRUNCATED_NOTE = (
+    "<p><em>Tweet truncated — X's public API doesn't expose the full text of "
+    "long-form tweets.</em></p>"
+)
 
 
 def _extract_tweet_id(url: str) -> str | None:
@@ -294,6 +298,19 @@ def _render_tweet_html(tweet: dict[str, Any]) -> str:
     a ``video/mp4`` — live-verified), and ``AssetDownloader`` rejects
     non-image ``Content-Type`` by design.
 
+    A tweet using X's long-form "Note Tweet" composer (over the legacy
+    ~280-char limit) gets a visible truncation marker: the syndication
+    endpoint's ``text``/``display_text_range`` only ever carry the
+    legacy-length preview for these — live-verified — and ``note_tweet``
+    itself is just an opaque GraphQL object reference (``{"id": ...}``),
+    not the full body. Getting the real full text would mean scraping an
+    undocumented, frontend-implementation-specific data blob embedded in
+    the tweet's own HTML page — fragile in a way that goes beyond what
+    the syndication endpoint's quasi-public contract accepts, and a
+    deliberate call not to pursue (2026-07-23). Presence of the
+    ``note_tweet`` key alone is the truncation signal — real, non-Note
+    tweets never carry that key.
+
     Args:
         tweet: A syndication tweet dict.
 
@@ -301,6 +318,8 @@ def _render_tweet_html(tweet: dict[str, Any]) -> str:
         An HTML fragment for this tweet.
     """
     parts = [_author_line_html(tweet), f"<p>{_clean_tweet_text(tweet)}</p>"]
+    if tweet.get("note_tweet"):
+        parts.append(_NOTE_TWEET_TRUNCATED_NOTE)
 
     for photo in tweet.get("photos") or []:
         src = photo.get("url")
