@@ -2,30 +2,30 @@
 
 This document traces how HTML extracted from an arbitrary, untrusted third-party web page becomes the Markdown a user reads in Analecta, and states the specific invariants that keep that path safe. It complements `docs/electron-shell-security.md`, which covers the Electron IPC/protocol/CSP surface; this document covers the ground that doc doesn't — the Python HTML→Markdown converter and the frontend Markdown→HTML renderer, neither of which is Electron-shell-specific.
 
-**Scope.** Analecta's entire purpose is to fetch and display content from URLs the user does not control the origin of. The extracted HTML (from Tier 1 extractors — `readability-lxml`, `trafilatura` — or Tier 2's Defuddle-processed Chromium render) must be treated as attacker-influenced input. `docs/electron-shell-security.md`'s Threat Model section already names this directly: "a crafted article that exploits a markdown-it XSS vulnerability or an injected script via a remote image payload." This document is the evidence for the first half of that claim.
+**Scope.** Analecta's entire purpose is to fetch and display content from URLs the user does not control the origin of. The extracted HTML — from `readability-lxml` or `trafilatura`, see `docs/extraction.md` — must be treated as attacker-influenced input. `docs/electron-shell-security.md`'s Threat Model section already names this directly: "a crafted article that exploits a markdown-it XSS vulnerability or an injected script via a remote image payload." This document is the evidence for the first half of that claim.
 
-**Out of scope.** Remote-image loading (`<img src="https://...">`) is an egress/privacy concern, not an injection concern — CSP already permits it deliberately (`docs/electron-shell-security.md` § Layer 5), and it is being revisited separately for tracking/read-receipt reasons. Do not fold that work into this document; the invariants here are about code/markup injection, and coupling the two would make this document go stale the moment the image-loading policy changes.
+**Out of scope.** Remote-image loading is an egress/privacy concern, not an injection concern — see `docs/privacy.md` § Image Egress for how it's handled. Do not fold that work into this document; the invariants here are about code/markup injection.
 
 ---
 
 ## The Pipeline
 
 ```
-Tier 1/2 extractor HTML  →  converter.py (Markdown)  →  saved .md file  →  renderer.ts (HTML)  →  {@html} in Svelte
-        (untrusted)           (Python, backend)                              (TypeScript, frontend)
+Extracted HTML  →  converter.py (Markdown)  →  saved .md file  →  renderer.ts (HTML)  →  {@html} in Svelte
+  (untrusted)       (Python, backend)                              (TypeScript, frontend)
 ```
 
 Four stages. Each has a specific job; the actual injection boundary is Stage 3, not Stage 2 — this is deliberate, not an oversight, and is called out below.
 
 ### Stage 1 — HTML acquisition
 
-Tier 2's Defuddle dependency is version-pinned against a known XSS advisory, and its `useAsync` site-extractor network path is disabled. Both are Electron-shell concerns already documented in `docs/electron-shell-security.md` § Render Server & URL Filtering — not repeated here.
+Extraction fetches the page as a single, un-executed HTTP response (`extraction/article.py`) — see `docs/extraction.md` for how the resulting HTML is picked apart by `readability-lxml`/`trafilatura`. Nothing about acquisition itself mitigates injection; the fetched HTML is attacker-influenced input from this point on. That's what Stage 3 below is for.
 
 ### Stage 2 — HTML → Markdown (`backend/src/analecta/markdown/converter.py`)
 
 `_Converter` (a `markdownify.MarkdownConverter` subclass) walks the **parsed DOM tree**, not the raw HTML string. This matters: an unrecognized tag contributes only the converted text of its children to the output — its own markup is never copied through. There is no code path in `markdownify` that reproduces an arbitrary source tag verbatim in the Markdown output.
 
-- `<script>` / `<style>`: `markdownify` itself defines `convert_script`/`convert_style` returning `''` — the tag **and its text content** are dropped entirely, not just detagged. This is upstream `markdownify` behavior (`pyproject.toml` pins `markdownify>=0.14.1`), not Analecta code — **re-verify this on any `markdownify` version bump**, the same convention already applied in-code to Defuddle's `RELATED_HEADING_PATTERN` replica (`electron/main/scraper.ts:100`, comment: "kept in sync manually, re-check this on every Defuddle bump").
+- `<script>` / `<style>`: `markdownify` itself defines `convert_script`/`convert_style` returning `''` — the tag **and its text content** are dropped entirely, not just detagged. This is upstream `markdownify` behavior (`pyproject.toml` pins `markdownify>=0.14.1`), not Analecta code — **re-verify this on any `markdownify` version bump**, the same convention already applied in-code to `article.py`'s `_readability_class_weight`, a manually maintained replica of `readability.readability.class_weight` (comment: "re-verify against `readability.readability.class_weight` on any readability-lxml bump").
 - `converter.py`'s own `_STRIP_RE` (line 13) additionally regex-strips `<script>`/`<style>` blocks before the DOM parse even runs. This is redundant with the point above — defense-in-depth on top of an already-safe default, not the load-bearing control.
 - **Text nodes are not HTML-escaped at this stage.** `markdownify`'s `process_text` escapes Markdown-syntax characters (`*`, `_`, backslash, …) but not `<`/`>`/`"`. A literal `<script>` appearing as prose text in the source page (not a real tag) passes through into the `.md` file unescaped. **This is safe by design, not a gap** — see Stage 3, which is what actually neutralizes it. Do not "fix" this in `converter.py` by adding HTML-escaping; it would double-escape legitimate Markdown-significant text and the real boundary belongs in Stage 3 regardless.
 - `<a href>` / `<img src>` values are preserved verbatim into `[text](href)` / `![alt](src)` Markdown syntax — no URL-scheme filtering happens here either. Same reasoning: Stage 3 owns scheme validation.
@@ -64,10 +64,9 @@ Both are already documented as Electron Layer 4 in `docs/electron-shell-security
 
 ## Known Residual Gaps
 
-Listed for honesty, not alarm — both are correctly scoped as non-injection issues and tracked as separate work, not as part of this trust boundary:
+Listed for honesty, not alarm — correctly scoped as a non-injection issue and tracked as separate work, not as part of this trust boundary:
 
 - **Fenced code-block backtick breakout** (`converter.py:134`) — content-integrity/cosmetic, not security. See Stage 2 above.
-- **Remote-image egress** (`img-src https:` in CSP) — privacy/tracking, not injection. Explicitly out of scope for this document; see the Scope note above.
 
 ---
 
@@ -85,6 +84,7 @@ When touching any file in the pipeline above:
 
 ## Cross-References
 
-- `docs/electron-shell-security.md` § Layer 4 (Custom Protocol Handler Restrictions), § Layer 5 (Content Security Policy), § Render Server & URL Filtering — the Electron-side half of this trust boundary.
+- `docs/extraction.md` — how Stage 1's HTML is produced.
+- `docs/electron-shell-security.md` § Layer 4 (Custom Protocol Handler Restrictions), § Layer 5 (Content Security Policy) — the Electron-side half of this trust boundary.
 - `docs/wikilinks-and-hashtags.md` — the wikilink/hashtag inline-syntax design (charset choices, fenced-block exclusion); this document only covers their HTML-rendering safety, not their parsing design.
 - `docs/syntax-highlighting.md` — Shiki rendering layer; the `style-to-class` transformer referenced above is documented there for CSP purposes, not sanitization.

@@ -1,13 +1,14 @@
-"""Resolves classic Twitter/X widget embeds inside Tier 1 article HTML.
+"""Resolves classic Twitter/X widget embeds inside article HTML.
 
 Sites that embed a tweet via X's own publish widget leave either a
 ``<blockquote class="twitter-tweet">`` (the oEmbed fallback markup, present
 in server-rendered HTML) or, less commonly, a direct
 ``<iframe src="https://platform.x.com/embed/Tweet.html?id=...">`` in
 already-cached/server-rendered HTML — ``widgets.js`` normally injects that
-iframe client-side to replace the blockquote, which Tier 1 never executes,
-so the iframe form is only reachable here when a site's own build process
-pre-renders it. Both forms carry the tweet id in plain, unexecuted markup.
+iframe client-side to replace the blockquote, which the extraction pipeline
+never executes (it never runs page JavaScript), so the iframe form is only
+reachable here when a site's own build process pre-renders it. Both forms
+carry the tweet id in plain, unexecuted markup.
 
 Confirmed empirically (this module's design phase) that readability-lxml
 drops the raw ``blockquote.twitter-tweet`` outright (its link-density

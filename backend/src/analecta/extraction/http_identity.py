@@ -1,7 +1,7 @@
-"""Coherent, generic browser headers for Tier 1 fetches.
+"""Coherent, generic browser headers for the extraction pipeline's fetches.
 
 Analecta identifies as a current Chrome on Linux — never a custom string
-tied to the project or its maintainer — so a Tier 1 fetch doesn't stick out
+tied to the project or its maintainer — so a fetch doesn't stick out
 against normal web traffic. See docs/privacy.md for the full threat model
 and what this does and doesn't protect.
 
@@ -59,7 +59,7 @@ _COMMON_HEADERS = {
 
 
 def build_headers(purpose: Purpose) -> dict[str, str]:
-    """Coherent Chrome-shaped headers for a Tier 1 request.
+    """Coherent Chrome-shaped headers for an extraction-pipeline request.
 
     Args:
         purpose: ``"document"`` for a top-level page fetch, ``"image"`` for
