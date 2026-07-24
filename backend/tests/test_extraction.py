@@ -20,6 +20,7 @@ from analecta.extraction.article import (
     _rescue_linked_lists,
     _rescue_linked_tables,
     _rescue_orphaned_header,
+    _rescue_short_figure_labels,
     _rescue_short_nested_lists,
     _reunite_intro_with_body,
     _simplify_figure_images,
@@ -2338,6 +2339,114 @@ def test_rescue_short_nested_lists_survives_readability_min_text_length():
     with_fix = Document(fixed_html).summary() or ""
     assert "github-heartbeat" in with_fix
     assert "/api/dl/386" in with_fix
+
+
+# ---------------------------------------------------------------------------
+# _rescue_short_figure_labels
+# ---------------------------------------------------------------------------
+
+
+def test_rescue_short_figure_labels_unwraps_label_before_figure():
+    html = (
+        '<div class="prose"><p><strong>See-through</strong></p></div>'
+        '<figure><img src="x.png"><figcaption>caption</figcaption></figure>'
+    )
+    result = _rescue_short_figure_labels(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("div") is None, "wrapper div should be unwrapped"
+    p = soup.find("p")
+    assert p is not None
+    assert p.get_text() == "See-through"
+    assert p.find_next_sibling("figure") is not None
+
+
+def test_rescue_short_figure_labels_keeps_div_grouped_with_intro():
+    # The div's own text is well over the threshold once grouped with a
+    # heading/intro paragraph (the real system76 shape for the *first*
+    # label in each section) -- readability never drops this one, so
+    # there's nothing to rescue; unwrapping it anyway would be a no-op at
+    # best and a needless DOM change at worst.
+    html = (
+        "<div><h3>Frosted Glass</h3>"
+        "<p>Frosted Glass creates a more organic and immersive desktop "
+        "experience, customizable in Settings.</p>"
+        "<p><strong>Subtle and balanced</strong></p></div>"
+        '<figure><img src="x.png"></figure>'
+    )
+    result = _rescue_short_figure_labels(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("div") is not None, (
+        "div with more than one child must be left untouched"
+    )
+
+
+def test_rescue_short_figure_labels_skips_when_not_followed_by_figure():
+    html = "<div><p><strong>Short label</strong></p></div><p>Not a figure.</p>"
+    result = _rescue_short_figure_labels(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("div") is not None
+
+
+def test_rescue_short_figure_labels_skips_long_label():
+    html = (
+        "<div><p><strong>A much longer caption label that clears the "
+        "twenty-five character content threshold easily</strong></p></div>"
+        '<figure><img src="x.png"></figure>'
+    )
+    result = _rescue_short_figure_labels(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("div") is not None
+
+
+def test_rescue_short_figure_labels_skips_div_with_image():
+    html = '<div><p><img src="icon.png"></p></div><figure><img src="x.png"></figure>'
+    result = _rescue_short_figure_labels(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("div") is not None
+
+
+def test_rescue_short_figure_labels_skips_negative_weight_div():
+    html = (
+        '<div class="sidebar"><p><strong>Short</strong></p></div>'
+        '<figure><img src="x.png"></figure>'
+    )
+    result = _rescue_short_figure_labels(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("div") is not None
+
+
+def test_rescue_short_figure_labels_survives_readability_min_text_length():
+    # Regression test for the real system76 bug: a bold caption label
+    # standing alone in its own <div> (not grouped with a section's
+    # <h3>/intro paragraph, unlike the *first* label in a section) falls
+    # under readability's min_text_length (25 chars) and is dropped, even
+    # though the surrounding <figure>/<figcaption> content survives fine.
+    from readability import Document
+
+    html = (
+        "<html><body><article>"
+        "<p>Padding paragraph one to give the surrounding article enough "
+        "weight for readability to pick it as the main candidate region.</p>"
+        '<figure><img src="a.png">'
+        "<figcaption>A reasonably long figure caption describing the first "
+        "screenshot in plenty of descriptive detail.</figcaption></figure>"
+        "<div><p><strong>Label two</strong></p></div>"
+        '<figure><img src="b.png">'
+        "<figcaption>Second screenshot in the sequence, also described in "
+        "plenty of detail.</figcaption></figure>"
+        "<p>Padding paragraph two, also long enough to keep this region "
+        "scored as the main content candidate for readability's algorithm.</p>"
+        "</article></body></html>"
+    )
+
+    without_fix = Document(html).summary() or ""
+    assert "Label two" not in without_fix, (
+        "fixture doesn't reproduce the readability drop — adjust padding"
+    )
+
+    fixed_html = _rescue_short_figure_labels(html)
+    with_fix = Document(fixed_html).summary() or ""
+    assert "Label two" in with_fix
 
 
 # ---------------------------------------------------------------------------

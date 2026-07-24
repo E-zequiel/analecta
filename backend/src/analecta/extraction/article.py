@@ -314,10 +314,11 @@ def _expand_table_spans(html: str) -> str:
     return str(soup)
 
 
-# readability.Document's default min_text_length — the same threshold
-# _unwrap_code_examples works around for <div>, reused here for the <ul>
-# case below.
-_SHORT_LIST_RESCUE_MIN_LEN = 25
+# readability.Document's default min_text_length — the threshold
+# _unwrap_code_examples, _rescue_short_nested_lists, and
+# _rescue_short_figure_labels below each work around for a different tag
+# shape it hits.
+_READABILITY_MIN_TEXT_LEN = 25
 
 
 def _rescue_short_nested_lists(html: str) -> str:
@@ -360,7 +361,7 @@ def _rescue_short_nested_lists(html: str) -> str:
         # threshold while readability's own (collapsed) length is still
         # under it.
         text = _readability_clean_text(nested.get_text())
-        if not text or len(text) >= _SHORT_LIST_RESCUE_MIN_LEN:
+        if not text or len(text) >= _READABILITY_MIN_TEXT_LEN:
             continue
         if nested.find("img") is not None:
             continue
@@ -374,6 +375,52 @@ def _rescue_short_nested_lists(html: str) -> str:
             for child in list(item.contents):
                 li.append(child.extract())
         nested.decompose()
+    return str(soup)
+
+
+def _rescue_short_figure_labels(html: str) -> str:
+    """Unwrap a short label <div> immediately preceding a <figure>.
+
+    Another member of the readability ``min_text_length`` family (see
+    ``_rescue_short_nested_lists`` above): readability drops any ``<div>``
+    (among other conditional-clean tags) under 25 chars with no ``<img>``.
+    system76's blog wraps each bold caption ("See-through", "Nearly
+    opaque") in its own near-empty
+    ``<div class="prose ..."><p><strong>...</strong></p></div>``
+    immediately before the ``<figure>`` it labels. The *first* label in a
+    section usually survives by accident — grouped in the same div as the
+    section's ``<h3>``/intro paragraph, comfortably over the threshold —
+    which masks that every subsequent standalone label div on the same
+    page is silently dropped.
+
+    Unwrapping the div (replacing it with its own bare ``<p>`` child) is
+    enough: ``<p>`` isn't one of readability's conditionally-cleaned tags
+    (``table``/``ul``/``div``/``aside``/``header``/``footer``/``section``),
+    so once freed of its wrapper the label survives on its own, and
+    there's nothing else in these near-empty divs worth keeping wrapped.
+
+    Scoped narrowly so it can't defeat the length rule for genuine
+    decorative cruft: only fires when the ``<div>``'s sole child is one
+    ``<p>``, and that ``<div>`` is immediately followed by a ``<figure>``
+    sibling — the exact label-then-image shape observed, not any short
+    div anywhere.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for div in soup.find_all("div"):
+        children = div.find_all(True, recursive=False)
+        if len(children) != 1 or children[0].name != "p":
+            continue
+        next_el = div.find_next_sibling(True)
+        if next_el is None or next_el.name != "figure":
+            continue
+        text = _readability_clean_text(div.get_text())
+        if not text or len(text) >= _READABILITY_MIN_TEXT_LEN:
+            continue
+        if div.find("img") is not None:
+            continue
+        if _readability_class_weight(div) < 0:
+            continue
+        div.unwrap()
     return str(soup)
 
 
@@ -860,6 +907,7 @@ class ArticleExtractor(SourceExtractor):
         clean = _rescue_linked_tables(clean)
         clean = _expand_table_spans(clean)
         clean = _rescue_short_nested_lists(clean)
+        clean = _rescue_short_figure_labels(clean)
         clean = _unwrap_code_examples(clean)
 
         doc = Document(clean)
