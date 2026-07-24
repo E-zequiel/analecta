@@ -11,6 +11,7 @@ import trafilatura
 from bs4 import BeautifulSoup, Comment, Tag
 from readability import Document
 from readability.readability import REGEXES as _READABILITY_REGEXES
+from readability.readability import clean as _readability_clean_text
 
 from analecta.extraction.core import ExtractedContent, ExtractionError, SourceExtractor
 from analecta.extraction.http_identity import build_headers
@@ -310,6 +311,69 @@ def _expand_table_spans(html: str) -> str:
                 row.clear()
                 for c in new_children:
                     row.append(c)
+    return str(soup)
+
+
+# readability.Document's default min_text_length — the same threshold
+# _unwrap_code_examples works around for <div>, reused here for the <ul>
+# case below.
+_SHORT_LIST_RESCUE_MIN_LEN = 25
+
+
+def _rescue_short_nested_lists(html: str) -> str:
+    """Inline a labeled <li>'s short nested list before readability.
+
+    readability-lxml's conditional cleaning walks ``<ul>``/``<ol>`` (among
+    other container tags) innermost-first and drops any whose own text
+    content is under ``min_text_length`` (25 chars, its default) with no
+    ``<img>`` child — the same rule ``_unwrap_code_examples`` below works
+    around for a ``<div>`` wrapper, but here it hits the ``<ul>`` itself.
+    socket.dev's threat-infrastructure lists are shaped as
+    ``<li>Execution telemetry path:<ul><li><code>/api/x</code></li></ul>
+    </li>`` — a single short API path in its own nested list, genuine
+    content rather than decorative cruft, but well under the 25-char
+    threshold sized for the latter. A sibling nested list long enough to
+    clear the threshold (e.g. a 4-item "Payload delivery paths:" list on
+    the same page) is untouched — only the short one gets folded.
+
+    Dissolves the nested list into the parent ``<li>``'s own text
+    (sub-items joined with ", ") rather than a sibling ``<p>`` the way
+    ``_rescue_linked_lists`` does — a sibling here would visually detach
+    the values from their label. Lists inside ``<nav>``/``<header>``/
+    ``<footer>``/``<aside>`` are left alone so readability can still prune
+    navigation menus (matches ``_rescue_linked_lists``'s own guard). Also
+    skips a nested list with a negative-weight class/id (readability's own
+    unrelated-to-length signal to drop it, e.g. ``class="sidebar"``) rather
+    than overriding it.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for li in soup.find_all("li"):
+        nested = li.find(["ul", "ol"], recursive=False)
+        if nested is None:
+            continue
+        if any(p.name in _NAV_TAGS for p in li.parents if p.name):
+            continue
+        # Whitespace-collapse the same way readability's own text_length()
+        # does (readability.readability.clean) before comparing — a bare
+        # bs4 get_text() keeps pretty-printed indentation as literal text,
+        # which could push a genuinely-short list's raw length past the
+        # threshold while readability's own (collapsed) length is still
+        # under it.
+        text = _readability_clean_text(nested.get_text())
+        if not text or len(text) >= _SHORT_LIST_RESCUE_MIN_LEN:
+            continue
+        if nested.find("img") is not None:
+            continue
+        if _readability_class_weight(nested) < 0:
+            continue
+        items = nested.find_all("li", recursive=False)
+        li.append(" ")
+        for i, item in enumerate(items):
+            if i > 0:
+                li.append(", ")
+            for child in list(item.contents):
+                li.append(child.extract())
+        nested.decompose()
     return str(soup)
 
 
@@ -795,6 +859,7 @@ class ArticleExtractor(SourceExtractor):
         clean = _rescue_linked_lists(clean)
         clean = _rescue_linked_tables(clean)
         clean = _expand_table_spans(clean)
+        clean = _rescue_short_nested_lists(clean)
         clean = _unwrap_code_examples(clean)
 
         doc = Document(clean)
