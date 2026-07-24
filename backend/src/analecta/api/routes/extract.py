@@ -75,7 +75,6 @@ async def extract_url(
             slug,
             vault.vault_path,
             base_url=content.url,
-            captured_images=content.captured_images,
         )
 
         markdown = MarkdownConverter().convert(content, created_at)

@@ -5,6 +5,7 @@ import httpx2
 
 from analecta.extraction.core import ExtractedContent, ExtractionError, SourceExtractor
 from analecta.extraction.http_identity import build_headers
+from analecta.extraction.ssrf import validate_fetch_url
 
 _INBOX_RE = re.compile(r"^/inbox/post/\d+$")
 _TIMEOUT = 8.0
@@ -64,11 +65,13 @@ class SubstackExtractor(SourceExtractor):
             Canonical Substack post URL.
 
         Raises:
-            ExtractionError: If the inbox URL cannot be resolved via redirect.
+            ExtractionError: If the inbox URL cannot be resolved via redirect,
+                or targets a blocked scheme/host.
         """
         if not _INBOX_RE.match(urlparse(url).path):
             return url
 
+        validate_fetch_url(url)
         try:
             async with httpx2.AsyncClient(
                 follow_redirects=False, timeout=_TIMEOUT

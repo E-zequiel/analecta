@@ -16,14 +16,6 @@ class ExtractedContent:
         url: Canonical source URL.
         source_type: Detected content category.
         metadata: Extractor-specific key/value pairs (author, video_id, etc.).
-        captured_images: Raw PNG bytes for interactive embeds screenshotted
-            during Tier 2 rendering (e.g. MDN live-code samples), keyed by
-            the id in each placeholder
-            ``<img src="https://analecta-shot.invalid/shot/{id}.png">``
-            already present in ``html``. Empty for extractors that never
-            reach Tier 2's embed-capture pass. Consumed by
-            ``AssetDownloader.process()`` to resolve those placeholders to
-            real vault assets without a network fetch.
     """
 
     title: str
@@ -31,7 +23,6 @@ class ExtractedContent:
     url: str
     source_type: SourceType
     metadata: dict[str, Any] = field(default_factory=dict)
-    captured_images: dict[str, bytes] = field(default_factory=dict)
 
 
 class ExtractionError(Exception):

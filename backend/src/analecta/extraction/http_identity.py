@@ -7,11 +7,12 @@ and what this does and doesn't protect.
 
 The Chrome major version is single-sourced from Electron's own bundled
 Chromium (``process.versions.chrome``, passed down as ``ANALECTA_CHROME_MAJOR``
-at sidecar spawn — see electron/main/sidecar.ts and chrome-identity.ts) so
-Tier 1 headers and the Tier 2 render window can never drift apart, and this
-module never goes stale on its own. ``_FALLBACK_CHROME_MAJOR`` only backs
-standalone runs with no Electron parent (``/dev``, pytest) — bump it
-occasionally so a fresh checkout doesn't claim an ancient Chrome.
+at sidecar spawn — see electron/main/sidecar.ts and chrome-identity.ts), so
+the claimed UA borrows the real version actually running the app rather than
+a hardcoded one that would age into an anomaly — this module never goes
+stale on its own. ``_FALLBACK_CHROME_MAJOR`` only backs standalone runs with
+no Electron parent (``/dev``, pytest) — bump it occasionally so a fresh
+checkout doesn't claim an ancient Chrome.
 """
 
 from __future__ import annotations

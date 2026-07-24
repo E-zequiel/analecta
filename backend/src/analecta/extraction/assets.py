@@ -12,6 +12,7 @@ import httpx2
 from bs4 import BeautifulSoup
 
 from analecta.extraction.http_identity import build_headers
+from analecta.extraction.ssrf import block_redirect_to_internal, validate_fetch_url
 
 _TIMEOUT = 30.0
 _MAX_CONCURRENT = 5
@@ -29,25 +30,6 @@ _ALT_ATTR_RE = re.compile(r"\balt=", re.IGNORECASE)
 # documented, currently-unhit limitations of the backfill path, not the
 # go-forward extraction path.
 _MD_IMAGE_RE = re.compile(r'!\[([^\]]*)\]\(((?:https?:)?//[^\s)]+)(?:\s+"[^"]*")?\)')
-
-# Reserved, non-resolvable (RFC 2606) host used by Tier 2's embed-capture pass
-# (see captureEmbedShots in electron/main/scraper.ts) to mark a screenshot
-# placeholder that must be resolved from already-in-memory bytes rather than
-# fetched over the network.
-_SHOT_HOST = "analecta-shot.invalid"
-
-
-def _shot_id_from_url(url: str) -> str | None:
-    """Return the capture id embedded in a Tier-2 screenshot placeholder URL.
-
-    Placeholder shape: ``https://analecta-shot.invalid/shot/{id}.png``.
-    Returns ``None`` for any URL on a different host, so callers fall through
-    to a normal network download.
-    """
-    if urlparse(url).hostname != _SHOT_HOST:
-        return None
-    return Path(urlparse(url).path).stem or None
-
 
 _CONTENT_TYPE_EXT: dict[str, str] = {
     "image/jpeg": ".jpg",
@@ -160,9 +142,13 @@ async def _try_fetch(client: httpx2.AsyncClient, url: str) -> tuple[bytes, str] 
 
     Returns:
         ``(content_bytes, extension)`` on success, ``None`` on any network
-        failure, non-2xx status, or non-image ``Content-Type``.
+        failure, non-2xx status, non-image ``Content-Type``, or a blocked
+        scheme/host (see ``ssrf.py``) — *url* comes from already-fetched page
+        content, so it's attacker-controlled; a blocked target degrades the
+        same as any other failed fetch rather than raising.
     """
     try:
+        validate_fetch_url(url)
         response = await client.get(url)
         response.raise_for_status()
     except Exception:
@@ -234,7 +220,6 @@ class AssetDownloader:
         slug: str,
         vault_path: Path,
         base_url: str = "",
-        captured_images: dict[str, bytes] | None = None,
     ) -> str:
         """Download images in *html*, rewrite src attrs, return modified HTML.
 
@@ -248,11 +233,6 @@ class AssetDownloader:
                 resolution a browser applies. Pass ``""`` to skip resolution;
                 non-absolute ``src`` values then fail to download and are left
                 in the HTML unchanged.
-            captured_images: Screenshot bytes from ``ExtractedContent.captured_images``,
-                keyed by capture id. Resolves any
-                ``https://analecta-shot.invalid/shot/{id}.png`` placeholder
-                ``src`` (see Tier 2's embed-capture pass) from these bytes
-                instead of a network fetch.
 
         Returns:
             HTML with ``../assets/{slug}/...`` paths replacing remote src URLs
@@ -268,7 +248,10 @@ class AssetDownloader:
 
         sem = asyncio.Semaphore(_MAX_CONCURRENT)
         async with httpx2.AsyncClient(
-            follow_redirects=True, timeout=_TIMEOUT, headers=build_headers("image")
+            follow_redirects=True,
+            timeout=_TIMEOUT,
+            headers=build_headers("image"),
+            event_hooks={"response": [block_redirect_to_internal]},
         ) as client:
             results = await asyncio.gather(
                 *[
@@ -277,7 +260,6 @@ class AssetDownloader:
                         asset_dir,
                         client,
                         sem,
-                        captured_images,
                     )
                     for url in urls
                 ],
@@ -320,38 +302,21 @@ class AssetDownloader:
         asset_dir: Path,
         client: httpx2.AsyncClient,
         sem: asyncio.Semaphore,
-        captured_images: dict[str, bytes] | None = None,
-    ) -> str | None:
+    ) -> str:
         """Download *url*, validate MIME type, and save to *asset_dir*.
 
         Args:
-            url: Remote image URL, or a Tier-2 screenshot placeholder
-                (``https://analecta-shot.invalid/shot/{id}.png``).
+            url: Remote image URL.
             asset_dir: Destination directory for the downloaded file.
             client: Shared ``httpx2.AsyncClient`` instance.
             sem: Semaphore controlling concurrency.
-            captured_images: Screenshot bytes keyed by capture id, consulted
-                instead of the network when *url* is a screenshot placeholder.
 
         Returns:
             Filename of the downloaded image (e.g. ``'abc123def456.png'``).
             A network download that fails twice in a row falls back to the
             bundled placeholder's filename (see :meth:`_placeholder`) rather
-            than ``None``. ``None`` is only returned for a Tier-2 screenshot
-            placeholder URL with no matching bytes in *captured_images* — a
-            missing in-memory capture, not a network failure, so it isn't
-            covered by the placeholder fallback.
+            than ``None``.
         """
-        shot_id = _shot_id_from_url(url)
-        if shot_id is not None:
-            data = (captured_images or {}).get(shot_id)
-            if data is None:
-                return None
-            sha256 = hashlib.sha256(data).hexdigest()
-            filename = f"{sha256[:16]}.png"
-            (asset_dir / filename).write_bytes(data)
-            return filename
-
         async with sem:
             result = await _try_fetch(client, url)
             if result is None:
@@ -469,7 +434,10 @@ class AssetDownloader:
 
         sem = asyncio.Semaphore(_MAX_CONCURRENT)
         async with httpx2.AsyncClient(
-            follow_redirects=True, timeout=_TIMEOUT, headers=build_headers("image")
+            follow_redirects=True,
+            timeout=_TIMEOUT,
+            headers=build_headers("image"),
+            event_hooks={"response": [block_redirect_to_internal]},
         ) as client:
             results = await asyncio.gather(
                 *[
