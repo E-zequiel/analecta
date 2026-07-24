@@ -243,42 +243,10 @@ If a handler only needs to read a file, do not also write. If a handler only nee
 **6. Document the handler's purpose in `ipc.ts`.**  
 A one-line comment above each `ipcMain.handle` block explaining what it does and what validation it applies makes security review possible.
 
-**7. Apply loopback filtering before implementing bulk or automated extraction.**  
-The current extraction flow is single-URL and user-initiated: the user explicitly submits each URL through the UI, so they are always the authorizing party. This changes if any of the following features are ever added:
+**7. SSRF guard on Tier 1's direct fetches.**  
+Every URL Tier 1 fetches directly — the submitted URL, any redirect target encountered while fetching it, and remote image URLs discovered in already-fetched page content — is validated before the request goes out. Non-http(s) schemes are rejected; loopback, link-local, and RFC 1918 hosts are rejected when they appear as IP literals (or as `localhost`). See `backend/src/analecta/extraction/ssrf.py`: `validate_fetch_url()` covers the initial request, `block_redirect_to_internal()` is an httpx2 `response` event hook that covers every hop of a redirect chain. Wired into all three fetch sites where the destination isn't fully constrained by direct user action — `article.py`, `social.py`, `assets.py` — unconditionally, not gated behind any particular feature.
 
-- Bulk URL import (CSV, OPML, clipboard list)
-- RSS / Atom / JSON Feed ingestion
-- Webhook-triggered or scheduled extraction
-- Any path where a URL enters the pipeline from an external or semi-trusted source without per-URL user confirmation
-
-In all such cases, URLs arrive from sources the user does not fully control. A URL crafted to redirect to a loopback address could cause the Python sidecar's `httpx2` client to inadvertently fetch internal services, since `ArticleExtractor._fetch` uses `follow_redirects=True` without a post-redirect destination filter.
-
-Before shipping any feature in the list above:
-
-1. **Validate the submitted URL** against the same blocklist used in `validateScrapeUrl` (loopback, link-local, RFC 1918) before it enters `ArticleExtractor.extract()`.
-2. **Add an `httpx2` response event hook** in `_fetch` that inspects the resolved URL after redirects and raises `ExtractionError` if the final destination falls within a blocked range. Example skeleton:
-
-```python
-import ipaddress
-
-def _block_loopback_redirect(response: httpx2.Response) -> None:
-    host = response.url.host.strip("[]")
-    try:
-        addr = ipaddress.ip_address(host)
-    except ValueError:
-        return  # hostname, not an IP literal — DNS result is not re-checked here
-    blocked = [
-        ipaddress.ip_network("127.0.0.0/8"),
-        ipaddress.ip_network("169.254.0.0/16"),
-        ipaddress.ip_network("::1/128"),
-        ipaddress.ip_network("::ffff:127.0.0.0/104"),
-        ipaddress.ip_network("::ffff:169.254.0.0/112"),
-    ]
-    if any(addr in net for net in blocked):
-        raise ExtractionError(f"Redirect to blocked address: {response.url}")
-```
-
-This is not required today because the user is always the authorizing party for each URL. It becomes required the moment that assumption no longer holds.
+This guard checks IP literals, not DNS resolution: a hostname whose A/AAAA record resolves to an internal address is not caught, since no resolution happens before the literal-match check. The single-URL, user-initiated extraction flow tolerates this — the person submitting the URL is the same person the fetch would affect. A feature that ingests URLs from an external or semi-trusted source without per-URL confirmation (bulk import, feed ingestion, scheduled or webhook-triggered extraction) would need to resolve the hostname and check the resolved address before fetching, not just the literal — this guard alone would not be sufficient for that case.
 
 ---
 
