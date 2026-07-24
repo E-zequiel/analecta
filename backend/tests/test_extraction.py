@@ -20,6 +20,7 @@ from analecta.extraction.article import (
     _rescue_linked_lists,
     _rescue_linked_tables,
     _rescue_orphaned_header,
+    _rescue_short_nested_lists,
     _reunite_intro_with_body,
     _simplify_figure_images,
     _strip_heading_classes,
@@ -2199,6 +2200,144 @@ def test_expand_table_spans_survives_readability_link_density_and_min_length():
         "second",
         "normal",
     ]
+
+
+# ---------------------------------------------------------------------------
+# _rescue_short_nested_lists
+# ---------------------------------------------------------------------------
+
+
+def test_rescue_short_nested_lists_inlines_single_item_list():
+    html = (
+        "<ul><li>Execution telemetry path:"
+        "<ul><li><code>/api/github-heartbeat</code></li></ul>"
+        "</li></ul>"
+    )
+    result = _rescue_short_nested_lists(html)
+    soup = _BS(result, "html.parser")
+    li = soup.find("li")
+    assert li.find("ul") is None, "nested list should be dissolved"
+    assert li.find("code").get_text() == "/api/github-heartbeat"
+    assert "Execution telemetry path:" in li.get_text()
+
+
+def test_rescue_short_nested_lists_collapses_pretty_printed_whitespace():
+    # A pretty-printed/indented source (real-world HTML, not minified) adds
+    # newlines and indentation as literal text nodes around the nested <li>.
+    # A raw len(get_text()) would count that indentation and could push the
+    # measured length past the rescue threshold even though the actual
+    # content — and readability's own whitespace-collapsed text_length() —
+    # is well under it. The rescue must still fire.
+    html = (
+        "<ul>\n"
+        "  <li>Execution telemetry path:\n"
+        "    <ul>\n"
+        "      <li><code>/api/github-heartbeat</code></li>\n"
+        "    </ul>\n"
+        "  </li>\n"
+        "</ul>\n"
+    )
+    result = _rescue_short_nested_lists(html)
+    soup = _BS(result, "html.parser")
+    li = soup.find("li")
+    assert li.find("ul") is None, "nested list should be dissolved"
+    assert li.find("code").get_text() == "/api/github-heartbeat"
+
+
+def test_rescue_short_nested_lists_keeps_long_list():
+    html = (
+        "<ul><li>Payload delivery paths:"
+        "<ul><li><code>/api/dl/386</code></li>"
+        "<li><code>/api/dl/amd64</code></li>"
+        "<li><code>/api/dl/arm</code></li>"
+        "<li><code>/api/dl/arm64</code></li></ul>"
+        "</li></ul>"
+    )
+    result = _rescue_short_nested_lists(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("li").find("ul") is not None, (
+        "long enough nested list must survive untouched"
+    )
+
+
+def test_rescue_short_nested_lists_joins_multiple_short_items_with_comma():
+    html = "<ul><li>Ports:<ul><li>80</li><li>443</li></ul></li></ul>"
+    result = _rescue_short_nested_lists(html)
+    soup = _BS(result, "html.parser")
+    li = soup.find("li")
+    assert li.find("ul") is None
+    assert "80, 443" in li.get_text()
+
+
+def test_rescue_short_nested_lists_skips_nav_context():
+    html = "<nav><ul><li>Docs:<ul><li>Guide</li></ul></li></ul></nav>"
+    result = _rescue_short_nested_lists(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("li").find("ul") is not None
+
+
+def test_rescue_short_nested_lists_skips_negative_weight_list():
+    # class="sidebar" -> readability's own negativeRe -> weight < 0. That's a
+    # different removal signal than the length rule this function targets;
+    # rescuing it would override readability's intent for an unrelated reason.
+    html = '<ul><li>Links:<ul class="sidebar"><li>x</li></ul></li></ul>'
+    result = _rescue_short_nested_lists(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("li").find("ul") is not None
+
+
+def test_rescue_short_nested_lists_skips_list_with_image():
+    html = '<ul><li>Icon:<ul><li><img src="/x.png"></li></ul></li></ul>'
+    result = _rescue_short_nested_lists(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("li").find("ul") is not None
+
+
+def test_rescue_short_nested_lists_noop_without_nested_list():
+    html = "<ul><li>Just plain text</li></ul>"
+    result = _rescue_short_nested_lists(html)
+    assert "Just plain text" in result
+
+
+def test_rescue_short_nested_lists_survives_readability_min_text_length():
+    # Regression test for the real socket.dev bug: a single short API path
+    # in its own nested <ul> falls under readability's min_text_length (25
+    # chars, default) and is dropped, even though the sibling 4-item list
+    # (long enough) survives untouched.
+    from readability import Document
+
+    html = (
+        "<html><body><article>"
+        "<p>Padding paragraph one to give the surrounding article enough "
+        "weight for readability to pick it as the main candidate region.</p>"
+        "<ul>"
+        "<li>Payload delivery paths:"
+        "<ul><li><code>/api/dl/386</code></li>"
+        "<li><code>/api/dl/amd64</code></li>"
+        "<li><code>/api/dl/arm</code></li>"
+        "<li><code>/api/dl/arm64</code></li></ul>"
+        "</li>"
+        "<li>Execution telemetry path:"
+        "<ul><li><code>/api/github-heartbeat</code></li></ul>"
+        "</li>"
+        "</ul>"
+        "<p>Padding paragraph two, also long enough to keep this region "
+        "scored as the main content candidate for readability's algorithm.</p>"
+        "</article></body></html>"
+    )
+
+    without_fix = Document(html).summary() or ""
+    assert "github-heartbeat" not in without_fix, (
+        "fixture doesn't reproduce the readability drop — adjust padding"
+    )
+    assert "/api/dl/386" in without_fix, (
+        "the long sibling list should survive even without the fix"
+    )
+
+    fixed_html = _rescue_short_nested_lists(html)
+    with_fix = Document(fixed_html).summary() or ""
+    assert "github-heartbeat" in with_fix
+    assert "/api/dl/386" in with_fix
 
 
 # ---------------------------------------------------------------------------
