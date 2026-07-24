@@ -23,12 +23,6 @@ extraResources:
   # SvelteKit static build served via app:// protocol.
   - from: ../frontend/build
     to: frontend-build
-  # Defuddle UMD browser bundle — injected into scraping BrowserWindow via executeJavaScript.
-  - from: node_modules/defuddle/dist/index.full.js
-    to: defuddle-browser.js
-  # EasyPrivacy filter list — Tier 2 tracker blocking, see tracker-blocking.ts.
-  - from: filters/easyprivacy.txt
-    to: filters/easyprivacy.txt
 
 linux:
   executableName: analecta

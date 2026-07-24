@@ -24,14 +24,12 @@ function getSidecarBinary(): string {
 	return path.join(repoRoot, 'binaries', 'analecta-sidecar', 'analecta-sidecar');
 }
 
-export function spawnSidecar(renderPort: number, renderToken: string): void {
+export function spawnSidecar(): void {
 	const bin = getSidecarBinary();
 	sidecarProcess = spawn(bin, [], {
 		stdio: 'pipe',
 		env: {
 			...process.env,
-			ANALECTA_RENDER_PORT: String(renderPort),
-			ANALECTA_RENDER_TOKEN: renderToken,
 			// Single-sources the Chrome identity Tier 1 headers present with
 			// Electron's own bundled Chromium — see chrome-identity.ts.
 			ANALECTA_CHROME_MAJOR: CHROME_MAJOR,
