@@ -30,10 +30,10 @@ run_frontend() {
   mise exec -- pnpm --filter frontend exec svelte-kit sync
 
   echo "==> prettier --check"
-  mise exec -- pnpm exec prettier --check "electron/**/*.ts" "frontend/src/**/*.{ts,svelte}" "frontend/scripts/**/*.mjs"
+  mise exec -- pnpm exec prettier --check "electron/**/*.ts" "frontend/src/**/*.{ts,svelte}" "frontend/scripts/**/*.mjs" "scripts/**/*.mjs"
 
   echo "==> eslint"
-  mise exec -- pnpm exec eslint electron/main electron/preload frontend/src frontend/scripts
+  mise exec -- pnpm exec eslint electron/main electron/preload frontend/src frontend/scripts scripts
 
   echo "==> tsc --noEmit (electron)"
   cd "$REPO_ROOT/electron" && mise exec -- pnpm exec tsc --noEmit

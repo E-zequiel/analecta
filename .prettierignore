@@ -3,6 +3,9 @@ dist
 build
 .svelte-kit
 binaries
-/scripts
+/scripts/*.py
+/scripts/*.sh
+/scripts/*.lock
+/scripts/__pycache__
 *.md
 pnpm-lock.yaml
