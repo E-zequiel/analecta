@@ -2,9 +2,9 @@
 // Manual comparison tool: runs Defuddle's own extraction algorithm against a
 // real page's raw HTML, offline, no browser — see docs/defuddle-decision.md
 // for why Defuddle is kept as a dev-only diagnostic rather than a live
-// pipeline component. Useful when a real Tier 1 (Python) extraction failure
-// comes up: run this against the same HTML the Python pipeline fetched, and
-// see whether Defuddle's algorithm recovers something worth hand-porting.
+// pipeline component. Useful when a real extraction failure comes up in the
+// Python pipeline: run this against the same HTML it fetched, and see
+// whether Defuddle's algorithm recovers something worth hand-porting.
 //
 // Usage:
 //   node scripts/defuddle-diagnostic.mjs <path-to-html-file> [source-url]

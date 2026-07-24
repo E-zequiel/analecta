@@ -463,8 +463,8 @@ class XExtractor(SourceExtractor):
     Falls back to the official oEmbed endpoint (text/author only, no media)
     when syndication is unavailable — a hedge against the syndication
     endpoint itself drifting/breaking, not against IP-based blocking
-    (nothing unauthenticated protects against that). No headless browser
-    (Tier 2) is used anywhere in this path.
+    (nothing unauthenticated protects against that). No headless browser is
+    used anywhere in this path.
     """
 
     async def extract(self, url: str) -> ExtractedContent:

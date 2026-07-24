@@ -30,8 +30,8 @@ export function spawnSidecar(): void {
 		stdio: 'pipe',
 		env: {
 			...process.env,
-			// Single-sources the Chrome identity Tier 1 headers present with
-			// Electron's own bundled Chromium — see chrome-identity.ts.
+			// Single-sources the Chrome identity extraction-pipeline headers
+			// present with Electron's own bundled Chromium — see chrome-identity.ts.
 			ANALECTA_CHROME_MAJOR: CHROME_MAJOR,
 		},
 	});

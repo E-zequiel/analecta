@@ -202,8 +202,8 @@ async def test_article_extractor_url_reflects_redirect(mocker):
 
 @pytest.mark.asyncio
 async def test_article_extractor_sets_low_confidence_true_for_thin_content(mocker):
-    """No Tier 2 fallback exists anymore — low_confidence is a frontmatter-only
-    signal now, always attached to metadata rather than triggering anything."""
+    """low_confidence is a frontmatter-only diagnostic signal, always
+    attached to metadata rather than triggering anything."""
     mocker.patch.object(
         ArticleExtractor,
         "_fetch",

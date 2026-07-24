@@ -47,7 +47,7 @@ Socket's "Obfuscated code" detector flags packages that use split operations on 
 | SOCKET-EZEQUIEL-2 | `entities@4.5.0` | HTML entity lookup tables encoded as compact strings |
 | SOCKET-EZEQUIEL-3 | `markdown-it@14.1.1` | Syntax/tokenizer rule tables |
 | SOCKET-EZEQUIEL-5 | `svelte@5.55.7` | Compiler/runtime lookup tables |
-| 2026-05-30 scan | `linkedom@0.18.12` (`package/worker.js`) | Web Worker DOM lookup tables — identical pattern. Optional dep of `defuddle@0.18.1`; Web Worker path is unused in Chromium context. |
+| 2026-05-30 scan | `linkedom@0.18.12` (`package/worker.js`) | Web Worker DOM lookup tables — identical pattern. Optional dep of `defuddle@0.19.1` (root `package.json` devDependency — a diagnostic-only tool, never a shipped runtime dep, see `docs/defuddle-decision.md`); Web Worker path is unused in the offline diagnostic script that consumes it. |
 | 2026-06-07 scan | `commander@9.5.0` | Transitive of electron-builder. Socket analyst: "conventional, non-obfuscated CLI framework component." 200M+ weekly downloads. |
 | 2026-06-07 scan | `cssom@0.5.0` | Standard CSS parser. Socket analyst: "no evidence of malicious behavior." Minified lookup tables. |
 | 2026-06-07 scan | `tiny-async-pool@1.3.0` | Standard concurrency utility. Socket analyst: "no evidence of malicious behavior, no hardcoded secrets." |

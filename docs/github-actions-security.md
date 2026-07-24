@@ -340,7 +340,7 @@ Steps 2 and 3 together provide an independent verification anchor: a registry-le
 Provenance attestation adoption in the npm ecosystem is incomplete. Packages without attestations are skipped without error — they are covered by other controls. Measured coverage as of 2026-05-31:
 
 - **52 of 386 installed packages** (13%) have SLSA provenance attestations.
-- Among key application-level deps: `svelte`, `vite`, `electron-builder`, `electron-updater`, `rolldown`, `socket` have attestations. `sigma`, `graphology`, `markdown-it`, `defuddle`, `electron`, `eslint`, `prettier`, `typescript` do not.
+- Among key application-level deps: `svelte`, `vite`, `electron-builder`, `electron-updater`, `rolldown`, `socket` have attestations. `sigma`, `graphology`, `markdown-it`, `defuddle`, `electron`, `eslint`, `prettier`, `typescript` do not. `defuddle` is a diagnostic-only devDependency that never ships in a packaged build (see `docs/defuddle-decision.md`) — its missing attestation has no production-attestation implication the way the others' does; it's still tracked under the same verification protocol (`docs/dependency-verification.md`), just for a lower-stakes reason (dev-machine supply-chain integrity, not shipped-artifact provenance).
 - The 87% without attestations are primarily older utility packages (`acorn`, `semver`, `yargs`, etc.) and packages that predate npm's provenance feature.
 
 Coverage is expected to grow as the ecosystem adopts `--provenance` publishing. The script automatically picks up new attestations without code changes.

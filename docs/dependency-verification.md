@@ -26,6 +26,8 @@ satisfy it through different mechanisms — see the two sections below.
 
 The procedure below adds that moment, and produces a paper trail in the PR/commit.
 
+**Applies regardless of whether a dependency ships.** A devDependency used only by a local diagnostic script (e.g. `defuddle`, see `docs/defuddle-decision.md`) is exposed to the exact same threat — a compromised tarball lands in a developer's `node_modules/` and runs the moment the script is invoked — even though it's never part of a packaged build. "It's just a diagnostic tool" is not a reason to skip this procedure or the Socket scan; both apply to every direct dependency in the lockfile, not only the ones that ship.
+
 ## Procedure (npm / pnpm)
 
 ### 1. Pre-install — fetch the published hash

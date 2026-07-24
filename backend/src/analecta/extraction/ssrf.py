@@ -1,12 +1,9 @@
-"""SSRF blocklist for Tier 1's direct fetches.
+"""SSRF blocklist for the extraction pipeline's direct fetches.
 
-Ported from ``electron/main/scraper.ts``'s ``validateScrapeUrl`` — the only
-SSRF guard in the app before Tier 2's removal, and one that only ever covered
-Tier 2's single render-server fetch. Now that Tier 1's own ``httpx2`` calls
-are the only fetch path left, this closes the gap for all three of its
-direct-fetch call sites: the pasted URL itself (``article.py``, ``social.py``),
-redirect targets Tier 1 follows on the way to that URL, and remote image URLs
-discovered in already-fetched page content (``assets.py``) — the last being
+Guards every direct fetch of a URL not otherwise constrained by user choice:
+the pasted URL itself (``article.py``, ``social.py``), redirect targets
+followed on the way to that URL, and remote image URLs discovered in
+already-fetched page content (``assets.py``) — the last being
 attacker-controlled, not user-chosen.
 
 Matches the ported logic exactly: only http(s) schemes are allowed; blocked
@@ -71,7 +68,7 @@ def validate_fetch_url(url: str) -> None:
     """Raise if *url* targets a blocked scheme or host.
 
     Args:
-        url: A URL Tier 1 is about to fetch directly — the pasted URL, a
+        url: A URL about to be fetched directly — the pasted URL, a
             redirect target, or a remote image URL found in fetched content.
 
     Raises:
