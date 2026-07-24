@@ -85,23 +85,6 @@ def test_extract_creates_entry(
     assert len(r2.json()) == 1
 
 
-def test_extract_passes_captured_images_to_asset_downloader(
-    tmp_path: Path, client: TestClient, mocker: MockerFixture
-) -> None:
-    """content.captured_images reaches AssetDownloader.process() unchanged."""
-    content = _fake_content()
-    content.captured_images = {"shot-0": b"png-bytes"}
-    mocker.patch("analecta.api.routes.extract.extract", return_value=content)
-    mock_process = mocker.patch.object(
-        AssetDownloader, "process", return_value="<p>Hello world</p>"
-    )
-
-    r = client.post("/api/v1/extract", json={"url": "https://example.com/article"})
-
-    assert r.status_code == 200
-    assert mock_process.call_args.kwargs["captured_images"] == {"shot-0": b"png-bytes"}
-
-
 def test_extract_publishes_sse_event(tmp_path: Path, mocker: MockerFixture) -> None:
     """Successful extraction delivers entry_added to EventBus subscribers."""
     config = AppConfig(vault_path=tmp_path / "vault")

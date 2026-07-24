@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import base64
-import binascii
 import difflib
 import json
 import logging
-import os
 import re
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import httpx2
 import trafilatura
@@ -17,10 +14,8 @@ from readability.readability import REGEXES as _READABILITY_REGEXES
 
 from analecta.extraction.core import ExtractedContent, ExtractionError, SourceExtractor
 from analecta.extraction.http_identity import build_headers
+from analecta.extraction.ssrf import block_redirect_to_internal, validate_fetch_url
 from analecta.extraction.tweet_embeds import resolve_embedded_tweets
-
-if TYPE_CHECKING:
-    from analecta.extraction.tier2 import Tier2Result
 
 log = logging.getLogger(__name__)
 
@@ -681,8 +676,9 @@ def _try_nextjs_hydration(html: str) -> str | None:
     Handles only the ``__NEXT_DATA__`` JSON blob (Pages Router).  App Router RSC
     payload is intentionally excluded — RSC wire-format strings are protocol
     markers and component references, not readable text, so extracting them
-    produces garbage.  App Router sites are handled by readability/trafilatura
-    (Tier 1) or by Defuddle via the Chromium render path (Tier 2).
+    produces garbage.  App Router sites fall through to readability/trafilatura
+    same as any other page; there is no other fallback for one that's still
+    too thin after that.
 
     Returns an HTML string when > 200 words of content is found in
     ``pageProps``, ``None`` otherwise — caller falls through to
@@ -704,22 +700,14 @@ def _try_nextjs_hydration(html: str) -> str | None:
     return None
 
 
-def _has_live_sample_placeholders(raw_html: str) -> bool:
-    """Return True when *raw_html* has MDN-style live-code-sample placeholders.
-
-    MDN's client JS tears down the raw ``<iframe class="sample-code-frame"
-    data-live-id="...">`` placeholder shortly after load and replaces it with
-    a JS-only custom element (``<mdn-live-sample-result>``) whose real content
-    Tier 1 can never see, regardless of how much other text is on the page —
-    so this fires Tier 2's embed-capture pass independently of
-    ``_is_low_confidence``.
-    """
-    soup = BeautifulSoup(raw_html, "html.parser")
-    return bool(soup.select("iframe.sample-code-frame[data-live-id]"))
-
-
 def _is_low_confidence(raw_html: str, extracted_html: str) -> bool:
-    """Return True when Tier 1 extraction likely missed JS-rendered content."""
+    """Return True when extraction likely missed JS-rendered content.
+
+    Surfaced to the reader as a ``low_confidence`` frontmatter key rather
+    than acted on — Analecta no longer has a fallback extraction strategy to
+    trigger, so this is a diagnostic signal only (see
+    ``docs/defuddle-decision.md``).
+    """
     text = BeautifulSoup(extracted_html, "html.parser").get_text()
     if len(text.split()) < 200:
         return True
@@ -742,86 +730,16 @@ def _populate_metadata(metadata: dict[str, Any], meta: Any) -> None:
         metadata["published"] = str(meta.date)
 
 
-def _resolve_tier2_url(tier2_final_url: str | None, fallback: str) -> str:
-    """Return the browser-reported URL, or *fallback* if it isn't usable.
-
-    ``tier2_final_url`` (``document.baseURI`` from the render server) is only
-    trustworthy when navigation actually reached a real page — a failed or
-    timed-out navigation can leave ``about:blank`` or a ``chrome-error://``
-    value there, which would be a worse base than the httpx-resolved
-    ``fallback``.
-    """
-    if tier2_final_url and tier2_final_url.startswith(("http://", "https://")):
-        return tier2_final_url
-    return fallback
-
-
-def _decode_shots(shots: dict[str, str]) -> dict[str, bytes]:
-    """Decode a ``Tier2Result.shots`` base64 map to raw PNG bytes, keyed by id.
-
-    Entries that fail to decode (malformed base64) are dropped rather than
-    raising — a lost screenshot degrades gracefully to a broken placeholder
-    image, matching ``AssetDownloader``'s existing silently-skip convention.
-    """
-    decoded: dict[str, bytes] = {}
-    for shot_id, data in shots.items():
-        try:
-            decoded[shot_id] = base64.b64decode(data)
-        except ValueError, binascii.Error:
-            continue
-    return decoded
-
-
-def _tier2_disabled() -> bool:
-    """Whether ``ANALECTA_DISABLE_TIER2`` is set.
-
-    Gates Chromium rendering only. Embedded-tweet resolution
-    (``tweet_embeds.py``) is a Tier 1 technique — no browser, same
-    syndication fetch ``x.py``'s standalone extractor already runs
-    unconditionally — so it is no longer tied to this flag (reversed
-    2026-07-23, same day it was introduced: the flag is being exercised to
-    test whether Tier 1 alone, including this resolver, can cover
-    extraction without Chromium at all, which requires the resolver to run
-    precisely when this flag is set).
-    """
-    return os.environ.get("ANALECTA_DISABLE_TIER2", "").strip().lower() in (
-        "1",
-        "true",
-    )
-
-
-def _build_from_defuddle(url: str, t: Tier2Result) -> ExtractedContent:
-    """Construct an ``ExtractedContent`` from a successful Defuddle Tier 2 result."""
-    metadata: dict[str, Any] = {"extractor": "defuddle"}
-    if t.author:
-        metadata["author"] = t.author
-    if t.description:
-        metadata["description"] = t.description
-    if t.published:
-        metadata["published"] = t.published
-    return ExtractedContent(
-        title=t.title or "",
-        html=t.content or "",
-        url=url,
-        source_type="article",
-        metadata=metadata,
-        captured_images=_decode_shots(t.shots) if t.shots else {},
-    )
-
-
 class ArticleExtractor(SourceExtractor):
-    """Extracts web article content using a two-tier pipeline.
+    """Extracts web article content via a plain HTTP fetch, no browser rendering.
 
-    Tier 1 (fast, no browser):
-        1. Fetch HTML via ``httpx``.
-        2. Try Next.js Pages Router hydration data (``__NEXT_DATA__`` JSON blob).
-        3. Try ``readability-lxml`` and ``trafilatura``; prefer readability unless
-           trafilatura yields > 1.5x more content.
+    1. Fetch HTML via ``httpx2``.
+    2. Try Next.js Pages Router hydration data (``__NEXT_DATA__`` JSON blob).
+    3. Try ``readability-lxml`` and ``trafilatura``; prefer readability unless
+       trafilatura yields > 1.5x more content.
 
-    Tier 2 (Chromium render, on low-confidence Tier 1 result):
-        4. POST to the Electron render server; Defuddle runs inside the live DOM
-           with ``getComputedStyle()`` available (same quality as Obsidian Web Clipper).
-        5. If Defuddle fails, fall back to the returned ``outerHtml`` through Tier 1.
+    See ``docs/defuddle-decision.md`` for why there is no browser-rendered
+    fallback for pages this misses.
     """
 
     async def extract(self, url: str) -> ExtractedContent:
@@ -831,54 +749,18 @@ class ArticleExtractor(SourceExtractor):
             url: Article URL.
 
         Returns:
-            Populated ``ExtractedContent`` with ``source_type="article"``.
+            Populated ``ExtractedContent`` with ``source_type="article"`` and
+            a ``low_confidence`` metadata flag (see ``_is_low_confidence``).
 
         Raises:
-            ExtractionError: If no extraction strategy succeeds.
+            ExtractionError: If no extraction strategy succeeds, or *url*
+                targets a blocked scheme/host.
             httpx2.HTTPStatusError: If the server returns a non-2xx response.
         """
         html, final_url = await self._fetch(url)
         html = await resolve_embedded_tweets(html)
         result = self._parse(html, final_url)
-
-        low_confidence = _is_low_confidence(html, result.html)
-        live_sample = _has_live_sample_placeholders(html)
-        if low_confidence or live_sample:
-            if _tier2_disabled():
-                log.info(
-                    "Tier 2 skipped (ANALECTA_DISABLE_TIER2 set) for %s "
-                    "(low_confidence=%s, live_sample=%s)",
-                    url,
-                    low_confidence,
-                    live_sample,
-                )
-                return result
-            try:
-                from analecta.extraction.tier2 import render_url
-
-                # url not final_url: Chromium follows its own redirects.
-                tier2 = await render_url(url)
-                resolved_url = _resolve_tier2_url(tier2.final_url, final_url)
-                if tier2.ok and tier2.content:
-                    if tier2.shots:
-                        placeholder_count = tier2.content.count("analecta-shot.invalid")
-                        log.info(
-                            "Tier 2 defuddle content for %s: %d shot(s) captured, "
-                            "%d placeholder(s) present in content",
-                            url,
-                            len(tier2.shots),
-                            placeholder_count,
-                        )
-                    return _build_from_defuddle(resolved_url, tier2)
-                if tier2.outer_html:
-                    outer_html = await resolve_embedded_tweets(tier2.outer_html)
-                    parsed = self._parse(outer_html, resolved_url)
-                    if tier2.shots:
-                        parsed.captured_images = _decode_shots(tier2.shots)
-                    return parsed
-            except Exception as exc:
-                log.warning("Tier 2 render failed for %s: %r", url, exc)
-
+        result.metadata["low_confidence"] = _is_low_confidence(html, result.html)
         return result
 
     async def _fetch(self, url: str) -> tuple[str, str]:
@@ -888,9 +770,16 @@ class ArticleExtractor(SourceExtractor):
             Tuple of ``(html, final_url)`` — ``final_url`` is the
             post-redirect URL (``response.url``), used as the base for
             resolving relative asset paths and as the canonical article URL.
+
+        Raises:
+            ExtractionError: If *url* (or any redirect hop along the way)
+                targets a blocked scheme/host — see ``ssrf.py``.
         """
+        validate_fetch_url(url)
         async with httpx2.AsyncClient(
-            follow_redirects=True, timeout=_TIMEOUT
+            follow_redirects=True,
+            timeout=_TIMEOUT,
+            event_hooks={"response": [block_redirect_to_internal]},
         ) as client:
             response = await client.get(url, headers=build_headers("document"))
             response.raise_for_status()

@@ -1,9 +1,9 @@
-import base64
 import difflib
 import json
 from types import SimpleNamespace
 from typing import Any
 
+import httpx2
 import pytest
 from bs4 import BeautifulSoup, Tag
 from youtube_transcript_api._transcripts import FetchedTranscriptSnippet
@@ -11,19 +11,15 @@ from youtube_transcript_api._transcripts import FetchedTranscriptSnippet
 from analecta.extraction.article import (
     _HERO_ALT_MATCH_RATIO,
     ArticleExtractor,
-    _build_from_defuddle,
-    _decode_shots,
     _expand_table_spans,
     _find_dek_paragraph,
     _find_hero_image,
-    _has_live_sample_placeholders,
     _is_low_confidence,
     _populate_metadata,
     _readability_class_weight,
     _rescue_linked_lists,
     _rescue_linked_tables,
     _rescue_orphaned_header,
-    _resolve_tier2_url,
     _reunite_intro_with_body,
     _simplify_figure_images,
     _strip_heading_classes,
@@ -39,7 +35,6 @@ from analecta.extraction.core import (
     extract,
 )
 from analecta.extraction.social import SubstackExtractor
-from analecta.extraction.tier2 import Tier2Result
 from analecta.extraction.tweet_embeds import (
     _iframe_fallback_link,
     _iframe_tweet_id,
@@ -201,6 +196,61 @@ async def test_article_extractor_url_reflects_redirect(mocker):
     )
     result = await ArticleExtractor().extract("https://example.com/old-slug")
     assert result.url == "https://example.com/new-slug"
+
+
+@pytest.mark.asyncio
+async def test_article_extractor_sets_low_confidence_true_for_thin_content(mocker):
+    """No Tier 2 fallback exists anymore — low_confidence is a frontmatter-only
+    signal now, always attached to metadata rather than triggering anything."""
+    mocker.patch.object(
+        ArticleExtractor,
+        "_fetch",
+        return_value=(_ARTICLE_HTML, "https://example.com/article"),
+    )
+    result = await ArticleExtractor().extract("https://example.com/article")
+    assert result.metadata["low_confidence"] is True
+
+
+@pytest.mark.asyncio
+async def test_article_extractor_sets_low_confidence_false_for_substantial_content(
+    mocker,
+):
+    raw = "<html><body>" + "<article>" + " ".join(["word"] * 250) + "</article>"
+    raw += "</body></html>"
+    mocker.patch.object(
+        ArticleExtractor, "_fetch", return_value=(raw, "https://example.com/article")
+    )
+    result = await ArticleExtractor().extract("https://example.com/article")
+    assert result.metadata["low_confidence"] is False
+
+
+@pytest.mark.asyncio
+async def test_article_extractor_fetch_rejects_blocked_host():
+    """_fetch validates *url* before ever touching the network — see ssrf.py."""
+    with pytest.raises(ExtractionError):
+        await ArticleExtractor()._fetch("http://127.0.0.1/admin")
+
+
+@pytest.mark.asyncio
+async def test_article_extractor_fetch_succeeds_through_real_client_with_hook(mocker):
+    """Regression guard: the redirect-blocking event_hooks wiring in _fetch must
+    not break an ordinary, non-redirected fetch through the real AsyncClient
+    (a sync hook there previously broke every response — see ssrf.py)."""
+    transport = httpx2.MockTransport(
+        lambda request: httpx2.Response(200, text="<html><body>ok</body></html>")
+    )
+    real_client = httpx2.AsyncClient
+
+    def client_factory(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    mocker.patch(
+        "analecta.extraction.article.httpx2.AsyncClient", side_effect=client_factory
+    )
+    html, final_url = await ArticleExtractor()._fetch("https://example.com/article")
+    assert html == "<html><body>ok</body></html>"
+    assert final_url == "https://example.com/article"
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +473,19 @@ async def test_substack_extractor_inbox_no_redirect_raises(mocker):
 
     with pytest.raises(ExtractionError, match="did not redirect"):
         await SubstackExtractor().extract("https://substack.com/inbox/post/99")
+
+
+@pytest.mark.asyncio
+async def test_substack_extractor_inbox_blocked_host_raises_before_head_request(
+    mocker,
+):
+    """An inbox-shaped URL on a blocked host never fires the HEAD request."""
+    mock_client_class = mocker.patch("analecta.extraction.social.httpx2.AsyncClient")
+
+    with pytest.raises(ExtractionError):
+        await SubstackExtractor().extract("http://127.0.0.1/inbox/post/99")
+
+    mock_client_class.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -1555,30 +1618,6 @@ to keep the surrounding container's text-to-link ratio high.</p>
     assert "twitter-tweet" not in result.html
 
 
-@pytest.mark.asyncio
-async def test_article_extractor_still_resolves_tweet_embeds_when_tier2_disabled(
-    mocker, monkeypatch
-):
-    """ANALECTA_DISABLE_TIER2 gates Chromium rendering only. Embedded-tweet
-    resolution is a Tier 1 technique (no browser) and must keep running
-    with the flag set — otherwise the Tier-1-only experiment can't cover
-    embedded tweets at all."""
-    monkeypatch.setenv("ANALECTA_DISABLE_TIER2", "1")
-    mock_resolve = mocker.patch(
-        "analecta.extraction.article.resolve_embedded_tweets",
-        new=mocker.AsyncMock(return_value=_ARTICLE_HTML),
-    )
-    mocker.patch.object(
-        ArticleExtractor,
-        "_fetch",
-        return_value=(_ARTICLE_HTML, "https://example.com/article"),
-    )
-
-    await ArticleExtractor().extract("https://example.com/article")
-
-    mock_resolve.assert_called_once_with(_ARTICLE_HTML)
-
-
 def test_resolved_tweet_embed_survives_real_parse():
     """Regression guard: locks in the empirical finding that a *resolved*
     embed (this module's replacement shape) survives real readability/
@@ -1685,54 +1724,6 @@ def test_is_low_confidence_normal_content():
 
 
 # ---------------------------------------------------------------------------
-# _has_live_sample_placeholders
-# ---------------------------------------------------------------------------
-
-_MDN_LIVE_SAMPLE_IFRAME = (
-    '<iframe class="sample-code-frame" src="about:blank" '
-    'data-live-path="/en-US/docs/Web/CSS/Guides/Box_alignment/Overview/" '
-    'data-live-id="grid-align-items" loading="lazy"></iframe>'
-)
-
-
-def test_has_live_sample_placeholders_detects_mdn_iframe():
-    html = f"<html><body><main>{_MDN_LIVE_SAMPLE_IFRAME}</main></body></html>"
-    assert _has_live_sample_placeholders(html) is True
-
-
-def test_has_live_sample_placeholders_false_without_data_live_id():
-    html = '<iframe class="sample-code-frame" src="about:blank"></iframe>'
-    assert _has_live_sample_placeholders(html) is False
-
-
-def test_has_live_sample_placeholders_false_for_unrelated_iframe():
-    html = '<iframe class="other-frame" data-live-id="x"></iframe>'
-    assert _has_live_sample_placeholders(html) is False
-
-
-def test_has_live_sample_placeholders_false_for_plain_article():
-    assert _has_live_sample_placeholders(_ARTICLE_HTML) is False
-
-
-# ---------------------------------------------------------------------------
-# _decode_shots
-# ---------------------------------------------------------------------------
-
-
-def test_decode_shots_decodes_valid_base64():
-    encoded = base64.b64encode(b"png-bytes").decode()
-    assert _decode_shots({"shot-0": encoded}) == {"shot-0": b"png-bytes"}
-
-
-def test_decode_shots_drops_malformed_entries():
-    assert _decode_shots({"shot-0": "not-valid-base64!!"}) == {}
-
-
-def test_decode_shots_empty_map():
-    assert _decode_shots({}) == {}
-
-
-# ---------------------------------------------------------------------------
 # _try_nextjs_hydration
 # ---------------------------------------------------------------------------
 
@@ -1802,323 +1793,6 @@ def test_populate_metadata_skips_missing_fields():
     assert metadata == {"author": "Bob"}
     assert "description" not in metadata
     assert "published" not in metadata
-
-
-# ---------------------------------------------------------------------------
-# _build_from_defuddle
-# ---------------------------------------------------------------------------
-
-
-def test_build_from_defuddle_constructs_content():
-    t = Tier2Result(
-        ok=True,
-        content="<p>Extracted</p>",
-        title="The Title",
-        author="Eve",
-        description="Short desc",
-        published="2024-06-01",
-    )
-    result = _build_from_defuddle("https://example.com", t)
-    assert result.title == "The Title"
-    assert result.html == "<p>Extracted</p>"
-    assert result.url == "https://example.com"
-    assert result.source_type == "article"
-    assert result.metadata["extractor"] == "defuddle"
-    assert result.metadata["author"] == "Eve"
-    assert result.metadata["published"] == "2024-06-01"
-
-
-def test_build_from_defuddle_decodes_shots_into_captured_images():
-    encoded = base64.b64encode(b"png-bytes").decode()
-    t = Tier2Result(ok=True, content="<p>x</p>", title="T", shots={"shot-0": encoded})
-    result = _build_from_defuddle("https://example.com", t)
-    assert result.captured_images == {"shot-0": b"png-bytes"}
-
-
-def test_build_from_defuddle_empty_captured_images_without_shots():
-    t = Tier2Result(ok=True, content="<p>x</p>", title="T")
-    result = _build_from_defuddle("https://example.com", t)
-    assert result.captured_images == {}
-
-
-# ---------------------------------------------------------------------------
-# ArticleExtractor.extract — Tier 2 paths
-# ---------------------------------------------------------------------------
-
-_HIGH_CONFIDENCE_WITH_LIVE_SAMPLE = (
-    "<html><body><article>"
-    + " ".join(["word"] * 250)
-    + _MDN_LIVE_SAMPLE_IFRAME
-    + "</article></body></html>"
-)
-
-
-@pytest.mark.asyncio
-async def test_extract_uses_defuddle_on_low_confidence(mocker):
-    mocker.patch.object(
-        ArticleExtractor,
-        "_fetch",
-        return_value=(_SCRIPT_HEAVY, "https://example.com/spa"),
-    )
-    mocker.patch(
-        "analecta.extraction.tier2.render_url",
-        new=mocker.AsyncMock(
-            return_value=Tier2Result(ok=True, content="<p>Defuddle</p>", title="D")
-        ),
-    )
-    result = await ArticleExtractor().extract("https://example.com/spa")
-    assert result.metadata["extractor"] == "defuddle"
-    assert "Defuddle" in result.html
-
-
-@pytest.mark.asyncio
-async def test_extract_uses_outer_html_when_defuddle_fails(mocker):
-    mocker.patch.object(
-        ArticleExtractor,
-        "_fetch",
-        return_value=(_SCRIPT_HEAVY, "https://example.com/spa"),
-    )
-    mocker.patch(
-        "analecta.extraction.tier2.render_url",
-        new=mocker.AsyncMock(
-            return_value=Tier2Result(ok=False, outer_html=_ARTICLE_HTML)
-        ),
-    )
-    result = await ArticleExtractor().extract("https://example.com/spa")
-    assert result.source_type == "article"
-    assert result.metadata.get("extractor") != "defuddle"
-
-
-@pytest.mark.asyncio
-async def test_extract_triggers_tier2_for_live_sample_despite_high_confidence(
-    mocker,
-):
-    """Fires Tier 2 for a page with plenty of real text, purely because of the
-    MDN live-sample placeholder — independent of _is_low_confidence."""
-    mocker.patch.object(
-        ArticleExtractor,
-        "_fetch",
-        return_value=(
-            _HIGH_CONFIDENCE_WITH_LIVE_SAMPLE,
-            "https://developer.mozilla.org/demo",
-        ),
-    )
-    mock_render = mocker.AsyncMock(
-        return_value=Tier2Result(ok=True, content="<p>Rendered</p>", title="D")
-    )
-    mocker.patch("analecta.extraction.tier2.render_url", new=mock_render)
-
-    result = await ArticleExtractor().extract("https://developer.mozilla.org/demo")
-
-    mock_render.assert_awaited_once()
-    assert result.metadata["extractor"] == "defuddle"
-
-
-@pytest.mark.asyncio
-async def test_extract_does_not_trigger_tier2_for_high_confidence_without_live_sample(
-    mocker,
-):
-    raw = "<html><body>" + _200_WORDS + "</body></html>"
-    mocker.patch.object(
-        ArticleExtractor, "_fetch", return_value=(raw, "https://example.com/article")
-    )
-    mock_render = mocker.AsyncMock()
-    mocker.patch("analecta.extraction.tier2.render_url", new=mock_render)
-
-    await ArticleExtractor().extract("https://example.com/article")
-
-    mock_render.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_extract_skips_tier2_when_disabled_for_low_confidence(
-    mocker, monkeypatch
-):
-    monkeypatch.setenv("ANALECTA_DISABLE_TIER2", "1")
-    mocker.patch.object(
-        ArticleExtractor,
-        "_fetch",
-        return_value=(_SCRIPT_HEAVY, "https://example.com/spa"),
-    )
-    mock_render = mocker.AsyncMock()
-    mocker.patch("analecta.extraction.tier2.render_url", new=mock_render)
-
-    result = await ArticleExtractor().extract("https://example.com/spa")
-
-    mock_render.assert_not_awaited()
-    assert result.metadata.get("extractor") != "defuddle"
-
-
-@pytest.mark.asyncio
-async def test_extract_skips_tier2_when_disabled_for_live_sample(mocker, monkeypatch):
-    monkeypatch.setenv("ANALECTA_DISABLE_TIER2", "true")
-    mocker.patch.object(
-        ArticleExtractor,
-        "_fetch",
-        return_value=(
-            _HIGH_CONFIDENCE_WITH_LIVE_SAMPLE,
-            "https://developer.mozilla.org/demo",
-        ),
-    )
-    mock_render = mocker.AsyncMock()
-    mocker.patch("analecta.extraction.tier2.render_url", new=mock_render)
-
-    result = await ArticleExtractor().extract("https://developer.mozilla.org/demo")
-
-    mock_render.assert_not_awaited()
-    assert result.metadata.get("extractor") != "defuddle"
-
-
-@pytest.mark.asyncio
-async def test_extract_disable_flag_falsy_value_does_not_disable_tier2(
-    mocker, monkeypatch
-):
-    monkeypatch.setenv("ANALECTA_DISABLE_TIER2", "0")
-    mocker.patch.object(
-        ArticleExtractor,
-        "_fetch",
-        return_value=(_SCRIPT_HEAVY, "https://example.com/spa"),
-    )
-    mock_render = mocker.AsyncMock(
-        return_value=Tier2Result(ok=True, content="<p>Defuddle</p>", title="D")
-    )
-    mocker.patch("analecta.extraction.tier2.render_url", new=mock_render)
-
-    result = await ArticleExtractor().extract("https://example.com/spa")
-
-    mock_render.assert_awaited_once()
-    assert result.metadata["extractor"] == "defuddle"
-
-
-@pytest.mark.asyncio
-async def test_extract_threads_captured_images_through_outer_html_fallback(mocker):
-    encoded = base64.b64encode(b"png-bytes").decode()
-    mocker.patch.object(
-        ArticleExtractor,
-        "_fetch",
-        return_value=(_SCRIPT_HEAVY, "https://example.com/spa"),
-    )
-    mocker.patch(
-        "analecta.extraction.tier2.render_url",
-        new=mocker.AsyncMock(
-            return_value=Tier2Result(
-                ok=False,
-                outer_html=_ARTICLE_HTML,
-                shots={"shot-0": encoded},
-            )
-        ),
-    )
-    result = await ArticleExtractor().extract("https://example.com/spa")
-    assert result.captured_images == {"shot-0": b"png-bytes"}
-
-
-@pytest.mark.asyncio
-async def test_extract_logs_shot_placeholder_survival_in_defuddle_content(
-    mocker, caplog
-):
-    encoded = base64.b64encode(b"png-bytes").decode()
-    mocker.patch.object(
-        ArticleExtractor,
-        "_fetch",
-        return_value=(_SCRIPT_HEAVY, "https://developer.mozilla.org/demo"),
-    )
-    mocker.patch(
-        "analecta.extraction.tier2.render_url",
-        new=mocker.AsyncMock(
-            return_value=Tier2Result(
-                ok=True,
-                content='<p><img src="https://analecta-shot.invalid/shot/shot-0.png"></p>',
-                title="D",
-                shots={"shot-0": encoded, "shot-1": encoded},
-            )
-        ),
-    )
-    with caplog.at_level("INFO"):
-        result = await ArticleExtractor().extract("https://developer.mozilla.org/demo")
-
-    assert result.captured_images == {"shot-0": b"png-bytes", "shot-1": b"png-bytes"}
-    assert "2 shot(s) captured" in caplog.text
-    assert "1 placeholder(s) present in content" in caplog.text
-
-
-@pytest.mark.asyncio
-async def test_extract_falls_back_to_tier1_when_render_raises(mocker, caplog):
-    mocker.patch.object(
-        ArticleExtractor,
-        "_fetch",
-        return_value=(_ARTICLE_HTML, "https://example.com/article"),
-    )
-    mocker.patch(
-        "analecta.extraction.tier2.render_url",
-        new=mocker.AsyncMock(side_effect=ExtractionError("no server")),
-    )
-    with caplog.at_level("WARNING"):
-        result = await ArticleExtractor().extract("https://example.com/article")
-    assert result.source_type == "article"
-    assert "Tier 2 render failed" in caplog.text
-    assert "no server" in caplog.text
-
-
-@pytest.mark.asyncio
-async def test_extract_uses_defuddle_with_redirect_resolved_url(mocker):
-    """Tier 2 gets the original URL, but result.url reflects httpx's resolution."""
-    mocker.patch.object(
-        ArticleExtractor,
-        "_fetch",
-        return_value=(_SCRIPT_HEAVY, "https://example.com/final"),
-    )
-    mock_render = mocker.AsyncMock(
-        return_value=Tier2Result(ok=True, content="<p>Defuddle</p>", title="D")
-    )
-    mocker.patch("analecta.extraction.tier2.render_url", new=mock_render)
-    result = await ArticleExtractor().extract("https://example.com/original")
-    mock_render.assert_awaited_once_with("https://example.com/original")
-    assert result.url == "https://example.com/final"
-
-
-@pytest.mark.asyncio
-async def test_extract_uses_tier2_final_url_over_httpx_when_present(mocker):
-    """Browser-reported final_url (JS/redirect-aware) wins over httpx's resolution."""
-    mocker.patch.object(
-        ArticleExtractor,
-        "_fetch",
-        return_value=(_SCRIPT_HEAVY, "https://example.com/httpx-final"),
-    )
-    mocker.patch(
-        "analecta.extraction.tier2.render_url",
-        new=mocker.AsyncMock(
-            return_value=Tier2Result(
-                ok=True,
-                content="<p>Defuddle</p>",
-                title="D",
-                final_url="https://example.com/browser-final",
-            )
-        ),
-    )
-    result = await ArticleExtractor().extract("https://example.com/original")
-    assert result.url == "https://example.com/browser-final"
-
-
-# ---------------------------------------------------------------------------
-# _resolve_tier2_url
-# ---------------------------------------------------------------------------
-
-
-def test_resolve_tier2_url_prefers_valid_browser_url():
-    assert (
-        _resolve_tier2_url("https://example.com/final", "https://example.com/httpx")
-        == "https://example.com/final"
-    )
-
-
-@pytest.mark.parametrize(
-    "bad_url", [None, "", "about:blank", "chrome-error://chromewebdata/"]
-)
-def test_resolve_tier2_url_falls_back_on_unusable_value(bad_url):
-    assert (
-        _resolve_tier2_url(bad_url, "https://example.com/httpx")
-        == "https://example.com/httpx"
-    )
 
 
 # ---------------------------------------------------------------------------

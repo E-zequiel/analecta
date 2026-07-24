@@ -96,6 +96,28 @@ def test_frontmatter_omits_absent_metadata_fields():
     assert "published:" not in fm
 
 
+def test_frontmatter_includes_low_confidence_true():
+    content = _content(metadata={"low_confidence": True})
+    fm = build_frontmatter(content, _CREATED_AT)
+    inner = fm.split("---\n", 2)[1]
+    data = yaml.safe_load(inner)
+    assert data["low_confidence"] is True
+
+
+def test_frontmatter_includes_low_confidence_false():
+    content = _content(metadata={"low_confidence": False})
+    fm = build_frontmatter(content, _CREATED_AT)
+    inner = fm.split("---\n", 2)[1]
+    data = yaml.safe_load(inner)
+    assert data["low_confidence"] is False
+
+
+def test_frontmatter_omits_low_confidence_when_absent():
+    content = _content(metadata={"extractor": "readability"})
+    fm = build_frontmatter(content, _CREATED_AT)
+    assert "low_confidence:" not in fm
+
+
 # ---------------------------------------------------------------------------
 # MarkdownConverter.convert
 # ---------------------------------------------------------------------------

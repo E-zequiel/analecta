@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 
+import httpx2
 import pytest
 
 import analecta.extraction.assets as assets_module
@@ -13,7 +14,6 @@ from analecta.extraction.assets import (
     _placeholder_bytes,
     _placeholder_filename,
     _resolve_nextjs_image,
-    _shot_id_from_url,
 )
 
 
@@ -393,117 +393,62 @@ async def test_process_creates_asset_directory(mocker, tmp_path):
     assert (tmp_path / "assets" / "entry-slug").is_dir()
 
 
-# ---------------------------------------------------------------------------
-# _shot_id_from_url
-# ---------------------------------------------------------------------------
-
-
-def test_shot_id_from_url_matches_placeholder():
-    assert (
-        _shot_id_from_url("https://analecta-shot.invalid/shot/shot-0.png") == "shot-0"
-    )
-
-
-def test_shot_id_from_url_returns_none_for_other_hosts():
-    assert _shot_id_from_url("https://example.com/shot/shot-0.png") is None
-
-
-def test_shot_id_from_url_returns_none_for_relative_url():
-    assert _shot_id_from_url("/shot/shot-0.png") is None
-
-
-# ---------------------------------------------------------------------------
-# AssetDownloader._download — Tier-2 screenshot placeholder resolution
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
-async def test_download_resolves_shot_from_captured_images(mocker, tmp_path):
-    data = b"fake-png-bytes"
-    sha = hashlib.sha256(data).hexdigest()
-
-    mock_client = mocker.AsyncMock()
-    asset_dir = tmp_path / "assets" / "slug"
-    asset_dir.mkdir(parents=True)
-
-    result = await AssetDownloader()._download(
-        "https://analecta-shot.invalid/shot/shot-0.png",
-        asset_dir,
-        mock_client,
-        asyncio.Semaphore(1),
-        {"shot-0": data},
-    )
-
-    assert result == f"{sha[:16]}.png"
-    assert (asset_dir / result).read_bytes() == data
-    mock_client.get.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_download_returns_none_for_unmapped_shot_id(mocker, tmp_path):
-    mock_client = mocker.AsyncMock()
-    asset_dir = tmp_path / "assets" / "slug"
-    asset_dir.mkdir(parents=True)
-
-    result = await AssetDownloader()._download(
-        "https://analecta-shot.invalid/shot/shot-0.png",
-        asset_dir,
-        mock_client,
-        asyncio.Semaphore(1),
-        {"shot-1": b"other bytes"},
-    )
-
-    assert result is None
-    mock_client.get.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_download_returns_none_for_shot_url_without_captured_images(
+async def test_process_downloads_through_real_client_with_redirect_hook(
     mocker, tmp_path
 ):
-    mock_client = mocker.AsyncMock()
-    asset_dir = tmp_path / "assets" / "slug"
-    asset_dir.mkdir(parents=True)
+    """Regression guard: the redirect-blocking event_hooks wiring must not
+    break an ordinary image download through the real AsyncClient (a sync
+    hook there previously broke every response — see ssrf.py)."""
+    png_bytes = b"\x89PNG\r\n\x1a\n fake"
+    transport = httpx2.MockTransport(
+        lambda request: httpx2.Response(
+            200, headers={"content-type": "image/png"}, content=png_bytes
+        )
+    )
+    real_client = httpx2.AsyncClient
 
-    result = await AssetDownloader()._download(
-        "https://analecta-shot.invalid/shot/shot-0.png",
-        asset_dir,
-        mock_client,
-        asyncio.Semaphore(1),
+    def client_factory(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    mocker.patch(
+        "analecta.extraction.assets.httpx2.AsyncClient", side_effect=client_factory
     )
 
-    assert result is None
-    mock_client.get.assert_not_called()
+    html = '<img src="https://example.com/real.png">'
+    result = await AssetDownloader().process(html, "slug", tmp_path)
 
-
-# ---------------------------------------------------------------------------
-# AssetDownloader.process — Tier-2 screenshot placeholder resolution
-# ---------------------------------------------------------------------------
+    sha = hashlib.sha256(png_bytes).hexdigest()
+    assert f"../assets/slug/{sha[:16]}.png" in result
 
 
 @pytest.mark.asyncio
-async def test_process_resolves_shot_placeholder_to_local_asset(tmp_path):
-    data = b"fake-png-bytes"
-    sha = hashlib.sha256(data).hexdigest()
+async def test_process_blocks_image_url_targeting_internal_host(mocker, tmp_path):
+    """An <img src> pointing at an internal host — attacker-controlled, since
+    it comes from already-fetched page content, not the pasted URL — must
+    degrade to the placeholder without ever reaching the transport."""
+    handler = mocker.Mock(
+        return_value=httpx2.Response(
+            200, headers={"content-type": "image/png"}, content=b"would-have-worked"
+        )
+    )
+    transport = httpx2.MockTransport(handler)
+    real_client = httpx2.AsyncClient
 
-    html = '<img src="https://analecta-shot.invalid/shot/shot-0.png" alt="demo">'
-    result = await AssetDownloader().process(
-        html, "my-slug", tmp_path, captured_images={"shot-0": data}
+    def client_factory(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    mocker.patch(
+        "analecta.extraction.assets.httpx2.AsyncClient", side_effect=client_factory
     )
 
-    filename = f"{sha[:16]}.png"
-    assert f'src="../assets/my-slug/{filename}"' in result
-    assert (tmp_path / "assets" / "my-slug" / filename).read_bytes() == data
+    html = '<img src="http://127.0.0.1/internal.png">'
+    result = await AssetDownloader().process(html, "slug", tmp_path)
 
-
-@pytest.mark.asyncio
-async def test_process_leaves_shot_placeholder_unchanged_without_matching_bytes(
-    tmp_path,
-):
-    html = '<img src="https://analecta-shot.invalid/shot/shot-0.png" alt="demo">'
-    result = await AssetDownloader().process(html, "my-slug", tmp_path)
-
-    assert 'src="https://analecta-shot.invalid/shot/shot-0.png"' in result
+    assert f"../assets/slug/{_placeholder_filename()}" in result
+    handler.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -675,12 +620,12 @@ async def test_localize_markdown_dedupes_repeated_url(mocker, tmp_path):
 
 @pytest.mark.asyncio
 async def test_localize_markdown_unchanged_when_download_maps_nothing(mocker, tmp_path):
-    # _download only returns None for an unresolved Tier-2 shot placeholder
-    # (no captured_images passed to localize_markdown) — an edge case, not a
-    # real remote image, but the URL still matches the discovery regex.
+    # A None result (e.g. an exception return_exceptions=True swallowed) is
+    # filtered out by localize_markdown's isinstance(filename, str) check —
+    # the URL still matches the discovery regex, but nothing gets rewritten.
     mocker.patch.object(AssetDownloader, "_download", return_value=None)
 
-    markdown = "![shot](https://analecta-shot.invalid/shot/shot-0.png)\n"
+    markdown = "![broken](https://example.com/broken.png)\n"
     result, changed, placeholders = await AssetDownloader().localize_markdown(
         markdown, "slug", tmp_path
     )
@@ -701,14 +646,14 @@ async def test_localize_markdown_leaves_unmapped_url_unchanged(mocker, tmp_path)
 
     markdown = (
         "![ok](https://example.com/photo.png)\n\n"
-        "![gone](https://analecta-shot.invalid/shot/unresolved.png)\n"
+        "![gone](https://example.com/unresolved.png)\n"
     )
     result, changed, _ = await AssetDownloader().localize_markdown(
         markdown, "slug", tmp_path
     )
 
     assert f"../assets/slug/{filename}" in result
-    assert "https://analecta-shot.invalid/shot/unresolved.png" in result
+    assert "https://example.com/unresolved.png" in result
     assert changed is True
 
 
