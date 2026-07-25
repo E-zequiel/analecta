@@ -424,6 +424,50 @@ def _rescue_short_figure_labels(html: str) -> str:
     return str(soup)
 
 
+def _rescue_syntax_footnote(html: str) -> str:
+    """Unwrap the ``<footer>`` note that follows MDN's "Formal syntax" ``<pre>``.
+
+    MDN's Formal syntax section renders as
+    ``<pre class="css-formal-syntax">...</pre><footer>This syntax reflects
+    the latest standard as per ...</footer>`` — a short prose footnote, made
+    up mostly of spec-reference links, immediately after the syntax diagram.
+    readability-lxml's conditional cleaning applies the same "too many
+    links" rule (``weight < 25`` and ``link_density > 0.2``, see
+    ``_rescue_linked_lists``/``_rescue_linked_tables``) to ``<footer>`` that
+    it does to ``<table>``/``<ul>``/``<div>`` — the footnote has no class/id
+    (weight 0) and roughly half its text is spec-title link text, clearing
+    the 0.2 threshold, so the whole element is silently dropped even though
+    the ``<pre>`` right before it survives untouched.
+
+    Gated the same two ways ``_rescue_linked_tables`` is: only a ``<footer>``
+    readability would actually drop (``weight < 25`` and link density above
+    threshold) is touched, and only when it's immediately preceded by a
+    ``<pre>`` sibling — the exact shape of this MDN footnote. MDN's real
+    page-wide site footer (``<footer class="footer">``, far outside the
+    article body, never preceded by a ``<pre>``) has a different tag pattern
+    entirely and must not be unwrapped into the article as a stray
+    paragraph.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for footer in soup.find_all("footer"):
+        prev = footer.find_previous_sibling(True)
+        if prev is None or prev.name != "pre":
+            continue
+        total = footer.get_text()
+        if not total.strip():
+            continue
+        if _readability_class_weight(footer) >= 25:
+            continue
+        link_chars = sum(len(a.get_text()) for a in footer.find_all("a"))
+        if link_chars / len(total) <= _LINK_DENSITY_RESCUE_THRESHOLD:
+            continue
+        p = soup.new_tag("p")
+        for child in list(footer.contents):
+            p.append(child.extract())
+        footer.replace_with(p)
+    return str(soup)
+
+
 def _unwrap_code_examples(html: str) -> str:
     """Replace MDN's ``<div class="code-example">`` wrapper with its bare ``<pre>``.
 
@@ -908,6 +952,7 @@ class ArticleExtractor(SourceExtractor):
         clean = _expand_table_spans(clean)
         clean = _rescue_short_nested_lists(clean)
         clean = _rescue_short_figure_labels(clean)
+        clean = _rescue_syntax_footnote(clean)
         clean = _unwrap_code_examples(clean)
 
         doc = Document(clean)
