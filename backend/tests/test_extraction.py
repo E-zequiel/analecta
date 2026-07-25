@@ -22,6 +22,7 @@ from analecta.extraction.article import (
     _rescue_orphaned_header,
     _rescue_short_figure_labels,
     _rescue_short_nested_lists,
+    _rescue_syntax_footnote,
     _reunite_intro_with_body,
     _simplify_figure_images,
     _strip_heading_classes,
@@ -2459,6 +2460,92 @@ def test_rescue_short_figure_labels_survives_readability_min_text_length():
     fixed_html = _rescue_short_figure_labels(html)
     with_fix = Document(fixed_html).summary() or ""
     assert "Label two" in with_fix
+
+
+# ---------------------------------------------------------------------------
+# _rescue_syntax_footnote
+# ---------------------------------------------------------------------------
+
+
+def test_rescue_syntax_footnote_survives_readability():
+    from readability import Document
+
+    # MDN's real shape: a <pre> "Formal syntax" block immediately followed
+    # by a <footer> that's mostly spec-reference link text (~50% link
+    # density) with no class/id (weight 0) -- readability's "too many
+    # links" conditional-clean rule (weight < 25, link_density > 0.2, see
+    # _rescue_linked_lists) drops the <footer> even though the <pre> right
+    # before it survives untouched.
+    html = (
+        "<html><body><article>"
+        "<p>Padding paragraph one to give the surrounding article enough "
+        "weight for readability to pick it as the main candidate region.</p>"
+        '<pre class="notranslate css-formal-syntax">bottom = auto | '
+        "&lt;length-percentage&gt;</pre>"
+        "<footer>This syntax reflects the latest standard as per "
+        '<a href="https://drafts.csswg.org/css-position-3/">CSS Positioned '
+        "Layout Module Level 3</a>, "
+        '<a href="https://drafts.csswg.org/css-values-4/">CSS Values and '
+        "Units Module Level 4</a>. Not all browsers may have implemented "
+        'every part. See <a href="#browser_compatibility">Browser '
+        "compatibility</a> for support information.</footer>"
+        "<p>Padding paragraph two, also long enough to keep this region "
+        "scored as the main content candidate for readability's "
+        "algorithm.</p>"
+        "</article></body></html>"
+    )
+
+    without_fix = Document(html).summary() or ""
+    assert "This syntax reflects" not in without_fix, (
+        "fixture doesn't reproduce the readability drop — adjust padding"
+    )
+
+    fixed_html = _rescue_syntax_footnote(html)
+    with_fix = Document(fixed_html).summary() or ""
+    assert "This syntax reflects" in with_fix
+    assert "CSS Positioned Layout Module Level 3" in with_fix
+
+
+def test_rescue_syntax_footnote_converts_high_density_footer_to_paragraph():
+    # link="ABCDE" (5 chars), rest=" xy" (3 chars) -> density=5/8=0.625 > 0.2
+    html = (
+        '<pre class="css-formal-syntax">bottom = auto</pre>'
+        '<footer><a href="/x">ABCDE</a> xy</footer>'
+    )
+    result = _rescue_syntax_footnote(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("footer") is None
+    p = soup.find("p")
+    assert p is not None
+    assert "ABCDE" in p.get_text()
+
+
+def test_rescue_syntax_footnote_ignores_footer_without_preceding_pre():
+    # MDN's real page-wide site footer sits far outside the article body
+    # and is never preceded by a <pre> sibling -- must not be unwrapped
+    # into the article as a stray paragraph, regardless of link density.
+    html = (
+        "<p>Article body text.</p>"
+        '<footer class="footer"><a href="/terms">Terms</a>'
+        '<a href="/privacy">Privacy</a></footer>'
+    )
+    result = _rescue_syntax_footnote(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("footer") is not None, (
+        "footer not preceded by <pre> must be left untouched"
+    )
+
+
+def test_rescue_syntax_footnote_keeps_low_density_footer():
+    # No links -> density = 0 -> readability wouldn't drop this footer via
+    # the "too many links" rule, so it must be left untouched.
+    html = (
+        '<pre class="css-formal-syntax">bottom = auto</pre>'
+        "<footer>Some footnote text with no links at all.</footer>"
+    )
+    result = _rescue_syntax_footnote(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("footer") is not None, "low-density footer must be preserved"
 
 
 # ---------------------------------------------------------------------------
