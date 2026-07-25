@@ -12,7 +12,7 @@ import httpx2
 from bs4 import BeautifulSoup
 
 from analecta.extraction.http_identity import build_headers
-from analecta.extraction.ssrf import block_redirect_to_internal, validate_fetch_url
+from analecta.extraction.ssrf import fetch_safely
 
 _TIMEOUT = 30.0
 _MAX_CONCURRENT = 5
@@ -148,8 +148,7 @@ async def _try_fetch(client: httpx2.AsyncClient, url: str) -> tuple[bytes, str] 
         same as any other failed fetch rather than raising.
     """
     try:
-        validate_fetch_url(url)
-        response = await client.get(url)
+        response, _final_url = await fetch_safely(client, "GET", url)
         response.raise_for_status()
     except Exception:
         return None
@@ -248,10 +247,8 @@ class AssetDownloader:
 
         sem = asyncio.Semaphore(_MAX_CONCURRENT)
         async with httpx2.AsyncClient(
-            follow_redirects=True,
             timeout=_TIMEOUT,
             headers=build_headers("image"),
-            event_hooks={"response": [block_redirect_to_internal]},
         ) as client:
             results = await asyncio.gather(
                 *[
@@ -434,10 +431,8 @@ class AssetDownloader:
 
         sem = asyncio.Semaphore(_MAX_CONCURRENT)
         async with httpx2.AsyncClient(
-            follow_redirects=True,
             timeout=_TIMEOUT,
             headers=build_headers("image"),
-            event_hooks={"response": [block_redirect_to_internal]},
         ) as client:
             results = await asyncio.gather(
                 *[

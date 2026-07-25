@@ -15,7 +15,7 @@ from readability.readability import clean as _readability_clean_text
 
 from analecta.extraction.core import ExtractedContent, ExtractionError, SourceExtractor
 from analecta.extraction.http_identity import build_headers
-from analecta.extraction.ssrf import block_redirect_to_internal, validate_fetch_url
+from analecta.extraction.ssrf import fetch_safely
 from analecta.extraction.tweet_embeds import resolve_embedded_tweets
 
 log = logging.getLogger(__name__)
@@ -930,15 +930,12 @@ class ArticleExtractor(SourceExtractor):
             ExtractionError: If *url* (or any redirect hop along the way)
                 targets a blocked scheme/host — see ``ssrf.py``.
         """
-        validate_fetch_url(url)
-        async with httpx2.AsyncClient(
-            follow_redirects=True,
-            timeout=_TIMEOUT,
-            event_hooks={"response": [block_redirect_to_internal]},
-        ) as client:
-            response = await client.get(url, headers=build_headers("document"))
+        async with httpx2.AsyncClient(timeout=_TIMEOUT) as client:
+            response, final_url = await fetch_safely(
+                client, "GET", url, headers=build_headers("document")
+            )
             response.raise_for_status()
-            return response.text, str(response.url)
+            return response.text, final_url
 
     def _parse(self, html: str, url: str) -> ExtractedContent:
         meta = trafilatura.extract_metadata(html, default_url=url)

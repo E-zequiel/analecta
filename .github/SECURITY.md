@@ -41,7 +41,7 @@ Please include:
 The following are the highest-priority surfaces — named explicitly because they handle untrusted input or mediate trust boundaries:
 
 - **`analecta://` URL scheme handler** — the `id` parameter is used in database queries and must be treated as untrusted input. Injection or path traversal via this handler is in scope.
-- **Extraction's SSRF guard** (`backend/src/analecta/extraction/ssrf.py`) — the blocklist validating every URL the extraction pipeline fetches directly (the pasted URL, redirect targets, remote image URLs). Bypasses are in scope.
+- **Extraction's SSRF guard** (`backend/src/analecta/extraction/ssrf.py`) — resolves and validates every URL the extraction pipeline fetches directly (the pasted URL, redirect targets, remote image URLs), then pins the connection to the validated address. Bypasses are in scope.
 - **Vault-scoped filesystem access** — path traversal or sandbox escape through the `analecta-file://` protocol handler or any IPC channel that accesses vault files.
 - **Asset downloader** — bypassing `Content-Type` validation to write non-image content to the vault asset directory.
 

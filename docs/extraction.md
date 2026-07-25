@@ -27,7 +27,7 @@ This document describes how Analecta turns a pasted URL into the `ExtractedConte
 
 ### 1. Fetch
 
-`_fetch()` validates the URL against the SSRF blocklist (`ssrf.py::validate_fetch_url` — rejects non-`http(s)` schemes and loopback/link-local/RFC 1918 hosts), then issues a `GET` with `httpx2`, following redirects. Every hop of the redirect chain is re-validated by an event hook (`ssrf.py::block_redirect_to_internal`) before it's followed. Outbound headers (`http_identity.py::build_headers`) present as a generic, current Chrome on Linux — see `docs/privacy.md` for the full identity model. The result's `url` is the post-redirect URL, not the one originally requested.
+`_fetch()` issues a `GET` through `ssrf.py::fetch_safely`, which resolves and validates the host of the URL (rejecting non-`http(s)` schemes and any address that isn't allocated for public use, plus multicast) and pins the connection to one of the validated addresses, re-resolving and re-validating at every redirect hop rather than trusting `httpx2`'s own redirect-following. Outbound headers (`http_identity.py::build_headers`) present as a generic, current Chrome on Linux — see `docs/privacy.md` for the full identity model. The result's `url` is the post-redirect URL, not the one originally requested.
 
 ### 2. Embedded-tweet resolution
 
@@ -65,7 +65,7 @@ Title and metadata (`author`, `description`, `published`) come from `trafilatura
 
 ## Substack (`social.py`)
 
-`SubstackExtractor` is a thin wrapper around `ArticleExtractor` — Substack renders full post content server-side, so the article pipeline handles it without special treatment. The only Substack-specific step is resolving a `substack.com/inbox/post/<id>` URL (the form Substack's own inbox UI links to) to its canonical `*.substack.com/p/<slug>` form via an HTTP `HEAD` request before handing off to `ArticleExtractor`. The SSRF blocklist applies to this resolution `HEAD` request the same way it applies to the article fetch that follows.
+`SubstackExtractor` is a thin wrapper around `ArticleExtractor` — Substack renders full post content server-side, so the article pipeline handles it without special treatment. The only Substack-specific step is resolving a `substack.com/inbox/post/<id>` URL (the form Substack's own inbox UI links to) to its canonical `*.substack.com/p/<slug>` form via an HTTP `HEAD` request before handing off to `ArticleExtractor`. The SSRF guard applies to this resolution `HEAD` request the same way it applies to the article fetch that follows.
 
 ---
 
