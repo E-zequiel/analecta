@@ -24,6 +24,15 @@ _LANG_HINT_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+\-#]{0,14}$")
 # run of whitespace, so it can be collapsed to a single space inside link text.
 _INTERNAL_BREAK_RE = re.compile(r"[ \t]*\n[ \t]*")
 
+# Backtick and CR/LF are the only characters that let a fence's language-info
+# string escape its line: a backtick run can extend/break the ``` fence itself,
+# a newline ends the info string early and hands the rest of the line to the
+# Markdown block parser. Both extraction paths that feed convert_pre's f-string
+# (language-* class, and the raw lang="" attribute — the latter isn't split on
+# whitespace by BeautifulSoup, so it can carry either character verbatim) need
+# this before interpolation.
+_LANG_UNSAFE_RE = re.compile(r"[`\r\n]")
+
 
 def _lang_from_pre(pre: Tag) -> str:
     """Extract language from a ``<pre>`` element's class list or ``lang`` attribute.
@@ -76,6 +85,18 @@ def _get_lang(code: Tag, pre: Tag) -> str:
     if lang_attr:
         return str(lang_attr)
     return _lang_from_pre(pre)
+
+
+def _sanitize_lang(lang: str) -> str:
+    """Strip characters that could break out of a fence's language-info line.
+
+    Args:
+        lang: Raw language name, as recovered by ``_get_lang``/``_lang_from_pre``.
+
+    Returns:
+        ``lang`` with backticks and CR/LF removed.
+    """
+    return _LANG_UNSAFE_RE.sub("", lang)
 
 
 def _resolve_img_src(src: str) -> str:
@@ -146,9 +167,9 @@ class _Converter(markdownify_lib.MarkdownConverter):
     def convert_pre(self, el: Tag, text: str, **kwargs: Any) -> str:  # type: ignore[override]
         code = el.find("code")
         if isinstance(code, Tag):
-            lang = _get_lang(code, el)
+            lang = _sanitize_lang(_get_lang(code, el))
             return f"\n\n```{lang}\n{code.get_text()}\n```\n\n"
-        return f"\n\n```{_lang_from_pre(el)}\n{text.strip()}\n```\n\n"
+        return f"\n\n```{_sanitize_lang(_lang_from_pre(el))}\n{text.strip()}\n```\n\n"
 
     def convert_a(self, el: Tag, text: str, **kwargs: Any) -> str:  # type: ignore[override]
         # A <br> inside an <a> normally collapses to a space (markdownify suppresses

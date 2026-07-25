@@ -261,6 +261,33 @@ def test_convert_bare_sourcecode_class_has_no_language():
     assert "```\nplain text\n```" in md
 
 
+def test_convert_strips_backtick_run_from_lang_attribute_on_code_element():
+    # A lang="" attribute isn't split on whitespace by BeautifulSoup the way a
+    # class token is, so a hostile page can put a backtick run in it that would
+    # otherwise extend/break the ``` fence and splice attacker-controlled text
+    # into the surrounding document as live Markdown.
+    content = _content(
+        html='<pre><code lang="python```\n# injected heading">x = 1</code></pre>'
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```python" in md
+    assert "x = 1" in md
+    assert md.count("```") == 2
+    assert "\n# injected heading" not in md
+
+
+def test_convert_strips_newline_from_lang_attribute_on_bare_pre():
+    # A newline in lang="" ends the fence's info-string line early, handing the
+    # rest of the line to the block-level Markdown parser instead of leaving it
+    # inert inside the fence.
+    content = _content(html='<pre lang="python\n# injected heading">print(1)</pre>')
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```python" in md
+    assert "print(1)" in md
+    assert md.count("```") == 2
+    assert "\n# injected heading" not in md
+
+
 # ---------------------------------------------------------------------------
 # title_to_hashtag_key
 # ---------------------------------------------------------------------------
