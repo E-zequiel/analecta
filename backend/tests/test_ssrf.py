@@ -56,6 +56,9 @@ def test_validate_fetch_url_blocks_non_http_schemes(url):
         "http://172.31.255.255/",
         "http://192.168.1.1/",
         "http://192.168.255.255/",
+        "http://0.0.0.0/",
+        "http://[fe80::1]/",
+        "http://[fc00::1]/",
     ],
 )
 def test_validate_fetch_url_blocks_internal_hosts(url):

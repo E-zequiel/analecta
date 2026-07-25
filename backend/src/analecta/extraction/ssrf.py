@@ -6,12 +6,13 @@ followed on the way to that URL, and remote image URLs discovered in
 already-fetched page content (``assets.py``) — the last being
 attacker-controlled, not user-chosen.
 
-Matches the ported logic exactly: only http(s) schemes are allowed; blocked
-hosts are ``localhost``, loopback (``127.0.0.0/8``, ``::1``, and the
-IPv4-mapped IPv6 form of the former), link-local (``169.254.0.0/16`` and its
-IPv4-mapped IPv6 form), and RFC 1918 private ranges. A DNS name that itself
-resolves to one of these (rather than being one as a literal) is not caught —
-inherited limitation from the source logic this replaces.
+Only http(s) schemes are allowed. Blocked hosts are ``localhost`` and any
+address literal (IPv4, or IPv6 including its IPv4-mapped form) that
+``ipaddress`` classifies as loopback, link-local, private (which covers RFC
+1918 and its IPv6 analogue ``fc00::/7``), reserved, or unspecified
+(``0.0.0.0``, ``::``). A DNS name that itself resolves to one of these
+(rather than being one as a literal) is not caught — inherited limitation
+from the source logic this replaces.
 """
 
 from __future__ import annotations
@@ -22,14 +23,6 @@ from urllib.parse import urljoin, urlparse
 import httpx2
 
 from analecta.extraction.core import ExtractionError
-
-_BLOCKED_V4_NETWORKS = [
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-]
 
 
 def _is_blocked_host(hostname: str) -> bool:
@@ -42,10 +35,11 @@ def _is_blocked_host(hostname: str) -> bool:
             ``urlparse``).
 
     Returns:
-        True for ``localhost``, ``::1``, any IPv4-mapped IPv6 address whose
-        unwrapped IPv4 form is blocked, or any address in
-        ``_BLOCKED_V4_NETWORKS``. False for a non-IP hostname (DNS
-        resolution is not performed here).
+        True for ``localhost`` or any address literal (unwrapping an
+        IPv4-mapped IPv6 address to its IPv4 form first) that ``ipaddress``
+        classifies as loopback, link-local, private, reserved, or
+        unspecified. False for a non-IP hostname (DNS resolution is not
+        performed here).
     """
     host = hostname.strip("[]")
     if host == "localhost":
@@ -55,13 +49,16 @@ def _is_blocked_host(hostname: str) -> bool:
     except ValueError:
         return False
     if isinstance(ip, ipaddress.IPv6Address):
-        if ip == ipaddress.IPv6Address("::1"):
-            return True
         mapped = ip.ipv4_mapped
-        if mapped is None:
-            return False
-        ip = mapped
-    return any(ip in net for net in _BLOCKED_V4_NETWORKS)
+        if mapped is not None:
+            ip = mapped
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
 
 
 def validate_fetch_url(url: str) -> None:
