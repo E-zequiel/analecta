@@ -67,12 +67,21 @@ def _is_blocked_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bo
         allowlist of what to catch), plus multicast explicitly — verified
         empirically that ``is_global`` returns ``True`` for multicast
         addresses on both address families, so it does not subsume that
-        case. Unwraps an IPv4-mapped IPv6 address (``::ffff:0:0/96``) or a
+        case. Unwraps an IPv4-mapped IPv6 address (``::ffff:0:0/96``), a
         NAT64-embedded one (the well-known ``64:ff9b::/96`` prefix a
         NAT64/DNS64 gateway on an IPv6-only network embeds an IPv4 address
-        in — verified empirically that ``is_global`` returns ``True`` for
-        an embedded-internal-IPv4 address under this prefix, so it isn't
-        caught without unwrapping first either) to its IPv4 form first.
+        in), or a deprecated IPv4-compatible one (the bare ``::/96`` prefix,
+        e.g. ``::127.0.0.1`` — distinguished from the other two forms by its
+        embedded value never exceeding ``2**32 - 1``, while both of those
+        stay well above it, so there's no overlap between the three checks)
+        to its IPv4 form first — verified empirically that ``is_global``
+        returns ``True`` for the embedded address under all three prefixes,
+        so none of them is caught without unwrapping first. No OS on this
+        project's target platforms actually routes the IPv4-compatible form
+        to the address it embeds (RFC 4291 deprecated the automatic
+        tunneling that once made it), but the classification itself is what
+        this function promises to get right, independent of what a kernel
+        happens to do with the result.
     """
     if isinstance(ip, ipaddress.IPv6Address):
         mapped = ip.ipv4_mapped
@@ -80,6 +89,8 @@ def _is_blocked_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bo
             ip = mapped
         elif ip in _NAT64_PREFIX:
             ip = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+        elif int(ip) < 2**32:
+            ip = ipaddress.IPv4Address(int(ip))
     return not ip.is_global or ip.is_multicast
 
 

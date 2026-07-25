@@ -31,6 +31,7 @@ from analecta.extraction.ssrf import (
         "https://8.8.8.8/path",
         "https://[2001:4860:4860::8888]/path",
         "https://[64:ff9b::808:808]/path",  # NAT64-embedded 8.8.8.8, public
+        "https://[::808:808]/path",  # IPv4-compatible-embedded 8.8.8.8, public
     ],
 )
 def test_validate_fetch_url_allows_public_targets(url):
@@ -71,6 +72,8 @@ def test_validate_fetch_url_blocks_non_http_schemes(url):
         "http://203.0.113.1/",  # TEST-NET-3 (RFC 5737)
         "http://[64:ff9b::7f00:1]/",  # NAT64-embedded 127.0.0.1
         "http://[64:ff9b::a00:1]/",  # NAT64-embedded 10.0.0.1
+        "http://[::127.0.0.1]/",  # deprecated IPv4-compatible 127.0.0.1
+        "http://[::10.0.0.1]/",  # deprecated IPv4-compatible 10.0.0.1
     ],
 )
 def test_validate_fetch_url_blocks_internal_hosts(url):
