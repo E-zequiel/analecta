@@ -178,17 +178,19 @@ def test_discover_images_empty_html():
 
 
 @pytest.mark.asyncio
-async def test_download_saves_with_sha256_name(mocker, tmp_path):
+async def test_download_saves_with_sha256_name(mocker, mock_getaddrinfo, tmp_path):
+    mock_getaddrinfo({"example.com": ["93.184.216.34"]})
     data = b"fake-image-bytes"
     sha = hashlib.sha256(data).hexdigest()
 
     mock_resp = mocker.Mock()
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = mocker.Mock()
     mock_resp.headers = {"content-type": "image/png"}
     mock_resp.content = data
 
     mock_client = mocker.AsyncMock()
-    mock_client.get = mocker.AsyncMock(return_value=mock_resp)
+    mock_client.request = mocker.AsyncMock(return_value=mock_resp)
 
     asset_dir = tmp_path / "assets" / "slug"
     asset_dir.mkdir(parents=True)
@@ -203,15 +205,17 @@ async def test_download_saves_with_sha256_name(mocker, tmp_path):
 
 @pytest.mark.asyncio
 async def test_download_falls_back_to_placeholder_on_non_image_content_type(
-    mocker, tmp_path
+    mocker, mock_getaddrinfo, tmp_path
 ):
+    mock_getaddrinfo({"example.com": ["93.184.216.34"]})
     mock_resp = mocker.Mock()
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = mocker.Mock()
     mock_resp.headers = {"content-type": "text/html"}
     mock_resp.content = b"<html></html>"
 
     mock_client = mocker.AsyncMock()
-    mock_client.get = mocker.AsyncMock(return_value=mock_resp)
+    mock_client.request = mocker.AsyncMock(return_value=mock_resp)
 
     asset_dir = tmp_path / "assets" / "slug"
     asset_dir.mkdir(parents=True)
@@ -221,13 +225,16 @@ async def test_download_falls_back_to_placeholder_on_non_image_content_type(
     )
     assert result == _placeholder_filename()
     assert (asset_dir / result).read_bytes() == _placeholder_bytes()
-    assert mock_client.get.call_count == 2
+    assert mock_client.request.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_download_falls_back_to_placeholder_on_network_error(mocker, tmp_path):
+async def test_download_falls_back_to_placeholder_on_network_error(
+    mocker, mock_getaddrinfo, tmp_path
+):
+    mock_getaddrinfo({"example.com": ["93.184.216.34"]})
     mock_client = mocker.AsyncMock()
-    mock_client.get = mocker.AsyncMock(side_effect=Exception("network error"))
+    mock_client.request = mocker.AsyncMock(side_effect=Exception("network error"))
 
     asset_dir = tmp_path / "assets" / "slug"
     asset_dir.mkdir(parents=True)
@@ -237,21 +244,27 @@ async def test_download_falls_back_to_placeholder_on_network_error(mocker, tmp_p
     )
     assert result == _placeholder_filename()
     assert (asset_dir / result).read_bytes() == _placeholder_bytes()
-    assert mock_client.get.call_count == 2
+    assert mock_client.request.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_download_recovers_on_retry_after_transient_failure(mocker, tmp_path):
+async def test_download_recovers_on_retry_after_transient_failure(
+    mocker, mock_getaddrinfo, tmp_path
+):
+    mock_getaddrinfo({"example.com": ["93.184.216.34"]})
     data = b"fake-image-bytes"
     sha = hashlib.sha256(data).hexdigest()
 
     mock_resp = mocker.Mock()
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = mocker.Mock()
     mock_resp.headers = {"content-type": "image/png"}
     mock_resp.content = data
 
     mock_client = mocker.AsyncMock()
-    mock_client.get = mocker.AsyncMock(side_effect=[Exception("transient"), mock_resp])
+    mock_client.request = mocker.AsyncMock(
+        side_effect=[Exception("transient"), mock_resp]
+    )
 
     asset_dir = tmp_path / "assets" / "slug"
     asset_dir.mkdir(parents=True)
@@ -262,7 +275,7 @@ async def test_download_recovers_on_retry_after_transient_failure(mocker, tmp_pa
 
     assert result == f"{sha[:16]}.png"
     assert (asset_dir / result).read_bytes() == data
-    assert mock_client.get.call_count == 2
+    assert mock_client.request.call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -304,17 +317,19 @@ def test_placeholder_shared_filename_across_asset_dirs(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_download_falls_back_to_url_extension(mocker, tmp_path):
+async def test_download_falls_back_to_url_extension(mocker, mock_getaddrinfo, tmp_path):
+    mock_getaddrinfo({"example.com": ["93.184.216.34"]})
     data = b"svg-data"
     sha = hashlib.sha256(data).hexdigest()
 
     mock_resp = mocker.Mock()
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = mocker.Mock()
     mock_resp.headers = {"content-type": "image/svg+xml"}
     mock_resp.content = data
 
     mock_client = mocker.AsyncMock()
-    mock_client.get = mocker.AsyncMock(return_value=mock_resp)
+    mock_client.request = mocker.AsyncMock(return_value=mock_resp)
 
     asset_dir = tmp_path / "assets" / "slug"
     asset_dir.mkdir(parents=True)
@@ -395,11 +410,11 @@ async def test_process_creates_asset_directory(mocker, tmp_path):
 
 @pytest.mark.asyncio
 async def test_process_downloads_through_real_client_with_redirect_hook(
-    mocker, tmp_path
+    mocker, mock_getaddrinfo, tmp_path
 ):
-    """Regression guard: the redirect-blocking event_hooks wiring must not
-    break an ordinary image download through the real AsyncClient (a sync
-    hook there previously broke every response — see ssrf.py)."""
+    """Regression guard: the resolve/pin plumbing must not break an ordinary
+    image download through the real AsyncClient — see ssrf.py."""
+    mock_getaddrinfo({"example.com": ["93.184.216.34"]})
     png_bytes = b"\x89PNG\r\n\x1a\n fake"
     transport = httpx2.MockTransport(
         lambda request: httpx2.Response(

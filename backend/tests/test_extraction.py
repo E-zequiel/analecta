@@ -235,10 +235,12 @@ async def test_article_extractor_fetch_rejects_blocked_host():
 
 
 @pytest.mark.asyncio
-async def test_article_extractor_fetch_succeeds_through_real_client_with_hook(mocker):
-    """Regression guard: the redirect-blocking event_hooks wiring in _fetch must
-    not break an ordinary, non-redirected fetch through the real AsyncClient
-    (a sync hook there previously broke every response — see ssrf.py)."""
+async def test_article_extractor_fetch_succeeds_through_real_client_with_hook(
+    mocker, mock_getaddrinfo
+):
+    """Regression guard: the resolve/pin plumbing in _fetch (see ssrf.py) must
+    not break an ordinary, non-redirected fetch through the real AsyncClient."""
+    mock_getaddrinfo({"example.com": ["93.184.216.34"]})
     transport = httpx2.MockTransport(
         lambda request: httpx2.Response(200, text="<html><body>ok</body></html>")
     )
@@ -394,14 +396,17 @@ async def test_substack_extractor_returns_substack_type(mocker):
 
 
 @pytest.mark.asyncio
-async def test_substack_extractor_resolves_inbox_url(mocker):
+async def test_substack_extractor_resolves_inbox_url(mocker, mock_getaddrinfo):
     """Inbox URL is resolved via HEAD redirect before extraction."""
+    mock_getaddrinfo({"substack.com": ["93.184.216.34"]})
     canonical = "https://example.substack.com/p/my-post"
     mock_resp = mocker.MagicMock()
     mock_resp.status_code = 302
     mock_resp.headers = {"location": canonical}
     mock_client = mocker.AsyncMock()
-    mock_client.__aenter__.return_value.head = mocker.AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__.return_value.request = mocker.AsyncMock(
+        return_value=mock_resp
+    )
     mocker.patch(
         "analecta.extraction.social.httpx2.AsyncClient", return_value=mock_client
     )
@@ -415,15 +420,20 @@ async def test_substack_extractor_resolves_inbox_url(mocker):
 
 
 @pytest.mark.asyncio
-async def test_substack_extractor_url_reflects_redirect_past_canonical(mocker):
+async def test_substack_extractor_url_reflects_redirect_past_canonical(
+    mocker, mock_getaddrinfo
+):
     """A redirect encountered *after* inbox resolution still updates url."""
+    mock_getaddrinfo({"substack.com": ["93.184.216.34"]})
     canonical = "https://example.substack.com/p/my-post"
     final = "https://example.substack.com/p/my-post-renamed"
     mock_resp = mocker.MagicMock()
     mock_resp.status_code = 302
     mock_resp.headers = {"location": canonical}
     mock_client = mocker.AsyncMock()
-    mock_client.__aenter__.return_value.head = mocker.AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__.return_value.request = mocker.AsyncMock(
+        return_value=mock_resp
+    )
     mocker.patch(
         "analecta.extraction.social.httpx2.AsyncClient", return_value=mock_client
     )
@@ -448,10 +458,11 @@ async def test_substack_extractor_canonical_url_skips_head_request(mocker):
 
 
 @pytest.mark.asyncio
-async def test_substack_extractor_inbox_head_failure_raises(mocker):
+async def test_substack_extractor_inbox_head_failure_raises(mocker, mock_getaddrinfo):
     """Network failure on inbox HEAD request raises ExtractionError."""
+    mock_getaddrinfo({"substack.com": ["93.184.216.34"]})
     mock_client = mocker.AsyncMock()
-    mock_client.__aenter__.return_value.head = mocker.AsyncMock(
+    mock_client.__aenter__.return_value.request = mocker.AsyncMock(
         side_effect=Exception("network error")
     )
     mocker.patch(
@@ -463,13 +474,16 @@ async def test_substack_extractor_inbox_head_failure_raises(mocker):
 
 
 @pytest.mark.asyncio
-async def test_substack_extractor_inbox_no_redirect_raises(mocker):
+async def test_substack_extractor_inbox_no_redirect_raises(mocker, mock_getaddrinfo):
     """A non-3xx response for an inbox URL raises ExtractionError."""
+    mock_getaddrinfo({"substack.com": ["93.184.216.34"]})
     mock_resp = mocker.MagicMock()
     mock_resp.status_code = 200
     mock_resp.headers = {}
     mock_client = mocker.AsyncMock()
-    mock_client.__aenter__.return_value.head = mocker.AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__.return_value.request = mocker.AsyncMock(
+        return_value=mock_resp
+    )
     mocker.patch(
         "analecta.extraction.social.httpx2.AsyncClient", return_value=mock_client
     )

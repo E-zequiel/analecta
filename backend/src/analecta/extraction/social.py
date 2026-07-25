@@ -5,7 +5,7 @@ import httpx2
 
 from analecta.extraction.core import ExtractedContent, ExtractionError, SourceExtractor
 from analecta.extraction.http_identity import build_headers
-from analecta.extraction.ssrf import validate_fetch_url
+from analecta.extraction.ssrf import fetch_pinned_once, validate_fetch_url
 
 _INBOX_RE = re.compile(r"^/inbox/post/\d+$")
 _TIMEOUT = 8.0
@@ -73,10 +73,10 @@ class SubstackExtractor(SourceExtractor):
 
         validate_fetch_url(url)
         try:
-            async with httpx2.AsyncClient(
-                follow_redirects=False, timeout=_TIMEOUT
-            ) as client:
-                resp = await client.head(url, headers=build_headers("document"))
+            async with httpx2.AsyncClient(timeout=_TIMEOUT) as client:
+                resp = await fetch_pinned_once(
+                    client, "HEAD", url, headers=build_headers("document")
+                )
         except Exception as exc:
             raise ExtractionError(
                 f"Could not resolve Substack inbox URL {url}: {exc}"
