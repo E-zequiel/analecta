@@ -2288,7 +2288,13 @@ def test_rescue_short_nested_lists_skips_negative_weight_list():
 
 
 def test_rescue_short_nested_lists_skips_list_with_image():
-    html = '<ul><li>Icon:<ul><li><img src="/x.png"></li></ul></li></ul>'
+    # The nested list needs its own short text alongside the <img>, not just
+    # the <img> alone: get_text() on an image-only list is "", which the
+    # earlier empty-text check (line 364) already skips on its own — that
+    # would make this test pass even if the img-guard itself were deleted.
+    # "Info" keeps get_text() non-empty and under the 25-char threshold, so
+    # the fixture actually reaches and exercises the img-guard below it.
+    html = '<ul><li>Icon:<ul><li><img src="/x.png">Info</li></ul></li></ul>'
     result = _rescue_short_nested_lists(html)
     soup = _BS(result, "html.parser")
     assert soup.find("li").find("ul") is not None
@@ -2399,7 +2405,13 @@ def test_rescue_short_figure_labels_skips_long_label():
 
 
 def test_rescue_short_figure_labels_skips_div_with_image():
-    html = '<div><p><img src="icon.png"></p></div><figure><img src="x.png"></figure>'
+    # Same reasoning as test_rescue_short_nested_lists_skips_list_with_image
+    # above: an image-only div's get_text() is "", which the earlier
+    # empty-text check (line 417) already skips on its own, so this
+    # wouldn't actually exercise the img-guard without accompanying text.
+    html = (
+        '<div><p><img src="icon.png">Info</p></div><figure><img src="x.png"></figure>'
+    )
     result = _rescue_short_figure_labels(html)
     soup = _BS(result, "html.parser")
     assert soup.find("div") is not None
