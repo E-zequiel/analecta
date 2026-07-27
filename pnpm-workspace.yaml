@@ -19,6 +19,17 @@ allowBuilds:
   # Downgrading below 42.0.0 will hit this: 41.x's postinstall would be
   # blocked and its index.js has no lazy-download fallback (throws "Electron
   # failed to install correctly") — re-add `electron: true` if that's ever needed.
+  #
+  # WARNING if you ever hit ERR_PNPM_IGNORED_BUILDS here (locally, without
+  # --ignore-scripts): pnpm auto-writes an entry into THIS file for you —
+  # `<pkg>: set this to true or false` — before you've decided anything.
+  # That string is not `false`, so it silently re-enables script execution
+  # for that package. Verified 2026-07-27: happens on `pnpm install` and
+  # `pnpm add`, with or without --frozen-lockfile, regardless of node_modules
+  # state. Don't `git add`/commit it as-is — either run `pnpm approve-builds`
+  # (resolves it to a real true/false and runs or skips the script
+  # accordingly) or edit the line yourself, then verify the script per
+  # Control 11 in docs/github-actions-security.md before setting it `true`.
   electron-winstaller: false
 
 overrides:

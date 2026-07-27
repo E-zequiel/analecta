@@ -99,6 +99,17 @@ pnpm verifies the downloaded tarball's hash against the registry's
 step doesn't trust the hash from step 1 blindly, it's independently re-derived
 from the actual bytes pnpm downloaded.
 
+**If this step fails with `ERR_PNPM_IGNORED_BUILDS` instead:** the package you
+just bumped has a lifecycle script pnpm won't run without approval — expected,
+`pnpm-workspace.yaml`'s `allowBuilds` denies scripts by default (Control 11,
+`docs/github-actions-security.md`). Before deciding whether to approve it,
+know that pnpm will have already rewritten `pnpm-workspace.yaml` with a
+placeholder line (`<pkg>: set this to true or false`) that is **not** a real
+`false` — left as-is, it silently re-enables the script. Run
+`pnpm approve-builds` to resolve it properly (or hand-edit after verifying the
+script per Control 11), and check `git diff pnpm-workspace.yaml` before
+committing either way.
+
 **Multi-package bumps: dedupe before trusting the lockfile.** When one
 `package.json` edit bumps several packages that share a transitive or peer
 dependency (e.g. `@codemirror/state`/`@codemirror/view`, consumed both
