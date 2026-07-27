@@ -6,6 +6,9 @@ For each ecosystem (Python/uv, Node/pnpm):
   2. Query the upstream registry for the release date of the new version.
   3. Skip packages released less than COOLDOWN_DAYS ago.
   4. Apply selective updates for packages that pass the gate.
+  5. With --verify: check the whole batch against check.sh; on failure,
+     replay the batch one package at a time to isolate and exclude only the
+     package(s) that actually broke it, instead of discarding the batch.
 
 Usage (from repo root):
     python scripts/deps_update.py [--cooldown DAYS] [--pr-body-file PATH]
@@ -36,6 +39,7 @@ _WORKSPACE_DIR = {"frontend": "frontend", "analecta-electron": "electron"}
 
 type Updated = tuple[str, str, str, datetime]  # (name, old, new, release_dt)
 type Skipped = tuple[str, str, datetime]  # (name, new, release_dt)
+type Blocked = tuple[str, str, str]  # (name, new, reason)
 
 # ---------------------------------------------------------------------------
 # Shared utilities
@@ -67,10 +71,10 @@ def _parse_iso(s: str) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
-def _run_check(repo_root: Path) -> bool:
-    """Run check.sh and stream its output. Returns True on success."""
-    print("\n==> Verifying with check.sh …")
-    result = subprocess.run(["bash", "scripts/check.sh"], cwd=repo_root)
+def _run_check(repo_root: Path, scope: str) -> bool:
+    """Run check.sh for the given scope ('backend' or 'frontend') and stream output."""
+    print(f"\n==> Verifying with check.sh {scope} …")
+    result = subprocess.run(["bash", "scripts/check.sh", scope], cwd=repo_root)
     return result.returncode == 0
 
 
@@ -100,6 +104,14 @@ def _pypi_release_date(
         return _parse_iso(min(times))
     except ValueError, TypeError:
         return None
+
+
+def _apply_python_package(name: str, backend: Path) -> tuple[bool, str]:
+    """Apply a single Python package bump via `uv lock --upgrade-package`."""
+    result = _run(["uv", "lock", "--upgrade-package", name], cwd=backend)
+    if result.returncode != 0:
+        return False, f"uv lock failed — {result.stderr.strip()}"
+    return True, ""
 
 
 def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], bool]:
@@ -155,9 +167,9 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], bool]:
             skipped.append((name, latest, release_dt))
             continue
 
-        result = _run(["uv", "lock", "--upgrade-package", name], cwd=backend)
-        if result.returncode != 0:
-            print(f"::error::{name}: uv lock failed — {result.stderr.strip()}")
+        ok, err = _apply_python_package(name, backend)
+        if not ok:
+            print(f"::error::{name}: {err}")
             had_error = True
         else:
             print("    [ok] updated")
@@ -170,6 +182,37 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], bool]:
         had_error = True
 
     return updated, skipped, had_error
+
+
+def _verify_python(
+    backend: Path, uv_lock_path: Path, snap: bytes, batch: list[Updated]
+) -> tuple[list[Updated], list[Blocked]]:
+    """Verify a batch of Python updates with check.sh backend; bisect on failure."""
+    if _run_check(REPO_ROOT, "backend"):
+        return batch, []
+
+    print(
+        "::warning::check.sh backend failed on the full batch"
+        " — isolating the offending package(s)"
+    )
+    _ = uv_lock_path.write_bytes(snap)
+
+    survivors: list[Updated] = []
+    blocked: list[Blocked] = []
+    for name, old, new, release_dt in batch:
+        step_snap = uv_lock_path.read_bytes()
+        ok, reason = _apply_python_package(name, backend)
+        if ok:
+            ok = _run_check(REPO_ROOT, "backend")
+            reason = "check.sh backend failed"
+        if ok:
+            print(f"    [ok] {name}: confirmed in isolation")
+            survivors.append((name, old, new, release_dt))
+        else:
+            _ = uv_lock_path.write_bytes(step_snap)
+            print(f"::warning::{name}: blocked — {reason}")
+            blocked.append((name, new, reason))
+    return survivors, blocked
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +274,45 @@ def _ensure_exact_specifier(workspace_dir: str, name: str, version: str) -> bool
     return True
 
 
+def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, str]:
+    """Apply a single Node package bump: pnpm add, enforce exact pin, resync, dedupe.
+
+    Returns:
+        (True, "") on success, (False, reason) on failure at any step.
+    """
+    result = _run(
+        ["pnpm", "add", f"{name}@{version}", "--save-exact", "--filter", workspace],
+        cwd=REPO_ROOT,
+    )
+    if result.returncode != 0:
+        return False, f"pnpm add failed — {result.stderr.strip()}"
+
+    if _ensure_exact_specifier(_WORKSPACE_DIR[workspace], name, version):
+        # --no-frozen-lockfile: this resync intentionally updates the
+        # lockfile, but pnpm defaults frozen-lockfile to on in CI (CI=true),
+        # which rejects any install that would change it.
+        resync = _run(
+            ["pnpm", "install", "--filter", workspace, "--no-frozen-lockfile"],
+            cwd=REPO_ROOT,
+        )
+        if resync.returncode != 0:
+            # pnpm reports ERR_PNPM_OUTDATED_LOCKFILE etc. on stdout, not stderr.
+            detail = resync.stderr.strip() or resync.stdout.strip()
+            return False, f"lockfile resync failed after exact-pin fix — {detail}"
+
+    # A direct-dependency bump can leave an older resolution of the same
+    # package alive elsewhere in the graph (pulled in transitively by an
+    # unrelated consumer) unless the lockfile is deduped afterward — this
+    # surfaces as duplicate-type errors in svelte-check/tsc, not as a pnpm
+    # error, so it has to be handled here rather than left to the caller.
+    dedupe = _run(["pnpm", "dedupe"], cwd=REPO_ROOT)
+    if dedupe.returncode != 0:
+        detail = dedupe.stderr.strip() or dedupe.stdout.strip()
+        return False, f"dedupe failed — {detail}"
+
+    return True, ""
+
+
 def update_node(
     cooldown: int, workspace: str
 ) -> tuple[list[Updated], list[Skipped], bool]:
@@ -289,33 +371,11 @@ def update_node(
             skipped.append((name, latest, release_dt))
             continue
 
-        result = _run(
-            ["pnpm", "add", f"{name}@{latest}", "--save-exact", "--filter", workspace],
-            cwd=REPO_ROOT,
-        )
-        if result.returncode != 0:
-            print(f"::error::{name}: pnpm add failed — {result.stderr.strip()}")
+        ok, err = _apply_node_package(workspace, name, latest)
+        if not ok:
+            print(f"::error::{name}: {err}")
             had_error = True
             continue
-
-        if _ensure_exact_specifier(_WORKSPACE_DIR[workspace], name, latest):
-            # --no-frozen-lockfile: this resync intentionally updates the
-            # lockfile, but pnpm defaults frozen-lockfile to on in CI (CI=true),
-            # which rejects any install that would change it.
-            resync = _run(
-                ["pnpm", "install", "--filter", workspace, "--no-frozen-lockfile"],
-                cwd=REPO_ROOT,
-            )
-            if resync.returncode != 0:
-                # pnpm reports ERR_PNPM_OUTDATED_LOCKFILE etc. on stdout, not stderr.
-                detail = resync.stderr.strip() or resync.stdout.strip()
-                print(
-                    f"::error::{name}: lockfile resync failed after exact-pin fix"
-                    f" — {detail}"
-                )
-                had_error = True
-                continue
-            print("    [fix] forced exact pin, resynced lockfile")
 
         print("    [ok] updated")
         updated.append((name, current, latest, release_dt))
@@ -327,6 +387,50 @@ def update_node(
     return updated, skipped, had_error
 
 
+def _verify_node(
+    pnpm_lock_path: Path,
+    pnpm_snap: bytes,
+    fe_pkg_path: Path,
+    fe_pkg_snap: bytes,
+    el_pkg_path: Path,
+    el_pkg_snap: bytes,
+    batch: list[tuple[str, Updated]],
+) -> tuple[list[tuple[str, Updated]], list[Blocked]]:
+    """Verify a batch of Node updates with check.sh frontend; bisect on failure."""
+    if _run_check(REPO_ROOT, "frontend"):
+        return batch, []
+
+    print(
+        "::warning::check.sh frontend failed on the full batch"
+        " — isolating the offending package(s)"
+    )
+    _ = pnpm_lock_path.write_bytes(pnpm_snap)
+    _ = fe_pkg_path.write_bytes(fe_pkg_snap)
+    _ = el_pkg_path.write_bytes(el_pkg_snap)
+
+    survivors: list[tuple[str, Updated]] = []
+    blocked: list[Blocked] = []
+    for workspace, (name, old, new, release_dt) in batch:
+        step_snap = {
+            pnpm_lock_path: pnpm_lock_path.read_bytes(),
+            fe_pkg_path: fe_pkg_path.read_bytes(),
+            el_pkg_path: el_pkg_path.read_bytes(),
+        }
+        ok, reason = _apply_node_package(workspace, name, new)
+        if ok:
+            ok = _run_check(REPO_ROOT, "frontend")
+            reason = "check.sh frontend failed"
+        if ok:
+            print(f"    [ok] {name} ({workspace}): confirmed in isolation")
+            survivors.append((workspace, (name, old, new, release_dt)))
+        else:
+            for path, data in step_snap.items():
+                _ = path.write_bytes(data)
+            print(f"::warning::{name} ({workspace}): blocked — {reason}")
+            blocked.append((name, new, reason))
+    return survivors, blocked
+
+
 # ---------------------------------------------------------------------------
 # PR body
 # ---------------------------------------------------------------------------
@@ -335,8 +439,10 @@ def update_node(
 def _pr_body(
     py_up: list[Updated],
     py_sk: list[Skipped],
+    py_blocked: list[Blocked],
     nd_up: list[Updated],
     nd_sk: list[Skipped],
+    nd_blocked: list[Blocked],
     cooldown: int,
 ) -> str:
     today = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -347,7 +453,9 @@ def _pr_body(
         "",
     ]
 
-    def _section(title: str, up: list[Updated], sk: list[Skipped]) -> None:
+    def _section(
+        title: str, up: list[Updated], sk: list[Skipped], blocked: list[Blocked]
+    ) -> None:
         lines.append(f"### {title}")
         if up:
             lines.append("| Package | Old | New | Released |")
@@ -366,16 +474,30 @@ def _pr_body(
                 for n, v, release_dt in sk
             ]
             lines.append(f"**Skipped — too recent:** {', '.join(eligible)}")
+        if blocked:
+            lines.append("")
+            items = [f"`{n}` {v} — _{reason}_" for n, v, reason in blocked]
+            lines.append(
+                f"**Blocked — broke `check.sh`, excluded from this update:**"
+                f" {'; '.join(items)}"
+            )
         lines.append("")
 
-    _section("Python", py_up, py_sk)
-    _section("Node / pnpm", nd_up, nd_sk)
+    _section("Python", py_up, py_sk, py_blocked)
+    _section("Node / pnpm", nd_up, nd_sk, nd_blocked)
 
     lines += [
         "---",
         "",
         "Before merging, verify the gate passed: run `./scripts/check.sh`.",
     ]
+    if py_blocked or nd_blocked:
+        lines += [
+            "",
+            "Blocked packages were excluded automatically, not reverted wholesale —"
+            " re-run the updater once the underlying incompatibility is resolved"
+            " upstream.",
+        ]
     return "\n".join(lines)
 
 
@@ -405,44 +527,75 @@ def main() -> None:
         "--verify",
         action="store_true",
         default=False,
-        help="run check.sh after updating and revert lockfiles on failure",
+        help=(
+            "verify each ecosystem's batch with check.sh; on failure, isolate and "
+            "exclude only the package(s) that broke it instead of reverting everything"
+        ),
     )
     args = parser.parse_args()
     cooldown: int = cast(int, args.cooldown)
     pr_body_file: Path | None = cast(Path | None, args.pr_body_file)
     verify: bool = cast(bool, args.verify)
 
-    uv_lock_path = REPO_ROOT / "backend" / "uv.lock"
+    backend = REPO_ROOT / "backend"
+    uv_lock_path = backend / "uv.lock"
     pnpm_lock_path = REPO_ROOT / "pnpm-lock.yaml"
+    fe_pkg_path = REPO_ROOT / _WORKSPACE_DIR["frontend"] / "package.json"
+    el_pkg_path = REPO_ROOT / _WORKSPACE_DIR["analecta-electron"] / "package.json"
+
     uv_snap: bytes | None = uv_lock_path.read_bytes() if verify else None
     pnpm_snap: bytes | None = pnpm_lock_path.read_bytes() if verify else None
+    fe_pkg_snap: bytes | None = fe_pkg_path.read_bytes() if verify else None
+    el_pkg_snap: bytes | None = el_pkg_path.read_bytes() if verify else None
 
     py_up, py_sk, py_err = update_python(cooldown)
     nd_up_fe, nd_sk_fe, nd_err_fe = update_node(cooldown, "frontend")
     nd_up_el, nd_sk_el, nd_err_el = update_node(cooldown, "analecta-electron")
-    nd_up = nd_up_fe + nd_up_el
     nd_sk = nd_sk_fe + nd_sk_el
     nd_err = nd_err_fe or nd_err_el
 
+    py_blocked: list[Blocked] = []
+    nd_blocked: list[Blocked] = []
+
+    if uv_snap is not None and py_up and not py_err:
+        py_up, py_blocked = _verify_python(backend, uv_lock_path, uv_snap, py_up)
+
+    nd_up_tagged: list[tuple[str, Updated]] = [("frontend", u) for u in nd_up_fe] + [
+        ("analecta-electron", u) for u in nd_up_el
+    ]
+
+    if (
+        pnpm_snap is not None
+        and fe_pkg_snap is not None
+        and el_pkg_snap is not None
+        and nd_up_tagged
+        and not nd_err
+    ):
+        nd_up_tagged, nd_blocked = _verify_node(
+            pnpm_lock_path,
+            pnpm_snap,
+            fe_pkg_path,
+            fe_pkg_snap,
+            el_pkg_path,
+            el_pkg_snap,
+            nd_up_tagged,
+        )
+    nd_up = [u for _, u in nd_up_tagged]
+
     total_up = len(py_up) + len(nd_up)
     total_sk = len(py_sk) + len(nd_sk)
-    print(f"\n==> {total_up} updated, {total_sk} skipped (cooldown)")
+    total_blocked = len(py_blocked) + len(nd_blocked)
+    print(
+        f"\n==> {total_up} updated, {total_sk} skipped (cooldown),"
+        f" {total_blocked} blocked (incompatible)"
+    )
 
     if pr_body_file:
-        body = _pr_body(py_up, py_sk, nd_up, nd_sk, cooldown)
+        body = _pr_body(py_up, py_sk, py_blocked, nd_up, nd_sk, nd_blocked, cooldown)
         _ = pr_body_file.write_text(body)
         print(f"    PR body written to {pr_body_file}")
 
     had_error = py_err or nd_err
-    if verify and total_up > 0 and not had_error:
-        if not _run_check(REPO_ROOT):
-            print("::error::check.sh failed — reverting lockfiles")
-            if uv_snap is not None:
-                uv_lock_path.write_bytes(uv_snap)
-            if pnpm_snap is not None:
-                pnpm_lock_path.write_bytes(pnpm_snap)
-            sys.exit(1)
-
     if had_error:
         sys.exit(1)
 
