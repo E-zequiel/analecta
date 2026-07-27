@@ -76,5 +76,7 @@ def build_frontmatter(content: ExtractedContent, created_at: str) -> str:
     for field in ("author", "description", "published"):
         if content.metadata.get(field):
             data[field] = content.metadata[field]
+    if "low_confidence" in content.metadata:
+        data["low_confidence"] = content.metadata["low_confidence"]
     body = yaml.dump(data, allow_unicode=True, sort_keys=False)
     return f"---\n{body}---\n"

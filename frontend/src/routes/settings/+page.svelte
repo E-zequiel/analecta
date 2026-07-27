@@ -36,6 +36,8 @@
 	let browsing = $state(false);
 	let rescanning = $state(false);
 	let rescanResult = $state('');
+	let localizingImages = $state(false);
+	let localizeImagesResult = $state('');
 
 	let uiFontTimer: ReturnType<typeof setTimeout> | null = null;
 	let readingFontTimer: ReturnType<typeof setTimeout> | null = null;
@@ -162,6 +164,28 @@
 			error = err instanceof Error ? err.message : String(err);
 		} finally {
 			rescanning = false;
+		}
+	}
+
+	async function localizeRemoteImages() {
+		localizingImages = true;
+		error = '';
+		localizeImagesResult = '';
+		try {
+			const { updated, placeholders } = await systemApi.localizeImages();
+			if (updated === 0) {
+				localizeImagesResult = 'No entries needed updating.';
+			} else {
+				const entryWord = updated === 1 ? 'entry' : 'entries';
+				localizeImagesResult =
+					placeholders > 0
+						? `Updated ${updated} ${entryWord} (${placeholders} replaced with a placeholder — the image couldn't be re-downloaded).`
+						: `Updated ${updated} ${entryWord}.`;
+			}
+		} catch (err) {
+			error = err instanceof Error ? err.message : String(err);
+		} finally {
+			localizingImages = false;
 		}
 	}
 
@@ -381,7 +405,24 @@
 					{rescanning ? 'Scanning…' : 'Rescan'}
 				</button>
 			</div>
-			{#if rescanResult}<p class="rescan-result">{rescanResult}</p>{/if}
+			{#if rescanResult}<p class="maintenance-result">{rescanResult}</p>{/if}
+			<div class="field toggle-field">
+				<label
+					for="localize-images"
+					use:tooltip={'Re-download or replace with a placeholder any remote images left over from a failed download in already-saved entries'}
+				>
+					Localize remote images
+				</label>
+				<button
+					id="localize-images"
+					class="action-btn"
+					onclick={localizeRemoteImages}
+					disabled={localizingImages}
+				>
+					{localizingImages ? 'Scanning…' : 'Localize'}
+				</button>
+			</div>
+			{#if localizeImagesResult}<p class="maintenance-result">{localizeImagesResult}</p>{/if}
 		</section>
 
 		<section>
@@ -823,7 +864,7 @@
 		margin-bottom: 1rem;
 	}
 
-	.rescan-result {
+	.maintenance-result {
 		margin: 0.5rem 0 0;
 		font-size: 12px;
 		color: var(--green);

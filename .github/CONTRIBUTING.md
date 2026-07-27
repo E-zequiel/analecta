@@ -58,9 +58,23 @@ cd backend && mise exec -- uv run python -m analecta
 
 **Full application** (Electron shell + SvelteKit hot reload + sidecar):
 
+`pnpm electron:dev` only compiles the Electron TypeScript and points the window at
+`http://localhost:5173` — it does not start the Vite dev server itself, and the sidecar
+process it spawns is always the PyInstaller binary in `binaries/`, never raw Python
+source. Two terminals, in order:
+
 ```sh
+# once, and again after any backend/src/analecta/** change
+mise exec -- uv run python scripts/build_sidecar.py
+
+# terminal 1 — frontend dev server
+mise exec -- pnpm --filter frontend dev
+
+# terminal 2 — after terminal 1 is listening on :5173
 mise exec -- pnpm electron:dev
 ```
+
+Starting terminal 2 before Vite is up fails the window load (`did-fail-load`).
 
 ## Building from source
 

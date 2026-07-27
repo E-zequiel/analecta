@@ -3,7 +3,33 @@ packages:
   - 'electron'
 
 allowBuilds:
-  electron: true
+  # electron (>=42.0.0, currently pinned 42.1.0): no entry needed. Electron
+  # removed its postinstall entirely in 42.0.0 — verified via a real tarball
+  # diff against 41.10.3 and Electron's own v42.0.0 release notes ("Electron
+  # will now download itself dynamically the first time its main `bin`
+  # script is run", done specifically to remove postinstall as a supply-chain
+  # attack vector). Leaving `electron: true` here would silently re-grant
+  # script execution if a future Electron release ever reintroduces one,
+  # bypassing the whole point of this allowlist — an absent entry fails
+  # loudly instead (`ERR_PNPM_IGNORED_BUILDS`, ci.yml's check-frontend job
+  # and release.yml both install without --ignore-scripts and would catch
+  # it), whereas `electron: false` would fail just as silently as `true`
+  # does today. Re-verify with `pnpm view electron@<version> scripts --json`
+  # before re-adding an entry, and audit the script per Control 11 below.
+  # Downgrading below 42.0.0 will hit this: 41.x's postinstall would be
+  # blocked and its index.js has no lazy-download fallback (throws "Electron
+  # failed to install correctly") — re-add `electron: true` if that's ever needed.
+  #
+  # WARNING if you ever hit ERR_PNPM_IGNORED_BUILDS here (locally, without
+  # --ignore-scripts): pnpm auto-writes an entry into THIS file for you —
+  # `<pkg>: set this to true or false` — before you've decided anything.
+  # That string is not `false`, so it silently re-enables script execution
+  # for that package. Verified 2026-07-27: happens on `pnpm install` and
+  # `pnpm add`, with or without --frozen-lockfile, regardless of node_modules
+  # state. Don't `git add`/commit it as-is — either run `pnpm approve-builds`
+  # (resolves it to a real true/false and runs or skips the script
+  # accordingly) or edit the line yourself, then verify the script per
+  # Control 11 in docs/github-actions-security.md before setting it `true`.
   electron-winstaller: false
 
 overrides:
@@ -15,8 +41,34 @@ overrides:
   js-yaml: '4.3.0'
   # Security patch — transitive via electron-builder and friends.
   form-data: '4.0.6'
-  # Security patch — transitive via node-gyp and electron-builder.
-  tar: '7.5.16'
+  # GHSA-r292-9mhp-454m (mapHas/filesFilter stack-overflow DoS) + 4 earlier CVEs it supersedes
+  # (GHSA-23hp-3jrh-7fpw gzip-bomb DoS, GHSA-8x88-c5mf-7j5w replace() infinite loop,
+  # GHSA-gvwx-54wh-qm9j PAX NUL-byte uncaught exception, GHSA-w8wr-v893-vjvp PAX numeric-path
+  # type confusion). Transitive via node-gyp and electron-builder.
+  tar: '7.5.21'
+  # GHSA-v2hh-gcrm-f6hx (backslash authority-delimiter host confusion) + GHSA-4c8g-83qw-93j6
+  # (failed IDN canonicalization host confusion). Transitive via ajv (single consumer, ajv@8.20.0).
+  fast-uri: '3.1.4'
+  # GHSA-mh99-v99m-4gvg (unbounded expansion length OOM) + GHSA-3jxr-9vmj-r5cp (exponential-time
+  # DoS). Three major lines are pulled in by different consumers and are NOT cross-compatible —
+  # verified empirically: forcing 5.0.8 onto the 1.x/2.x consumers throws real TypeErrors
+  # (`expand is not a function`) because brace-expansion@5.x switched to a named-export-only CJS
+  # build (tshy), while minimatch@3.x/5.x/9.x call the old default-callable export directly.
+  # Scoped per line by requested range:
+  #   @1 (minimatch@3.1.5 → glob@7.2.3 → @electron/asar, dir-compare)
+  #   @2 (minimatch@5.1.9, minimatch@9.0.9 → filelist, @electron/universal)
+  #   @5 (minimatch@10.2.5 → eslint tooling)
+  # Residual risk, accepted 2026-07-27: GHSA-mh99-v99m-4gvg has no backport to the 1.x/2.x lines
+  # (verified: 1.1.16 and 2.1.2 lack the EXPANSION_MAX_LENGTH bound present in 5.0.8) — those two
+  # lines stay exposed to it. Low real-world risk: both are electron-builder/eslint build-time
+  # tooling operating on our own glob patterns, not attacker-controlled input.
+  'brace-expansion@1': '1.1.16'
+  'brace-expansion@2': '2.1.2'
+  'brace-expansion@5': '5.0.8'
+  # GHSA-r28c-9q8g-f849 (sourceMappingURL path traversal → arbitrary .map file disclosure) +
+  # GHSA-fxqj-rqcc-2cmp. Transitive via vite/svelte-eslint-parser. Cooldown exception: 8.5.23
+  # released 3 days before this patch, approved explicitly given the severity.
+  postcss: '8.5.23'
   # CVE-2026-9678 (shared-cache info disclosure, CVSS 5.9) + CVE-2026-9697 (TLS bypass via SOCKS5, CVSS 7.4).
   # Scoped to @electron/get (7.x consumer). node-gyp uses a separate 6.x branch — see node-gyp>undici below.
   '@electron/get>undici': '7.28.0'

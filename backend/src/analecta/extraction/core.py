@@ -62,7 +62,14 @@ def detect_source_type(url: str) -> SourceType:
     if host in {"youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com"}:
         return "youtube"
 
-    if host in {"twitter.com", "www.twitter.com", "x.com", "www.x.com"}:
+    if host in {
+        "twitter.com",
+        "www.twitter.com",
+        "mobile.twitter.com",
+        "x.com",
+        "www.x.com",
+        "mobile.x.com",
+    }:
         return "x"
 
     if host.endswith(".substack.com") or host in {"substack.com", "www.substack.com"}:
@@ -82,10 +89,11 @@ async def extract(url: str) -> ExtractedContent:
 
     Raises:
         ExtractionError: If extraction fails.
-        NotImplementedError: For unsupported source types (e.g. X/Twitter).
+        NotImplementedError: If the detected source type has no extraction path.
     """
     from analecta.extraction.article import ArticleExtractor
-    from analecta.extraction.social import SubstackExtractor, XExtractor
+    from analecta.extraction.social import SubstackExtractor
+    from analecta.extraction.x import XExtractor
     from analecta.extraction.youtube import YouTubeExtractor
 
     source_type = detect_source_type(url)

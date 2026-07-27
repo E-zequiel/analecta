@@ -1,6 +1,9 @@
+import asyncio
+import socket
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import httpx2
 import pytest
@@ -47,6 +50,43 @@ def index(tmp_vault: Path) -> Generator[VaultIndex]:
 def vault(tmp_vault: Path) -> VaultManager:
     """VaultManager pointed at tmp_vault."""
     return VaultManager(tmp_vault)
+
+
+# ---------------------------------------------------------------------------
+# ssrf._getaddrinfo mocking — shared by every test that exercises
+# ssrf.fetch_safely/fetch_pinned_once (directly or via an extractor) without
+# wanting a real DNS query for a made-up hostname.
+# ---------------------------------------------------------------------------
+
+
+def _addrinfo_for(ip: str, port: int) -> tuple[Any, ...]:
+    family = socket.AF_INET6 if ":" in ip else socket.AF_INET
+    sockaddr = (ip, port, 0, 0) if family == socket.AF_INET6 else (ip, port)
+    return (family, socket.SOCK_STREAM, 6, "", sockaddr)
+
+
+@pytest.fixture
+def mock_getaddrinfo(mocker):
+    """Patch ``ssrf._getaddrinfo`` so specific hostnames resolve to fixed
+    addresses without a real DNS query.
+
+    Returns an activation function — call it with a ``{hostname: [ip, ...]}``
+    mapping. Any host *not* in the mapping still resolves for real, which
+    matters for IP-literal hosts (the alternate-encoding regression tests
+    need the real resolver's own numeric parsing) and for real redirect
+    targets that are themselves literals.
+    """
+
+    def _activate(mapping: dict[str, list[str]]):
+        async def fake(host: str, port: int) -> list[tuple[Any, ...]]:
+            if host in mapping:
+                return [_addrinfo_for(ip, port) for ip in mapping[host]]
+            loop = asyncio.get_running_loop()
+            return await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+
+        return mocker.patch("analecta.extraction.ssrf._getaddrinfo", side_effect=fake)
+
+    return _activate
 
 
 # ---------------------------------------------------------------------------

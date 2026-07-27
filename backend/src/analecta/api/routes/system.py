@@ -3,14 +3,17 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 from importlib.metadata import version
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from analecta.api.deps import get_event_bus, get_index
+from analecta.api.deps import get_config, get_event_bus, get_index
 from analecta.api.events import EventBus
-from analecta.storage.index import VaultIndex
+from analecta.config import AppConfig
+from analecta.extraction.assets import AssetDownloader
+from analecta.storage.index import EntryRecord, VaultIndex
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -27,6 +30,54 @@ class RescanOut(BaseModel):
     """
 
     updated: int
+
+
+class LocalizeImagesOut(BaseModel):
+    """Result of a manual remote-image localization backfill.
+
+    Attributes:
+        updated: Number of entries whose Markdown file was rewritten.
+        placeholders: Of those, how many rewrites replaced at least one
+            image with the bundled local placeholder rather than a
+            successful re-download (i.e. the download failed even after
+            its retry) — surfaced separately so a run that mostly hits
+            placeholders (e.g. a rate-limited CDN) is visible, not folded
+            into an opaque "updated N" success.
+    """
+
+    updated: int
+    placeholders: int
+
+
+def _read_markdown_if_exists(file_path: Path) -> str | None:
+    """Return *file_path*'s text content, or ``None`` if it doesn't exist.
+
+    Args:
+        file_path: Path to the entry's Markdown file.
+
+    Returns:
+        File content, or ``None`` if the file no longer exists on disk.
+    """
+    if not file_path.exists():
+        return None
+    return file_path.read_text(encoding="utf-8")
+
+
+def _persist_localized_entry(
+    index: VaultIndex, entry: EntryRecord, file_path: Path, rewritten: str
+) -> None:
+    """Write *rewritten* to *file_path* and resync backlinks/FTS for *entry*.
+
+    Args:
+        index: VaultIndex to resync.
+        entry: The entry being rewritten (must have a persisted id).
+        file_path: Path to the entry's Markdown file.
+        rewritten: New file content to write.
+    """
+    file_path.write_text(rewritten, encoding="utf-8")
+    assert entry.id is not None
+    index.update_fts_content(entry.id, entry.title, rewritten)
+    index.index_backlinks(entry.id)
 
 
 @router.get("/system/health")
@@ -101,3 +152,67 @@ async def rescan(
     count = await asyncio.to_thread(index.reconcile_stale_entries, force=True)
     event_bus.put_nowait({"type": "vault_rescanned"})
     return RescanOut(updated=count)
+
+
+@router.post("/system/localize-images")
+async def localize_images(
+    index: VaultIndex = Depends(get_index),
+    config: AppConfig = Depends(get_config),
+    event_bus: EventBus = Depends(get_event_bus),
+) -> LocalizeImagesOut:
+    """Backfill already-saved entries that still hold a live remote image URL.
+
+    Manual counterpart to :meth:`~analecta.extraction.assets.AssetDownloader.process`,
+    which only runs against fresh extractions. Scans every vault entry's
+    saved Markdown for a ``![alt](url)`` reference that was never
+    localized — the residual gap that predates this class falling back to
+    a local placeholder on download failure — and re-downloads (or
+    placeholders) each one via
+    :meth:`~analecta.extraction.assets.AssetDownloader.localize_markdown`.
+
+    Deliberately a separate action from :func:`rescan`, not folded into
+    it: ``/system/rescan`` only re-derives backlinks/FTS from a file as-is
+    (read-only w.r.t. the file itself); this endpoint rewrites the file,
+    a heavier operation that warrants its own explicit trigger and result
+    rather than silently changing what "Rescan" means.
+
+    Publishes the same ``vault_rescanned`` SSE event :func:`rescan` does —
+    already-open viewers already treat it as "a file changed outside the
+    normal edit path, re-read it," which applies here too.
+
+    Args:
+        index: Injected VaultIndex singleton.
+        config: Injected AppConfig (for ``vault_path``).
+        event_bus: Injected SSE event bus.
+
+    Returns:
+        How many entries were rewritten, and how many of those rewrites
+        fell back to the local placeholder for at least one image.
+    """
+    downloader = AssetDownloader()
+    updated = 0
+    placeholders = 0
+    for entry in await asyncio.to_thread(index.list_entries):
+        file_path = Path(entry.file_path)
+        markdown = await asyncio.to_thread(_read_markdown_if_exists, file_path)
+        if markdown is None:
+            continue
+        rewritten, changed, placeholder_count = await downloader.localize_markdown(
+            markdown,
+            slug=file_path.stem,
+            vault_path=config.vault_path,
+            base_url=entry.url,
+        )
+        if not changed:
+            continue
+
+        await asyncio.to_thread(
+            _persist_localized_entry, index, entry, file_path, rewritten
+        )
+        updated += 1
+        if placeholder_count:
+            placeholders += 1
+
+    if updated:
+        event_bus.put_nowait({"type": "vault_rescanned"})
+    return LocalizeImagesOut(updated=updated, placeholders=placeholders)

@@ -135,7 +135,7 @@ A CSP is applied to all responses via `session.defaultSession.webRequest.onHeade
 ```
 default-src    'self' app:;
 connect-src    'self' http://localhost:* app:;
-img-src        'self' app: analecta-file: data: blob: https:;
+img-src        'self' app: analecta-file: data: blob:;
 style-src-elem 'self' app:;
 style-src-attr 'none';
 font-src       'self' app:;
@@ -146,7 +146,7 @@ base-uri       'self';
 
 Key decisions:
 - `connect-src` allows `http://localhost:*` for the Python sidecar API. No external HTTP connections from the renderer.
-- `img-src` allows `analecta-file:` (vault images) and `https:` (remote article images). Remote images were a deliberate decision for the article reader; they are not blocked.
+- `img-src` allows only `analecta-file:` (vault images), `data:`/`blob:` (inline/decoded image data), and `app:` — no `https:`. `AssetDownloader` (`backend/src/analecta/extraction/assets.py`) localizes every image at extraction time, retrying once then falling back to a bundled placeholder on failure, so no entry should ever reference a live remote image; this directive makes that invariant enforced, not just assumed. See `docs/privacy.md` for the reasoning.
 - `object-src 'none'` blocks Flash and other plugin content.
 - `base-uri 'self'` prevents `<base>` tag injection from changing the document base URL.
 - `script-src` does **not** use `'unsafe-inline'`. SvelteKit injects one inline script per build (`__sveltekit_xyz = { base: "" }`). `protocols.ts` reads `index.html` at app startup, computes the SHA-256 hash of that script, and includes it in `script-src`. The hash is recomputed on every launch so it stays correct across builds without a separate build step.
@@ -174,28 +174,6 @@ const ALLOWED_CHANNELS = [
 If the renderer calls `window.electronAPI.invoke('arbitrary-channel')`, the preload throws before `ipcRenderer.invoke` is called. The main process never receives the call.
 
 The `on` method (for event listeners) is similarly guarded: only `sidecar-ready` and `deep-link` events are forwarded.
-
----
-
-### Render Server & URL Filtering
-
-The Electron main process runs a lightweight HTTP server (`scraper.ts`) bound exclusively to `127.0.0.1` on an OS-assigned random port. The Python sidecar calls this server to request Tier 2 (Chromium-rendered) extraction. Two controls protect it:
-
-**Token authentication.** The server generates a `ANALECTA_RENDER_TOKEN` via `crypto.randomBytes(32)` at startup and passes it to the sidecar via the `ANALECTA_RENDER_TOKEN` environment variable. Every request must include this token in the `X-Render-Token` header; requests without it receive HTTP 401. The token is never written to disk or logged.
-
-**URL blocklist (`validateScrapeUrl`).** Before spawning a `BrowserWindow`, the entry URL is validated against the following blocklist:
-
-| Category | Blocked range |
-|----------|--------------|
-| Non-HTTP/HTTPS protocols | Any scheme other than `http:` / `https:` |
-| Loopback (IPv4) | `127.0.0.0/8` (entire block, not just `.1`) |
-| Loopback (IPv6) | `::1` |
-| IPv4-mapped IPv6 loopback | `::ffff:127.x.x.x` (dotted) · `::ffff:7f...` (hex) |
-| Link-local (IPv4) | `169.254.0.0/16` |
-| Link-local (IPv6-mapped) | `::ffff:169.254.x.x` · `::ffff:a9fe:...` |
-| RFC 1918 private ranges | `10.0.0.0/8` · `172.16.0.0/12` · `192.168.0.0/16` |
-
-**Known limitation.** The filter applies to the entry URL supplied by the sidecar. Once Chromium has loaded the initial page, server-side redirects and JavaScript-triggered navigations are not re-validated. This is an accepted residual risk: the scraping `BrowserWindow` has no preload script and no IPC surface, so it cannot call back into the main process. Its only output is a serialized HTML string returned to the sidecar — there is no mechanism for a redirect to a local service to exfiltrate data back to a remote party.
 
 ---
 
@@ -239,42 +217,10 @@ If a handler only needs to read a file, do not also write. If a handler only nee
 **6. Document the handler's purpose in `ipc.ts`.**  
 A one-line comment above each `ipcMain.handle` block explaining what it does and what validation it applies makes security review possible.
 
-**7. Apply loopback filtering before implementing bulk or automated extraction.**  
-The current extraction flow is single-URL and user-initiated: the user explicitly submits each URL through the UI, so they are always the authorizing party. This changes if any of the following features are ever added:
+**7. SSRF guard on the extraction pipeline's direct fetches.**  
+Every URL the extraction pipeline fetches directly — the submitted URL, any redirect target encountered while fetching it, and remote image URLs discovered in already-fetched page content — is resolved and validated before the request goes out, and the connection is pinned to one of the addresses that was validated rather than re-resolving the hostname at connect time. Non-`http(s)` schemes are rejected. The pipeline resolves the host itself via the platform resolver and rejects the fetch if any resolved address isn't allocated for public use — `ipaddress`'s own `is_global`, a default-deny classification (loopback, link-local, private including RFC 1918 and CGNAT `100.64.0.0/10`, reserved, unspecified, and the benchmarking/documentation ranges), plus multicast checked explicitly since `is_global` doesn't cover it — with an internal IPv4 address embedded in an IPv4-mapped (`::ffff:0:0/96`), NAT64 (`64:ff9b::/96`), or deprecated IPv4-compatible (bare `::/96`, e.g. `::127.0.0.1`) IPv6 address unwrapped and classified by that embedded address, since `is_global` returns `True` for the wrapper form of all three — then connects to one of the validated addresses it resolved. TLS certificate verification (SNI and hostname matching) still targets the original hostname, not the pinned address. See `backend/src/analecta/extraction/ssrf.py`: `fetch_pinned_once()` performs one resolve-validate-pin request, falling back through every validated address in resolver order if a connection attempt refuses or times out (so one unreachable address family on a dual-stack host degrades to the next answer instead of failing the fetch); `fetch_safely()` builds on it to follow redirects, re-resolving and re-pinning at every hop rather than trusting the transport's own redirect-following. Wired into all three fetch sites where the destination isn't fully constrained by direct user action — `article.py`, `social.py`, `assets.py` — unconditionally, not gated behind any particular feature.
 
-- Bulk URL import (CSV, OPML, clipboard list)
-- RSS / Atom / JSON Feed ingestion
-- Webhook-triggered or scheduled extraction
-- Any path where a URL enters the pipeline from an external or semi-trusted source without per-URL user confirmation
-
-In all such cases, URLs arrive from sources the user does not fully control. A URL crafted to redirect to a loopback address could cause the Python sidecar's `httpx2` client to inadvertently fetch internal services, since `ArticleExtractor._fetch` uses `follow_redirects=True` without a post-redirect destination filter.
-
-Before shipping any feature in the list above:
-
-1. **Validate the submitted URL** against the same blocklist used in `validateScrapeUrl` (loopback, link-local, RFC 1918) before it enters `ArticleExtractor.extract()`.
-2. **Add an `httpx2` response event hook** in `_fetch` that inspects the resolved URL after redirects and raises `ExtractionError` if the final destination falls within a blocked range. Example skeleton:
-
-```python
-import ipaddress
-
-def _block_loopback_redirect(response: httpx2.Response) -> None:
-    host = response.url.host.strip("[]")
-    try:
-        addr = ipaddress.ip_address(host)
-    except ValueError:
-        return  # hostname, not an IP literal — DNS result is not re-checked here
-    blocked = [
-        ipaddress.ip_network("127.0.0.0/8"),
-        ipaddress.ip_network("169.254.0.0/16"),
-        ipaddress.ip_network("::1/128"),
-        ipaddress.ip_network("::ffff:127.0.0.0/104"),
-        ipaddress.ip_network("::ffff:169.254.0.0/112"),
-    ]
-    if any(addr in net for net in blocked):
-        raise ExtractionError(f"Redirect to blocked address: {response.url}")
-```
-
-This is not required today because the user is always the authorizing party for each URL. It becomes required the moment that assumption no longer holds.
+Resolving before every connection (rather than pattern-matching the hostname string) closes two gaps a literal-only check has: a hostname string that encodes a blocked address in a form the check doesn't parse but the platform resolver still does (e.g. decimal, hex, or octal IPv4, or a trailing-dot `localhost.`), and a DNS name whose answer changes between the check and the connection that follows it (rebinding) — both only exist if something validates a string and then lets the resolver run again independently of that check. Pinning the connection to one of the addresses resolved for that request is what closes the second case: the resolver is consulted exactly once per request, and its answers are the only addresses ever connected to for it.
 
 ---
 

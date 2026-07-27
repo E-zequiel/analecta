@@ -50,7 +50,7 @@ export function setupProtocolHandlers(): void {
 	const csp = [
 		"default-src 'self' app:",
 		"connect-src 'self' http://localhost:* app:",
-		"img-src 'self' app: analecta-file: data: blob: https:",
+		"img-src 'self' app: analecta-file: data: blob:",
 		"style-src-elem 'self' app:",
 		"style-src-attr 'none'",
 		"font-src 'self' app:",

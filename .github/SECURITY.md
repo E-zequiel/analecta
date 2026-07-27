@@ -41,7 +41,7 @@ Please include:
 The following are the highest-priority surfaces — named explicitly because they handle untrusted input or mediate trust boundaries:
 
 - **`analecta://` URL scheme handler** — the `id` parameter is used in database queries and must be treated as untrusted input. Injection or path traversal via this handler is in scope.
-- **Tier-2 render channel** — the loopback HTTP server (`127.0.0.1:{port}`) used for web content rendering, and its `X-Render-Token` bearer authentication. Token bypass or SSRF via this channel is in scope.
+- **Extraction's SSRF guard** (`backend/src/analecta/extraction/ssrf.py`) — resolves and validates every URL the extraction pipeline fetches directly (the pasted URL, redirect targets, remote image URLs), then pins the connection to the validated address. Bypasses are in scope.
 - **Vault-scoped filesystem access** — path traversal or sandbox escape through the `analecta-file://` protocol handler or any IPC channel that accesses vault files.
 - **Asset downloader** — bypassing `Content-Type` validation to write non-image content to the vault asset directory.
 
@@ -49,7 +49,7 @@ Additionally in scope:
 
 - Electron process boundary violations (main/renderer/preload) and contextBridge IPC surface.
 - Content Security Policy (CSP) configuration and any bypass thereof.
-- Untrusted remote content processed during web extraction (XSS via fetched pages, Chromium renderer sandbox escape).
+- Untrusted remote content processed during web extraction — XSS via fetched pages, e.g. a crafted article exploiting a markdown-it vulnerability.
 - SQLite storage — SQL injection or unauthorized data access through the application.
 - SvelteKit/Svelte 5 frontend logic where it handles user data or communicates with the sidecar.
 

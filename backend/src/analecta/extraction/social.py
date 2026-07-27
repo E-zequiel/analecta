@@ -4,6 +4,8 @@ from urllib.parse import urljoin, urlparse
 import httpx2
 
 from analecta.extraction.core import ExtractedContent, ExtractionError, SourceExtractor
+from analecta.extraction.http_identity import build_headers
+from analecta.extraction.ssrf import fetch_pinned_once, validate_fetch_url
 
 _INBOX_RE = re.compile(r"^/inbox/post/\d+$")
 _TIMEOUT = 8.0
@@ -30,8 +32,10 @@ class SubstackExtractor(SourceExtractor):
                 or ``substack.com/inbox/post/<id>``.
 
         Returns:
-            ``ExtractedContent`` with ``source_type="substack"`` and
-            ``url`` set to the canonical URL.
+            ``ExtractedContent`` with ``source_type="substack"`` and ``url``
+            set to the fully-resolved post-fetch URL (``ArticleExtractor``'s
+            own redirect resolution runs after inbox-URL resolution, so this
+            is never staler than the canonical form).
 
         Raises:
             ExtractionError: If inbox URL cannot be resolved, or article
@@ -44,7 +48,7 @@ class SubstackExtractor(SourceExtractor):
         return ExtractedContent(
             title=result.title,
             html=result.html,
-            url=canonical,
+            url=result.url,
             source_type="substack",
             metadata={**result.metadata, "platform": "substack"},
         )
@@ -61,16 +65,18 @@ class SubstackExtractor(SourceExtractor):
             Canonical Substack post URL.
 
         Raises:
-            ExtractionError: If the inbox URL cannot be resolved via redirect.
+            ExtractionError: If the inbox URL cannot be resolved via redirect,
+                or targets a blocked scheme/host.
         """
         if not _INBOX_RE.match(urlparse(url).path):
             return url
 
+        validate_fetch_url(url)
         try:
-            async with httpx2.AsyncClient(
-                follow_redirects=False, timeout=_TIMEOUT
-            ) as client:
-                resp = await client.head(url)
+            async with httpx2.AsyncClient(timeout=_TIMEOUT) as client:
+                resp = await fetch_pinned_once(
+                    client, "HEAD", url, headers=build_headers("document")
+                )
         except Exception as exc:
             raise ExtractionError(
                 f"Could not resolve Substack inbox URL {url}: {exc}"
@@ -83,26 +89,4 @@ class SubstackExtractor(SourceExtractor):
 
         raise ExtractionError(
             f"Substack inbox URL did not redirect to a canonical post URL: {url}"
-        )
-
-
-class XExtractor(SourceExtractor):
-    """X/Twitter extraction stub — not implemented.
-
-    Nitter is defunct. The X API requires authentication.
-    Implementing this extractor is deferred until a viable public path exists.
-    """
-
-    async def extract(self, url: str) -> ExtractedContent:
-        """Raise ``NotImplementedError`` for any X/Twitter URL.
-
-        Args:
-            url: X/Twitter status URL.
-
-        Raises:
-            NotImplementedError: Always. X extraction has no viable path.
-        """
-        raise NotImplementedError(
-            "X/Twitter extraction is not supported: Nitter is defunct and the X API "
-            f"requires authentication. URL recorded but not extracted: {url}"
         )

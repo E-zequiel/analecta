@@ -12,13 +12,16 @@ export default tseslint.config(
       '**/build/**',
       'frontend/.svelte-kit/**',
       'binaries/**',
-      'scripts/**',
+      'scripts/__pycache__/**',
     ],
   },
 
-  // ── frontend/scripts: plain JS (.mjs) — no TypeScript project needed ────────
+  // ── scripts/, frontend/scripts: plain JS (.mjs) — no TypeScript project needed.
+  // Everything else under scripts/ (.py, .sh, the provenance lockfile) is
+  // non-JS and outside any files: glob below, so ESLint skips it untouched —
+  // ruff/basedpyright cover the Python side (see check.sh's run_backend).
   {
-    files: ['frontend/scripts/**/*.mjs'],
+    files: ['scripts/**/*.mjs', 'frontend/scripts/**/*.mjs'],
     extends: tseslint.configs.recommended,
     rules: {
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],

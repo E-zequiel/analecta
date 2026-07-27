@@ -96,6 +96,28 @@ def test_frontmatter_omits_absent_metadata_fields():
     assert "published:" not in fm
 
 
+def test_frontmatter_includes_low_confidence_true():
+    content = _content(metadata={"low_confidence": True})
+    fm = build_frontmatter(content, _CREATED_AT)
+    inner = fm.split("---\n", 2)[1]
+    data = yaml.safe_load(inner)
+    assert data["low_confidence"] is True
+
+
+def test_frontmatter_includes_low_confidence_false():
+    content = _content(metadata={"low_confidence": False})
+    fm = build_frontmatter(content, _CREATED_AT)
+    inner = fm.split("---\n", 2)[1]
+    data = yaml.safe_load(inner)
+    assert data["low_confidence"] is False
+
+
+def test_frontmatter_omits_low_confidence_when_absent():
+    content = _content(metadata={"extractor": "readability"})
+    fm = build_frontmatter(content, _CREATED_AT)
+    assert "low_confidence:" not in fm
+
+
 # ---------------------------------------------------------------------------
 # MarkdownConverter.convert
 # ---------------------------------------------------------------------------
@@ -149,6 +171,25 @@ def test_convert_img_inside_heading_renders_as_image_syntax():
     assert "![cover-photo](https://cdn.example.com/img.png)" in md
 
 
+def test_convert_collapses_hard_break_inside_link_text():
+    # A <br> inside an <a> that isn't nested under a table/heading (e.g. after
+    # _rescue_linked_tables flattens a <td> into a bare <p>) produces a literal
+    # hard break ("  \n") in markdownify's output. Left uncollapsed, a second
+    # line starting with "#" gets parsed as an ATX heading and breaks the link.
+    content = _content(
+        html=(
+            '<p><a href="https://drafts.csswg.org/css-cascade-5/#css-inheritance">'
+            "CSS Cascading and Inheritance Level 5<br># css-inheritance</a></p>"
+        )
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert (
+        "[CSS Cascading and Inheritance Level 5 # css-inheritance]"
+        "(https://drafts.csswg.org/css-cascade-5/#css-inheritance)" in md
+    )
+    assert "\n# css-inheritance" not in md
+
+
 def test_convert_resolves_nextjs_image_proxy():
     encoded = "https%3A%2F%2Fcdn.example.com%2Fphoto.jpg"
     content = _content(
@@ -157,6 +198,94 @@ def test_convert_resolves_nextjs_image_proxy():
     md = MarkdownConverter().convert(content, _CREATED_AT)
     assert "https://cdn.example.com/photo.jpg" in md
     assert "/_next/image" not in md
+
+
+def test_convert_code_lang_attribute_on_code_element():
+    # Chakra UI's <Code> component (e.g. socket.dev's blog) has no
+    # language-* class at all — just a plain lang="" attribute on <code>.
+    content = _content(
+        html='<pre class="css-1gw6m10"><code lang="json" class="chakra-code">'
+        '{"a": 1}</code></pre>'
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```json\n" in md
+
+
+def test_convert_code_lang_attribute_on_bare_pre():
+    # Fallback path (convert_pre when there's no inner <code>): lang attribute
+    # lives directly on <pre>.
+    content = _content(html='<pre lang="python">print(1)</pre>')
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```python\n" in md
+
+
+def test_convert_language_class_takes_priority_over_lang_attribute():
+    content = _content(
+        html='<pre><code class="language-python" lang="javascript">x = 1</code></pre>'
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```python\n" in md
+
+
+def test_convert_pandoc_sourcecode_class_on_pre_and_code():
+    # Pandoc-generated static sites (arthurrump.com and similar) mark up code
+    # blocks as <pre class="sourceCode html"><code class="sourceCode html">
+    # — no "language-*" prefix, just a bare sibling class next to "sourceCode".
+    content = _content(
+        html='<pre class="sourceCode html"><code class="sourceCode html">'
+        "&lt;p&gt;hi&lt;/p&gt;</code></pre>"
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```html\n" in md
+
+
+def test_convert_pandoc_sourcecode_with_line_numbers():
+    # Pandoc adds "numberSource"/"numberLines" modifier classes when line
+    # numbering is enabled — must not be mistaken for the language itself.
+    content = _content(
+        html='<pre class="numberSource sourceCode python numberLines">'
+        '<code class="sourceCode python">print(1)</code></pre>'
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```python\n" in md
+
+
+def test_convert_bare_sourcecode_class_has_no_language():
+    # Pandoc fences with an unspecified/unrecognized language get just
+    # class="sourceCode" with no language sibling — must not crash and must
+    # not fabricate a language.
+    content = _content(
+        html='<pre class="sourceCode"><code class="sourceCode">plain text</code></pre>'
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```\nplain text\n```" in md
+
+
+def test_convert_strips_backtick_run_from_lang_attribute_on_code_element():
+    # A lang="" attribute isn't split on whitespace by BeautifulSoup the way a
+    # class token is, so a hostile page can put a backtick run in it that would
+    # otherwise extend/break the ``` fence and splice attacker-controlled text
+    # into the surrounding document as live Markdown.
+    content = _content(
+        html='<pre><code lang="python```\n# injected heading">x = 1</code></pre>'
+    )
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```python" in md
+    assert "x = 1" in md
+    assert md.count("```") == 2
+    assert "\n# injected heading" not in md
+
+
+def test_convert_strips_newline_from_lang_attribute_on_bare_pre():
+    # A newline in lang="" ends the fence's info-string line early, handing the
+    # rest of the line to the block-level Markdown parser instead of leaving it
+    # inert inside the fence.
+    content = _content(html='<pre lang="python\n# injected heading">print(1)</pre>')
+    md = MarkdownConverter().convert(content, _CREATED_AT)
+    assert "```python" in md
+    assert "print(1)" in md
+    assert md.count("```") == 2
+    assert "\n# injected heading" not in md
 
 
 # ---------------------------------------------------------------------------

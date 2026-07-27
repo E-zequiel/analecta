@@ -1,6 +1,6 @@
 # Wayland Desktop Icon: Taskbar and Alt-Tab Switcher
 
-**Status:** Implemented — confirmed working in dev (2026-07-01)
+**Status:** Implemented — confirmed working in dev (2026-07-01); packaged-build fix implemented 2026-07-13, not yet re-verified against a CI-built artifact
 **Date:** 2026-06-30
 
 ---
@@ -34,17 +34,17 @@ Set `icon: resolveAppIcon()` on `BrowserWindow`. The icon path resolves differen
 
 ### Alt-tab icon
 
-Gated on `!app.isPackaged && process.platform === 'linux'`, before `app.whenReady()`:
+Gated on `process.platform === 'linux'`, before `app.whenReady()`:
 
-1. `app.setDesktopName('analecta-dev.desktop')` — aligns the Wayland `xdg_toplevel` app-id with a dev-only `.desktop` filename. `setDesktopName` is present in the Electron 42 runtime binary but missing from its TypeScript types (`setDesktopFileName` does **not** exist at all in E42); a cast is required.
-2. `registerDevSchemeHandler()` writes `~/.local/share/applications/analecta-dev.desktop` with `Icon=<absolute-path-to-512x512.png>` and `StartupWMClass=Analecta`, then runs `update-desktop-database` to refresh the compositor's cache.
+1. `app.setDesktopName(...)` — aligns the Wayland `xdg_toplevel` app-id with the installed `.desktop` filename: `analecta-dev.desktop` in dev, `analecta.desktop` when packaged. `setDesktopName` is present in the Electron 42 runtime binary but missing from its TypeScript types (`setDesktopFileName` does **not** exist at all in E42); a cast is required.
+2. Dev only: `registerDevSchemeHandler()` writes `~/.local/share/applications/analecta-dev.desktop` with `Icon=<absolute-path-to-512x512.png>` and `StartupWMClass=Analecta`, then runs `update-desktop-database` to refresh the compositor's cache. Packaged builds skip this — `electron-builder` (`electron-builder.yml`, `linux.executableName: analecta`) already generates and installs `analecta.desktop`.
 
-Both steps must run before the first window opens — `app.getPath('home')` and `app.getAppPath()` are safe to call pre-ready.
+All dev-only steps must run before the first window opens — `app.getPath('home')` and `app.getAppPath()` are safe to call pre-ready.
 
-**Packaged builds skip this entirely.** `electron-builder` (`electron-builder.yml`, `linux.executableName: analecta`) generates its own `analecta.desktop` and the running binary is already named `analecta`, so the app-id and `.desktop` filename match automatically — no `setDesktopName` call needed.
+**Packaged builds need the `setDesktopName` call too.** The original assumption here was that a matching running-binary name and `.desktop` filename would make Electron's Wayland app-id resolve automatically, without an explicit call. **Disproven 2026-07-13**: a real CI-built `.deb`, installed and traced with `WAYLAND_DEBUG=1`, showed `xdg_toplevel.set_app_id("analecta-electron")` — Electron falls back to the raw `electron/package.json` `"name"` field regardless of the installed binary/`.desktop` filename. Same underlying leak as the `.deb` `Package:` field, fixed separately via `electron-builder.yml`'s `deb.packageName` (see `docs/electron-builder-linux-package-naming.md`). Fixed by calling `setDesktopName('analecta.desktop')` unconditionally for packaged Linux builds too, not just dev.
 
 ---
 
 ## Scope
 
-Confirmed working in dev on **COSMIC (Pop!_OS 24.04, Wayland native)** as of 2026-07-01. The packaged-build path has not yet been verified against a real `.deb`/`.rpm` artifact — local `fpm` packaging is blocked by a path-corruption bug (`/mnt/HD_ARCHIVO` → `/mnt/HD_amd64IVO`), so this requires a CI-built artifact to confirm.
+Confirmed working in dev on **COSMIC (Pop!_OS 24.04, Wayland native)** as of 2026-07-01. The packaged-build fix (above) has not yet been re-verified against a real `.deb`/`.rpm` artifact — local `fpm` packaging is blocked by a path-corruption bug (`/mnt/HD_ARCHIVO` → `/mnt/HD_amd64IVO`), so this requires a CI-built artifact to confirm, same as how the leak itself was found.

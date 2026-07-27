@@ -47,7 +47,7 @@ Socket's "Obfuscated code" detector flags packages that use split operations on 
 | SOCKET-EZEQUIEL-2 | `entities@4.5.0` | HTML entity lookup tables encoded as compact strings |
 | SOCKET-EZEQUIEL-3 | `markdown-it@14.1.1` | Syntax/tokenizer rule tables |
 | SOCKET-EZEQUIEL-5 | `svelte@5.55.7` | Compiler/runtime lookup tables |
-| 2026-05-30 scan | `linkedom@0.18.12` (`package/worker.js`) | Web Worker DOM lookup tables — identical pattern. Optional dep of `defuddle@0.18.1`; Web Worker path is unused in Chromium context. |
+| 2026-05-30 scan | `linkedom@0.18.12` (`package/worker.js`) | Web Worker DOM lookup tables — identical pattern. Optional dep of `defuddle@0.19.1` (root `package.json` devDependency — a diagnostic-only tool, never a shipped runtime dep, see `docs/defuddle-decision.md`); Web Worker path is unused in the offline diagnostic script that consumes it. |
 | 2026-06-07 scan | `commander@9.5.0` | Transitive of electron-builder. Socket analyst: "conventional, non-obfuscated CLI framework component." 200M+ weekly downloads. |
 | 2026-06-07 scan | `cssom@0.5.0` | Standard CSS parser. Socket analyst: "no evidence of malicious behavior." Minified lookup tables. |
 | 2026-06-07 scan | `tiny-async-pool@1.3.0` | Standard concurrency utility. Socket analyst: "no evidence of malicious behavior, no hardcoded secrets." |
@@ -109,6 +109,17 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 ---
 
 ## Resolved CVEs
+
+### 2026-07-27
+
+| Package | CVE(s) | Fix |
+|---------|--------|-----|
+| `tar@7.5.16` | GHSA-r292-9mhp-454m (MODERATE 5.3, `mapHas`/`filesFilter` stack-overflow DoS) + 4 earlier CVEs it supersedes (GHSA-23hp-3jrh-7fpw CRITICAL 9.2 gzip-bomb DoS, GHSA-8x88-c5mf-7j5w HIGH 8.7 `replace()` infinite loop, GHSA-gvwx-54wh-qm9j MODERATE 5.3 PAX NUL-byte uncaught exception, GHSA-w8wr-v893-vjvp MODERATE 5.3 PAX numeric-path type confusion) | `overrides: {tar: '7.5.21'}` in `pnpm-workspace.yaml` |
+| `fast-uri@3.1.2` (via `ajv@8.20.0`) | GHSA-v2hh-gcrm-f6hx (HIGH 7.5, backslash authority-delimiter host confusion), GHSA-4c8g-83qw-93j6 (HIGH 7.5, failed IDN canonicalization host confusion) | `overrides: {'fast-uri': '3.1.4'}` in `pnpm-workspace.yaml` |
+| `brace-expansion@1.1.14` / `2.1.0` / `5.0.6` | GHSA-mh99-v99m-4gvg (HIGH 7.5, unbounded expansion length OOM), GHSA-3jxr-9vmj-r5cp (HIGH 7.7, exponential-time DoS) | Scoped per major line, **not a single blanket bump**: `overrides: {'brace-expansion@1': '1.1.16', 'brace-expansion@2': '2.1.2', 'brace-expansion@5': '5.0.8'}`. Verified empirically (real `minimatch` code, real brace-expansion tarballs, isolated `node_modules`) that forcing `5.0.8` onto the `minimatch@3.1.5`/`5.1.9`/`9.0.9` consumer lines throws `TypeError: expand is not a function` — brace-expansion@5.x rebuilt as a named-export-only CJS module via `tshy` (`exports.expand = expand`), while those minimatch versions call the old default-callable export directly (`require('brace-expansion')(...)`). Confirmed the inverse too: 1.1.16/2.1.2/5.0.8 paired with their own matching minimatch line all resolve correctly. **Residual risk, accepted 2026-07-27:** GHSA-mh99-v99m-4gvg has no backport to the 1.x/2.x lines — downloaded and grepped both `1.1.16` and `2.1.2`, neither contains the `EXPANSION_MAX_LENGTH` bound that `5.0.8` has. `minimatch@3.1.5` (→ `glob@7.2.3` → `@electron/asar`, `dir-compare`) and `minimatch@5.1.9`/`9.0.9` (→ `filelist`, `@electron/universal`) stay exposed to it. Accepted because both are electron-builder build-time tooling operating on our own glob patterns, not attacker-controlled input — a hand-maintained `pnpm patch` backport was considered and rejected as worse than the documented residual for a non-attacker-reachable DoS. |
+| `postcss@8.5.17` | GHSA-r28c-9q8g-f849 (HIGH 7.5, `sourceMappingURL` path traversal → arbitrary `.map` file disclosure), GHSA-fxqj-rqcc-2cmp | `overrides: {postcss: '8.5.23'}` — 10-day window exception approved given severity (8.5.23 was 3 days old at merge). |
+| `setuptools@82.0.1` (via `pyinstaller`, unconstrained range) | GHSA-h35f-9h28-mq5c (MODERATE 6.1, `MANIFEST.in` exclusion bypass in sdist builds via NFC/NFD Unicode normalization collision on macOS APFS/HFS+) | `[tool.uv] constraint-dependencies = ["setuptools>=83.0.0"]` in `backend/pyproject.toml` |
+| `electron-builder@26.15.3` | — (routine patch bump, not Socket-flagged; bumped ahead of the brace-expansion investigation since it could have shifted `@electron/asar`/`@electron/universal`'s dependency tree — it didn't) | Upgraded to `26.15.6` in `electron/package.json`. Not exercised by `check.sh` (packaging step is skipped there — see "Task workflow" note in project docs); verified via `pnpm install` + `tsc --noEmit` only. Real packaging is exercised by the release workflow. |
 
 ### 2026-07-13
 

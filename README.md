@@ -63,7 +63,7 @@ Analecta is a hybrid desktop application: an Electron shell manages the window a
 
 Beyond the shell/sidecar/frontend split described in [Architecture](#architecture):
 
-- **Extraction** — trafilatura and readability-lxml for content extraction, markdownify for HTML-to-Markdown conversion, youtube-transcript-api for transcripts, defuddle as a rendered-page fallback.
+- **Extraction** — trafilatura and readability-lxml for content extraction, markdownify for HTML-to-Markdown conversion, youtube-transcript-api for transcripts.
 - **Reading & editing** — markdown-it for the native reading view, Shiki for syntax-highlighted code blocks, CodeMirror 6 for the built-in editor.
 - **Knowledge graph** — Sigma.js and graphology for the vault-wide graph, d3-force for the per-entry subgraph.
 - **Search** — SQLite FTS5.
