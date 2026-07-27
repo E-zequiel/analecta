@@ -43,6 +43,10 @@ constraint-dependencies = [
     # transitive dep of readability-lxml (via lxml[html-clean]), which uses
     # exactly that Cleaner configuration in readability/cleaners.py.
     "lxml-html-clean>=0.4.5",
+    # GHSA-h35f-9h28-mq5c (CVSS 6.1, MANIFEST.in exclusion bypass in sdist
+    # builds via NFC/NFD Unicode normalization collision on macOS APFS/HFS+).
+    # setuptools is a transitive dep of pyinstaller (unconstrained range).
+    "setuptools>=83.0.0",
 ]
 
 [project.scripts]
