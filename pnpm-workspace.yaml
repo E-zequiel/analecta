@@ -3,7 +3,22 @@ packages:
   - 'electron'
 
 allowBuilds:
-  electron: true
+  # electron (>=42.0.0, currently pinned 42.1.0): no entry needed. Electron
+  # removed its postinstall entirely in 42.0.0 — verified via a real tarball
+  # diff against 41.10.3 and Electron's own v42.0.0 release notes ("Electron
+  # will now download itself dynamically the first time its main `bin`
+  # script is run", done specifically to remove postinstall as a supply-chain
+  # attack vector). Leaving `electron: true` here would silently re-grant
+  # script execution if a future Electron release ever reintroduces one,
+  # bypassing the whole point of this allowlist — an absent entry fails
+  # loudly instead (`ERR_PNPM_IGNORED_BUILDS`, ci.yml's check-frontend job
+  # and release.yml both install without --ignore-scripts and would catch
+  # it), whereas `electron: false` would fail just as silently as `true`
+  # does today. Re-verify with `pnpm view electron@<version> scripts --json`
+  # before re-adding an entry, and audit the script per Control 11 below.
+  # Downgrading below 42.0.0 will hit this: 41.x's postinstall would be
+  # blocked and its index.js has no lazy-download fallback (throws "Electron
+  # failed to install correctly") — re-add `electron: true` if that's ever needed.
   electron-winstaller: false
 
 overrides:
