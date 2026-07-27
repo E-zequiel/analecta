@@ -272,7 +272,7 @@ The Socket CI job (`ci.yml`) only runs on PRs that change a lockfile. This means
 
 **`deps_update.py` runs fully script-free.** `_apply_node_package()`'s `pnpm add`, the exact-pin resync `pnpm install`, and `pnpm dedupe` all pass `--ignore-scripts`. This isn't about `socket-audit.sh` timing — it closes a separate gap: the `deps-update.yml` "update" job's only output is `pnpm-lock.yaml`/`package.json`/`pr-body.md` bytes, picked up by `upload-artifact` and then committed and force-pushed by a second job holding `contents: write` and `pull-requests: write`. Any lifecycle script executing on that disk before the upload could tamper with what gets pushed, regardless of whether the package it belongs to is itself malicious. `allowBuilds` restricts *which* packages may run scripts on a normal install; `--ignore-scripts` here means none run at all in this job, for any package, which is what a job whose output feeds a privileged pusher should do — and costs nothing, since nothing `check.sh` exercises (type-checking, lint, Vite build) launches Electron or needs its downloaded binary.
 
-**Local limitation — manual runs only:** a developer running `pnpm add <pkg>@<latest> --save-exact` by hand (not via `deps_update.py`) does not get this protection automatically. `electron`'s lifecycle script (the only one permitted by `allowBuilds`) may run before `socket-audit.sh` can scan the updated lockfile. Running the scan immediately after — and not pushing until it is clean — is the correct compensating control for that path. The hard enforcement gate regardless of path is CI: the `socket` job in `ci.yml` runs with `--ignore-scripts` and its result gates `check-frontend` and `test-backend` via `needs:` (see Control 12).
+**Local limitation — manual runs only:** a developer running `pnpm add <pkg>@<latest> --save-exact` by hand (not via `deps_update.py`) does not get this protection automatically. Any package granted a `true` entry in `allowBuilds` may run its lifecycle script before `socket-audit.sh` can scan the updated lockfile. (As of Electron 42.0.0, `electron` itself no longer has one — see Control 11's allowlist table — so today this only matters if a future `allowBuilds` entry grants a real script again.) Running the scan immediately after — and not pushing until it is clean — is the correct compensating control for that path regardless of which package it is. The hard enforcement gate regardless of path is CI: the `socket` job in `ci.yml` runs with `--ignore-scripts` and its result gates `check-frontend` and `test-backend` via `needs:` (see Control 12).
 
 ### How to run
 
@@ -390,7 +390,6 @@ Every npm package can declare `preinstall`, `install`, and `postinstall` scripts
 
 ```yaml
 allowBuilds:
-  electron: true          # must download platform binary via install.js
   electron-winstaller: false  # explicitly blocked
 ```
 
@@ -400,10 +399,11 @@ Only packages in this allowlist are permitted to run lifecycle scripts. All othe
 
 | Package | Script | Why allowed |
 |---------|--------|-------------|
-| `electron` | `install.js` — downloads Electron binary via `@electron/get` | Required; no alternative download mechanism |
 | `electron-winstaller` | `select-7z-arch.js` | Blocked — Windows-only, irrelevant on Linux |
 
 `esbuild` was removed from the allowlist on 2026-05-31 — Vite 8 uses Rolldown, so esbuild is not in the dependency tree.
+
+**`electron` had an entry here (`electron: true`) until 2026-07-27 — removed, not just set to `false`.** Electron 42.0.0 (currently pinned: 42.1.0) dropped its `postinstall` entirely — verified via a real tarball diff against 41.10.3 (the last 41.x release; every 41.x has `"postinstall": "node install.js"`, every 42.x has no `scripts` field at all) and Electron's own v42.0.0 release notes: *"Electron will now download itself dynamically the first time that its main `bin` script is run"* — done specifically to remove `postinstall` as a supply-chain attack vector. Leaving a stale `true` in place would silently re-grant script execution the moment a future Electron release ever reintroduces one — deleting the entry instead means that scenario fails loudly (`ERR_PNPM_IGNORED_BUILDS`, confirmed empirically: `ci.yml`'s `check-frontend` job and `release.yml` both install without `--ignore-scripts` and would catch it) rather than silently, which is what `false` would do — `false` and a stale `true` are equally quiet once a script actually appears. See `pnpm-workspace.yaml`'s comment for the re-adding procedure and the 41.x-downgrade caveat.
 
 ### Verifying allowlist entries
 
@@ -422,7 +422,7 @@ curl -sL "https://registry.npmjs.org/<pkg>/-/<pkg>-<version>.tgz" \
 
 Do **not** use `raw.githubusercontent.com` for this check — it is flagged as malicious by some security tools (it's GitHub's CDN for raw content, legitimately used but also widely used by malware as free hosting). Use the npm registry tarball or `api.github.com` instead.
 
-**Verified 2026-05-31:** `electron@42.1.0` `install.js` — sha256 `8a6e96a324147490ad5d474e2c6deec608018a90032e80ec8e3ae97a6cd02851` — matches npm registry tarball.
+**Historical, no longer applicable:** as of 2026-05-31, `electron@42.1.0` `install.js` was hashed (sha256 `8a6e96a324147490ad5d474e2c6deec608018a90032e80ec8e3ae97a6cd02851`, matched the npm registry tarball) under the assumption it ran as a `postinstall`. Electron 42.0.0 dropped that wiring entirely (see the allowlist table above) — `install.js` still exists as a file but nothing in `package.json` invokes it anymore, so this specific verification no longer describes an active execution path. `electron` has no entry in `allowBuilds` now; if a future version reintroduces a real lifecycle script, re-run this same procedure before adding it back.
 
 ### Auditing the full installed tree
 
@@ -445,13 +445,13 @@ for pkg_dir in os.listdir(base):
                 print(f"{d.get('name')}@{d.get('version')} → {lc}")
 ```
 
-As of 2026-05-31: only `electron-winstaller@5.4.0` has a lifecycle script in the installed tree, and it is blocked.
+As of 2026-05-31: only `electron-winstaller@5.4.0` has a lifecycle script in the installed tree, and it is blocked. **Re-confirmed 2026-07-27, still true, now for a clearer reason:** `electron@42.1.0` has genuinely zero lifecycle scripts (`pnpm view electron@42.1.0 scripts --json` returns empty) — it isn't merely blocked, there's nothing to block.
 
 ---
 
 ## Control 12: Scan Ordering — Scan Before Lifecycle Scripts
 
-Controls 8, 9, and 11 together establish *which* packages run scripts and *when* the lockfile is scanned. This control addresses the sequencing gap: even with `allowBuilds` restricted to `electron`, a compromised version of `electron` introduced into the lockfile would have its `install.js` (binary download) execute during `pnpm install` **before** `socket ci` could flag it, unless install order is explicitly managed.
+Controls 8, 9, and 11 together establish *which* packages run scripts and *when* the lockfile is scanned. This control addresses the sequencing gap: whatever package is in `allowBuilds` with a `true` entry, a compromised version of it introduced into the lockfile would have its lifecycle script execute during `pnpm install` **before** `socket ci` could flag it, unless install order is explicitly managed. (`electron` was the example here through 2026-07-27 — it no longer has a lifecycle script as of 42.0.0, and no longer has an `allowBuilds` entry; `electron-winstaller` remains in the allowlist as `false`, i.e. explicitly denied, so this gap doesn't currently apply to anything. It re-applies the moment any package is granted `true`.)
 
 ### CI: `socket` job installs with `--ignore-scripts`
 
