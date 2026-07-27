@@ -78,6 +78,23 @@ def _run_check(repo_root: Path, scope: str) -> bool:
     return result.returncode == 0
 
 
+def _sanitize_reason(text: str, limit: int = 200) -> str:
+    """Make subprocess-derived text safe to interpolate into the committed PR body.
+
+    A blocked package's reason can carry raw stderr/stdout from a package's
+    own install step (via uv/pnpm) — untruncated, that text ends up verbatim
+    in pr-body.md, which is committed and handed to `gh pr create` unreviewed.
+    Collapsing whitespace and stripping markdown-structural characters keeps
+    it from breaking out of its single-line context or forging PR body
+    structure (headings, tables, comments) that a human reads before merging.
+    """
+    flat = " ".join(text.split())
+    flat = flat.replace("`", "'").replace("|", "/")
+    if len(flat) > limit:
+        flat = flat[: limit - 1].rstrip() + "…"
+    return flat
+
+
 # ---------------------------------------------------------------------------
 # Python / uv
 # ---------------------------------------------------------------------------
@@ -211,7 +228,7 @@ def _verify_python(
         else:
             _ = uv_lock_path.write_bytes(step_snap)
             print(f"::warning::{name}: blocked — {reason}")
-            blocked.append((name, new, reason))
+            blocked.append((name, new, _sanitize_reason(reason)))
     return survivors, blocked
 
 
@@ -427,7 +444,7 @@ def _verify_node(
             for path, data in step_snap.items():
                 _ = path.write_bytes(data)
             print(f"::warning::{name} ({workspace}): blocked — {reason}")
-            blocked.append((name, new, reason))
+            blocked.append((name, new, _sanitize_reason(reason)))
     return survivors, blocked
 
 
