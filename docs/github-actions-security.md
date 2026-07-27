@@ -409,6 +409,8 @@ Only packages in this allowlist are permitted to run lifecycle scripts. All othe
 
 When a package is in `allowBuilds`, its lifecycle script executes on every `pnpm install`. Before adding or retaining an entry, verify the script matches the published npm source:
 
+**First, a pnpm behavior to know about before you touch this file: if `pnpm install` or `pnpm add` (run locally, without `--ignore-scripts`) hits an unapproved package with a real lifecycle script, pnpm doesn't just print `ERR_PNPM_IGNORED_BUILDS` — it auto-writes a placeholder line into `pnpm-workspace.yaml` for you: `<pkg>: set this to true or false`.** That string is not `false`; pnpm's own approval check only cares whether an entry is exactly `false`, so this placeholder silently re-enables the script it was meant to gate — the exact opposite of what the message implies is pending. Verified 2026-07-27: reproduced on `pnpm install` and `pnpm add`, with and without `--frozen-lockfile`, with `node_modules` both fresh and already populated. **Never `git add`/commit this file with a placeholder like that still in it.** Either run `pnpm approve-builds` (interactive, or `--all` to approve everything pending) — it replaces the placeholder with a real `true`/`false` and, if approved, runs the script right then so you see what it does — or edit the line yourself to a deliberate `true`/`false` after doing the hash verification below. This applies to any package, not just `electron`; check `git diff pnpm-workspace.yaml` after any manual `pnpm install`/`pnpm add` before committing.
+
 ```bash
 # Hash the installed script
 sha256sum node_modules/.pnpm/<pkg>@<version>/node_modules/<pkg>/install.js
@@ -719,7 +721,7 @@ When the repository is made public, the **"Fork pull request workflows"** sectio
 
 ### When adding a new npm or Python package
 
-1. Install with `pnpm add` or `uv add` as usual.
+1. Install with `pnpm add` or `uv add` as usual. If `pnpm add` hits `ERR_PNPM_IGNORED_BUILDS`, see the warning under "Verifying allowlist entries" (Control 11) before touching `pnpm-workspace.yaml` — pnpm auto-writes an unresolved placeholder there that is easy to commit by mistake.
 2. **Immediately run** `./scripts/socket-audit.sh` — do not commit or push before the scan completes.
 3. Review any new alerts against the false-positive catalog in `docs/socket-security.md`.
 4. If the alert is a confirmed false positive, add it to the catalog before committing.
@@ -730,6 +732,7 @@ When the repository is made public, the **"Fork pull request workflows"** sectio
 
 Run this whenever `pnpm-workspace.yaml` `allowBuilds` changes or when upgrading a package that is in the allowlist:
 
+0. **Before anything else, check `git diff pnpm-workspace.yaml`.** If a line reads `<pkg>: set this to true or false`, that's pnpm's own auto-written placeholder from a prior `ERR_PNPM_IGNORED_BUILDS` — not a real decision, and not `false` (so it currently re-enables the script). Resolve it deliberately (`pnpm approve-builds`, or hand-edit) before proceeding — do not carry it into a commit.
 1. Run the lifecycle script audit (see Control 11) to confirm only the expected packages have lifecycle scripts.
 2. For each package in `allowBuilds: true`, verify its lifecycle script against the npm registry tarball:
    ```bash
