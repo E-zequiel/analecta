@@ -294,11 +294,28 @@ def _ensure_exact_specifier(workspace_dir: str, name: str, version: str) -> bool
 def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, str]:
     """Apply a single Node package bump: pnpm add, enforce exact pin, resync, dedupe.
 
+    --ignore-scripts on every pnpm call here: this function's only output is
+    pnpm-lock.yaml/package.json bytes that get uploaded as a CI artifact and
+    then committed and force-pushed by a separate, higher-privileged job
+    (contents: write) — code executing on this disk before that upload could
+    tamper with what gets pushed. allowBuilds in pnpm-workspace.yaml already
+    restricts lifecycle scripts to `electron`, and nothing check.sh exercises
+    (type-checking, lint, vite build) launches Electron or needs its binary,
+    so skipping scripts here costs nothing functionally.
+
     Returns:
         (True, "") on success, (False, reason) on failure at any step.
     """
     result = _run(
-        ["pnpm", "add", f"{name}@{version}", "--save-exact", "--filter", workspace],
+        [
+            "pnpm",
+            "add",
+            f"{name}@{version}",
+            "--save-exact",
+            "--ignore-scripts",
+            "--filter",
+            workspace,
+        ],
         cwd=REPO_ROOT,
     )
     if result.returncode != 0:
@@ -309,7 +326,14 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
         # lockfile, but pnpm defaults frozen-lockfile to on in CI (CI=true),
         # which rejects any install that would change it.
         resync = _run(
-            ["pnpm", "install", "--filter", workspace, "--no-frozen-lockfile"],
+            [
+                "pnpm",
+                "install",
+                "--filter",
+                workspace,
+                "--no-frozen-lockfile",
+                "--ignore-scripts",
+            ],
             cwd=REPO_ROOT,
         )
         if resync.returncode != 0:
@@ -322,7 +346,7 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
     # unrelated consumer) unless the lockfile is deduped afterward — this
     # surfaces as duplicate-type errors in svelte-check/tsc, not as a pnpm
     # error, so it has to be handled here rather than left to the caller.
-    dedupe = _run(["pnpm", "dedupe"], cwd=REPO_ROOT)
+    dedupe = _run(["pnpm", "dedupe", "--ignore-scripts"], cwd=REPO_ROOT)
     if dedupe.returncode != 0:
         detail = dedupe.stderr.strip() or dedupe.stdout.strip()
         return False, f"dedupe failed — {detail}"
