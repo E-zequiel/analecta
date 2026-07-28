@@ -1,15 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { untrack } from 'svelte';
+	import { get } from 'svelte/store';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import Sigma from 'sigma';
 	import { UndirectedGraph } from 'graphology';
 	import forceAtlas2 from 'graphology-layout-forceatlas2';
-	import { BowArrow, Focus, Maximize2, Waypoints, X } from '@lucide/svelte';
+	import { BowArrow, Focus, Maximize2, Pause, Play, Waypoints, X } from '@lucide/svelte';
 	import { entries as entriesApi, type GraphResult } from '$lib/api/client';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { openEntryTab } from '$lib/stores/tabs';
 	import { tooltip } from '$lib/actions/tooltip';
+	import { graphAnimationEnabled } from '$lib/stores/ui';
 
 	type VaultNodeAttrs = {
 		label: string;
@@ -57,6 +59,11 @@
 	// Non-reactive handles — updated by $effect, never tracked.
 	let sigmaInstance: InstanceType<typeof Sigma<VaultNodeAttrs>> | null = null;
 	let sigmaGraph: UndirectedGraph<VaultNodeAttrs> | null = null;
+	// Start/stop the live forceAtlas2 simulation — set by the Sigma-build $effect, called by
+	// the pause/resume button so the toggle has an immediate visible effect rather than
+	// waiting on the next drag/reset to notice the preference changed.
+	let startLiveSimulation: (() => void) | null = null;
+	let stopLiveSimulation: (() => void) | null = null;
 
 	// Incremented by MutationObserver when .theme-light toggles, forcing a Sigma rebuild
 	// with colors re-read from the new computed styles.
@@ -261,6 +268,16 @@
 		});
 	}
 
+	// Both directions take effect immediately rather than waiting on the next drag/reset:
+	// pausing cancels mid-flight ticks, resuming re-heats so the toggle has a visible effect
+	// even when the layout is already settled.
+	function toggleAnimation() {
+		const next = !get(graphAnimationEnabled);
+		graphAnimationEnabled.set(next);
+		if (next) startLiveSimulation?.();
+		else stopLiveSimulation?.();
+	}
+
 	async function handleNodeContextMenu(id: number, e: MouseEvent) {
 		try {
 			const entry = await entriesApi.get(id);
@@ -364,10 +381,21 @@
 			liveRafId = requestAnimationFrame(tick);
 		}
 
-		function heat(ticks = 150) {
+		// Gated on the persisted preference — read via get(), not $graphAnimationEnabled,
+		// so toggling it doesn't retrigger this outer $effect and rebuild the whole graph.
+		function heat(ticks = 2000) {
+			if (!get(graphAnimationEnabled)) return;
 			liveTicksLeft = ticks;
 			if (liveRafId === 0) liveRafId = requestAnimationFrame(tick);
 		}
+
+		function stopHeat() {
+			liveTicksLeft = 0;
+			cancelAnimationFrame(liveRafId);
+			liveRafId = 0;
+		}
+		startLiveSimulation = () => heat(2000);
+		stopLiveSimulation = stopHeat;
 
 		// Hover tooltip — show full label when truncated.
 		sigma.on('enterNode', ({ node, event }) => {
@@ -454,7 +482,7 @@
 				const pos = sigma.viewportToGraph(event);
 				graph.setNodeAttribute(draggedNode, 'x', pos.x);
 				graph.setNodeAttribute(draggedNode, 'y', pos.y);
-				heat(300);
+				heat(2000);
 			}
 		});
 
@@ -486,6 +514,8 @@
 			sigma.kill();
 			sigmaInstance = null;
 			sigmaGraph = null;
+			startLiveSimulation = null;
+			stopLiveSimulation = null;
 		};
 	});
 
@@ -633,7 +663,7 @@
 					use:tooltip={'Clear search'}
 					aria-label="Clear search"
 				>
-					<X size={14} />
+					<X size={18} />
 				</button>
 			{:else}
 				<span class="graph-stats">{nodeCount} nodes · {edgeCount} edges</span>
@@ -643,7 +673,7 @@
 					use:tooltip={'Hunt nodes'}
 					aria-label="Hunt nodes"
 				>
-					<BowArrow size={14} />
+					<BowArrow size={18} />
 				</button>
 			{/if}
 			<button
@@ -652,7 +682,7 @@
 				use:tooltip={'Reset layout'}
 				aria-label="Reset layout"
 			>
-				<Waypoints size={14} />
+				<Waypoints size={18} />
 			</button>
 			<button
 				class="graph-toggle"
@@ -660,7 +690,19 @@
 				use:tooltip={'Fit to viewport'}
 				aria-label="Fit to viewport"
 			>
-				<Focus size={14} />
+				<Focus size={18} />
+			</button>
+			<button
+				class="graph-toggle"
+				onclick={toggleAnimation}
+				use:tooltip={$graphAnimationEnabled ? 'Pause animation' : 'Resume animation'}
+				aria-label={$graphAnimationEnabled ? 'Pause animation' : 'Resume animation'}
+			>
+				{#if $graphAnimationEnabled}
+					<Pause size={18} />
+				{:else}
+					<Play size={18} />
+				{/if}
 			</button>
 		{:else if !loading && !error}
 			<span class="graph-stats">{nodeCount} nodes · {edgeCount} edges</span>
@@ -672,9 +714,9 @@
 			aria-label={expanded ? 'Collapse' : 'Expand graph'}
 		>
 			{#if expanded}
-				<X size={14} />
+				<X size={18} />
 			{:else}
-				<Maximize2 size={14} />
+				<Maximize2 size={18} />
 			{/if}
 		</button>
 	</div>
@@ -737,8 +779,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 26px;
-		height: 26px;
+		width: 28px;
+		height: 28px;
 		padding: 0;
 		background: none;
 		border: 1px solid transparent;

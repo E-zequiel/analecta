@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A pause/resume button on the vault graph toggles its live layout animation. The preference persists across sessions. Animation is on by default, except on first launch when the OS reports `prefers-reduced-motion: reduce`, in which case it starts paused.
+
 ### Changed
 
 - In the LIBRARY, UNREAD, READ, BOOKMARK, GEM, ARCHIVE, and TAGS dashboards, clicking a list entry now opens its reading view directly instead of the local graph. The local graph is now reached via a dedicated button on the row (graph-network icon) — previously that button ("View") opened the reading view, and clicking the row opened the graph.
