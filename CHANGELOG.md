@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-28
+
 ### Added
 
 - X/Twitter extraction — paste a tweet URL (`Ctrl+L`) to capture it as clean Markdown, via X's syndication endpoint with an official-oEmbed fallback for endpoint drift. No headless-browser rendering involved. Pulls in the tweet's full reply chain all the way up to the conversation's root, regardless of how many times authorship changes along the way. Video and animated-GIF media link out to X rather than being downloaded (X doesn't serve real `.gif` files). Tweet hashtags render as plain links and are kept out of Analecta's own tag/backlink system. A tweet's own line breaks are preserved as hard breaks in the saved Markdown, matching how they appear on x.com. Every tweet block — the main tweet, each entry in a reply chain, and any quoted tweet — opens with a bold, profile-linked author name directly followed by the tweet's text on the next line, so it's clear at a glance whose words follow. Consecutive tweets in a reply chain are separated by a `---` rule. A long-form "Note Tweet" gets a visible truncation marker instead of silently cutting off mid-sentence — X's public syndication/oEmbed endpoints don't expose a Note Tweet's full text, only a legacy-length preview.
@@ -66,5 +68,6 @@ Initial public release.
 - Native Linux packaging — `.deb`, `.rpm`, `.AppImage` — with correct application identity and icons, including taskbar/alt-tab icon support on Wayland compositors, built with electron-builder.
 - Release integrity verification — SHA256SUMS checksums for all packaged installers, plus a Sigstore build provenance attestation (attaches automatically once the repository goes public).
 
-[Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/E-zequiel/analecta/releases/tag/v0.4.0
 [0.3.1]: https://github.com/E-zequiel/analecta/releases/tag/v0.3.1
