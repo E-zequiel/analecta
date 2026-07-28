@@ -34,3 +34,13 @@ export const dashboardPreviewEntryId = writable<number | null>(null);
 export const preSettingsState = writable<{ path: string; scrollTop: number } | null>(null);
 export const pendingScrollRestore = writable<number | null>(null);
 export const scrollPositions = persisted<Record<string, number>>('scroll-positions', {});
+
+// Default is "on" for everyone — but on a first run with no stored preference yet, seed
+// from the OS-level reduced-motion signal so vestibular-sensitive users don't get ~30s of
+// continuous canvas motion before they discover the pause button.
+function graphAnimationDefault(): boolean {
+	if (!browser) return true;
+	return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+export const graphAnimationEnabled = persisted('graph-animation-enabled', graphAnimationDefault());
