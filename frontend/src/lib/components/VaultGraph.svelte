@@ -55,6 +55,10 @@
 	let searchInputEl = $state<HTMLInputElement | undefined>(undefined);
 	let matchedNodeKeys = $state<SvelteSet<string> | null>(null);
 	let selectedNodeKey = $state<string | null>(null);
+	// Reflects whether the live forceAtlas2 simulation is *currently* ticking — distinct from
+	// graphAnimationEnabled (the persisted Settings preference, which only gates whether it
+	// auto-starts on load/drag). Drives the header button's icon; not persisted itself.
+	let isAnimating = $state(false);
 
 	// Non-reactive handles — updated by $effect, never tracked.
 	let sigmaInstance: InstanceType<typeof Sigma<VaultNodeAttrs>> | null = null;
@@ -268,14 +272,14 @@
 		});
 	}
 
-	// Both directions take effect immediately rather than waiting on the next drag/reset:
-	// pausing cancels mid-flight ticks, resuming re-heats so the toggle has a visible effect
-	// even when the layout is already settled.
-	function toggleAnimation() {
-		const next = !get(graphAnimationEnabled);
-		graphAnimationEnabled.set(next);
-		if (next) startLiveSimulation?.();
-		else stopLiveSimulation?.();
+	// Local, session-only control over the *live* simulation — separate from
+	// graphAnimationEnabled (the persisted Settings preference for auto-animating on
+	// load/drag). Lets the user manually resume even when Settings has auto-animate off,
+	// and mirrors the button back to Play whenever the simulation exhausts its own tick
+	// budget on its own, without the user ever touching this button.
+	function toggleLiveAnimation() {
+		if (isAnimating) stopLiveSimulation?.();
+		else startLiveSimulation?.();
 	}
 
 	async function handleNodeContextMenu(id: number, e: MouseEvent) {
@@ -371,20 +375,31 @@
 		};
 		let liveTicksLeft = 0;
 		let liveRafId = 0;
+		// True only after an explicit user Pause this mount — distinct from isAnimating
+		// being false because the tick budget simply ran out. Stops the drag auto-reheat
+		// below from silently overriding an explicit pause; a natural exhaustion still
+		// lets the next drag resume things, which is the whole point of a tick budget.
+		let manuallyPaused = false;
 
 		function tick() {
 			liveRafId = 0;
-			if (liveTicksLeft <= 0) return;
+			if (liveTicksLeft <= 0) {
+				// Tick budget exhausted on its own (not via stopHeat) — mirror the
+				// button back to Play so the user can restart the motion.
+				isAnimating = false;
+				return;
+			}
 			forceAtlas2.assign(graph, { iterations: 1, settings: liveSettings });
 			sigma.refresh();
 			liveTicksLeft--;
 			liveRafId = requestAnimationFrame(tick);
 		}
 
-		// Gated on the persisted preference — read via get(), not $graphAnimationEnabled,
-		// so toggling it doesn't retrigger this outer $effect and rebuild the whole graph.
+		// No longer gates on graphAnimationEnabled itself — that preference only decides
+		// whether the two auto-trigger call sites below invoke heat() at all. Once called
+		// (auto or via the manual Play button), heat() always runs.
 		function heat(ticks = 2000) {
-			if (!get(graphAnimationEnabled)) return;
+			isAnimating = true;
 			liveTicksLeft = ticks;
 			if (liveRafId === 0) liveRafId = requestAnimationFrame(tick);
 		}
@@ -393,9 +408,16 @@
 			liveTicksLeft = 0;
 			cancelAnimationFrame(liveRafId);
 			liveRafId = 0;
+			isAnimating = false;
 		}
-		startLiveSimulation = () => heat(2000);
-		stopLiveSimulation = stopHeat;
+		startLiveSimulation = () => {
+			manuallyPaused = false;
+			heat(2000);
+		};
+		stopLiveSimulation = () => {
+			manuallyPaused = true;
+			stopHeat();
+		};
 
 		// Hover tooltip — show full label when truncated.
 		sigma.on('enterNode', ({ node, event }) => {
@@ -482,7 +504,7 @@
 				const pos = sigma.viewportToGraph(event);
 				graph.setNodeAttribute(draggedNode, 'x', pos.x);
 				graph.setNodeAttribute(draggedNode, 'y', pos.y);
-				heat(2000);
+				if (!manuallyPaused && get(graphAnimationEnabled)) heat(2000);
 			}
 		});
 
@@ -503,7 +525,7 @@
 		const rafId = requestAnimationFrame(() => {
 			sigma.refresh();
 			sigma.getCamera().setState({ x: 0.5, y: 0.5, angle: 0, ratio: 1 });
-			heat(2000);
+			if (get(graphAnimationEnabled)) heat(2000);
 		});
 
 		return () => {
@@ -516,6 +538,7 @@
 			sigmaGraph = null;
 			startLiveSimulation = null;
 			stopLiveSimulation = null;
+			isAnimating = false;
 		};
 	});
 
@@ -694,11 +717,11 @@
 			</button>
 			<button
 				class="graph-toggle"
-				onclick={toggleAnimation}
-				use:tooltip={$graphAnimationEnabled ? 'Pause animation' : 'Resume animation'}
-				aria-label={$graphAnimationEnabled ? 'Pause animation' : 'Resume animation'}
+				onclick={toggleLiveAnimation}
+				use:tooltip={isAnimating ? 'Pause animation' : 'Resume animation'}
+				aria-label={isAnimating ? 'Pause animation' : 'Resume animation'}
 			>
-				{#if $graphAnimationEnabled}
+				{#if isAnimating}
 					<Pause size={18} />
 				{:else}
 					<Play size={18} />

@@ -37,7 +37,9 @@ export const scrollPositions = persisted<Record<string, number>>('scroll-positio
 
 // Default is "on" for everyone — but on a first run with no stored preference yet, seed
 // from the OS-level reduced-motion signal so vestibular-sensitive users don't get ~30s of
-// continuous canvas motion before they discover the pause button.
+// continuous canvas motion before they find the toggle in Settings. Controls only whether
+// the vault graph auto-animates on load/drag — Collecta's pause/play button always works
+// as a manual, session-only override regardless of this preference.
 function graphAnimationDefault(): boolean {
 	if (!browser) return true;
 	return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
