@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- A pause/resume button on the vault graph toggles its live layout animation. The preference persists across sessions. Animation is on by default, except on first launch when the OS reports `prefers-reduced-motion: reduce`, in which case it starts paused.
+- Settings → Vault Graph has a new "Auto-animate on load / drag" toggle for the vault graph's live layout animation. The preference persists across sessions and is on by default, except on first launch when the OS reports `prefers-reduced-motion: reduce`, in which case it starts off.
+- The vault graph in Collecta has its own pause/resume button: it stops or restarts the animation for the current session regardless of the Settings preference, and switches itself from Pause to Play whenever the animation runs its course on its own — not just when clicked.
 
 ### Changed
 

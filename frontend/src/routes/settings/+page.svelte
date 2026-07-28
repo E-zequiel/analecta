@@ -4,6 +4,7 @@
 	import { config as configApi, system as systemApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 	import { tooltip } from '$lib/actions/tooltip';
+	import { graphAnimationEnabled } from '$lib/stores/ui';
 
 	const ACCENT_OPTIONS = [
 		{ id: 'red', label: 'Red' },
@@ -269,6 +270,10 @@
 		form.close_to_tray = !form.close_to_tray;
 		autoSaveCloseToTray();
 	}
+
+	function toggleGraphAnimation() {
+		graphAnimationEnabled.update((v) => !v);
+	}
 </script>
 
 <div class="settings-page">
@@ -457,6 +462,28 @@
 						></button>
 					{/each}
 				</div>
+			</div>
+		</section>
+
+		<section>
+			<h2>Vault Graph</h2>
+			<div class="field toggle-field">
+				<label
+					for="graph-animation-toggle"
+					use:tooltip={'Automatically settle node positions with motion when the graph loads or when you drag a node. Off does not disable the pause/play button in Collecta — you can still start the animation manually from there.'}
+				>
+					Auto-animate on load / drag
+				</label>
+				<button
+					id="graph-animation-toggle"
+					role="switch"
+					aria-checked={$graphAnimationEnabled}
+					class="toggle"
+					class:on={$graphAnimationEnabled}
+					onclick={toggleGraphAnimation}
+				>
+					{$graphAnimationEnabled ? 'On' : 'Off'}
+				</button>
 			</div>
 		</section>
 
