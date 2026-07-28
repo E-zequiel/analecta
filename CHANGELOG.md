@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- In the LIBRARY, UNREAD, READ, BOOKMARK, GEM, ARCHIVE, and TAGS dashboards, clicking a list entry now opens its reading view directly instead of the local graph. The local graph is now reached via a dedicated button on the row (graph-network icon) — previously that button ("View") opened the reading view, and clicking the row opened the graph.
+
 ### Fixed
 
 - The dek/subtitle sentence beneath an article's title is no longer silently dropped from Substack extraction. Substack renders two `<h1>` elements on a post page — the publication name in the navbar, then the actual headline — and the dek-rescue mechanism (see the 0.4.0 entry above) was always anchoring on the first, wrong one; it also only recognized a dek shaped as a `<p>`, while Substack renders its subtitle as `<h3 class="subtitle">`. Both are now handled: the rescue anchors on whichever `<h1>` actually matches the extracted title, and a subtitle-classed heading is accepted as a dek shape alongside `<p>`.

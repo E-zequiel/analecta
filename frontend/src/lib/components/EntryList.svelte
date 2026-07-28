@@ -2,7 +2,8 @@
 	import type { Entry } from '$lib/api/client';
 	import { navigateInTab, openEntryTab } from '$lib/stores/tabs';
 	import { showContextMenu } from '$lib/stores/contextMenu';
-	import { Eye, EyeClosed, Bookmark, Gem } from '@lucide/svelte';
+	import { tooltip } from '$lib/actions/tooltip';
+	import { Eye, EyeClosed, Bookmark, Gem, ChartNetwork } from '@lucide/svelte';
 
 	const {
 		entries,
@@ -44,11 +45,11 @@
 					class="entry-row selectable"
 					role="button"
 					tabindex="0"
-					onclick={() => onitemclick!(entry)}
+					onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
 					onkeydown={(e) => {
 						if (e.key === 'Enter' || e.key === ' ') {
 							e.preventDefault();
-							onitemclick!(entry);
+							navigateInTab(entry.id, entry.title, entry.source_type);
 						}
 					}}
 					oncontextmenu={(e) => showContextMenu(e, entry)}
@@ -86,12 +87,13 @@
 					</div>
 					<button
 						class="view-btn"
+						use:tooltip={'View graph'}
 						onclick={(e) => {
 							e.stopPropagation();
-							navigateInTab(entry.id, entry.title, entry.source_type);
+							onitemclick!(entry);
 						}}
 					>
-						View ↗
+						<ChartNetwork size={15} />
 					</button>
 				</div>
 			{:else}
@@ -248,17 +250,17 @@
 	}
 
 	.view-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		flex-shrink: 0;
 		margin-left: 8px;
-		padding: 3px 10px;
+		padding: 6px;
 		background: none;
 		border: 1px solid var(--border);
 		border-radius: 4px;
 		color: var(--fg-muted);
-		font-family: inherit;
-		font-size: 0.72rem;
 		cursor: pointer;
-		white-space: nowrap;
 		transition:
 			color 0.12s,
 			border-color 0.12s;

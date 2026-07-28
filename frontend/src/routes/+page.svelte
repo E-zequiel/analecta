@@ -28,7 +28,15 @@
 	import LocalGraph from '$lib/components/LocalGraph.svelte';
 	import VaultGraph from '$lib/components/VaultGraph.svelte';
 	import { tooltip } from '$lib/actions/tooltip';
-	import { Eye, EyeClosed, Bookmark, Gem, Archive, TriangleAlert } from '@lucide/svelte';
+	import {
+		Eye,
+		EyeClosed,
+		Bookmark,
+		Gem,
+		Archive,
+		TriangleAlert,
+		ChartNetwork,
+	} from '@lucide/svelte';
 
 	let entryList = $state<Entry[]>([]);
 	let loading = $state(false);
@@ -688,13 +696,11 @@
 									class="tag-entry-card"
 									role="button"
 									tabindex="0"
-									onclick={() => {
-										selectDashboardEntry(entry.id);
-									}}
+									onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
 									onkeydown={(e) => {
 										if (e.key === 'Enter' || e.key === ' ') {
 											e.preventDefault();
-											selectDashboardEntry(entry.id);
+											navigateInTab(entry.id, entry.title, entry.source_type);
 										}
 									}}
 									oncontextmenu={(e) => showContextMenu(e, entry)}
@@ -724,12 +730,13 @@
 									</div>
 									<button
 										class="view-btn"
+										use:tooltip={'View graph'}
 										onclick={(e) => {
 											e.stopPropagation();
-											navigateInTab(entry.id, entry.title, entry.source_type);
+											selectDashboardEntry(entry.id);
 										}}
 									>
-										View ↗
+										<ChartNetwork size={15} />
 									</button>
 								</div>
 							{/each}
@@ -1148,16 +1155,16 @@
 	}
 
 	.view-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		flex-shrink: 0;
-		padding: 3px 10px;
+		padding: 6px;
 		background: none;
 		border: 1px solid var(--border);
 		border-radius: 4px;
 		color: var(--fg-muted);
-		font-family: inherit;
-		font-size: 0.72rem;
 		cursor: pointer;
-		white-space: nowrap;
 		transition:
 			color 0.12s,
 			border-color 0.12s;
