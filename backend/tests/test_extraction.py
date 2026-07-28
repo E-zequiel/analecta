@@ -24,6 +24,7 @@ from analecta.extraction.article import (
     _rescue_short_nested_lists,
     _rescue_syntax_footnote,
     _reunite_intro_with_body,
+    _select_article_h1,
     _simplify_figure_images,
     _strip_heading_classes,
     _strip_loading_placeholders,
@@ -3129,6 +3130,73 @@ def test_find_dek_paragraph_none_without_following_sibling():
     assert _find_dek_paragraph(soup.find("h1")) is None
 
 
+def test_find_dek_paragraph_accepts_substack_h3_subtitle():
+    # Substack renders the dek as <h3 class="subtitle ..."> right after the
+    # post's real <h1>, not as a <p> — the shape every other dek fixture uses.
+    html = (
+        '<div><h1 class="post-title">Blixt - LN Nodo y Monedero Lightning</h1>'
+        '<h3 class="subtitle subtitle-HEEcLo">Potente nodo BTC Lightning en '
+        "su propio bolsillo, en cualquier lugar</h3></div>"
+    )
+    soup = _BS(html, "html.parser")
+    dek = _find_dek_paragraph(soup.find("h1"))
+    assert dek is not None
+    assert dek.name == "h3"
+    assert dek.get_text(strip=True) == (
+        "Potente nodo BTC Lightning en su propio bolsillo, en cualquier lugar"
+    )
+
+
+def test_find_dek_paragraph_ignores_plain_heading_without_subtitle_class():
+    # A genuine subheading right after <h1> (no "subtitle" class) must not
+    # be mistaken for a dek.
+    html = "<div><h1>Title</h1><h3>Background</h3></div>"
+    soup = _BS(html, "html.parser")
+    assert _find_dek_paragraph(soup.find("h1")) is None
+
+
+def test_select_article_h1_returns_only_candidate():
+    soup = _BS("<div><h1>Title</h1></div>", "html.parser")
+    h1 = _select_article_h1(soup, "Unrelated title")
+    assert h1 is not None
+    assert h1.get_text(strip=True) == "Title"
+
+
+def test_select_article_h1_picks_match_over_first():
+    # Substack shape: publication name is the first <h1> on the page, the
+    # real headline is the second — selection must go by title match, not
+    # document order.
+    html = (
+        "<div><h1>DarthCoin's Bitcoin Guides</h1></div>"
+        "<div><h1>Blixt - LN Nodo y Monedero Lightning</h1></div>"
+    )
+    soup = _BS(html, "html.parser")
+    h1 = _select_article_h1(soup, "Blixt - LN Nodo y Monedero Lightning")
+    assert h1 is not None
+    assert h1.get_text(strip=True) == "Blixt - LN Nodo y Monedero Lightning"
+
+
+def test_select_article_h1_falls_back_to_first_when_no_match():
+    html = "<div><h1>Alpha</h1></div><div><h1>Beta</h1></div>"
+    soup = _BS(html, "html.parser")
+    h1 = _select_article_h1(soup, "Completely unrelated string")
+    assert h1 is not None
+    assert h1.get_text(strip=True) == "Alpha"
+
+
+def test_select_article_h1_falls_back_to_first_without_title():
+    html = "<div><h1>Alpha</h1></div><div><h1>Beta</h1></div>"
+    soup = _BS(html, "html.parser")
+    h1 = _select_article_h1(soup, "")
+    assert h1 is not None
+    assert h1.get_text(strip=True) == "Alpha"
+
+
+def test_select_article_h1_none_without_any_h1():
+    soup = _BS("<div><p>No heading here.</p></div>", "html.parser")
+    assert _select_article_h1(soup, "Title") is None
+
+
 def test_find_hero_image_matches_alt_several_levels_up():
     # socket.dev shape: hero <img> is a sibling of the title block several
     # ancestor levels above <h1>, alongside an unrelated avatar <img>.
@@ -3292,11 +3360,9 @@ def test_rescue_orphaned_header_socket_shape_prepends_dek_and_hero():
 
 def test_rescue_orphaned_header_ignores_wrong_h1_publication_name():
     # Substack shape: the page's *first* <h1> is the publication name in the
-    # site header, not the article's own headline — soup.find("h1") in
-    # _rescue_orphaned_header picks that one. If hero matching compared
-    # against that h1's own text instead of the passed-in article *title*,
-    # it would false-match the small publication-logo <img> sitting nearby.
-    # Regression guard for that failure mode (caught 2026-07-22).
+    # site header, not the article's own headline. _select_article_h1 picks
+    # the second (matching) <h1> by title similarity, so the publication
+    # branch — and its logo <img> — is never even considered.
     raw_html = (
         "<div>"
         "<div><h1>Viennese Civilization</h1>"
@@ -3310,6 +3376,51 @@ def test_rescue_orphaned_header_ignores_wrong_h1_publication_name():
         raw_html, content, "Money-Demand is very different"
     )
     assert "/logo.png" not in result
+
+
+def test_rescue_orphaned_header_falls_back_when_title_matches_no_h1():
+    # When *title* doesn't clear the match threshold against either <h1>,
+    # _select_article_h1 falls back to the first one — the hero-image
+    # lookup's own title comparison (not h1.get_text()) is the guard that
+    # still keeps the wrong branch's logo out of the result.
+    raw_html = (
+        "<div>"
+        "<div><h1>Viennese Civilization</h1>"
+        '<div><img src="/logo.png" alt="Viennese Civilization"/></div></div>'
+        '<div class="body"><h1>Money-Demand is very different</h1>'
+        "<p>Article body text long enough to survive.</p></div>"
+        "</div>"
+    )
+    content = '<div class="body"><p>Article body text long enough to survive.</p></div>'
+    result = _rescue_orphaned_header(raw_html, content, "Completely unrelated title")
+    assert "/logo.png" not in result
+
+
+def test_rescue_orphaned_header_substack_shape_prepends_h3_subtitle_dek():
+    # Real-world regression: darthcoin.substack.com/p/blixt-nodo-monedero-
+    # lightning — the dek is an <h3 class="subtitle"> after the *second*
+    # <h1> (the real headline), with an unrelated first <h1> (publication
+    # name) earlier on the page. Both the h1-selection fix and the
+    # h3-as-dek fix are needed together for this to be rescued.
+    dek_text = "Potente nodo BTC Lightning en su propio bolsillo, en cualquier lugar"
+    title = "Blixt - LN Nodo y Monedero Lightning"
+    raw_html = (
+        "<div>"
+        "<div><h1>DarthCoin's Bitcoin Guides</h1></div>"
+        f'<div class="body"><h1 class="post-title">{title}</h1>'
+        f'<h3 class="subtitle subtitle-HEEcLo">{dek_text}</h3>'
+        "<p>Me gustaría que le presentara un nuevo nodo.</p></div>"
+        "</div>"
+    )
+    content = (
+        '<div class="body"><p>Me gustaría que le presentara un nuevo nodo.</p></div>'
+    )
+    result = _rescue_orphaned_header(raw_html, content, title)
+    soup = _BS(result, "html.parser")
+    dek_p = soup.find("p")
+    assert dek_p is not None
+    assert dek_p.get_text(strip=True) == dek_text
+    assert dek_p.name == "p"
 
 
 def test_rescue_orphaned_header_noop_without_h1():

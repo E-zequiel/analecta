@@ -679,24 +679,35 @@ _DEK_MIN_LEN = 20
 _HERO_ALT_MATCH_RATIO = 0.7
 _HERO_SEARCH_MAX_DEPTH = 8
 _SKIP_SIBLING_TAGS = frozenset({"style", "script"})
+_DEK_HEADING_TAGS = frozenset({"h2", "h3"})
+_DEK_CLASS_RE = re.compile(r"subtitle", re.IGNORECASE)
+_H1_TITLE_MATCH_RATIO = 0.7
 
 
 def _find_dek_paragraph(h1: Tag) -> Tag | None:
-    """Return the dek/standfirst <p> immediately after *h1*, if any.
+    """Return the dek/standfirst element immediately after *h1*, if any.
 
     Sites commonly place a one-sentence standfirst directly after the
     ``<h1>``, inside the same header wrapper (e.g. milkroad.com's
     ``newsletterArticleLayoutIntroLine``, socket.dev's Chakra-generated
-    ``<p>`` sibling). Only the first non-``<style>``/``<script>`` sibling is
-    checked — stray paragraphs further down the header (bylines, share
-    widgets) are deliberately not scanned for, to avoid false positives.
+    ``<p>`` sibling). Substack instead renders it as a heading —
+    ``<h3 class="subtitle ...">`` — so a heading sibling is also accepted
+    when its class carries "subtitle"; a plain ``<h2>``/``<h3>`` with no
+    such class is left alone since that's a real subheading, not a dek.
+    Only the first non-``<style>``/``<script>`` sibling is checked — stray
+    paragraphs further down the header (bylines, share widgets) are
+    deliberately not scanned for, to avoid false positives.
     """
     for sib in h1.find_next_siblings():
         if not isinstance(sib, Tag):
             continue
         if sib.name in _SKIP_SIBLING_TAGS:
             continue
-        if sib.name == "p" and len(sib.get_text(strip=True)) >= _DEK_MIN_LEN:
+        is_dek = sib.name == "p" or (
+            sib.name in _DEK_HEADING_TAGS
+            and _DEK_CLASS_RE.search(" ".join(sib.get("class") or []))
+        )
+        if is_dek and len(sib.get_text(strip=True)) >= _DEK_MIN_LEN:
             return sib
         return None
     return None
@@ -720,11 +731,13 @@ def _find_hero_image(h1: Tag, title: str) -> Tag | None:
     are not rescued — that's a missed fix, not a false positive.
 
     Deliberately compares against *title* (the article's extracted metadata
-    title), not ``h1.get_text()``: some sites (Substack) render more than one
-    ``<h1>`` on the page, and ``soup.find("h1")`` in ``_rescue_orphaned_header``
-    picks the *first* one — the publication name in Substack's header, not
-    the article's own headline — which would false-match against a small
-    publication-logo ``<img>`` sitting in the same branch.
+    title), not ``h1.get_text()``: ``_select_article_h1`` already picks the
+    ``<h1>`` matching *title* when a page renders more than one (Substack
+    renders a publication-name ``<h1>`` in its navbar in addition to the
+    real headline), but that selection is a similarity-ratio heuristic, not
+    a guarantee. Comparing against *title* here rather than trusting
+    ``h1.get_text()`` blindly is a second, independent guard against a
+    stray publication-logo ``<img>`` being mistaken for the hero image.
 
     A ``title`` that is itself SEO-truncated with a trailing "…" (e.g.
     socket.dev's ``<title>`` tag) can undershoot the similarity ratio even
@@ -765,6 +778,34 @@ def _find_hero_image(h1: Tag, title: str) -> Tag | None:
     return None
 
 
+def _select_article_h1(soup: BeautifulSoup, title: str) -> Tag | None:
+    """Return the <h1> matching *title* among possibly several on the page.
+
+    Most sites this function targets render exactly one <h1>. Substack
+    renders two — the publication name in the navbar and the actual post
+    headline — and a blind ``soup.find("h1")`` would pick the first (wrong)
+    one, sending the dek lookup searching the navbar branch instead of the
+    real header, where it would never find the genuine ``<h3
+    class="subtitle">`` dek that actually follows the headline. Falls back
+    to the first <h1> when there's no title to compare against or no
+    candidate clears the match threshold, preserving the original
+    single-h1 behavior other callers rely on.
+    """
+    candidates = [h for h in soup.find_all("h1") if isinstance(h, Tag)]
+    if not candidates:
+        return None
+    if len(candidates) == 1 or not title.strip():
+        return candidates[0]
+    best, best_ratio = candidates[0], 0.0
+    for h1 in candidates:
+        ratio = difflib.SequenceMatcher(
+            None, h1.get_text(strip=True).lower(), title.strip().lower()
+        ).ratio()
+        if ratio > best_ratio:
+            best, best_ratio = h1, ratio
+    return best if best_ratio >= _H1_TITLE_MATCH_RATIO else candidates[0]
+
+
 def _rescue_orphaned_header(raw_html: str, content: str, title: str) -> str:
     """Prepend a dek paragraph / hero image dropped by readability's scoring.
 
@@ -781,8 +822,8 @@ def _rescue_orphaned_header(raw_html: str, content: str, title: str) -> str:
     candidate are untouched.
     """
     soup = BeautifulSoup(raw_html, "html.parser")
-    h1 = soup.find("h1")
-    if h1 is None or not isinstance(h1, Tag):
+    h1 = _select_article_h1(soup, title)
+    if h1 is None:
         return content
 
     pieces: list[str] = []
@@ -792,8 +833,9 @@ def _rescue_orphaned_header(raw_html: str, content: str, title: str) -> str:
         dek_text = dek.get_text(strip=True)
         content_text = BeautifulSoup(content, "html.parser").get_text()
         if dek_text and dek_text not in content_text:
-            clone = BeautifulSoup(str(dek), "html.parser").find("p")
+            clone = BeautifulSoup(str(dek), "html.parser").find(dek.name)
             if isinstance(clone, Tag):
+                clone.name = "p"
                 clone.attrs = {}
                 pieces.append(str(clone))
 
