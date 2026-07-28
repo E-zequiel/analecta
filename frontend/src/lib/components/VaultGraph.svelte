@@ -22,6 +22,19 @@
 		source_type: string | null;
 	};
 
+	// Node radius grows with degree (fixed curve, not normalized against the graph's max
+	// degree — otherwise a leaf node's size would shift depending on whether some unrelated
+	// hub exists elsewhere in the vault). Tags keep a lower ceiling than entries, mirroring
+	// the old uniform 7 vs 10 split.
+	const ENTRY_SIZE_RANGE = { min: 6, max: 20 } as const;
+	const TAG_SIZE_RANGE = { min: 4, max: 14 } as const;
+	const SIZE_GROWTH_PER_SQRT_DEGREE = 3;
+
+	function sizeForDegree(kind: 'entry' | 'tag', degree: number): number {
+		const range = kind === 'tag' ? TAG_SIZE_RANGE : ENTRY_SIZE_RANGE;
+		return Math.min(range.max, range.min + SIZE_GROWTH_PER_SQRT_DEGREE * Math.sqrt(degree));
+	}
+
 	const {
 		onopen,
 		ontagclick,
@@ -216,7 +229,24 @@
 	function runLayout(graph: UndirectedGraph<VaultNodeAttrs>, iterations?: number) {
 		const n = graph.order;
 		if (n === 0) return;
-		positionByComponent(graph, iterations ?? Math.min(600, Math.max(300, 200 + n * 2)));
+		const iters = iterations ?? Math.min(600, Math.max(300, 200 + n * 2));
+		positionByComponent(graph, iters);
+		if (n < 2) return;
+		// positionByComponent only prevents disconnected clusters from overlapping at
+		// start. Filling the available space is a separate step: run FA2 jointly across
+		// every node so universal repulsion (it acts between every pair, not just linked
+		// nodes) pushes separate clusters apart. This used to happen live, spread over
+		// the 900-frame heat() after render — now it runs synchronously before first paint.
+		forceAtlas2.assign(graph, {
+			iterations: iters,
+			settings: {
+				...forceAtlas2.inferSettings(graph),
+				barnesHutOptimize: n > 150,
+				scalingRatio: 15,
+				gravity: 0.0575,
+				adjustSizes: true,
+			},
+		});
 	}
 
 	// Re-run layout from random positions, then fit camera.
@@ -265,7 +295,7 @@
 				label: truncate(node.label),
 				fullLabel: node.label,
 				color: nodeColor(node.kind, node.source_type, colors),
-				size: node.kind === 'tag' ? 7 : 10,
+				size: 0, // placeholder — replaced below once degree is known
 				x: Math.random(),
 				y: Math.random(),
 				kind: node.kind,
@@ -290,9 +320,15 @@
 			}
 		}
 
-		// Partial layout before sigma creation — spreads nodes from the initial random
-		// cluster but stays under-converged so heat() animates the remaining settling.
-		runLayout(graph, Math.min(60, 20 + data.nodes.length));
+		// Size by degree now that every edge is in — must run before layout since
+		// forceAtlas2's adjustSizes reads node size to space hubs apart.
+		graph.forEachNode((node, attrs) => {
+			graph.setNodeAttribute(node, 'size', sizeForDegree(attrs.kind, graph.degree(node)));
+		});
+
+		// Full layout before sigma creation — nodes render already settled, no visible
+		// assemble animation on load (matches resetLayout's convergence).
+		runLayout(graph);
 
 		const sigma = new Sigma<VaultNodeAttrs>(graph, el, {
 			allowInvalidContainer: true,
@@ -410,6 +446,8 @@
 			if (!isNaN(id)) void handleNodeContextMenu(id, origEvent);
 		});
 
+		// Only an actual node drag re-heats the simulation — panning the camera is a
+		// viewport operation and must not visibly re-agitate the settled layout.
 		sigma.on('moveBody', ({ preventSigmaDefault, event }) => {
 			if (isDragging && draggedNode) {
 				preventSigmaDefault();
@@ -417,9 +455,6 @@
 				graph.setNodeAttribute(draggedNode, 'x', pos.x);
 				graph.setNodeAttribute(draggedNode, 'y', pos.y);
 				heat(300);
-			} else {
-				// Canvas pan — heat up so nodes responsively settle around the new viewport.
-				heat(450);
 			}
 		});
 
@@ -435,11 +470,12 @@
 
 		// $effect may run before the browser computes layout dimensions.
 		// A single rAF ensures offsetWidth/Height are non-zero before Sigma renders.
-		// heat() continues the under-converged layout with 1 FA2 iter/frame (~15s settle).
+		// heat() continues the live simulation from the already-settled layout above —
+		// a gentle ongoing motion, not the "assemble from clumped" animation this once was.
 		const rafId = requestAnimationFrame(() => {
 			sigma.refresh();
 			sigma.getCamera().setState({ x: 0.5, y: 0.5, angle: 0, ratio: 1 });
-			heat(900);
+			heat(2000);
 		});
 
 		return () => {
@@ -511,9 +547,10 @@
 				}
 
 				sigma.setSetting('nodeReducer', (nodeKey: string, nodeData: VaultNodeAttrs) => {
-					const { x, y, label } = nodeData;
-					if (keys.has(nodeKey)) return { x, y, color: accentColor, size: 14, label };
-					return { x, y, color: dimColor, size: 4, label: '' };
+					const { x, y, size, label } = nodeData;
+					if (keys.has(nodeKey))
+						return { x, y, color: accentColor, size: Math.max(size * 1.3, 12), label };
+					return { x, y, color: dimColor, size: Math.min(size * 0.5, 4), label: '' };
 				});
 				sigma.refresh();
 
@@ -529,7 +566,8 @@
 				matchedNodeKeys = null;
 				sigma.setSetting('nodeReducer', (nodeKey: string, nodeData: VaultNodeAttrs) => {
 					const { x, y, color, size, label } = nodeData;
-					if (nodeKey === selected) return { x, y, color: accentColor, size: 14 };
+					if (nodeKey === selected)
+						return { x, y, color: accentColor, size: Math.max(size * 1.3, 12) };
 					return { x, y, color, size, label };
 				});
 				sigma.refresh();
