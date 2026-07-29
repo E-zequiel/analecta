@@ -44,6 +44,7 @@
 		expandAllSignal,
 		pasteUrlSignal,
 		dashboardPreviewEntryId,
+		sidebarTagPreview,
 		preSettingsState,
 		pendingScrollRestore,
 	} from '$lib/stores/ui';
@@ -497,6 +498,12 @@
 	}
 
 	function selectSection(id: SectionId) {
+		if ($activeSection === id && $dashboardPreviewEntryId !== null) {
+			// Re-clicking the already-active dashboard exits its LocalGraph view.
+			dashboardPreviewEntryId.set(null);
+			sidebarTagPreview.set(null);
+			return;
+		}
 		selectedTag.set(null);
 		navigateInSectionTab(id);
 	}
@@ -623,7 +630,15 @@
 				<button
 					class="section-label"
 					class:active={$activeSection === 'tags'}
-					onclick={() => navigateInSectionTab('tags')}
+					onclick={() => {
+						if ($activeSection === 'tags' && $dashboardPreviewEntryId !== null) {
+							// Re-clicking the already-active TAGS dashboard exits its LocalGraph view.
+							dashboardPreviewEntryId.set(null);
+							sidebarTagPreview.set(null);
+							return;
+						}
+						navigateInSectionTab('tags');
+					}}
 				>
 					<BrainCircuit size={18} />
 					<span class="label-text">TAGS</span>
