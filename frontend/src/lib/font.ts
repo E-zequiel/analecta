@@ -4,7 +4,7 @@ const ACCENT_MAP: Record<AccentKey, { dark: [string, string]; light: [string, st
 	red: { dark: ['#ff757f', '#db4b4b'], light: ['#b5202b', '#7f161e'] },
 	yellow: { dark: ['#e0af68', '#c99a4b'], light: ['#785814', '#543e0e'] },
 	green: { dark: ['#9ece6a', '#73a85a'], light: ['#2e693e', '#204a2b'] },
-	cyan: { dark: ['#7dcfff', '#5aafc5'], light: ['#00619b', '#00446c'] },
+	cyan: { dark: ['#8dd5fe', '#5aafc5'], light: ['#00619b', '#00446c'] },
 };
 
 export function applyFont(
