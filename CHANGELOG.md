@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - In the LIBRARY, UNREAD, READ, BOOKMARK, GEM, and ARCHIVE dashboards, opening a row's local graph panel narrows the list column; while it's open, that row's source-type badge and local-graph button now sit together in the row's bottom-right corner instead of staying centered against the full row, freeing horizontal room for the title and tags in the narrower column. Row layout is unchanged whenever no local graph panel is open.
 - The dark theme's cyan (`gem` badges, backlink labels, `h4` headings, and graph node fill) is now a lighter, softer shade (`#8dd5fe`, up from `#7dcfff`). Code-block syntax highlighting is unaffected and keeps the original Tokyo Night cyan.
 - Settings → Accent color: the "Cyan" option has been replaced by "Magenta" (a Tokyo Night violet/purple). Selecting Cyan as the accent color made hover states on links and other cyan-tinted UI indistinguishable from their resting state, because the accent color and the fixed cyan syntax color became identical.
+- Italic text (`*em*`) in the reading view is no longer rendered in cyan — it now matches the body text color, distinguished only by the italic style.
 
 ### Fixed
 
