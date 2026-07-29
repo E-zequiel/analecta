@@ -94,7 +94,7 @@
 
 .markdown-body em {
 	font-style: italic;
-	color: var(--cyan);
+	color: var(--fg);
 }
 
 .markdown-body h1 strong,
