@@ -117,9 +117,10 @@
 	font-size: 0.89em;
 	background: var(--bg-highlight);
 	color: var(--fg);
-	padding: 0.1em 0.4em;
-	border-radius: 5px;
+	padding: 0.1em 0.25em;
+	border-radius: 3.5px;
 	border: none;
+	vertical-align: top;
 }
 
 .markdown-body pre {
