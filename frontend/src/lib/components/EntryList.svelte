@@ -10,11 +10,13 @@
 		loading = false,
 		onitemclick,
 		showStatusLabel = false,
+		compact = false,
 	}: {
 		entries: Entry[];
 		loading?: boolean;
 		onitemclick?: (entry: Entry) => void;
 		showStatusLabel?: boolean;
+		compact?: boolean;
 	} = $props();
 
 	const sourceColors: Record<string, string> = {
@@ -43,6 +45,7 @@
 			{#if onitemclick}
 				<div
 					class="entry-row selectable"
+					class:compact
 					role="button"
 					tabindex="0"
 					onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
@@ -80,25 +83,28 @@
 							{/each}
 						</div>
 					</div>
-					<span
-						class="entry-source"
-						style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
-						>{entry.source_type}</span
-					>
-					<button
-						class="view-btn"
-						use:tooltip={'View graph'}
-						onclick={(e) => {
-							e.stopPropagation();
-							onitemclick!(entry);
-						}}
-					>
-						<ChartNetwork size={15} />
-					</button>
+					<div class="entry-controls">
+						<span
+							class="entry-source"
+							style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
+							>{entry.source_type}</span
+						>
+						<button
+							class="view-btn"
+							use:tooltip={'View graph'}
+							onclick={(e) => {
+								e.stopPropagation();
+								onitemclick!(entry);
+							}}
+						>
+							<ChartNetwork size={15} />
+						</button>
+					</div>
 				</div>
 			{:else}
 				<button
 					class="entry-row"
+					class:compact
 					onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
 					onmousedown={(e) => {
 						if (e.button === 1) {
@@ -134,11 +140,13 @@
 							{/each}
 						</div>
 					</div>
-					<span
-						class="entry-source"
-						style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
-						>{entry.source_type}</span
-					>
+					<div class="entry-controls">
+						<span
+							class="entry-source"
+							style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
+							>{entry.source_type}</span
+						>
+					</div>
 				</button>
 			{/if}
 		{/each}
@@ -159,6 +167,7 @@
 	}
 
 	.entry-row {
+		position: relative;
 		display: flex;
 		align-items: center;
 		width: 100%;
@@ -170,6 +179,10 @@
 		text-align: left;
 		font-family: inherit;
 		transition: background 0.1s;
+	}
+
+	.entry-row.compact .entry-body {
+		padding-right: 132px;
 	}
 
 	.entry-row:hover {
@@ -199,7 +212,6 @@
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
-		margin-left: 8px;
 		padding: 2px 7px;
 		border-radius: 3px;
 		background: var(--bg-alt);
@@ -255,7 +267,6 @@
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
-		margin-left: 8px;
 		padding: 6px;
 		background: none;
 		border: 1px solid var(--border);
@@ -270,5 +281,20 @@
 	.view-btn:hover {
 		color: var(--accent);
 		border-color: var(--accent-dark);
+	}
+
+	.entry-controls {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-shrink: 0;
+		margin-left: 8px;
+	}
+
+	.entry-row.compact .entry-controls {
+		position: absolute;
+		right: 7px;
+		bottom: 7px;
+		margin-left: 0;
 	}
 </style>

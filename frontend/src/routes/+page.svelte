@@ -831,6 +831,7 @@
 							selectDashboardEntry(entry.id);
 						}}
 						showStatusLabel={$activeSection === 'library'}
+						compact={$dashboardPreviewEntryId !== null}
 					/>
 				</div>
 				{#if $dashboardPreviewEntryId !== null}
