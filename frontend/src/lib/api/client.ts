@@ -124,7 +124,7 @@ export interface AppConfig {
 	ui_font_size: number;
 	reading_font_size: number;
 	theme: 'dark' | 'light';
-	accent_color: 'red' | 'yellow' | 'green' | 'cyan';
+	accent_color: 'red' | 'yellow' | 'green' | 'magenta';
 	open_tab_ids: string[];
 	active_tab_id: string;
 	first_run: boolean;
@@ -137,7 +137,7 @@ export interface AppConfigUpdate {
 	ui_font_size?: number;
 	reading_font_size?: number;
 	theme?: 'dark' | 'light';
-	accent_color?: 'red' | 'yellow' | 'green' | 'cyan';
+	accent_color?: 'red' | 'yellow' | 'green' | 'magenta';
 	open_tab_ids?: string[];
 	active_tab_id?: string;
 	close_to_tray?: boolean;

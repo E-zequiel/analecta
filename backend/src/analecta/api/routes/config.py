@@ -56,7 +56,7 @@ class ConfigIn(BaseModel):
     ui_font_size: float | None = None
     reading_font_size: float | None = None
     theme: Literal["dark", "light"] | None = None
-    accent_color: Literal["red", "yellow", "green", "cyan"] | None = None
+    accent_color: Literal["red", "yellow", "green", "magenta"] | None = None
     open_tab_ids: list[str] | None = None
     active_tab_id: str | None = None
     close_to_tray: bool | None = None

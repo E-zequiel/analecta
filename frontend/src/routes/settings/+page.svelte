@@ -10,8 +10,8 @@
 		{ id: 'red', label: 'Red' },
 		{ id: 'yellow', label: 'Yellow' },
 		{ id: 'green', label: 'Green' },
-		{ id: 'cyan', label: 'Cyan' },
-	] as const satisfies { id: 'red' | 'yellow' | 'green' | 'cyan'; label: string }[];
+		{ id: 'magenta', label: 'Magenta' },
+	] as const satisfies { id: 'red' | 'yellow' | 'green' | 'magenta'; label: string }[];
 
 	let form = $state({
 		vault_path: '',
@@ -19,7 +19,7 @@
 		ui_font_size: 17.0,
 		reading_font_size: 18.0,
 		theme: 'dark' as 'dark' | 'light',
-		accent_color: 'yellow' as 'red' | 'yellow' | 'green' | 'cyan',
+		accent_color: 'yellow' as 'red' | 'yellow' | 'green' | 'magenta',
 		close_to_tray: false,
 	});
 	let initialVaultPath = $state('');
@@ -241,7 +241,7 @@
 		}
 	}
 
-	function selectAccent(id: 'red' | 'yellow' | 'green' | 'cyan') {
+	function selectAccent(id: 'red' | 'yellow' | 'green' | 'magenta') {
 		form.accent_color = id;
 		autoSaveAccent();
 	}
@@ -871,8 +871,8 @@
 	.swatch-green {
 		background: var(--green);
 	}
-	.swatch-cyan {
-		background: var(--cyan);
+	.swatch-magenta {
+		background: var(--magenta);
 	}
 
 	.swatch.active {
