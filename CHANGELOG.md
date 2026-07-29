@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - In the LIBRARY, UNREAD, READ, BOOKMARK, GEM, ARCHIVE, and TAGS dashboards, clicking a list entry now opens its reading view directly instead of the local graph. The local graph is now reached via a dedicated button on the row (graph-network icon) — previously that button ("View") opened the reading view, and clicking the row opened the graph.
+- The local graph panel in any dashboard can now be exited back to the plain list view: re-clicking the same dashboard in the left sidebar closes it, and a new button (scroll-text icon, top-right of the graph panel) does the same. Previously the only way out was switching to a different dashboard.
 - The vault graph on the Collecta dashboard now starts each connected cluster already spread out to fill the available space, instead of clumped together, before continuing its usual live-settling motion from that point. Node size also now scales with how many connections a node has — entries and tags share the same size range, so a well-connected tag reads as prominent as a well-connected entry — with the least-connected nodes noticeably smaller and the difference between low and high connectivity now more pronounced.
 
 ### Fixed

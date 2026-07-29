@@ -36,6 +36,7 @@
 		Archive,
 		TriangleAlert,
 		ChartNetwork,
+		ScrollText,
 	} from '@lucide/svelte';
 
 	let entryList = $state<Entry[]>([]);
@@ -73,20 +74,24 @@
 
 	// Dashboard graph state (shared across section + tags dashboards)
 	let pendingTagNav = $state<string | null>(null);
-	let dashboardSelectedId = $state<number | null>(null);
 	let dashboardSubgraph = $state<SubgraphResult | null>(null);
 	let dashboardSubgraphLoading = $state(false);
 	let graphColumnHeight = $state(200);
 	const graphHeight = $derived(graphColumnHeight || 200);
 
 	function selectDashboardEntry(id: number | null) {
-		dashboardSelectedId = id;
 		dashboardPreviewEntryId.set(id);
 		if (id !== null) {
 			selectedTag.set(null);
 			sidebarTagPreview.set(null);
 			rightSidebarOpen.set(true);
 		}
+	}
+
+	// Closes the LocalGraph panel and returns the dashboard to its plain list view.
+	function closeDashboardGraph() {
+		selectDashboardEntry(null);
+		sidebarTagPreview.set(null);
 	}
 
 	const FLAG_SECTIONS = new Set(['bookmark', 'gem', 'archive']);
@@ -116,7 +121,7 @@
 
 	// Fetch subgraph when an entry is selected in a dashboard
 	$effect(() => {
-		const id = dashboardSelectedId;
+		const id = $dashboardPreviewEntryId;
 		dashboardSubgraph = null;
 		if (id === null) return;
 		dashboardSubgraphLoading = true;
@@ -745,8 +750,16 @@
 				{/if}
 			</div>
 
-			{#if dashboardSelectedId !== null}
+			{#if $dashboardPreviewEntryId !== null}
 				<div class="graph-column" bind:clientHeight={graphColumnHeight}>
+					<button
+						class="graph-close-btn"
+						onclick={closeDashboardGraph}
+						use:tooltip={'Back to list'}
+						aria-label="Back to list"
+					>
+						<ScrollText size={18} />
+					</button>
 					{#if dashboardSubgraphLoading}
 						<p class="graph-hint">Loading…</p>
 					{:else if dashboardSubgraph}
@@ -820,8 +833,16 @@
 						showStatusLabel={$activeSection === 'library'}
 					/>
 				</div>
-				{#if dashboardSelectedId !== null}
+				{#if $dashboardPreviewEntryId !== null}
 					<div class="graph-column" bind:clientHeight={graphColumnHeight}>
+						<button
+							class="graph-close-btn"
+							onclick={closeDashboardGraph}
+							use:tooltip={'Back to list'}
+							aria-label="Back to list"
+						>
+							<ScrollText size={18} />
+						</button>
 						{#if dashboardSubgraphLoading}
 							<p class="graph-hint">Loading…</p>
 						{:else if dashboardSubgraph}
@@ -871,6 +892,7 @@
 	}
 
 	.graph-column {
+		position: relative;
 		flex: 0 0 570px;
 		min-height: 0;
 		border-left: 1px solid var(--border);
@@ -878,6 +900,30 @@
 		display: flex;
 		flex-direction: column;
 		justify-content: flex-start;
+	}
+
+	.graph-close-btn {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		z-index: 2;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 6px;
+		background: var(--bg-alt);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		color: var(--fg-muted);
+		cursor: pointer;
+		transition:
+			color 0.12s,
+			border-color 0.12s;
+	}
+
+	.graph-close-btn:hover {
+		color: var(--accent);
+		border-color: var(--accent-dark);
 	}
 
 	@container (max-width: 620px) {
