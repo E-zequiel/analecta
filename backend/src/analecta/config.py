@@ -30,7 +30,7 @@ class AppConfig(BaseModel):
     ui_font_size: float = 17.0
     reading_font_size: float = 18.0
     theme: Literal["dark", "light"] = "dark"
-    accent_color: Literal["red", "yellow", "green", "cyan"] = "yellow"
+    accent_color: Literal["red", "yellow", "green", "magenta"] = "yellow"
     open_tab_ids: list[str] = ["section-library"]
     active_tab_id: str = "section-library"
     close_to_tray: bool = False

@@ -57,3 +57,12 @@ def test_load_config_reads_close_to_tray(tmp_path: Path):
     cfg_file.write_text("close_to_tray = false\n")
     config = load_config(cfg_file)
     assert config.close_to_tray is False
+
+
+def test_appconfig_accent_color_magenta_valid():
+    assert AppConfig(accent_color="magenta").accent_color == "magenta"
+
+
+def test_appconfig_rejects_removed_cyan_accent():
+    with pytest.raises(ValidationError):
+        AppConfig(accent_color="cyan")  # pyright: ignore[reportArgumentType]
