@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The dark theme's cyan (`gem` badges, backlink labels, `h4` headings, and graph node fill) is now a lighter, softer shade (`#8dd5fe`, up from `#7dcfff`). Code-block syntax highlighting is unaffected and keeps the original Tokyo Night cyan.
 - Settings → Accent color: the "Cyan" option has been replaced by "Magenta" (a Tokyo Night violet/purple). Selecting Cyan as the accent color made hover states on links and other cyan-tinted UI indistinguishable from their resting state, because the accent color and the fixed cyan syntax color became identical.
 - Italic text (`*em*`) in the reading view is no longer rendered in cyan — it now matches the body text color, distinguished only by the italic style.
+- Tag nodes in the local graph, the vault graph, and grouped Backlinks entries are now colored magenta instead of green. The selected/focused node in both graphs (and, in the vault graph, search-matched nodes) is now colored green instead of the accent color — previously, picking "Magenta" as the accent color made a selected tag node indistinguishable from an ordinary one.
 
 ### Fixed
 

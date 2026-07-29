@@ -539,7 +539,7 @@
 	}
 
 	.bl-group-tag {
-		color: var(--green);
+		color: var(--magenta);
 		flex: 1;
 		overflow: hidden;
 		text-overflow: ellipsis;
