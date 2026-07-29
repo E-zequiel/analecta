@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The source-type badge (`article`, `youtube`, etc.) on each row in the LIBRARY, UNREAD, READ, BOOKMARK, GEM, ARCHIVE, and TAGS dashboards is now vertically centered against the full row, matching the local-graph button beside it — it previously sat pinned near the top of the row, level with the title, whenever the row's date/status/tag line gave it extra height.
 - The dek/subtitle sentence beneath an article's title is no longer silently dropped from Substack extraction. Substack renders two `<h1>` elements on a post page — the publication name in the navbar, then the actual headline — and the dek-rescue mechanism (see the 0.4.0 entry above) was always anchoring on the first, wrong one; it also only recognized a dek shaped as a `<p>`, while Substack renders its subtitle as `<h3 class="subtitle">`. Both are now handled: the rescue anchors on whichever `<h1>` actually matches the extracted title, and a subtitle-classed heading is accepted as a dek shape alongside `<p>`.
 
 ## [0.4.0] - 2026-07-28

@@ -57,11 +57,6 @@
 					<div class="entry-body">
 						<div class="entry-top">
 							<span class="entry-title">{entry.title}</span>
-							<span
-								class="entry-source"
-								style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
-								>{entry.source_type}</span
-							>
 						</div>
 						<div class="entry-meta">
 							<span class="entry-date">{formatDate(entry.created_at)}</span>
@@ -85,6 +80,11 @@
 							{/each}
 						</div>
 					</div>
+					<span
+						class="entry-source"
+						style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
+						>{entry.source_type}</span
+					>
 					<button
 						class="view-btn"
 						use:tooltip={'View graph'}
@@ -111,11 +111,6 @@
 					<div class="entry-body">
 						<div class="entry-top">
 							<span class="entry-title">{entry.title}</span>
-							<span
-								class="entry-source"
-								style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
-								>{entry.source_type}</span
-							>
 						</div>
 						<div class="entry-meta">
 							<span class="entry-date">{formatDate(entry.created_at)}</span>
@@ -139,6 +134,11 @@
 							{/each}
 						</div>
 					</div>
+					<span
+						class="entry-source"
+						style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
+						>{entry.source_type}</span
+					>
 				</button>
 			{/if}
 		{/each}
@@ -183,8 +183,6 @@
 
 	.entry-top {
 		display: flex;
-		align-items: flex-start;
-		gap: 8px;
 		margin-bottom: 4px;
 	}
 
@@ -197,13 +195,16 @@
 	}
 
 	.entry-source {
-		font-size: 0.68rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		flex-shrink: 0;
+		margin-left: 8px;
 		padding: 2px 7px;
 		border-radius: 3px;
 		background: var(--bg-alt);
 		border: 1px solid var(--border);
-		margin-top: 2px;
+		font-size: 0.68rem;
 	}
 
 	.entry-meta {
