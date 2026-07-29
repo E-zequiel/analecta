@@ -63,6 +63,15 @@
 		hideContextMenu();
 	}
 
+	async function copyDeepLink() {
+		if ($contextMenu.entry) {
+			await navigator.clipboard
+				.writeText(`analecta://open?id=${$contextMenu.entry.id}`)
+				.catch(() => {});
+		}
+		hideContextMenu();
+	}
+
 	async function revealFile() {
 		if ($contextMenu.entry) {
 			await revealInDir($contextMenu.entry.file_path).catch(() => {});
@@ -127,6 +136,9 @@
 	>
 		<button class="menu-item" onclick={copyUrl} role="menuitem"> Copy article URL </button>
 		<button class="menu-item" onclick={openInBrowser} role="menuitem"> Open in browser </button>
+		<button class="menu-item" onclick={copyDeepLink} role="menuitem">
+			Copy Analecta deep link
+		</button>
 		<div class="separator"></div>
 		<button class="menu-item" onclick={revealFile} role="menuitem">
 			Show in system explorer

@@ -191,8 +191,8 @@
 					<button
 						class="btn-icon"
 						onclick={() => $viewerActions!.copyUrl()}
-						use:tooltip={'Copy URL'}
-						aria-label="Copy URL"
+						use:tooltip={'Copy Analecta deep link'}
+						aria-label="Copy Analecta deep link"
 					>
 						<Link size={18} />
 					</button>
