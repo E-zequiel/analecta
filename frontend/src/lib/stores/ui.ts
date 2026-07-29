@@ -35,6 +35,11 @@ export const preSettingsState = writable<{ path: string; scrollTop: number } | n
 export const pendingScrollRestore = writable<number | null>(null);
 export const scrollPositions = persisted<Record<string, number>>('scroll-positions', {});
 
+// One-shot: reading-view scroll fraction (0–1) captured when entering the editor from the
+// viewer, so the editor can land the cursor/view near where the reader left off instead of
+// always at the top. Consumed and cleared by the editor route on mount.
+export const pendingEditorScrollFraction = writable<number | null>(null);
+
 // Default is "on" for everyone — but on a first run with no stored preference yet, seed
 // from the OS-level reduced-motion signal so vestibular-sensitive users don't get ~30s of
 // continuous canvas motion before they find the toggle in Settings. Controls only whether
