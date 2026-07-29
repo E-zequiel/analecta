@@ -112,7 +112,7 @@
 			article: get('--cyan', '#7dcfff'),
 			youtube: get('--red', '#f7768e'),
 			substack: get('--accent-warm', '#ff9e64'),
-			tag: get('--green', '#9ece6a'),
+			tag: get('--magenta', '#bb9af7'),
 			fallback: get('--fg-muted', '#565f89'),
 			edge: get('--border', '#292e42'),
 			label: get('--fg-muted', '#565f89'),
@@ -579,7 +579,7 @@
 			}
 
 			const s = getComputedStyle(document.documentElement);
-			const accentColor = s.getPropertyValue('--accent').trim() || '#ff757f';
+			const highlightColor = s.getPropertyValue('--green').trim() || '#9ece6a';
 			const dimColor = s.getPropertyValue('--border').trim() || '#292e42';
 
 			if (q && data) {
@@ -603,7 +603,7 @@
 				sigma.setSetting('nodeReducer', (nodeKey: string, nodeData: VaultNodeAttrs) => {
 					const { x, y, size, label } = nodeData;
 					if (keys.has(nodeKey))
-						return { x, y, color: accentColor, size: Math.max(size * 1.3, 12), label };
+						return { x, y, color: highlightColor, size: Math.max(size * 1.3, 12), label };
 					return { x, y, color: dimColor, size: Math.min(size * 0.5, 4), label: '' };
 				});
 				sigma.refresh();
@@ -621,7 +621,7 @@
 				sigma.setSetting('nodeReducer', (nodeKey: string, nodeData: VaultNodeAttrs) => {
 					const { x, y, color, size, label } = nodeData;
 					if (nodeKey === selected)
-						return { x, y, color: accentColor, size: Math.max(size * 1.3, 12) };
+						return { x, y, color: highlightColor, size: Math.max(size * 1.3, 12) };
 					return { x, y, color, size, label };
 				});
 				sigma.refresh();

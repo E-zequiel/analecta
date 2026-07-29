@@ -351,7 +351,7 @@
 	}
 
 	.node-focus {
-		fill: var(--accent);
+		fill: var(--green);
 		stroke: var(--bg);
 		stroke-width: 2;
 	}
@@ -369,7 +369,7 @@
 	}
 
 	.node-tag {
-		fill: var(--green);
+		fill: var(--magenta);
 		cursor: pointer;
 	}
 
