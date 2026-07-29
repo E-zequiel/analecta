@@ -26,15 +26,16 @@
 
 	// Node radius grows with degree (fixed curve, not normalized against the graph's max
 	// degree — otherwise a leaf node's size would shift depending on whether some unrelated
-	// hub exists elsewhere in the vault). Tags keep a lower ceiling than entries, mirroring
-	// the old uniform 7 vs 10 split.
-	const ENTRY_SIZE_RANGE = { min: 6, max: 20 } as const;
-	const TAG_SIZE_RANGE = { min: 4, max: 14 } as const;
-	const SIZE_GROWTH_PER_SQRT_DEGREE = 3;
+	// hub exists elsewhere in the vault). Tags and entries share the same curve — a tag's
+	// visual weight should reflect its own connection count, not a category ceiling.
+	const SIZE_RANGE = { min: 3, max: 26 } as const;
+	const SIZE_GROWTH_PER_SQRT_DEGREE = 5;
 
-	function sizeForDegree(kind: 'entry' | 'tag', degree: number): number {
-		const range = kind === 'tag' ? TAG_SIZE_RANGE : ENTRY_SIZE_RANGE;
-		return Math.min(range.max, range.min + SIZE_GROWTH_PER_SQRT_DEGREE * Math.sqrt(degree));
+	function sizeForDegree(degree: number): number {
+		return Math.min(
+			SIZE_RANGE.max,
+			SIZE_RANGE.min + SIZE_GROWTH_PER_SQRT_DEGREE * Math.sqrt(degree)
+		);
 	}
 
 	const {
@@ -343,8 +344,8 @@
 
 		// Size by degree now that every edge is in — must run before layout since
 		// forceAtlas2's adjustSizes reads node size to space hubs apart.
-		graph.forEachNode((node, attrs) => {
-			graph.setNodeAttribute(node, 'size', sizeForDegree(attrs.kind, graph.degree(node)));
+		graph.forEachNode((node) => {
+			graph.setNodeAttribute(node, 'size', sizeForDegree(graph.degree(node)));
 		});
 
 		// Full layout before sigma creation — nodes render already settled, no visible
