@@ -792,7 +792,7 @@
 	}
 
 	.graph-title {
-		font-size: 11px;
+		font-size: var(--font-size-label);
 		font-weight: 600;
 		color: var(--fg-muted);
 		text-transform: uppercase;
@@ -800,7 +800,7 @@
 	}
 
 	.graph-stats {
-		font-size: 11px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		opacity: 0.7;
 		flex: 1;
@@ -837,7 +837,7 @@
 		border: 1px solid var(--border);
 		border-radius: 4px;
 		color: var(--fg);
-		font-size: 11px;
+		font-size: var(--font-size-sublabel);
 		font-family: inherit;
 		padding: 3px 8px;
 		outline: none;
@@ -853,7 +853,7 @@
 	}
 
 	.search-match-count {
-		font-size: 11px;
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
 		opacity: 0.7;
 		flex-shrink: 0;
@@ -873,7 +873,7 @@
 
 	.graph-status {
 		padding: 10px;
-		font-size: 12px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		font-style: italic;
 		margin: 0;

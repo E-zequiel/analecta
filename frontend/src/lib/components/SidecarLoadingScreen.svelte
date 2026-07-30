@@ -40,7 +40,7 @@
 
 	p {
 		margin: 0;
-		font-size: 13px;
+		font-size: var(--font-size-sublabel);
 	}
 
 	.error {

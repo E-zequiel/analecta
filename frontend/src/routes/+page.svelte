@@ -947,7 +947,7 @@
 
 	.graph-hint {
 		padding: 1rem;
-		font-size: 13.25px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		font-style: italic;
 		text-align: center;
@@ -1025,12 +1025,12 @@
 	}
 
 	.tag-chip-name {
-		font-size: 13px;
+		font-size: var(--font-size-label);
 		color: var(--fg);
 	}
 
 	.tag-chip-count {
-		font-size: 13px;
+		font-size: var(--font-size-label);
 		color: var(--fg-muted);
 		background: var(--bg-highlight);
 		border-radius: 10px;
@@ -1048,7 +1048,7 @@
 		border-radius: 20px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		outline: none;
 		min-width: 80px;
 	}
@@ -1058,7 +1058,7 @@
 		align-items: flex-start;
 		gap: 4px;
 		color: var(--yellow);
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		line-height: 1.35;
 	}
 
@@ -1122,7 +1122,7 @@
 	}
 
 	.tag-entry-header {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		color: var(--accent);
 		padding: 0.25rem 0;
@@ -1161,7 +1161,7 @@
 	}
 
 	.tag-entry-title {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		color: var(--fg);
 		overflow: hidden;
@@ -1225,7 +1225,7 @@
 	.hint {
 		padding: 1rem 0;
 		color: var(--fg-muted);
-		font-size: 13.25px;
+		font-size: var(--font-size-sublabel);
 	}
 
 	/* Collecta dashboard */
@@ -1257,7 +1257,7 @@
 	}
 
 	.metric-label {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		color: var(--fg-muted);
 		text-transform: uppercase;
@@ -1267,12 +1267,12 @@
 	}
 
 	.metric-value {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		color: var(--fg);
 	}
 
 	.metric-link {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		color: var(--accent);
 		background: none;
 		border: none;
@@ -1331,7 +1331,7 @@
 	}
 
 	.collecta-card-label {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		color: var(--fg);
 		letter-spacing: 0.05em;
@@ -1362,7 +1362,7 @@
 	}
 
 	.collecta-expanded-title {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		color: var(--accent);
 		letter-spacing: 0.05em;
@@ -1391,7 +1391,7 @@
 	}
 
 	.collecta-tag-header {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		color: var(--accent);
 		padding: 0.2rem 0;

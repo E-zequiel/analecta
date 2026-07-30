@@ -80,7 +80,7 @@
 
 	h1 {
 		margin: 0 0 0.5rem;
-		font-size: 1.3rem;
+		font-size: 1.2rem;
 		font-weight: 700;
 		color: var(--fg);
 	}
@@ -141,7 +141,7 @@
 	}
 
 	.error {
-		font-size: 12px;
+		font-size: var(--font-size-label);
 		color: var(--red);
 		margin-bottom: 1rem;
 	}

@@ -120,7 +120,7 @@
 	}
 
 	h2 {
-		font-size: 0.78rem;
+		font-size: 0.85rem;
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
