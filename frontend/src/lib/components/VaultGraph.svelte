@@ -119,6 +119,13 @@
 		};
 	}
 
+	function resolveLabelSize(): number {
+		const uiFontPx = parseFloat(
+			getComputedStyle(document.documentElement).getPropertyValue('--font-ui-size')
+		);
+		return Math.round((uiFontPx || 17) * (12 / 17));
+	}
+
 	function nodeColor(
 		kind: string,
 		sourceType: string | null,
@@ -359,7 +366,7 @@
 			renderLabels: true,
 			defaultDrawNodeHover: () => {},
 			labelColor: { color: colors.label },
-			labelSize: 12,
+			labelSize: resolveLabelSize(),
 			labelWeight: 'normal',
 			minCameraRatio: 0.02,
 			maxCameraRatio: 10,
