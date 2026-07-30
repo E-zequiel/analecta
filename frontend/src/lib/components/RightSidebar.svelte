@@ -597,10 +597,14 @@
 
 	.bl-item-name {
 		font-size: 12px;
-		color: var(--cyan);
+		color: var(--fg-dark);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		transition: color 0.14s;
+	}
+	.bl-item:hover .bl-item-name {
+		color: var(--fg);
 	}
 
 	.bl-item-heading {
