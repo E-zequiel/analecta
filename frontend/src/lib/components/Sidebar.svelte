@@ -1140,7 +1140,7 @@
 
 	.entry-indicator {
 		flex-shrink: 0;
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		color: var(--accent);
 	}
 
@@ -1151,7 +1151,7 @@
 	}
 
 	.tag-count {
-		font-size: 0.7rem;
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
 		margin-left: 6px;
 		flex-shrink: 0;
@@ -1160,7 +1160,7 @@
 	.empty-section {
 		display: block;
 		padding: 3px 8px;
-		font-size: 0.75rem;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		font-style: italic;
 	}

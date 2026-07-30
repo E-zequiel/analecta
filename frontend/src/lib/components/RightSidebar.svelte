@@ -398,7 +398,7 @@
 	}
 
 	.item-title {
-		font-size: 13px;
+		font-size: var(--font-size-label);
 		color: var(--fg-dark);
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -415,7 +415,7 @@
 	}
 
 	.item-type {
-		font-size: 13px;
+		font-size: var(--font-size-label);
 		color: var(--fg-muted);
 	}
 
@@ -450,7 +450,7 @@
 
 	.stack-empty {
 		padding: 12px;
-		font-size: 12px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		margin: 0;
 	}
@@ -488,7 +488,7 @@
 
 	.bl-tag-label {
 		padding: 2px 10px 4px 26px;
-		font-size: 0.72rem;
+		font-size: var(--font-size-sublabel);
 		font-weight: 700;
 		color: var(--accent);
 		letter-spacing: 0.06em;
@@ -518,7 +518,7 @@
 	}
 
 	.bl-count {
-		font-size: 0.68rem;
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
 		background: var(--bg-highlight);
 		border-radius: 10px;
@@ -544,7 +544,7 @@
 		align-items: center;
 		gap: 6px;
 		padding: 5px 8px 3px 10px;
-		font-size: 0.68rem;
+		font-size: var(--font-size-count);
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
@@ -569,7 +569,7 @@
 
 	.bl-empty {
 		padding: 4px 10px 8px 26px;
-		font-size: 12px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		font-style: italic;
 		margin: 0;
@@ -608,7 +608,7 @@
 	}
 
 	.bl-item-name {
-		font-size: 12px;
+		font-size: var(--font-size-label);
 		color: var(--fg-dark);
 		white-space: nowrap;
 		overflow: hidden;
@@ -620,7 +620,7 @@
 	}
 
 	.bl-item-heading {
-		font-size: 10px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		font-style: italic;
 		white-space: nowrap;

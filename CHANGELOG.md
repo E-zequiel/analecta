@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Italic text (`*em*`) in the reading view is no longer rendered in cyan — it now matches the body text color, distinguished only by the italic style.
 - Tag nodes in the local graph, the vault graph, and grouped Backlinks entries are now colored magenta instead of green. The selected/focused node in both graphs (and, in the vault graph, search-matched nodes) is now colored green instead of the accent color — previously, picking "Magenta" as the accent color made a selected tag node indistinguishable from an ordinary one.
 - Connected-entry titles in the right sidebar's BACKLINKS panel are no longer cyan — they now use the same muted-to-bright hover treatment as the "recently viewed" stack panel in the same sidebar (dim at rest, brightening on hover), instead of a flat, fixed color.
+- Text sizing across both sidebars now shares the same three font-size tokens instead of scattered hardcoded values. Most visibly, connected-entry titles in the right sidebar's BACKLINKS panel grow from 12px to match the row-title size used everywhere else a list shows an entry's title (~13.26px). The smallest token, used for counts like a tag's entry count or a backlinks group's count, is also bumped up slightly (12.24px, up from 11.9px) for legibility.
 
 ### Fixed
 
