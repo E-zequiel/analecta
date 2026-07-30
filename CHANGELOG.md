@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The dek/subtitle sentence beneath an article's title is no longer silently dropped from Substack extraction. Substack renders two `<h1>` elements on a post page — the publication name in the navbar, then the actual headline — and the dek-rescue mechanism (see the 0.4.0 entry above) was always anchoring on the first, wrong one; it also only recognized a dek shaped as a `<p>`, while Substack renders its subtitle as `<h3 class="subtitle">`. Both are now handled: the rescue anchors on whichever `<h1>` actually matches the extracted title, and a subtitle-classed heading is accepted as a dek shape alongside `<p>`.
 - Fenced code blocks in the reading view and editor preview now scale with the user's chosen reading-view font size instead of rendering at a fixed, smaller size regardless of that setting.
 - Inline code spans (single backtick) in the reading view and editor preview no longer sit visibly low against the surrounding text's line — a missing `vertical-align` let the padded, backgrounded span default to baseline alignment instead. Tightened the span's horizontal padding and corner radius to match.
+- A connected entry's title in the right sidebar's BACKLINKS panel — under a hashtag group, under Direct, or listing a tag's entries — now shows the full title on hover as a tooltip, instead of the truncated, ellipsized text being the only cue to what it says.
 
 ## [0.4.0] - 2026-07-28
 
