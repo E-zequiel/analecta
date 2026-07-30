@@ -642,6 +642,66 @@
 			{/if}
 		</div>
 	{:else if $activeSection === 'tags'}
+		{#snippet tagEntryList()}
+			<div class="tag-entry-list">
+				<p class="tag-entry-header">#{expandedTag}</p>
+				{#if tagEntriesLoading}
+					<p class="hint">Loading…</p>
+				{:else if tagEntries.length === 0}
+					<p class="hint">No entries.</p>
+				{:else}
+					{#each tagEntries as entry (entry.id)}
+						<div
+							class="tag-entry-card"
+							role="button"
+							tabindex="0"
+							onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
+							onkeydown={(e) => {
+								if (e.key === 'Enter' || e.key === ' ') {
+									e.preventDefault();
+									navigateInTab(entry.id, entry.title, entry.source_type);
+								}
+							}}
+							oncontextmenu={(e) => showContextMenu(e, entry)}
+						>
+							<div class="tag-entry-body">
+								<span class="tag-entry-title">{entry.title}</span>
+								<div class="tag-entry-badges">
+									{#if entry.flags.includes('archive')}
+										<span class="entry-badge entry-badge-archive" title="archived"
+											><Archive size={15} /></span
+										>
+									{/if}
+									<span class="entry-badge entry-status-{entry.status}">
+										{#if entry.status === 'read'}
+											<Eye size={15} />
+										{:else}
+											<EyeClosed size={15} />
+										{/if}
+									</span>
+									{#if entry.flags.includes('bookmark')}
+										<span class="entry-badge entry-badge-bookmark"><Bookmark size={15} /></span>
+									{/if}
+									{#if entry.flags.includes('gem')}
+										<span class="entry-badge entry-badge-gem"><Gem size={15} /></span>
+									{/if}
+								</div>
+							</div>
+							<button
+								class="view-btn"
+								use:tooltip={'View graph'}
+								onclick={(e) => {
+									e.stopPropagation();
+									selectDashboardEntry(entry.id);
+								}}
+							>
+								<ChartNetwork size={15} />
+							</button>
+						</div>
+					{/each}
+				{/if}
+			</div>
+		{/snippet}
 		<div class="tags-dashboard">
 			<div class="tags-left">
 				<div class="tag-grid">
@@ -688,95 +748,45 @@
 					<div class="tag-op-error"><TriangleAlert size={13.25} />{renameError}</div>
 				{/if}
 
-				{#if expandedTag}
-					<div class="tag-entry-list">
-						<p class="tag-entry-header">#{expandedTag}</p>
-						{#if tagEntriesLoading}
-							<p class="hint">Loading…</p>
-						{:else if tagEntries.length === 0}
-							<p class="hint">No entries.</p>
-						{:else}
-							{#each tagEntries as entry (entry.id)}
-								<div
-									class="tag-entry-card"
-									role="button"
-									tabindex="0"
-									onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
-									onkeydown={(e) => {
-										if (e.key === 'Enter' || e.key === ' ') {
-											e.preventDefault();
-											navigateInTab(entry.id, entry.title, entry.source_type);
-										}
-									}}
-									oncontextmenu={(e) => showContextMenu(e, entry)}
-								>
-									<div class="tag-entry-body">
-										<span class="tag-entry-title">{entry.title}</span>
-										<div class="tag-entry-badges">
-											{#if entry.flags.includes('archive')}
-												<span class="entry-badge entry-badge-archive" title="archived"
-													><Archive size={15} /></span
-												>
-											{/if}
-											<span class="entry-badge entry-status-{entry.status}">
-												{#if entry.status === 'read'}
-													<Eye size={15} />
-												{:else}
-													<EyeClosed size={15} />
-												{/if}
-											</span>
-											{#if entry.flags.includes('bookmark')}
-												<span class="entry-badge entry-badge-bookmark"><Bookmark size={15} /></span>
-											{/if}
-											{#if entry.flags.includes('gem')}
-												<span class="entry-badge entry-badge-gem"><Gem size={15} /></span>
-											{/if}
-										</div>
-									</div>
-									<button
-										class="view-btn"
-										use:tooltip={'View graph'}
-										onclick={(e) => {
-											e.stopPropagation();
-											selectDashboardEntry(entry.id);
-										}}
-									>
-										<ChartNetwork size={15} />
-									</button>
-								</div>
-							{/each}
-						{/if}
-					</div>
+				{#if expandedTag && $dashboardPreviewEntryId === null}
+					{@render tagEntryList()}
 				{/if}
 			</div>
 
 			{#if $dashboardPreviewEntryId !== null}
-				<div class="graph-column" bind:clientHeight={graphColumnHeight}>
-					<button
-						class="graph-close-btn"
-						onclick={closeDashboardGraph}
-						use:tooltip={'Back to list'}
-						aria-label="Back to list"
-					>
-						<ScrollText size={18} />
-					</button>
-					{#if dashboardSubgraphLoading}
-						<p class="graph-hint">Loading…</p>
-					{:else if dashboardSubgraph}
-						<LocalGraph
-							nodes={dashboardSubgraph.nodes}
-							edges={dashboardSubgraph.edges}
-							focusNodeId={$sidebarTagPreview ? undefined : dashboardSubgraph.focus_node_id}
-							height={graphHeight}
-							onopen={(id) => {
-								selectDashboardEntry(id);
-							}}
-							ontagclick={(tagName) => {
-								selectedTag.set(tagName);
-								sidebarTagPreview.set(null);
-								rightSidebarOpen.set(true);
-							}}
-						/>
+				<div class="graph-column">
+					<div class="graph-area" bind:clientHeight={graphColumnHeight}>
+						<button
+							class="graph-close-btn"
+							onclick={closeDashboardGraph}
+							use:tooltip={'Back to list'}
+							aria-label="Back to list"
+						>
+							<ScrollText size={18} />
+						</button>
+						{#if dashboardSubgraphLoading}
+							<p class="graph-hint">Loading…</p>
+						{:else if dashboardSubgraph}
+							<LocalGraph
+								nodes={dashboardSubgraph.nodes}
+								edges={dashboardSubgraph.edges}
+								focusNodeId={$sidebarTagPreview ? undefined : dashboardSubgraph.focus_node_id}
+								height={graphHeight}
+								onopen={(id) => {
+									selectDashboardEntry(id);
+								}}
+								ontagclick={(tagName) => {
+									selectedTag.set(tagName);
+									sidebarTagPreview.set(null);
+									rightSidebarOpen.set(true);
+								}}
+							/>
+						{/if}
+					</div>
+					{#if expandedTag}
+						<div class="graph-tag-entries">
+							{@render tagEntryList()}
+						</div>
 					{/if}
 				</div>
 			{/if}
@@ -970,6 +980,23 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
+	}
+
+	.graph-area {
+		position: relative;
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.graph-tag-entries {
+		flex: 0 0 auto;
+		max-height: 22rem;
+		overflow-y: auto;
+		padding: 0.25rem 1rem;
+		border-top: 1px solid var(--border);
 	}
 
 	/* Responsive stacking: graph above list when main is narrow.
