@@ -262,7 +262,11 @@
 				{:else}
 					<div class="bl-list">
 						{#each tagEntries as entry (entry.id)}
-							<button class="bl-item" onclick={() => onbacklinksopen?.(entry.id, entry.title)}>
+							<button
+								class="bl-item"
+								onclick={() => onbacklinksopen?.(entry.id, entry.title)}
+								use:tooltip={entry.title}
+							>
 								<span class="bl-item-name">{entry.title}</span>
 							</button>
 						{/each}
@@ -282,7 +286,11 @@
 							</div>
 							<div class="bl-group-list">
 								{#each group.entries as entry (entry.id)}
-									<button class="bl-item" onclick={() => onbacklinksopen?.(entry.id, entry.title)}>
+									<button
+										class="bl-item"
+										onclick={() => onbacklinksopen?.(entry.id, entry.title)}
+										use:tooltip={entry.title}
+									>
 										<span class="bl-item-name">{entry.title}</span>
 									</button>
 								{/each}
@@ -295,7 +303,11 @@
 							</div>
 							<div class="bl-group-list">
 								{#each directLinks as item, i (`${item.direction}-${item.id}-${i}`)}
-									<button class="bl-item" onclick={() => onbacklinksopen?.(item.id, item.name)}>
+									<button
+										class="bl-item"
+										onclick={() => onbacklinksopen?.(item.id, item.name)}
+										use:tooltip={item.name}
+									>
 										<span class="bl-item-row">
 											{#if item.direction === 'in'}
 												<span class="bl-item-dir" use:tooltip={'Incoming link'}>
