@@ -593,7 +593,8 @@
 	/* ── Keyboard shortcuts panel ── */
 	.shortcuts-panel {
 		flex-shrink: 0;
-		width: 220px;
+		width: 12.94rem;
+		max-width: 90vw;
 		position: sticky;
 		top: 2rem;
 		background: var(--bg-alt);

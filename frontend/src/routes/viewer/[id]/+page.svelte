@@ -969,7 +969,7 @@
 	}
 
 	.props-bar {
-		height: 33px;
+		min-height: 33px;
 		display: flex;
 		align-items: center;
 		width: 100%;
