@@ -537,6 +537,7 @@
 	.bl-rich-scroll {
 		max-height: 320px;
 		overflow-y: auto;
+		padding-top: 2px;
 	}
 
 	.bl-group-header {
