@@ -87,7 +87,7 @@
 
 	.subtitle {
 		margin: 0 0 1.75rem;
-		font-size: 13px;
+		font-size: 0.76rem;
 		color: var(--fg-muted);
 	}
 
@@ -97,7 +97,7 @@
 
 	label {
 		display: block;
-		font-size: 12px;
+		font-size: 0.71rem;
 		color: var(--fg-muted);
 		margin-bottom: 0.35rem;
 	}
@@ -115,7 +115,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13px;
+		font-size: 0.76rem;
 		outline: none;
 	}
 
@@ -130,7 +130,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13px;
+		font-size: 0.76rem;
 		cursor: pointer;
 		white-space: nowrap;
 	}
@@ -154,7 +154,7 @@
 		border-radius: 6px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 14px;
+		font-size: 0.82rem;
 		font-weight: 700;
 		cursor: pointer;
 		transition: background 0.15s;

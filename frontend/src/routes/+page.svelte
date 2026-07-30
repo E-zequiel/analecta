@@ -1338,7 +1338,7 @@
 	}
 
 	.collecta-card-count {
-		font-size: 16px;
+		font-size: 0.94rem;
 		font-weight: 700;
 		color: var(--accent);
 	}
@@ -1369,7 +1369,7 @@
 	}
 
 	.collecta-nav-btn {
-		font-size: 14px;
+		font-size: 0.82rem;
 		color: var(--fg-muted);
 		background: none;
 		border: none;
