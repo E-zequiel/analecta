@@ -887,7 +887,7 @@
 
 	.error {
 		color: var(--red);
-		font-size: 13px;
+		font-size: var(--font-size-label);
 		margin-bottom: 1rem;
 	}
 

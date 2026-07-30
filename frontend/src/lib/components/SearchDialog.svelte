@@ -172,7 +172,7 @@
 	.hint {
 		padding: 12px 16px;
 		margin: 0;
-		font-size: 0.85rem;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 	}
 

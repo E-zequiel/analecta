@@ -938,13 +938,13 @@
 	.error-banner {
 		padding: 1rem;
 		color: var(--red);
-		font-size: 13px;
+		font-size: var(--font-size-label);
 	}
 
 	.hint {
 		padding: 1rem;
 		color: var(--fg-muted);
-		font-size: 13px;
+		font-size: var(--font-size-sublabel);
 	}
 
 	.content {

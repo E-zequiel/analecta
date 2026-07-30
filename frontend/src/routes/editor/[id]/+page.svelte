@@ -174,7 +174,7 @@
 
 	.error-banner {
 		padding: 0.5rem 1rem;
-		font-size: 12px;
+		font-size: var(--font-size-label);
 		color: var(--red);
 		background: var(--bg-alt);
 		border-bottom: 1px solid var(--border);
@@ -183,7 +183,7 @@
 	.hint {
 		padding: 1rem;
 		color: var(--fg-muted);
-		font-size: 13px;
+		font-size: var(--font-size-sublabel);
 	}
 
 	.panes {

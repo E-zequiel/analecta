@@ -162,7 +162,7 @@
 	.hint {
 		padding: 2rem 1.25rem;
 		color: var(--fg-muted);
-		font-size: 13.25px;
+		font-size: var(--font-size-sublabel);
 		font-style: italic;
 	}
 
@@ -201,7 +201,7 @@
 
 	.entry-title {
 		flex: 1;
-		font-size: 0.85rem;
+		font-size: var(--font-size-label);
 		font-weight: 600;
 		color: var(--fg);
 		line-height: 1.4;
