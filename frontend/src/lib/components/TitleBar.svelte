@@ -457,7 +457,7 @@
 	}
 
 	.active-title {
-		font-size: 0.76rem;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		overflow: hidden;
 		text-overflow: ellipsis;

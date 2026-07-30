@@ -196,7 +196,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 0.82rem;
+		font-size: var(--font-size-label);
 		text-align: left;
 		cursor: pointer;
 		transition:

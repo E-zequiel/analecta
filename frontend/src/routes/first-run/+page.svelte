@@ -87,7 +87,7 @@
 
 	.subtitle {
 		margin: 0 0 1.75rem;
-		font-size: 0.76rem;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 	}
 
@@ -97,7 +97,7 @@
 
 	label {
 		display: block;
-		font-size: 0.71rem;
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
 		margin-bottom: 0.35rem;
 	}
@@ -115,7 +115,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 0.76rem;
+		font-size: var(--font-size-sublabel);
 		outline: none;
 	}
 
@@ -130,7 +130,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 0.76rem;
+		font-size: var(--font-size-sublabel);
 		cursor: pointer;
 		white-space: nowrap;
 	}
