@@ -39,7 +39,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13px;
+		font-size: 0.76rem;
 		outline: none;
 	}
 
@@ -58,7 +58,7 @@
 		border: none;
 		color: var(--fg-muted);
 		cursor: pointer;
-		font-size: 13px;
+		font-size: 0.76rem;
 		padding: 0;
 		line-height: 1;
 	}

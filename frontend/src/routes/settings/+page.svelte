@@ -700,13 +700,13 @@
 	}
 
 	label {
-		font-size: 12px;
+		font-size: 0.71rem;
 		color: var(--fg-muted);
 	}
 
 	.saved-tag {
 		color: var(--green);
-		font-size: 11px;
+		font-size: var(--font-size-count);
 		margin-left: 0.35rem;
 	}
 
@@ -718,7 +718,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13px;
+		font-size: 0.76rem;
 		outline: none;
 	}
 
@@ -763,7 +763,7 @@
 
 	.range-min,
 	.range-max {
-		font-size: 11px;
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
 		flex-shrink: 0;
 	}
@@ -807,7 +807,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13px;
+		font-size: 0.76rem;
 		cursor: pointer;
 	}
 
@@ -829,7 +829,7 @@
 		background: var(--bg-alt);
 		color: var(--fg-muted);
 		font-family: inherit;
-		font-size: 12px;
+		font-size: 0.71rem;
 		cursor: pointer;
 	}
 
@@ -841,7 +841,7 @@
 
 	/* Accent colour swatches */
 	.field-caption {
-		font-size: 12px;
+		font-size: 0.71rem;
 		color: var(--fg-muted);
 	}
 
@@ -893,7 +893,7 @@
 
 	.maintenance-result {
 		margin: 0.5rem 0 0;
-		font-size: 12px;
+		font-size: 0.71rem;
 		color: var(--green);
 	}
 
@@ -904,7 +904,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13px;
+		font-size: 0.76rem;
 		cursor: pointer;
 	}
 
