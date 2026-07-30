@@ -1210,7 +1210,7 @@
 	}
 
 	.conn-dialog {
-		width: 360px;
+		width: 21.18rem;
 	}
 
 	.conn-linked {
