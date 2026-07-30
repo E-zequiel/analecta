@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings → Accent color: the "Cyan" option has been replaced by "Magenta" (a Tokyo Night violet/purple). Selecting Cyan as the accent color made hover states on links and other cyan-tinted UI indistinguishable from their resting state, because the accent color and the fixed cyan syntax color became identical.
 - Italic text (`*em*`) in the reading view is no longer rendered in cyan — it now matches the body text color, distinguished only by the italic style.
 - Tag nodes in the local graph, the vault graph, and grouped Backlinks entries are now colored magenta instead of green. The selected/focused node in both graphs (and, in the vault graph, search-matched nodes) is now colored green instead of the accent color — previously, picking "Magenta" as the accent color made a selected tag node indistinguishable from an ordinary one.
+- Connected-entry titles in the right sidebar's BACKLINKS panel are no longer cyan — they now use the same muted-to-bright hover treatment as the "recently viewed" stack panel in the same sidebar (dim at rest, brightening on hover), instead of a flat, fixed color.
 
 ### Fixed
 
