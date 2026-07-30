@@ -165,7 +165,7 @@
 	}
 
 	.results {
-		max-height: 360px;
+		max-height: 21.18rem;
 		overflow-y: auto;
 	}
 

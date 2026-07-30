@@ -1007,7 +1007,7 @@
 	}
 
 	.tags-section-entries {
-		max-height: 160px;
+		max-height: 9.41rem;
 		overflow-y: auto;
 		padding-left: 4px;
 	}
@@ -1372,7 +1372,7 @@
 	}
 
 	.url-dialog {
-		width: 540px;
+		width: 31.76rem;
 		max-width: 90vw;
 		background: var(--bg-alt);
 		border: 1px solid var(--border);
