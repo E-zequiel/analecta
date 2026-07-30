@@ -1283,7 +1283,7 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		max-width: 260px;
+		max-width: 15.29rem;
 		transition: color 0.12s;
 	}
 

@@ -453,7 +453,7 @@
 		gap: 6px;
 		color: var(--fg-muted);
 		min-width: 0;
-		max-width: 480px;
+		max-width: 28.24rem;
 	}
 
 	.active-title {
