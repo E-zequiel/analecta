@@ -111,7 +111,8 @@
 	}
 
 	.dialog {
-		width: 280px;
+		width: 16.47rem;
+		max-width: 90vw;
 		background: var(--bg-alt);
 		border: 1px solid var(--border);
 		border-radius: 8px;

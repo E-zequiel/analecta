@@ -182,7 +182,7 @@
 	}
 
 	.entry-row.compact .entry-body {
-		padding-right: 132px;
+		padding-right: 7.76rem;
 	}
 
 	.entry-row:hover {
