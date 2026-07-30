@@ -1089,7 +1089,7 @@
 	}
 
 	.tags-dialog {
-		width: 320px;
+		width: 18.82rem;
 		max-width: 90vw;
 		background: var(--bg-alt);
 		border: 1px solid var(--border);
@@ -1176,7 +1176,7 @@
 	.tag-suggestions {
 		display: flex;
 		flex-direction: column;
-		max-height: 120px;
+		max-height: 7.06rem;
 		overflow-y: auto;
 		border: 1px solid var(--border);
 		border-radius: 4px;

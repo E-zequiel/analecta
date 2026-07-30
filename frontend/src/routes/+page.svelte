@@ -894,7 +894,7 @@
 
 	.graph-column {
 		position: relative;
-		flex: 0 0 570px;
+		flex: 0 0 33.53rem;
 		min-height: 0;
 		border-left: 1px solid var(--border);
 		overflow: hidden;
@@ -933,7 +933,7 @@
 		}
 
 		.graph-column {
-			flex: 0 0 470px;
+			flex: 0 0 27.65rem;
 			width: 100%;
 			border-left: none;
 			border-bottom: 1px solid var(--border);
@@ -980,7 +980,7 @@
 		}
 
 		.tags-dashboard .graph-column {
-			flex: 0 0 470px;
+			flex: 0 0 27.65rem;
 			width: 100%;
 			border-left: none;
 			border-bottom: 1px solid var(--border);
@@ -1035,7 +1035,7 @@
 		background: var(--bg-highlight);
 		border-radius: 10px;
 		padding: 0 5px;
-		min-width: 18px;
+		min-width: 1.06rem;
 		text-align: center;
 	}
 
@@ -1050,7 +1050,7 @@
 		font-family: inherit;
 		font-size: var(--font-size-label);
 		outline: none;
-		min-width: 80px;
+		min-width: 4.71rem;
 	}
 
 	.tag-op-error {
@@ -1075,7 +1075,7 @@
 		border-radius: 6px;
 		padding: 3px;
 		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-		min-width: 140px;
+		min-width: 8.24rem;
 	}
 
 	.tag-menu-item {

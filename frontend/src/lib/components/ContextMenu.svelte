@@ -184,7 +184,7 @@
 		border-radius: 6px;
 		padding: 3px;
 		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-		min-width: 180px;
+		min-width: 10.59rem;
 	}
 
 	.menu-item {
