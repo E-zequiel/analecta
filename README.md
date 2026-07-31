@@ -31,11 +31,10 @@ Analecta is a local Linux desktop application that turns any URL — article, Yo
 
 ## Screenshots
 
-| Dashboard | Reading view |
-|----------|-------------|
-| ![Library dashboard](.github/assets/1-library.png) | ![Reading view](.github/assets/3-reading-view.png) |
-
+![Library dashboard](.github/assets/1-library.png)
 ![COLLECTA dashboard](.github/assets/2-collecta.png)
+![Reading view](.github/assets/3-reading-view.png)
+![TAGS dashboard](.github/assets/4-tags.png)
 
 ## Download
 
