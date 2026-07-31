@@ -74,7 +74,7 @@ function createStyleToClassTransformer() {
  * inventing a new color.
  */
 const DARK_TO_LIGHT = {
-	'1A1B26': 'var(--bg)', // pre background — exact match of project --bg (dark)
+	'1A1B26': 'var(--bg-alt)', // pre background — exact hex match of project --bg (dark), but reusing --bg here would make the code block fill identical to the page background in light theme (no visible panel); --bg-alt gives it a real, separate surface
 	'51597D': 'var(--fg-muted)', // comment — official #888B94 fails 3:1 on light bg
 	'5A638C': 'var(--fg-muted)', // jsdoc comment sub-shade
 	'646E9C': 'var(--fg-muted)', // jsdoc comment sub-shade
@@ -96,16 +96,30 @@ const DARK_TO_LIGHT = {
 	'73DACA': '#33635C', // string.other.link / teal family (official)
 };
 
-function translateToLight(style) {
+function translate(style, map) {
 	let changed = false;
 	const next = style.replace(/#([0-9A-Fa-f]{6})\b/g, (full, hex) => {
-		const repl = DARK_TO_LIGHT[hex.toUpperCase()];
+		const repl = map[hex.toUpperCase()];
 		if (!repl) return full;
 		changed = true;
 		return repl;
 	});
 	return changed ? next : null;
 }
+
+/**
+ * Hex → CSS var translated in the *default* (dark) output too, not just the
+ * `.theme-light` override — for tokens whose literal Shiki hex happens to
+ * equal one of this project's own CSS vars, but where reusing that var
+ * verbatim would make the token identical to the page background instead of
+ * a distinct surface. Currently just the pre/code-block root background:
+ * Tokyo Night's official editor bg (#1a1b26) is an exact hex match for this
+ * project's dark --bg, so without this override the code block's fill is
+ * indistinguishable from the surrounding article in dark mode.
+ */
+const ALWAYS_TRANSLATE = {
+	'1A1B26': 'var(--bg-dark)', // pre background — see DARK_TO_LIGHT's 1A1B26 entry for the light-theme counterpart
+};
 
 import { createHighlighterCoreSync } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
@@ -543,11 +557,16 @@ for (const [lang, code] of Object.entries(SAMPLES)) {
 	highlighter.codeToHtml(code, { ...opts, lang });
 }
 
-const css_out = transformer.getCSS();
+const dark_rules = [];
+for (const [style, cls] of transformer.entries()) {
+	const darkStyle = translate(style, ALWAYS_TRANSLATE);
+	dark_rules.push(`.${cls}{${darkStyle ?? style}}`);
+}
+const css_out = dark_rules.join('\n');
 
 const light_rules = [];
 for (const [style, cls] of transformer.entries()) {
-	const lightStyle = translateToLight(style);
+	const lightStyle = translate(style, DARK_TO_LIGHT);
 	if (lightStyle) light_rules.push(`.theme-light .${cls}{${lightStyle}}`);
 }
 const light_css_out = light_rules.join('\n');
