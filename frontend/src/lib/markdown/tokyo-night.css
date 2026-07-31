@@ -115,10 +115,10 @@
 .markdown-body code {
 	font-family: inherit;
 	font-size: 0.89em;
-	background: var(--bg-highlight);
+	background: color-mix(in srgb, var(--cyan) 2%, var(--bg-alt));
 	color: var(--fg);
-	padding: 0.1em 0.25em;
-	border-radius: 3.5px;
+	padding: 0.07em 0.2em;
+	border-radius: 2px;
 	border: none;
 	vertical-align: top;
 }
