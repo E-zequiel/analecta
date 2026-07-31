@@ -13,7 +13,7 @@
 .__s_1ba0f6d8f01b1e{color:#9ABDF5}
 .__s_6b3e13275bbb2{color:#E0AF68}
 .__s_25f1c41dccd15{color:#9ECE6A}
-.__s_92420ee368e88{background-color:#1a1b26;color:#a9b1d6}
+.__s_92420ee368e88{background-color:var(--bg-dark);color:#a9b1d6}
 .__s_18b41918ed29d3{color:#9D7CD8;font-style:italic}
 .__s_a3ad61a9c1a3{color:#73DACA}
 .__s_74d7865e62d9b{color:#F7768E}
@@ -41,7 +41,7 @@
 .theme-light .__s_1ba0f6d8f01b1e{color:#484C61}
 .theme-light .__s_6b3e13275bbb2{color:var(--yellow)}
 .theme-light .__s_25f1c41dccd15{color:var(--green)}
-.theme-light .__s_92420ee368e88{background-color:var(--bg);color:var(--fg-dark)}
+.theme-light .__s_92420ee368e88{background-color:var(--bg-alt);color:var(--fg-dark)}
 .theme-light .__s_18b41918ed29d3{color:#65359D;font-style:italic}
 .theme-light .__s_a3ad61a9c1a3{color:#33635C}
 .theme-light .__s_74d7865e62d9b{color:#8C4351}
