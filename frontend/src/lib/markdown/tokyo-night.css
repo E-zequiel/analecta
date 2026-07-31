@@ -72,6 +72,10 @@
 	color: var(--cyan);
 }
 
+.markdown-body a:hover code {
+	color: var(--cyan);
+}
+
 .markdown-body .wikilink {
 	cursor: pointer;
 }
@@ -115,11 +119,11 @@
 .markdown-body code {
 	font-family: inherit;
 	font-size: 0.89em;
-	background: color-mix(in srgb, var(--cyan) 2%, var(--bg-alt));
-	color: var(--fg);
-	padding: 0.07em 0.2em;
-	border-radius: 2px;
-	border: none;
+	background: color-mix(in srgb, var(--bg-alt) 50%, var(--accent));
+	color: var(--bg-dark);
+	padding: 0.07em 0.25em;
+	border-radius: 3.75px;
+	border-style: hidden;
 	vertical-align: top;
 }
 
