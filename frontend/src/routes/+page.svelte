@@ -1031,12 +1031,11 @@
 		align-items: center;
 		gap: 0.3rem;
 		padding: 0.15rem 0.3rem;
-		background: var(--bg-alt);
+		background: var(--bg);
 		border: 1px solid var(--terminal);
-		border-radius: 3px;
+		border-radius: 3.75px;
 		cursor: pointer;
 		font-family: inherit;
-		text-align: center;
 		transition:
 			border-color 0.15s,
 			box-shadow 0.15s;
@@ -1047,13 +1046,12 @@
 	}
 
 	.tag-chip.active {
-		border-color: var(--magenta);
-		box-shadow: 1px 1px 0 var(--magenta);
+		border-color: var(--accent-dark);
+		box-shadow: 1.5px 1.5px 0 var(--accent-dark);
 	}
 
 	.tag-chip.active .tag-chip-name {
-		color: var(--cyan);
-		font-weight: bold;
+		color: var(--accent);
 	}
 
 	.tag-chip-name {
