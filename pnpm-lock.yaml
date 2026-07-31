@@ -80,11 +80,11 @@ importers:
         specifier: 6.10.4
         version: 6.10.4
       '@codemirror/lang-markdown':
-        specifier: 6.5.0
-        version: 6.5.0
+        specifier: 6.5.1
+        version: 6.5.1
       '@codemirror/state':
-        specifier: 6.7.0
-        version: 6.7.0
+        specifier: 6.7.1
+        version: 6.7.1
       '@codemirror/view':
         specifier: 6.43.4
         version: 6.43.4
@@ -92,23 +92,23 @@ importers:
         specifier: 0.577.0
         version: 0.577.0(svelte@5.56.4(@typescript-eslint/types@8.60.0))
       '@shikijs/langs':
-        specifier: 4.2.0
-        version: 4.2.0
+        specifier: 4.3.1
+        version: 4.3.1
       '@shikijs/markdown-it':
         specifier: 4.2.0
         version: 4.2.0
       '@shikijs/themes':
-        specifier: 4.2.0
-        version: 4.2.0
+        specifier: 4.3.1
+        version: 4.3.1
       '@types/d3-force':
         specifier: 3.0.10
         version: 3.0.10
       '@uiw/codemirror-theme-tokyo-night':
-        specifier: 4.25.10
-        version: 4.25.10(@codemirror/language@6.12.3)(@codemirror/state@6.7.0)(@codemirror/view@6.43.4)
+        specifier: 4.25.11
+        version: 4.25.11(@codemirror/language@6.12.3)(@codemirror/state@6.7.1)(@codemirror/view@6.43.4)
       '@uiw/codemirror-theme-tokyo-night-day':
-        specifier: 4.25.10
-        version: 4.25.10(@codemirror/language@6.12.3)(@codemirror/state@6.7.0)(@codemirror/view@6.43.4)
+        specifier: 4.25.11
+        version: 4.25.11(@codemirror/language@6.12.3)(@codemirror/state@6.7.1)(@codemirror/view@6.43.4)
       d3-force:
         specifier: 3.0.0
         version: 3.0.0
@@ -136,13 +136,13 @@ importers:
     devDependencies:
       '@sveltejs/adapter-static':
         specifier: 3.0.10
-        version: 3.0.10(@sveltejs/kit@2.69.1(@sveltejs/vite-plugin-svelte@7.1.2(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0)))(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3)(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0)))
+        version: 3.0.10(@sveltejs/kit@2.70.1(@sveltejs/vite-plugin-svelte@7.2.0(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0)))(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3)(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0)))
       '@sveltejs/kit':
-        specifier: 2.69.1
-        version: 2.69.1(@sveltejs/vite-plugin-svelte@7.1.2(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0)))(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3)(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0))
+        specifier: 2.70.1
+        version: 2.70.1(@sveltejs/vite-plugin-svelte@7.2.0(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0)))(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3)(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0))
       '@sveltejs/vite-plugin-svelte':
-        specifier: 7.1.2
-        version: 7.1.2(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0))
+        specifier: 7.2.0
+        version: 7.2.0(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0))
       '@types/markdown-it':
         specifier: 14.1.2
         version: 14.1.2
@@ -154,13 +154,13 @@ importers:
         version: 5.56.4(@typescript-eslint/types@8.60.0)
       svelte-check:
         specifier: 4.7.1
-        version: 4.7.1(picomatch@4.0.4)(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3)
+        version: 4.7.1(picomatch@4.0.5)(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3)
       typescript:
         specifier: 6.0.3
         version: 6.0.3
       vite:
-        specifier: 8.1.3
-        version: 8.1.3(@types/node@24.13.2)(jiti@2.7.0)
+        specifier: 8.1.5
+        version: 8.1.5(@types/node@24.13.2)(jiti@2.7.0)
 
 packages:
 
@@ -182,8 +182,8 @@ packages:
   '@codemirror/lang-javascript@6.2.5':
     resolution: {integrity: sha512-zD4e5mS+50htS7F+TYjBPsiIFGanfVqg4HyUz6WNFikgOPf2BgKlx+TQedI1w6n/IqRBVBbBWmGFdLB/7uxO4A==}
 
-  '@codemirror/lang-markdown@6.5.0':
-    resolution: {integrity: sha512-0K40bZ35jpHya6FriukbgaleaqzBLZfOh7HuzqbMxBXkbYMJDxfF39c23xOgxFezR+3G+tR2/Mup+Xk865OMvw==}
+  '@codemirror/lang-markdown@6.5.1':
+    resolution: {integrity: sha512-6re5avCNfyRMIoi3XNjbEfQM1vTeVD3JS3g/Fyegyso/eoANFM71Cyvbb66LDyYtQLMEcRFlzioywCqDo9SlLA==}
 
   '@codemirror/language@6.12.3':
     resolution: {integrity: sha512-QwCZW6Tt1siP37Jet9Tb02Zs81TQt6qQrZR2H+eGMcFsL1zMrk2/b9CLC7/9ieP1fjIUMgviLWMmgiHoJrj+ZA==}
@@ -191,8 +191,8 @@ packages:
   '@codemirror/lint@6.9.6':
     resolution: {integrity: sha512-6Kp7r6XfCi/D/5sdXieMfg9pJU1bUEx96WITuLU6ESaKizCz0QHFMjY/TaFSbigDdEAIgi93itLBIUETP4oK+A==}
 
-  '@codemirror/state@6.7.0':
-    resolution: {integrity: sha512-Zbl9NyscLMZkfXPQnNAIIAFftidrA1UbcJEIMp24C0Bukc2I5T8wJS0wsXYsnDOqCFJUeJ1BITGNs5CqPDSmSg==}
+  '@codemirror/state@6.7.1':
+    resolution: {integrity: sha512-9QzNDgE4EYDnAHfrTlR2lwiPciiOymLtwKK+8yHQzCc7GXhAP9xdEbEJFy2IWB1j9UGUl9BsgMmTo/ImA02T7A==}
 
   '@codemirror/view@6.43.4':
     resolution: {integrity: sha512-YImu23iyKfncJzT7sRy+rEqEhSc8RhOHqDxwy4WzXRKJwYm6iwf/9OJk5ctCAdZ6yi2ZqaGEvmf55fSVqMDrgg==}
@@ -504,6 +504,10 @@ packages:
     resolution: {integrity: sha512-bwrVRlJ0wUhZxAbVdvBbv2TTC9yLsh4C/IO5Ofz0T8MQntgDvyVnkbjw9vi50r1kx7RCIJdnJnjZAwmAsXFLZQ==}
     engines: {node: '>=20'}
 
+  '@shikijs/langs@4.3.1':
+    resolution: {integrity: sha512-m0l9nsDqgBHvbZbk7A0/kXz/impK3uB/c6rAn6Gpg/uPtdZRQ+alsN/17MU5thb68XTj/4DxkZAotrM0GGSpDQ==}
+    engines: {node: '>=20'}
+
   '@shikijs/markdown-it@4.2.0':
     resolution: {integrity: sha512-PpjZsE1JmY/2x6XFklfRJsFH6hjY0VY18Ny5Tm1/rZPpzBjuzyzOzD+fBtaud0NyO3PdCfcNPQQlbgHUz6m45w==}
     engines: {node: '>=20'}
@@ -521,8 +525,16 @@ packages:
     resolution: {integrity: sha512-RX8IHYeLv8Cu2W6ruc3RxUqWn0IYCqSrMBzi/uRGAmfyDNOnNO5BF/Px7o97n4XTpmFTo5GbRaazuOWj+2ak2w==}
     engines: {node: '>=20'}
 
+  '@shikijs/themes@4.3.1':
+    resolution: {integrity: sha512-dgpoJ4WqNi2yTmizQHBJ5zcX6j2lE6icN/0yt4l1kkf16jrY/pwPLoTb1ETsWMz0OBLf9ZNvwmxft+cH+N9qSA==}
+    engines: {node: '>=20'}
+
   '@shikijs/types@4.2.0':
     resolution: {integrity: sha512-VT/MKtlpOhEPZloSH3Pb9WCZEBDoQVMa9jedp5UAwmJOar1DVc9DRODAxmYPW9M93IK4ryuqRejFfmlvlVDemw==}
+    engines: {node: '>=20'}
+
+  '@shikijs/types@4.3.1':
+    resolution: {integrity: sha512-CHFxE0jztBIZRHH6gxXE7DXUCFXjReEGxZ/j0rfSLGKZuwp2xBYycEP14875DSa9KLL/6700oxIq6oO6ef9K2g==}
     engines: {node: '>=20'}
 
   '@shikijs/vscode-textmate@10.0.2':
@@ -600,8 +612,8 @@ packages:
     peerDependencies:
       '@sveltejs/kit': ^2.0.0
 
-  '@sveltejs/kit@2.69.1':
-    resolution: {integrity: sha512-+nz8Fx/cElzb2ZPHC+6Ll3y3NEVIe4Na75PeplLlyTmd1dBXAjz2KR14y1ZgNjb2ThfAYzulu+PFy1UE3RCUzA==}
+  '@sveltejs/kit@2.70.1':
+    resolution: {integrity: sha512-nY9SPHGOZro3doud9vZXDBwl9tCZIouuJztjgSHs6PAIrv9M/z5O7eOhPV5xU7CgVHA976Jwu3BA1hIFvXztkA==}
     engines: {node: '>=18.13'}
     hasBin: true
     peerDependencies:
@@ -620,8 +632,8 @@ packages:
     resolution: {integrity: sha512-1LgZ/qUqSoq+QorD83lk2hka79Px0wXNW2q5V1nZlxGhQgw1jrsIbVz5YiCeucVLo4XvFLjXukUaQjIiqowkcg==}
     engines: {node: '>= 18.0.0'}
 
-  '@sveltejs/vite-plugin-svelte@7.1.2':
-    resolution: {integrity: sha512-DrUBA2UXRfDmUX/ZTiEopd3X40yavsJF1FX2RygcuIScHL7o5YX1fMvoYnDhjeJQC4weCOklirpNWlcb2NiSeA==}
+  '@sveltejs/vite-plugin-svelte@7.2.0':
+    resolution: {integrity: sha512-1SpkuMSRLfugrVX+IrKfE1RUegzo8AQzKQ6qQPfVzbcWi5IhuTPaKb5ZrLpucleFznkc4/RTeSPoRnGWFxX+EQ==}
     engines: {node: ^20.19 || ^22.12 || >=24}
     peerDependencies:
       svelte: ^5.46.4
@@ -762,14 +774,14 @@ packages:
     resolution: {integrity: sha512-9WI52t8ZGLVGrPMBet25yAftqY/n95+zmoUUtJBBQTKDSKUu7OsPTroT2op7U9JatkoRccL0YkWDNMFfC4Sjxg==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@uiw/codemirror-theme-tokyo-night-day@4.25.10':
-    resolution: {integrity: sha512-n7SJGwAY5KCtikj8xru5OrT3maEtrYnjMI2LGTWjCO+yA5TTMFOTsVLtT7HMesGQ2db61iMHKEgn7Kkhqs6/8g==}
+  '@uiw/codemirror-theme-tokyo-night-day@4.25.11':
+    resolution: {integrity: sha512-5GlD3cJVtG3rk/4kpjCwAxR0FygEYCX5e4xxAm4wMKSiH+eATaKOD8mG5lG6cWKzI1RgG4se1aCpMFeFr4F7bA==}
 
-  '@uiw/codemirror-theme-tokyo-night@4.25.10':
-    resolution: {integrity: sha512-nbW1szmpdlGdm9Nf03j0IU+Ecd2h/qp3vkPiHMcfEHOl3KEPPqek5UhTfpemQgdSTmohGQcY1NfUlysXsQ5y7A==}
+  '@uiw/codemirror-theme-tokyo-night@4.25.11':
+    resolution: {integrity: sha512-rLKWsrbW+rxufaHFstNIz26avlvSqsn+Oxmo7N9vAQARh9lojwAgZ0u16RTWsqgwdMHB6e4cg6PnHOJrA/ArDg==}
 
-  '@uiw/codemirror-themes@4.25.10':
-    resolution: {integrity: sha512-Fqiz1HIuDlDftcL+/O53V333UOH6MqQ84VbiQB5egn6u+uDwAqACp1FrdAoi4wgpR3b3TGW4Gr0wIYcrJSSz1A==}
+  '@uiw/codemirror-themes@4.25.11':
+    resolution: {integrity: sha512-SBNCOgRsCtewGNocRbmjbCkltGXlFcPJsvhxQ351VynQjnWUiPbUrFcEU/haQ3HanROdAAjWXZJPk5bMBxl2jw==}
     peerDependencies:
       '@codemirror/language': '>=6.0.0'
       '@codemirror/state': '>=6.0.0'
@@ -1923,8 +1935,8 @@ packages:
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
-  picomatch@4.0.4:
-    resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
+  picomatch@4.0.5:
+    resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
 
   pkijs@3.4.0:
@@ -2367,8 +2379,8 @@ packages:
   vfile@6.0.3:
     resolution: {integrity: sha512-KzIbH/9tXat2u30jf+smMwFCsno4wHVdNmzFyL+T/L3UGqqk6JKfVqOFOZEpZSHADH1k40ab6NUIXZq422ov3Q==}
 
-  vite@8.1.3:
-    resolution: {integrity: sha512-Ds+gBRbj0lwRO2Y5hwnUBdxSwlAve9LeRyU4sNnAr0ewW0gWF0n5bgXgUzbgZ49MV9BVUAQUFYVcDUcilUExMA==}
+  vite@8.1.5:
+    resolution: {integrity: sha512-7ULLwsCdYx/nRyrpiEwvqb5TFHrMVZyBt+rg/OAXT7rgj/z+DtTDyKFeLAdDkubDVDKD8jOsndmy7m55XcfUsw==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -2500,14 +2512,14 @@ snapshots:
   '@codemirror/autocomplete@6.20.2':
     dependencies:
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.7.0
+      '@codemirror/state': 6.7.1
       '@codemirror/view': 6.43.4
       '@lezer/common': 1.5.2
 
   '@codemirror/commands@6.10.4':
     dependencies:
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.7.0
+      '@codemirror/state': 6.7.1
       '@codemirror/view': 6.43.4
       '@lezer/common': 1.5.2
 
@@ -2515,7 +2527,7 @@ snapshots:
     dependencies:
       '@codemirror/autocomplete': 6.20.2
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.7.0
+      '@codemirror/state': 6.7.1
       '@lezer/common': 1.5.2
       '@lezer/css': 1.3.3
 
@@ -2525,7 +2537,7 @@ snapshots:
       '@codemirror/lang-css': 6.3.1
       '@codemirror/lang-javascript': 6.2.5
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.7.0
+      '@codemirror/state': 6.7.1
       '@codemirror/view': 6.43.4
       '@lezer/common': 1.5.2
       '@lezer/css': 1.3.3
@@ -2536,24 +2548,24 @@ snapshots:
       '@codemirror/autocomplete': 6.20.2
       '@codemirror/language': 6.12.3
       '@codemirror/lint': 6.9.6
-      '@codemirror/state': 6.7.0
+      '@codemirror/state': 6.7.1
       '@codemirror/view': 6.43.4
       '@lezer/common': 1.5.2
       '@lezer/javascript': 1.5.4
 
-  '@codemirror/lang-markdown@6.5.0':
+  '@codemirror/lang-markdown@6.5.1':
     dependencies:
       '@codemirror/autocomplete': 6.20.2
       '@codemirror/lang-html': 6.4.11
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.7.0
+      '@codemirror/state': 6.7.1
       '@codemirror/view': 6.43.4
       '@lezer/common': 1.5.2
       '@lezer/markdown': 1.6.3
 
   '@codemirror/language@6.12.3':
     dependencies:
-      '@codemirror/state': 6.7.0
+      '@codemirror/state': 6.7.1
       '@codemirror/view': 6.43.4
       '@lezer/common': 1.5.2
       '@lezer/highlight': 1.2.3
@@ -2562,17 +2574,17 @@ snapshots:
 
   '@codemirror/lint@6.9.6':
     dependencies:
-      '@codemirror/state': 6.7.0
+      '@codemirror/state': 6.7.1
       '@codemirror/view': 6.43.4
       crelt: 1.0.6
 
-  '@codemirror/state@6.7.0':
+  '@codemirror/state@6.7.1':
     dependencies:
       '@marijn/find-cluster-break': 1.0.2
 
   '@codemirror/view@6.43.4':
     dependencies:
-      '@codemirror/state': 6.7.0
+      '@codemirror/state': 6.7.1
       crelt: 1.0.6
       style-mod: 4.1.3
       w3c-keyname: 2.2.8
@@ -2920,6 +2932,10 @@ snapshots:
     dependencies:
       '@shikijs/types': 4.2.0
 
+  '@shikijs/langs@4.3.1':
+    dependencies:
+      '@shikijs/types': 4.3.1
+
   '@shikijs/markdown-it@4.2.0':
     dependencies:
       markdown-it: 14.3.0
@@ -2935,7 +2951,16 @@ snapshots:
     dependencies:
       '@shikijs/types': 4.2.0
 
+  '@shikijs/themes@4.3.1':
+    dependencies:
+      '@shikijs/types': 4.3.1
+
   '@shikijs/types@4.2.0':
+    dependencies:
+      '@shikijs/vscode-textmate': 10.0.2
+      '@types/hast': 3.0.4
+
+  '@shikijs/types@4.3.1':
     dependencies:
       '@shikijs/vscode-textmate': 10.0.2
       '@types/hast': 3.0.4
@@ -2995,15 +3020,15 @@ snapshots:
     dependencies:
       acorn: 8.16.0
 
-  '@sveltejs/adapter-static@3.0.10(@sveltejs/kit@2.69.1(@sveltejs/vite-plugin-svelte@7.1.2(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0)))(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3)(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0)))':
+  '@sveltejs/adapter-static@3.0.10(@sveltejs/kit@2.70.1(@sveltejs/vite-plugin-svelte@7.2.0(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0)))(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3)(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0)))':
     dependencies:
-      '@sveltejs/kit': 2.69.1(@sveltejs/vite-plugin-svelte@7.1.2(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0)))(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3)(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0))
+      '@sveltejs/kit': 2.70.1(@sveltejs/vite-plugin-svelte@7.2.0(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0)))(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3)(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0))
 
-  '@sveltejs/kit@2.69.1(@sveltejs/vite-plugin-svelte@7.1.2(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0)))(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3)(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0))':
+  '@sveltejs/kit@2.70.1(@sveltejs/vite-plugin-svelte@7.2.0(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0)))(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3)(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0))':
     dependencies:
       '@standard-schema/spec': 1.1.0
       '@sveltejs/acorn-typescript': 1.0.11(acorn@8.16.0)
-      '@sveltejs/vite-plugin-svelte': 7.1.2(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0))
+      '@sveltejs/vite-plugin-svelte': 7.2.0(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0))
       '@types/cookie': 0.6.0
       acorn: 8.16.0
       cookie: 0.7.0
@@ -3015,20 +3040,20 @@ snapshots:
       set-cookie-parser: 3.1.0
       sirv: 3.0.2
       svelte: 5.56.4(@typescript-eslint/types@8.60.0)
-      vite: 8.1.3(@types/node@24.13.2)(jiti@2.7.0)
+      vite: 8.1.5(@types/node@24.13.2)(jiti@2.7.0)
     optionalDependencies:
       typescript: 6.0.3
 
   '@sveltejs/load-config@0.2.0': {}
 
-  '@sveltejs/vite-plugin-svelte@7.1.2(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0))':
+  '@sveltejs/vite-plugin-svelte@7.2.0(svelte@5.56.4(@typescript-eslint/types@8.60.0))(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0))':
     dependencies:
       deepmerge: 4.3.1
       magic-string: 0.30.21
       obug: 2.1.1
       svelte: 5.56.4(@typescript-eslint/types@8.60.0)
-      vite: 8.1.3(@types/node@24.13.2)(jiti@2.7.0)
-      vitefu: 1.1.3(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0))
+      vite: 8.1.5(@types/node@24.13.2)(jiti@2.7.0)
+      vitefu: 1.1.3(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0))
 
   '@szmarczak/http-timer@4.0.6':
     dependencies:
@@ -3205,26 +3230,26 @@ snapshots:
       '@typescript-eslint/types': 8.60.0
       eslint-visitor-keys: 5.0.1
 
-  '@uiw/codemirror-theme-tokyo-night-day@4.25.10(@codemirror/language@6.12.3)(@codemirror/state@6.7.0)(@codemirror/view@6.43.4)':
+  '@uiw/codemirror-theme-tokyo-night-day@4.25.11(@codemirror/language@6.12.3)(@codemirror/state@6.7.1)(@codemirror/view@6.43.4)':
     dependencies:
-      '@uiw/codemirror-themes': 4.25.10(@codemirror/language@6.12.3)(@codemirror/state@6.7.0)(@codemirror/view@6.43.4)
+      '@uiw/codemirror-themes': 4.25.11(@codemirror/language@6.12.3)(@codemirror/state@6.7.1)(@codemirror/view@6.43.4)
     transitivePeerDependencies:
       - '@codemirror/language'
       - '@codemirror/state'
       - '@codemirror/view'
 
-  '@uiw/codemirror-theme-tokyo-night@4.25.10(@codemirror/language@6.12.3)(@codemirror/state@6.7.0)(@codemirror/view@6.43.4)':
+  '@uiw/codemirror-theme-tokyo-night@4.25.11(@codemirror/language@6.12.3)(@codemirror/state@6.7.1)(@codemirror/view@6.43.4)':
     dependencies:
-      '@uiw/codemirror-themes': 4.25.10(@codemirror/language@6.12.3)(@codemirror/state@6.7.0)(@codemirror/view@6.43.4)
+      '@uiw/codemirror-themes': 4.25.11(@codemirror/language@6.12.3)(@codemirror/state@6.7.1)(@codemirror/view@6.43.4)
     transitivePeerDependencies:
       - '@codemirror/language'
       - '@codemirror/state'
       - '@codemirror/view'
 
-  '@uiw/codemirror-themes@4.25.10(@codemirror/language@6.12.3)(@codemirror/state@6.7.0)(@codemirror/view@6.43.4)':
+  '@uiw/codemirror-themes@4.25.11(@codemirror/language@6.12.3)(@codemirror/state@6.7.1)(@codemirror/view@6.43.4)':
     dependencies:
       '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.7.0
+      '@codemirror/state': 6.7.1
       '@codemirror/view': 6.43.4
 
   '@ungap/structured-clone@1.3.1': {}
@@ -3868,9 +3893,9 @@ snapshots:
     dependencies:
       pend: 1.2.0
 
-  fdir@6.5.0(picomatch@4.0.4):
+  fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
-      picomatch: 4.0.4
+      picomatch: 4.0.5
 
   file-entry-cache@8.0.0:
     dependencies:
@@ -4461,7 +4486,7 @@ snapshots:
 
   picocolors@1.1.1: {}
 
-  picomatch@4.0.4: {}
+  picomatch@4.0.5: {}
 
   pkijs@3.4.0:
     dependencies:
@@ -4756,12 +4781,12 @@ snapshots:
     dependencies:
       has-flag: 4.0.0
 
-  svelte-check@4.7.1(picomatch@4.0.4)(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3):
+  svelte-check@4.7.1(picomatch@4.0.5)(svelte@5.56.4(@typescript-eslint/types@8.60.0))(typescript@6.0.3):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       '@sveltejs/load-config': 0.2.0
       chokidar: 4.0.3
-      fdir: 6.5.0(picomatch@4.0.4)
+      fdir: 6.5.0(picomatch@4.0.5)
       picocolors: 1.1.1
       sade: 1.8.1
       svelte: 5.56.4(@typescript-eslint/types@8.60.0)
@@ -4831,8 +4856,8 @@ snapshots:
 
   tinyglobby@0.2.17:
     dependencies:
-      fdir: 6.5.0(picomatch@4.0.4)
-      picomatch: 4.0.4
+      fdir: 6.5.0(picomatch@4.0.5)
+      picomatch: 4.0.5
 
   tmp-promise@3.0.3:
     dependencies:
@@ -4946,10 +4971,10 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
-  vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0):
+  vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0):
     dependencies:
       lightningcss: 1.32.0
-      picomatch: 4.0.4
+      picomatch: 4.0.5
       postcss: 8.5.23
       rolldown: 1.1.5
       tinyglobby: 0.2.17
@@ -4958,9 +4983,9 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.7.0
 
-  vitefu@1.1.3(vite@8.1.3(@types/node@24.13.2)(jiti@2.7.0)):
+  vitefu@1.1.3(vite@8.1.5(@types/node@24.13.2)(jiti@2.7.0)):
     optionalDependencies:
-      vite: 8.1.3(@types/node@24.13.2)(jiti@2.7.0)
+      vite: 8.1.5(@types/node@24.13.2)(jiti@2.7.0)
 
   w3c-keyname@2.2.8: {}
 
