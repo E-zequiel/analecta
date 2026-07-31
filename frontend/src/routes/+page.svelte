@@ -1029,50 +1029,56 @@
 	.tag-chip {
 		display: flex;
 		align-items: center;
-		gap: 0.35rem;
-		padding: 0.3rem 0.7rem;
+		gap: 0.3rem;
+		padding: 0.15rem 0.3rem;
 		background: var(--bg-alt);
-		border: 1px solid var(--border);
-		border-radius: 20px;
+		border: 1px solid var(--terminal);
+		border-radius: 3px;
 		cursor: pointer;
 		font-family: inherit;
+		text-align: center;
 		transition:
 			border-color 0.15s,
-			background 0.15s;
+			box-shadow 0.15s;
 	}
 
 	.tag-chip:hover {
-		border-color: var(--accent-dark);
-		background: var(--bg-highlight);
+		border-color: var(--accent);
 	}
 
 	.tag-chip.active {
-		border-color: var(--accent);
-		background: var(--bg-alt);
+		border-color: var(--magenta);
+		box-shadow: 1px 1px 0 var(--magenta);
+	}
+
+	.tag-chip.active .tag-chip-name {
+		color: var(--cyan);
+		font-weight: bold;
 	}
 
 	.tag-chip-name {
 		font-size: var(--font-size-label);
-		color: var(--fg);
+		color: var(--fg-dark);
 	}
 
 	.tag-chip-count {
-		font-size: var(--font-size-label);
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
-		background: var(--bg-highlight);
-		border-radius: 10px;
-		padding: 0 5px;
-		min-width: 1.06rem;
+		background: var(--bg);
+		border-radius: 3px;
+		padding: 0 2px;
+		min-width: 0.6rem;
 		text-align: center;
 	}
 
 	.tag-chip-edit {
 		display: flex;
 		align-items: center;
-		padding: 0.35rem 0.7rem;
+		padding: 0.2rem 0.5rem;
 		background: var(--bg-alt);
-		border: 1px solid var(--accent);
-		border-radius: 20px;
+		border: 1px solid var(--magenta);
+		border-radius: 3px;
+		box-shadow: 0 1px 0 var(--magenta);
 		color: var(--fg);
 		font-family: inherit;
 		font-size: var(--font-size-label);
