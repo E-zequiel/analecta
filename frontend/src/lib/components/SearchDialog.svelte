@@ -139,7 +139,7 @@
 	}
 
 	.dialog {
-		width: 540px;
+		width: 31.76rem;
 		max-width: 90vw;
 		background: var(--bg-alt);
 		border: 1px solid var(--border);
@@ -165,14 +165,14 @@
 	}
 
 	.results {
-		max-height: 360px;
+		max-height: 21.18rem;
 		overflow-y: auto;
 	}
 
 	.hint {
 		padding: 12px 16px;
 		margin: 0;
-		font-size: 0.85rem;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 	}
 

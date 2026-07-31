@@ -1,15 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { untrack } from 'svelte';
+	import { get } from 'svelte/store';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import Sigma from 'sigma';
 	import { UndirectedGraph } from 'graphology';
 	import forceAtlas2 from 'graphology-layout-forceatlas2';
-	import { BowArrow, Focus, Maximize2, Waypoints, X } from '@lucide/svelte';
+	import { BowArrow, Focus, Maximize2, Pause, Play, Waypoints, X } from '@lucide/svelte';
 	import { entries as entriesApi, type GraphResult } from '$lib/api/client';
 	import { showContextMenu } from '$lib/stores/contextMenu';
 	import { openEntryTab } from '$lib/stores/tabs';
 	import { tooltip } from '$lib/actions/tooltip';
+	import { graphAnimationEnabled } from '$lib/stores/ui';
 
 	type VaultNodeAttrs = {
 		label: string;
@@ -21,6 +23,20 @@
 		kind: 'entry' | 'tag';
 		source_type: string | null;
 	};
+
+	// Node radius grows with degree (fixed curve, not normalized against the graph's max
+	// degree — otherwise a leaf node's size would shift depending on whether some unrelated
+	// hub exists elsewhere in the vault). Tags and entries share the same curve — a tag's
+	// visual weight should reflect its own connection count, not a category ceiling.
+	const SIZE_RANGE = { min: 3, max: 26 } as const;
+	const SIZE_GROWTH_PER_SQRT_DEGREE = 5;
+
+	function sizeForDegree(degree: number): number {
+		return Math.min(
+			SIZE_RANGE.max,
+			SIZE_RANGE.min + SIZE_GROWTH_PER_SQRT_DEGREE * Math.sqrt(degree)
+		);
+	}
 
 	const {
 		onopen,
@@ -40,10 +56,19 @@
 	let searchInputEl = $state<HTMLInputElement | undefined>(undefined);
 	let matchedNodeKeys = $state<SvelteSet<string> | null>(null);
 	let selectedNodeKey = $state<string | null>(null);
+	// Reflects whether the live forceAtlas2 simulation is *currently* ticking — distinct from
+	// graphAnimationEnabled (the persisted Settings preference, which only gates whether it
+	// auto-starts on load/drag). Drives the header button's icon; not persisted itself.
+	let isAnimating = $state(false);
 
 	// Non-reactive handles — updated by $effect, never tracked.
 	let sigmaInstance: InstanceType<typeof Sigma<VaultNodeAttrs>> | null = null;
 	let sigmaGraph: UndirectedGraph<VaultNodeAttrs> | null = null;
+	// Start/stop the live forceAtlas2 simulation — set by the Sigma-build $effect, called by
+	// the pause/resume button so the toggle has an immediate visible effect rather than
+	// waiting on the next drag/reset to notice the preference changed.
+	let startLiveSimulation: (() => void) | null = null;
+	let stopLiveSimulation: (() => void) | null = null;
 
 	// Incremented by MutationObserver when .theme-light toggles, forcing a Sigma rebuild
 	// with colors re-read from the new computed styles.
@@ -87,11 +112,18 @@
 			article: get('--cyan', '#7dcfff'),
 			youtube: get('--red', '#f7768e'),
 			substack: get('--accent-warm', '#ff9e64'),
-			tag: get('--green', '#9ece6a'),
+			tag: get('--magenta', '#bb9af7'),
 			fallback: get('--fg-muted', '#565f89'),
 			edge: get('--border', '#292e42'),
 			label: get('--fg-muted', '#565f89'),
 		};
+	}
+
+	function resolveLabelSize(): number {
+		const uiFontPx = parseFloat(
+			getComputedStyle(document.documentElement).getPropertyValue('--font-ui-size')
+		);
+		return Math.round((uiFontPx || 17) * (12 / 17));
 	}
 
 	function nodeColor(
@@ -216,7 +248,24 @@
 	function runLayout(graph: UndirectedGraph<VaultNodeAttrs>, iterations?: number) {
 		const n = graph.order;
 		if (n === 0) return;
-		positionByComponent(graph, iterations ?? Math.min(600, Math.max(300, 200 + n * 2)));
+		const iters = iterations ?? Math.min(600, Math.max(300, 200 + n * 2));
+		positionByComponent(graph, iters);
+		if (n < 2) return;
+		// positionByComponent only prevents disconnected clusters from overlapping at
+		// start. Filling the available space is a separate step: run FA2 jointly across
+		// every node so universal repulsion (it acts between every pair, not just linked
+		// nodes) pushes separate clusters apart. This used to happen live, spread over
+		// the 900-frame heat() after render — now it runs synchronously before first paint.
+		forceAtlas2.assign(graph, {
+			iterations: iters,
+			settings: {
+				...forceAtlas2.inferSettings(graph),
+				barnesHutOptimize: n > 150,
+				scalingRatio: 15,
+				gravity: 0.0575,
+				adjustSizes: true,
+			},
+		});
 	}
 
 	// Re-run layout from random positions, then fit camera.
@@ -229,6 +278,16 @@
 		requestAnimationFrame(() => {
 			sigma.getCamera().setState({ x: 0.5, y: 0.5, angle: 0, ratio: 1 });
 		});
+	}
+
+	// Local, session-only control over the *live* simulation — separate from
+	// graphAnimationEnabled (the persisted Settings preference for auto-animating on
+	// load/drag). Lets the user manually resume even when Settings has auto-animate off,
+	// and mirrors the button back to Play whenever the simulation exhausts its own tick
+	// budget on its own, without the user ever touching this button.
+	function toggleLiveAnimation() {
+		if (isAnimating) stopLiveSimulation?.();
+		else startLiveSimulation?.();
 	}
 
 	async function handleNodeContextMenu(id: number, e: MouseEvent) {
@@ -265,7 +324,7 @@
 				label: truncate(node.label),
 				fullLabel: node.label,
 				color: nodeColor(node.kind, node.source_type, colors),
-				size: node.kind === 'tag' ? 7 : 10,
+				size: 0, // placeholder — replaced below once degree is known
 				x: Math.random(),
 				y: Math.random(),
 				kind: node.kind,
@@ -290,9 +349,15 @@
 			}
 		}
 
-		// Partial layout before sigma creation — spreads nodes from the initial random
-		// cluster but stays under-converged so heat() animates the remaining settling.
-		runLayout(graph, Math.min(60, 20 + data.nodes.length));
+		// Size by degree now that every edge is in — must run before layout since
+		// forceAtlas2's adjustSizes reads node size to space hubs apart.
+		graph.forEachNode((node) => {
+			graph.setNodeAttribute(node, 'size', sizeForDegree(graph.degree(node)));
+		});
+
+		// Full layout before sigma creation — nodes render already settled, no visible
+		// assemble animation on load (matches resetLayout's convergence).
+		runLayout(graph);
 
 		const sigma = new Sigma<VaultNodeAttrs>(graph, el, {
 			allowInvalidContainer: true,
@@ -301,7 +366,7 @@
 			renderLabels: true,
 			defaultDrawNodeHover: () => {},
 			labelColor: { color: colors.label },
-			labelSize: 12,
+			labelSize: resolveLabelSize(),
 			labelWeight: 'normal',
 			minCameraRatio: 0.02,
 			maxCameraRatio: 10,
@@ -318,20 +383,49 @@
 		};
 		let liveTicksLeft = 0;
 		let liveRafId = 0;
+		// True only after an explicit user Pause this mount — distinct from isAnimating
+		// being false because the tick budget simply ran out. Stops the drag auto-reheat
+		// below from silently overriding an explicit pause; a natural exhaustion still
+		// lets the next drag resume things, which is the whole point of a tick budget.
+		let manuallyPaused = false;
 
 		function tick() {
 			liveRafId = 0;
-			if (liveTicksLeft <= 0) return;
+			if (liveTicksLeft <= 0) {
+				// Tick budget exhausted on its own (not via stopHeat) — mirror the
+				// button back to Play so the user can restart the motion.
+				isAnimating = false;
+				return;
+			}
 			forceAtlas2.assign(graph, { iterations: 1, settings: liveSettings });
 			sigma.refresh();
 			liveTicksLeft--;
 			liveRafId = requestAnimationFrame(tick);
 		}
 
-		function heat(ticks = 150) {
+		// No longer gates on graphAnimationEnabled itself — that preference only decides
+		// whether the two auto-trigger call sites below invoke heat() at all. Once called
+		// (auto or via the manual Play button), heat() always runs.
+		function heat(ticks = 2000) {
+			isAnimating = true;
 			liveTicksLeft = ticks;
 			if (liveRafId === 0) liveRafId = requestAnimationFrame(tick);
 		}
+
+		function stopHeat() {
+			liveTicksLeft = 0;
+			cancelAnimationFrame(liveRafId);
+			liveRafId = 0;
+			isAnimating = false;
+		}
+		startLiveSimulation = () => {
+			manuallyPaused = false;
+			heat(2000);
+		};
+		stopLiveSimulation = () => {
+			manuallyPaused = true;
+			stopHeat();
+		};
 
 		// Hover tooltip — show full label when truncated.
 		sigma.on('enterNode', ({ node, event }) => {
@@ -410,16 +504,15 @@
 			if (!isNaN(id)) void handleNodeContextMenu(id, origEvent);
 		});
 
+		// Only an actual node drag re-heats the simulation — panning the camera is a
+		// viewport operation and must not visibly re-agitate the settled layout.
 		sigma.on('moveBody', ({ preventSigmaDefault, event }) => {
 			if (isDragging && draggedNode) {
 				preventSigmaDefault();
 				const pos = sigma.viewportToGraph(event);
 				graph.setNodeAttribute(draggedNode, 'x', pos.x);
 				graph.setNodeAttribute(draggedNode, 'y', pos.y);
-				heat(300);
-			} else {
-				// Canvas pan — heat up so nodes responsively settle around the new viewport.
-				heat(450);
+				if (!manuallyPaused && get(graphAnimationEnabled)) heat(2000);
 			}
 		});
 
@@ -435,11 +528,12 @@
 
 		// $effect may run before the browser computes layout dimensions.
 		// A single rAF ensures offsetWidth/Height are non-zero before Sigma renders.
-		// heat() continues the under-converged layout with 1 FA2 iter/frame (~15s settle).
+		// heat() continues the live simulation from the already-settled layout above —
+		// a gentle ongoing motion, not the "assemble from clumped" animation this once was.
 		const rafId = requestAnimationFrame(() => {
 			sigma.refresh();
 			sigma.getCamera().setState({ x: 0.5, y: 0.5, angle: 0, ratio: 1 });
-			heat(900);
+			if (get(graphAnimationEnabled)) heat(2000);
 		});
 
 		return () => {
@@ -450,6 +544,9 @@
 			sigma.kill();
 			sigmaInstance = null;
 			sigmaGraph = null;
+			startLiveSimulation = null;
+			stopLiveSimulation = null;
+			isAnimating = false;
 		};
 	});
 
@@ -489,7 +586,7 @@
 			}
 
 			const s = getComputedStyle(document.documentElement);
-			const accentColor = s.getPropertyValue('--accent').trim() || '#ff757f';
+			const highlightColor = s.getPropertyValue('--green').trim() || '#9ece6a';
 			const dimColor = s.getPropertyValue('--border').trim() || '#292e42';
 
 			if (q && data) {
@@ -511,9 +608,10 @@
 				}
 
 				sigma.setSetting('nodeReducer', (nodeKey: string, nodeData: VaultNodeAttrs) => {
-					const { x, y, label } = nodeData;
-					if (keys.has(nodeKey)) return { x, y, color: accentColor, size: 14, label };
-					return { x, y, color: dimColor, size: 4, label: '' };
+					const { x, y, size, label } = nodeData;
+					if (keys.has(nodeKey))
+						return { x, y, color: highlightColor, size: Math.max(size * 1.3, 12), label };
+					return { x, y, color: dimColor, size: Math.min(size * 0.5, 4), label: '' };
 				});
 				sigma.refresh();
 
@@ -529,7 +627,8 @@
 				matchedNodeKeys = null;
 				sigma.setSetting('nodeReducer', (nodeKey: string, nodeData: VaultNodeAttrs) => {
 					const { x, y, color, size, label } = nodeData;
-					if (nodeKey === selected) return { x, y, color: accentColor, size: 14 };
+					if (nodeKey === selected)
+						return { x, y, color: highlightColor, size: Math.max(size * 1.3, 12) };
 					return { x, y, color, size, label };
 				});
 				sigma.refresh();
@@ -595,7 +694,7 @@
 					use:tooltip={'Clear search'}
 					aria-label="Clear search"
 				>
-					<X size={14} />
+					<X size={18} />
 				</button>
 			{:else}
 				<span class="graph-stats">{nodeCount} nodes · {edgeCount} edges</span>
@@ -605,7 +704,7 @@
 					use:tooltip={'Hunt nodes'}
 					aria-label="Hunt nodes"
 				>
-					<BowArrow size={14} />
+					<BowArrow size={18} />
 				</button>
 			{/if}
 			<button
@@ -614,7 +713,7 @@
 				use:tooltip={'Reset layout'}
 				aria-label="Reset layout"
 			>
-				<Waypoints size={14} />
+				<Waypoints size={18} />
 			</button>
 			<button
 				class="graph-toggle"
@@ -622,7 +721,19 @@
 				use:tooltip={'Fit to viewport'}
 				aria-label="Fit to viewport"
 			>
-				<Focus size={14} />
+				<Focus size={18} />
+			</button>
+			<button
+				class="graph-toggle"
+				onclick={toggleLiveAnimation}
+				use:tooltip={isAnimating ? 'Pause animation' : 'Resume animation'}
+				aria-label={isAnimating ? 'Pause animation' : 'Resume animation'}
+			>
+				{#if isAnimating}
+					<Pause size={18} />
+				{:else}
+					<Play size={18} />
+				{/if}
 			</button>
 		{:else if !loading && !error}
 			<span class="graph-stats">{nodeCount} nodes · {edgeCount} edges</span>
@@ -634,9 +745,9 @@
 			aria-label={expanded ? 'Collapse' : 'Expand graph'}
 		>
 			{#if expanded}
-				<X size={14} />
+				<X size={18} />
 			{:else}
-				<Maximize2 size={14} />
+				<Maximize2 size={18} />
 			{/if}
 		</button>
 	</div>
@@ -681,7 +792,7 @@
 	}
 
 	.graph-title {
-		font-size: 11px;
+		font-size: var(--font-size-label);
 		font-weight: 600;
 		color: var(--fg-muted);
 		text-transform: uppercase;
@@ -689,7 +800,7 @@
 	}
 
 	.graph-stats {
-		font-size: 11px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		opacity: 0.7;
 		flex: 1;
@@ -699,8 +810,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 26px;
-		height: 26px;
+		width: 28px;
+		height: 28px;
 		padding: 0;
 		background: none;
 		border: 1px solid transparent;
@@ -726,7 +837,7 @@
 		border: 1px solid var(--border);
 		border-radius: 4px;
 		color: var(--fg);
-		font-size: 11px;
+		font-size: var(--font-size-sublabel);
 		font-family: inherit;
 		padding: 3px 8px;
 		outline: none;
@@ -742,7 +853,7 @@
 	}
 
 	.search-match-count {
-		font-size: 11px;
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
 		opacity: 0.7;
 		flex-shrink: 0;
@@ -762,7 +873,7 @@
 
 	.graph-status {
 		padding: 10px;
-		font-size: 12px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		font-style: italic;
 		margin: 0;

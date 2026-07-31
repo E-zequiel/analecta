@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { get } from 'svelte/store';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { readTextFile, writeTextFile } from '$lib/platform';
 	import { entries as entriesApi, type Entry } from '$lib/api/client';
 	import { entryChangedTick } from '$lib/stores/sse';
 	import { entryTitleIndex, ensureEntryTitleIndexLoaded } from '$lib/stores/entryTitles';
+	import { pendingEditorScrollFraction } from '$lib/stores/ui';
 	import {
 		editorSaving,
 		editorSaved,
@@ -28,11 +30,15 @@
 	let saving = $state(false);
 	let saved = $state(false);
 	let error = $state('');
+	let initialScrollFraction = $state<number | null>(null);
 
 	let previewTimer: ReturnType<typeof setTimeout>;
 
 	onMount(() => {
 		ensureEntryTitleIndexLoaded();
+
+		initialScrollFraction = get(pendingEditorScrollFraction);
+		pendingEditorScrollFraction.set(null);
 
 		entriesApi
 			.get(entryId)
@@ -138,7 +144,12 @@
 	{#if entry}
 		<div class="panes" class:split={showPreview}>
 			<div class="pane editor-pane">
-				<MarkdownEditor value={content} onChange={handleChange} onSave={save} />
+				<MarkdownEditor
+					value={content}
+					onChange={handleChange}
+					onSave={save}
+					{initialScrollFraction}
+				/>
 			</div>
 			{#if showPreview}
 				<div class="pane preview-pane">
@@ -163,7 +174,7 @@
 
 	.error-banner {
 		padding: 0.5rem 1rem;
-		font-size: 12px;
+		font-size: var(--font-size-label);
 		color: var(--red);
 		background: var(--bg-alt);
 		border-bottom: 1px solid var(--border);
@@ -172,7 +183,7 @@
 	.hint {
 		padding: 1rem;
 		color: var(--fg-muted);
-		font-size: 13px;
+		font-size: var(--font-size-sublabel);
 	}
 
 	.panes {

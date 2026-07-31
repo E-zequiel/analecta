@@ -15,7 +15,13 @@
 	import { createRenderer } from '$lib/markdown/renderer';
 	import '$lib/markdown/tokyo-night.css';
 	import '$lib/markdown/shiki-classes.css';
-	import { lastViewedId, pendingScrollRestore, scrollPositions, selectedTag } from '$lib/stores/ui';
+	import {
+		lastViewedId,
+		pendingScrollRestore,
+		pendingEditorScrollFraction,
+		scrollPositions,
+		selectedTag,
+	} from '$lib/stores/ui';
 	import { ensureEntryTab, closeTab, openEntryTab, navigateInSectionTab } from '$lib/stores/tabs';
 	import { entryChangedTick, lastChangedEntry, vaultRescannedTick } from '$lib/stores/sse';
 	import { entryTitleIndex, ensureEntryTitleIndexLoaded } from '$lib/stores/entryTitles';
@@ -282,7 +288,11 @@
 			copyUrl,
 			deleteEntry,
 			goBack: () => closeTab(`viewer-${entryId}`),
-			goToEditor: () => entry && goto(`/editor/${entry.id}`),
+			goToEditor: () => {
+				if (!entry) return;
+				pendingEditorScrollFraction.set(currentScrollFraction());
+				goto(`/editor/${entry.id}`);
+			},
 		});
 
 		return () => {
@@ -388,6 +398,15 @@
 			setTimeout(() => ro.disconnect(), 5000);
 		});
 	});
+
+	// Fraction (0–1) of the way down the reading view the user has scrolled, or null when
+	// there's nothing to scroll (short article) or no content element yet.
+	function currentScrollFraction(): number | null {
+		if (!contentEl) return null;
+		const scrollable = contentEl.scrollHeight - contentEl.clientHeight;
+		if (scrollable <= 0) return null;
+		return contentEl.scrollTop / scrollable;
+	}
 
 	function handleContentScroll() {
 		if (!contentEl || isNaN(entryId)) return;
@@ -919,13 +938,13 @@
 	.error-banner {
 		padding: 1rem;
 		color: var(--red);
-		font-size: 13px;
+		font-size: var(--font-size-label);
 	}
 
 	.hint {
 		padding: 1rem;
 		color: var(--fg-muted);
-		font-size: 13px;
+		font-size: var(--font-size-sublabel);
 	}
 
 	.content {
@@ -950,7 +969,7 @@
 	}
 
 	.props-bar {
-		height: 33px;
+		min-height: 33px;
 		display: flex;
 		align-items: center;
 		width: 100%;
@@ -1070,7 +1089,7 @@
 	}
 
 	.tags-dialog {
-		width: 320px;
+		width: 18.82rem;
 		max-width: 90vw;
 		background: var(--bg-alt);
 		border: 1px solid var(--border);
@@ -1157,7 +1176,7 @@
 	.tag-suggestions {
 		display: flex;
 		flex-direction: column;
-		max-height: 120px;
+		max-height: 7.06rem;
 		overflow-y: auto;
 		border: 1px solid var(--border);
 		border-radius: 4px;
@@ -1191,7 +1210,7 @@
 	}
 
 	.conn-dialog {
-		width: 360px;
+		width: 21.18rem;
 	}
 
 	.conn-linked {

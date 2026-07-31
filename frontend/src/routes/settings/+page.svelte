@@ -4,13 +4,14 @@
 	import { config as configApi, system as systemApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 	import { tooltip } from '$lib/actions/tooltip';
+	import { graphAnimationEnabled } from '$lib/stores/ui';
 
 	const ACCENT_OPTIONS = [
 		{ id: 'red', label: 'Red' },
 		{ id: 'yellow', label: 'Yellow' },
 		{ id: 'green', label: 'Green' },
-		{ id: 'cyan', label: 'Cyan' },
-	] as const satisfies { id: 'red' | 'yellow' | 'green' | 'cyan'; label: string }[];
+		{ id: 'magenta', label: 'Magenta' },
+	] as const satisfies { id: 'red' | 'yellow' | 'green' | 'magenta'; label: string }[];
 
 	let form = $state({
 		vault_path: '',
@@ -18,7 +19,7 @@
 		ui_font_size: 17.0,
 		reading_font_size: 18.0,
 		theme: 'dark' as 'dark' | 'light',
-		accent_color: 'yellow' as 'red' | 'yellow' | 'green' | 'cyan',
+		accent_color: 'yellow' as 'red' | 'yellow' | 'green' | 'magenta',
 		close_to_tray: false,
 	});
 	let initialVaultPath = $state('');
@@ -240,7 +241,7 @@
 		}
 	}
 
-	function selectAccent(id: 'red' | 'yellow' | 'green' | 'cyan') {
+	function selectAccent(id: 'red' | 'yellow' | 'green' | 'magenta') {
 		form.accent_color = id;
 		autoSaveAccent();
 	}
@@ -268,6 +269,10 @@
 	function toggleCloseToTray() {
 		form.close_to_tray = !form.close_to_tray;
 		autoSaveCloseToTray();
+	}
+
+	function toggleGraphAnimation() {
+		graphAnimationEnabled.update((v) => !v);
 	}
 </script>
 
@@ -461,6 +466,28 @@
 		</section>
 
 		<section>
+			<h2>Vault Graph</h2>
+			<div class="field toggle-field">
+				<label
+					for="graph-animation-toggle"
+					use:tooltip={'Automatically settle node positions with motion when the graph loads or when you drag a node. Off does not disable the pause/play button in Collecta — you can still start the animation manually from there.'}
+				>
+					Auto-animate on load / drag
+				</label>
+				<button
+					id="graph-animation-toggle"
+					role="switch"
+					aria-checked={$graphAnimationEnabled}
+					class="toggle"
+					class:on={$graphAnimationEnabled}
+					onclick={toggleGraphAnimation}
+				>
+					{$graphAnimationEnabled ? 'On' : 'Off'}
+				</button>
+			</div>
+		</section>
+
+		<section>
 			<h2>Window</h2>
 			<div class="field toggle-field">
 				<label for="close-to-tray-toggle">
@@ -566,7 +593,8 @@
 	/* ── Keyboard shortcuts panel ── */
 	.shortcuts-panel {
 		flex-shrink: 0;
-		width: 220px;
+		width: 12.94rem;
+		max-width: 90vw;
 		position: sticky;
 		top: 2rem;
 		background: var(--bg-alt);
@@ -599,7 +627,7 @@
 
 	.sp-group-label {
 		grid-column: 1 / -1;
-		font-size: 0.62rem;
+		font-size: var(--font-size-count);
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
@@ -625,13 +653,13 @@
 	}
 
 	.sp-desc {
-		font-size: 0.72rem;
+		font-size: var(--font-size-count);
 		color: var(--fg-dark);
 	}
 
 	kbd {
 		font-family: var(--font-ui-family);
-		font-size: 0.62rem;
+		font-size: var(--font-size-count);
 		letter-spacing: 0.05em;
 		background: var(--bg-highlight);
 		border: 1px solid var(--terminal);
@@ -673,13 +701,13 @@
 	}
 
 	label {
-		font-size: 12px;
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
 	}
 
 	.saved-tag {
 		color: var(--green);
-		font-size: 11px;
+		font-size: var(--font-size-count);
 		margin-left: 0.35rem;
 	}
 
@@ -691,7 +719,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13px;
+		font-size: var(--font-size-sublabel);
 		outline: none;
 	}
 
@@ -736,7 +764,7 @@
 
 	.range-min,
 	.range-max {
-		font-size: 11px;
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
 		flex-shrink: 0;
 	}
@@ -780,7 +808,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13px;
+		font-size: var(--font-size-sublabel);
 		cursor: pointer;
 	}
 
@@ -802,7 +830,7 @@
 		background: var(--bg-alt);
 		color: var(--fg-muted);
 		font-family: inherit;
-		font-size: 12px;
+		font-size: var(--font-size-count);
 		cursor: pointer;
 	}
 
@@ -814,7 +842,7 @@
 
 	/* Accent colour swatches */
 	.field-caption {
-		font-size: 12px;
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
 	}
 
@@ -844,8 +872,8 @@
 	.swatch-green {
 		background: var(--green);
 	}
-	.swatch-cyan {
-		background: var(--cyan);
+	.swatch-magenta {
+		background: var(--magenta);
 	}
 
 	.swatch.active {
@@ -860,13 +888,13 @@
 
 	.error {
 		color: var(--red);
-		font-size: 13px;
+		font-size: var(--font-size-label);
 		margin-bottom: 1rem;
 	}
 
 	.maintenance-result {
 		margin: 0.5rem 0 0;
-		font-size: 12px;
+		font-size: var(--font-size-sublabel);
 		color: var(--green);
 	}
 
@@ -877,7 +905,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13px;
+		font-size: var(--font-size-sublabel);
 		cursor: pointer;
 	}
 

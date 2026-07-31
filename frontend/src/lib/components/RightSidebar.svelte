@@ -262,7 +262,11 @@
 				{:else}
 					<div class="bl-list">
 						{#each tagEntries as entry (entry.id)}
-							<button class="bl-item" onclick={() => onbacklinksopen?.(entry.id, entry.title)}>
+							<button
+								class="bl-item"
+								onclick={() => onbacklinksopen?.(entry.id, entry.title)}
+								use:tooltip={entry.title}
+							>
 								<span class="bl-item-name">{entry.title}</span>
 							</button>
 						{/each}
@@ -282,7 +286,11 @@
 							</div>
 							<div class="bl-group-list">
 								{#each group.entries as entry (entry.id)}
-									<button class="bl-item" onclick={() => onbacklinksopen?.(entry.id, entry.title)}>
+									<button
+										class="bl-item"
+										onclick={() => onbacklinksopen?.(entry.id, entry.title)}
+										use:tooltip={entry.title}
+									>
 										<span class="bl-item-name">{entry.title}</span>
 									</button>
 								{/each}
@@ -295,7 +303,11 @@
 							</div>
 							<div class="bl-group-list">
 								{#each directLinks as item, i (`${item.direction}-${item.id}-${i}`)}
-									<button class="bl-item" onclick={() => onbacklinksopen?.(item.id, item.name)}>
+									<button
+										class="bl-item"
+										onclick={() => onbacklinksopen?.(item.id, item.name)}
+										use:tooltip={item.name}
+									>
 										<span class="bl-item-row">
 											{#if item.direction === 'in'}
 												<span class="bl-item-dir" use:tooltip={'Incoming link'}>
@@ -386,7 +398,7 @@
 	}
 
 	.item-title {
-		font-size: 13px;
+		font-size: var(--font-size-label);
 		color: var(--fg-dark);
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -403,7 +415,7 @@
 	}
 
 	.item-type {
-		font-size: 13px;
+		font-size: var(--font-size-label);
 		color: var(--fg-muted);
 	}
 
@@ -438,7 +450,7 @@
 
 	.stack-empty {
 		padding: 12px;
-		font-size: 12px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		margin: 0;
 	}
@@ -476,7 +488,7 @@
 
 	.bl-tag-label {
 		padding: 2px 10px 4px 26px;
-		font-size: 0.72rem;
+		font-size: var(--font-size-sublabel);
 		font-weight: 700;
 		color: var(--accent);
 		letter-spacing: 0.06em;
@@ -506,7 +518,7 @@
 	}
 
 	.bl-count {
-		font-size: 0.68rem;
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
 		background: var(--bg-highlight);
 		border-radius: 10px;
@@ -525,6 +537,7 @@
 	.bl-rich-scroll {
 		max-height: 320px;
 		overflow-y: auto;
+		padding-top: 2px;
 	}
 
 	.bl-group-header {
@@ -532,14 +545,14 @@
 		align-items: center;
 		gap: 6px;
 		padding: 5px 8px 3px 10px;
-		font-size: 0.68rem;
+		font-size: var(--font-size-count);
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
 	}
 
 	.bl-group-tag {
-		color: var(--green);
+		color: var(--magenta);
 		flex: 1;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -557,7 +570,7 @@
 
 	.bl-empty {
 		padding: 4px 10px 8px 26px;
-		font-size: 12px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		font-style: italic;
 		margin: 0;
@@ -596,15 +609,19 @@
 	}
 
 	.bl-item-name {
-		font-size: 12px;
-		color: var(--cyan);
+		font-size: var(--font-size-label);
+		color: var(--fg-dark);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		transition: color 0.14s;
+	}
+	.bl-item:hover .bl-item-name {
+		color: var(--fg);
 	}
 
 	.bl-item-heading {
-		font-size: 10px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		font-style: italic;
 		white-space: nowrap;

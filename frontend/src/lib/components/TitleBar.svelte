@@ -191,8 +191,8 @@
 					<button
 						class="btn-icon"
 						onclick={() => $viewerActions!.copyUrl()}
-						use:tooltip={'Copy URL'}
-						aria-label="Copy URL"
+						use:tooltip={'Copy Analecta deep link'}
+						aria-label="Copy Analecta deep link"
 					>
 						<Link size={18} />
 					</button>
@@ -394,7 +394,7 @@
 
 <style>
 	.titlebar {
-		height: 40px;
+		min-height: 40px;
 		display: flex;
 		align-items: stretch;
 		background: var(--bg-dark);
@@ -453,11 +453,11 @@
 		gap: 6px;
 		color: var(--fg-muted);
 		min-width: 0;
-		max-width: 480px;
+		max-width: 28.24rem;
 	}
 
 	.active-title {
-		font-size: 13px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		overflow: hidden;
 		text-overflow: ellipsis;

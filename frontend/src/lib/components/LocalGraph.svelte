@@ -310,7 +310,7 @@
 
 	.graph-empty {
 		padding: 6px 10px 8px;
-		font-size: 12px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		font-style: italic;
 		margin: 0;
@@ -351,7 +351,7 @@
 	}
 
 	.node-focus {
-		fill: var(--accent);
+		fill: var(--green);
 		stroke: var(--bg);
 		stroke-width: 2;
 	}
@@ -369,7 +369,7 @@
 	}
 
 	.node-tag {
-		fill: var(--green);
+		fill: var(--magenta);
 		cursor: pointer;
 	}
 
@@ -379,7 +379,7 @@
 
 	.label {
 		fill: var(--fg-muted);
-		font-size: 12px;
+		font-size: 0.71rem;
 		text-anchor: middle;
 		font-family: inherit;
 		pointer-events: none;
@@ -389,7 +389,7 @@
 
 	.caption {
 		fill: var(--fg-muted);
-		font-size: 11px;
+		font-size: 0.65rem;
 		text-anchor: middle;
 		font-family: inherit;
 		font-style: italic;

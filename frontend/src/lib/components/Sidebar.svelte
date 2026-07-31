@@ -44,6 +44,7 @@
 		expandAllSignal,
 		pasteUrlSignal,
 		dashboardPreviewEntryId,
+		sidebarTagPreview,
 		preSettingsState,
 		pendingScrollRestore,
 	} from '$lib/stores/ui';
@@ -497,6 +498,12 @@
 	}
 
 	function selectSection(id: SectionId) {
+		if ($activeSection === id && $dashboardPreviewEntryId !== null) {
+			// Re-clicking the already-active dashboard exits its LocalGraph view.
+			dashboardPreviewEntryId.set(null);
+			sidebarTagPreview.set(null);
+			return;
+		}
 		selectedTag.set(null);
 		navigateInSectionTab(id);
 	}
@@ -623,7 +630,15 @@
 				<button
 					class="section-label"
 					class:active={$activeSection === 'tags'}
-					onclick={() => navigateInSectionTab('tags')}
+					onclick={() => {
+						if ($activeSection === 'tags' && $dashboardPreviewEntryId !== null) {
+							// Re-clicking the already-active TAGS dashboard exits its LocalGraph view.
+							dashboardPreviewEntryId.set(null);
+							sidebarTagPreview.set(null);
+							return;
+						}
+						navigateInSectionTab('tags');
+					}}
 				>
 					<BrainCircuit size={18} />
 					<span class="label-text">TAGS</span>
@@ -992,7 +1007,7 @@
 	}
 
 	.tags-section-entries {
-		max-height: 160px;
+		max-height: 9.41rem;
 		overflow-y: auto;
 		padding-left: 4px;
 	}
@@ -1125,7 +1140,7 @@
 
 	.entry-indicator {
 		flex-shrink: 0;
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		color: var(--accent);
 	}
 
@@ -1136,7 +1151,7 @@
 	}
 
 	.tag-count {
-		font-size: 0.7rem;
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
 		margin-left: 6px;
 		flex-shrink: 0;
@@ -1145,7 +1160,7 @@
 	.empty-section {
 		display: block;
 		padding: 3px 8px;
-		font-size: 0.75rem;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		font-style: italic;
 	}
@@ -1357,7 +1372,7 @@
 	}
 
 	.url-dialog {
-		width: 540px;
+		width: 31.76rem;
 		max-width: 90vw;
 		background: var(--bg-alt);
 		border: 1px solid var(--border);

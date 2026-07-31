@@ -111,7 +111,8 @@
 	}
 
 	.dialog {
-		width: 280px;
+		width: 16.47rem;
+		max-width: 90vw;
 		background: var(--bg-alt);
 		border: 1px solid var(--border);
 		border-radius: 8px;
@@ -120,7 +121,7 @@
 	}
 
 	h2 {
-		font-size: 0.78rem;
+		font-size: 0.85rem;
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
@@ -143,7 +144,7 @@
 
 	.sp-group-label {
 		grid-column: 1 / -1;
-		font-size: 0.62rem;
+		font-size: var(--font-size-count);
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
@@ -169,13 +170,13 @@
 	}
 
 	.sp-desc {
-		font-size: 0.72rem;
+		font-size: var(--font-size-count);
 		color: var(--fg-dark);
 	}
 
 	kbd {
 		font-family: var(--font-ui-family);
-		font-size: 0.62rem;
+		font-size: var(--font-size-count);
 		letter-spacing: 0.05em;
 		background: var(--bg-highlight);
 		border: 1px solid var(--terminal);

@@ -13,13 +13,13 @@ Made in Linux for Linux.
 
 ![Analecta](.github/assets/hero-readme.png)
 
-Analecta is a local Linux desktop application that turns any URL — article, YouTube video, Substack post — into a clean Markdown file stored in your personal vault. No cloud sync, no subscription, no tracking. Truly private and yours.
+Analecta is a local Linux desktop application that turns any URL — article, YouTube video, Substack post, X/Twitter thread — into a clean Markdown file stored in your personal vault. No cloud sync, no subscription, no tracking. Truly private and yours.
 
 ## Features
 
-- **Web extraction** — paste a URL (`Ctrl+L`) to extract the main content as clean Markdown. Supports articles, YouTube transcripts, and Substack posts.
+- **Web extraction** — paste a URL (`Ctrl+L`) to extract the main content as clean Markdown. Supports articles, YouTube transcripts, Substack posts, X/Twitter threads, and more.
 - **Native Markdown reading view** — every entry renders as clean, formatted Markdown.
-- **Local vault** — every entry is saved as a Markdown file in a directory you control, compatible with Logseq and other PKM tools.
+- **Local vault** — every entry is saved as a Markdown file in a directory you control, compatible with other PKM tools.
 - **Reading library** — organize entries by status: Unread, Read, Bookmark, Gem, Archive.
 - **Full-text search** — fast search across titles and content (`Ctrl+K`), powered by SQLite FTS5.
 - **Tags & backlinks** — tag list, automatic bidirectional Linked Mentions, clickable `[[wikilink]]` rendering, and clickable `#hashtag` navigation to the TAGS dashboard across your vault. Tags and hashtags accept Spanish-accented letters and symbols, with case-insensitive but accent-sensitive identity (`café` ≠ `cafe`).
@@ -31,11 +31,10 @@ Analecta is a local Linux desktop application that turns any URL — article, Yo
 
 ## Screenshots
 
-| Dashboard | Reading view |
-|----------|-------------|
-| ![Library dashboard](.github/assets/1-library.png) | ![Reading view](.github/assets/3-reading-view.png) |
-
+![Library dashboard](.github/assets/1-library.png)
 ![COLLECTA dashboard](.github/assets/2-collecta.png)
+![Reading view](.github/assets/3-reading-view.png)
+![TAGS dashboard](.github/assets/4-tags.png)
 
 ## Download
 
@@ -63,7 +62,7 @@ Analecta is a hybrid desktop application: an Electron shell manages the window a
 
 Beyond the shell/sidecar/frontend split described in [Architecture](#architecture):
 
-- **Extraction** — trafilatura and readability-lxml for content extraction, markdownify for HTML-to-Markdown conversion, youtube-transcript-api for transcripts.
+- **Extraction** — trafilatura and readability-lxml for content extraction, markdownify for HTML-to-Markdown conversion, youtube-transcript-api for transcripts, X's own syndication endpoint (with an oEmbed fallback) for tweets.
 - **Reading & editing** — markdown-it for the native reading view, Shiki for syntax-highlighted code blocks, CodeMirror 6 for the built-in editor.
 - **Knowledge graph** — Sigma.js and graphology for the vault-wide graph, d3-force for the per-entry subgraph.
 - **Search** — SQLite FTS5.
@@ -72,6 +71,8 @@ Beyond the shell/sidecar/frontend split described in [Architecture](#architectur
 ## Security
 
 To report a vulnerability, see [SECURITY.md](.github/SECURITY.md).
+
+For the network identity Analecta presents when fetching a URL — what it sends, what it doesn't, and how that compares to browsing the same page in a browser — see [docs/privacy.md](docs/privacy.md).
 
 ## License
 

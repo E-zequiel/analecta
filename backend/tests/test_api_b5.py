@@ -105,6 +105,19 @@ def test_put_config_invalid_font_422(client: TestClient) -> None:
     assert r.status_code == 422
 
 
+def test_put_config_removed_cyan_accent_422(client: TestClient) -> None:
+    r = client.put("/api/v1/config", json={"accent_color": "cyan"})
+    assert r.status_code == 422
+
+
+def test_put_config_magenta_accent_200(tmp_path: Path, mocker: MockerFixture) -> None:
+    mocker.patch("analecta.api.routes.config.save_config")
+    with TestClient(_make_app(tmp_path)) as c:
+        r = c.put("/api/v1/config", json={"accent_color": "magenta"})
+    assert r.status_code == 200
+    assert r.json()["accent_color"] == "magenta"
+
+
 # ---------------------------------------------------------------------------
 # GET /system/health
 # ---------------------------------------------------------------------------

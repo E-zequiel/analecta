@@ -2,18 +2,21 @@
 	import type { Entry } from '$lib/api/client';
 	import { navigateInTab, openEntryTab } from '$lib/stores/tabs';
 	import { showContextMenu } from '$lib/stores/contextMenu';
-	import { Eye, EyeClosed, Bookmark, Gem } from '@lucide/svelte';
+	import { tooltip } from '$lib/actions/tooltip';
+	import { Eye, EyeClosed, Bookmark, Gem, ChartNetwork } from '@lucide/svelte';
 
 	const {
 		entries,
 		loading = false,
 		onitemclick,
 		showStatusLabel = false,
+		compact = false,
 	}: {
 		entries: Entry[];
 		loading?: boolean;
 		onitemclick?: (entry: Entry) => void;
 		showStatusLabel?: boolean;
+		compact?: boolean;
 	} = $props();
 
 	const sourceColors: Record<string, string> = {
@@ -42,13 +45,14 @@
 			{#if onitemclick}
 				<div
 					class="entry-row selectable"
+					class:compact
 					role="button"
 					tabindex="0"
-					onclick={() => onitemclick!(entry)}
+					onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
 					onkeydown={(e) => {
 						if (e.key === 'Enter' || e.key === ' ') {
 							e.preventDefault();
-							onitemclick!(entry);
+							navigateInTab(entry.id, entry.title, entry.source_type);
 						}
 					}}
 					oncontextmenu={(e) => showContextMenu(e, entry)}
@@ -56,11 +60,6 @@
 					<div class="entry-body">
 						<div class="entry-top">
 							<span class="entry-title">{entry.title}</span>
-							<span
-								class="entry-source"
-								style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
-								>{entry.source_type}</span
-							>
 						</div>
 						<div class="entry-meta">
 							<span class="entry-date">{formatDate(entry.created_at)}</span>
@@ -84,19 +83,28 @@
 							{/each}
 						</div>
 					</div>
-					<button
-						class="view-btn"
-						onclick={(e) => {
-							e.stopPropagation();
-							navigateInTab(entry.id, entry.title, entry.source_type);
-						}}
-					>
-						View ↗
-					</button>
+					<div class="entry-controls">
+						<span
+							class="entry-source"
+							style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
+							>{entry.source_type}</span
+						>
+						<button
+							class="view-btn"
+							use:tooltip={'View graph'}
+							onclick={(e) => {
+								e.stopPropagation();
+								onitemclick!(entry);
+							}}
+						>
+							<ChartNetwork size={15} />
+						</button>
+					</div>
 				</div>
 			{:else}
 				<button
 					class="entry-row"
+					class:compact
 					onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
 					onmousedown={(e) => {
 						if (e.button === 1) {
@@ -109,11 +117,6 @@
 					<div class="entry-body">
 						<div class="entry-top">
 							<span class="entry-title">{entry.title}</span>
-							<span
-								class="entry-source"
-								style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
-								>{entry.source_type}</span
-							>
 						</div>
 						<div class="entry-meta">
 							<span class="entry-date">{formatDate(entry.created_at)}</span>
@@ -136,6 +139,13 @@
 								<span class="entry-tag">#{tag}</span>
 							{/each}
 						</div>
+					</div>
+					<div class="entry-controls">
+						<span
+							class="entry-source"
+							style:color={sourceColors[entry.source_type] ?? 'var(--fg-muted)'}
+							>{entry.source_type}</span
+						>
 					</div>
 				</button>
 			{/if}
@@ -152,11 +162,12 @@
 	.hint {
 		padding: 2rem 1.25rem;
 		color: var(--fg-muted);
-		font-size: 13.25px;
+		font-size: var(--font-size-sublabel);
 		font-style: italic;
 	}
 
 	.entry-row {
+		position: relative;
 		display: flex;
 		align-items: center;
 		width: 100%;
@@ -170,6 +181,10 @@
 		transition: background 0.1s;
 	}
 
+	.entry-row.compact .entry-body {
+		padding-right: 7.76rem;
+	}
+
 	.entry-row:hover {
 		background: var(--bg-highlight);
 	}
@@ -181,27 +196,27 @@
 
 	.entry-top {
 		display: flex;
-		align-items: flex-start;
-		gap: 8px;
 		margin-bottom: 4px;
 	}
 
 	.entry-title {
 		flex: 1;
-		font-size: 0.85rem;
+		font-size: var(--font-size-label);
 		font-weight: 600;
 		color: var(--fg);
 		line-height: 1.4;
 	}
 
 	.entry-source {
-		font-size: 0.68rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		flex-shrink: 0;
 		padding: 2px 7px;
 		border-radius: 3px;
 		background: var(--bg-alt);
 		border: 1px solid var(--border);
-		margin-top: 2px;
+		font-size: 0.68rem;
 	}
 
 	.entry-meta {
@@ -248,17 +263,16 @@
 	}
 
 	.view-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		flex-shrink: 0;
-		margin-left: 8px;
-		padding: 3px 10px;
+		padding: 6px;
 		background: none;
 		border: 1px solid var(--border);
 		border-radius: 4px;
 		color: var(--fg-muted);
-		font-family: inherit;
-		font-size: 0.72rem;
 		cursor: pointer;
-		white-space: nowrap;
 		transition:
 			color 0.12s,
 			border-color 0.12s;
@@ -267,5 +281,20 @@
 	.view-btn:hover {
 		color: var(--accent);
 		border-color: var(--accent-dark);
+	}
+
+	.entry-controls {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-shrink: 0;
+		margin-left: 8px;
+	}
+
+	.entry-row.compact .entry-controls {
+		position: absolute;
+		right: 7px;
+		bottom: 7px;
+		margin-left: 0;
 	}
 </style>

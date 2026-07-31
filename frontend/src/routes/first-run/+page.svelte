@@ -80,14 +80,14 @@
 
 	h1 {
 		margin: 0 0 0.5rem;
-		font-size: 1.3rem;
+		font-size: 1.2rem;
 		font-weight: 700;
 		color: var(--fg);
 	}
 
 	.subtitle {
 		margin: 0 0 1.75rem;
-		font-size: 13px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 	}
 
@@ -97,7 +97,7 @@
 
 	label {
 		display: block;
-		font-size: 12px;
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
 		margin-bottom: 0.35rem;
 	}
@@ -115,7 +115,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13px;
+		font-size: var(--font-size-sublabel);
 		outline: none;
 	}
 
@@ -130,7 +130,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13px;
+		font-size: var(--font-size-sublabel);
 		cursor: pointer;
 		white-space: nowrap;
 	}
@@ -141,7 +141,7 @@
 	}
 
 	.error {
-		font-size: 12px;
+		font-size: var(--font-size-label);
 		color: var(--red);
 		margin-bottom: 1rem;
 	}
@@ -154,7 +154,7 @@
 		border-radius: 6px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 14px;
+		font-size: 0.82rem;
 		font-weight: 700;
 		cursor: pointer;
 		transition: background 0.15s;

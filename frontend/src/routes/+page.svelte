@@ -28,7 +28,16 @@
 	import LocalGraph from '$lib/components/LocalGraph.svelte';
 	import VaultGraph from '$lib/components/VaultGraph.svelte';
 	import { tooltip } from '$lib/actions/tooltip';
-	import { Eye, EyeClosed, Bookmark, Gem, Archive, TriangleAlert } from '@lucide/svelte';
+	import {
+		Eye,
+		EyeClosed,
+		Bookmark,
+		Gem,
+		Archive,
+		TriangleAlert,
+		ChartNetwork,
+		ScrollText,
+	} from '@lucide/svelte';
 
 	let entryList = $state<Entry[]>([]);
 	let loading = $state(false);
@@ -65,20 +74,24 @@
 
 	// Dashboard graph state (shared across section + tags dashboards)
 	let pendingTagNav = $state<string | null>(null);
-	let dashboardSelectedId = $state<number | null>(null);
 	let dashboardSubgraph = $state<SubgraphResult | null>(null);
 	let dashboardSubgraphLoading = $state(false);
 	let graphColumnHeight = $state(200);
 	const graphHeight = $derived(graphColumnHeight || 200);
 
 	function selectDashboardEntry(id: number | null) {
-		dashboardSelectedId = id;
 		dashboardPreviewEntryId.set(id);
 		if (id !== null) {
 			selectedTag.set(null);
 			sidebarTagPreview.set(null);
 			rightSidebarOpen.set(true);
 		}
+	}
+
+	// Closes the LocalGraph panel and returns the dashboard to its plain list view.
+	function closeDashboardGraph() {
+		selectDashboardEntry(null);
+		sidebarTagPreview.set(null);
 	}
 
 	const FLAG_SECTIONS = new Set(['bookmark', 'gem', 'archive']);
@@ -108,7 +121,7 @@
 
 	// Fetch subgraph when an entry is selected in a dashboard
 	$effect(() => {
-		const id = dashboardSelectedId;
+		const id = $dashboardPreviewEntryId;
 		dashboardSubgraph = null;
 		if (id === null) return;
 		dashboardSubgraphLoading = true;
@@ -629,6 +642,66 @@
 			{/if}
 		</div>
 	{:else if $activeSection === 'tags'}
+		{#snippet tagEntryList()}
+			<div class="tag-entry-list">
+				<p class="tag-entry-header">#{expandedTag}</p>
+				{#if tagEntriesLoading}
+					<p class="hint">Loading…</p>
+				{:else if tagEntries.length === 0}
+					<p class="hint">No entries.</p>
+				{:else}
+					{#each tagEntries as entry (entry.id)}
+						<div
+							class="tag-entry-card"
+							role="button"
+							tabindex="0"
+							onclick={() => navigateInTab(entry.id, entry.title, entry.source_type)}
+							onkeydown={(e) => {
+								if (e.key === 'Enter' || e.key === ' ') {
+									e.preventDefault();
+									navigateInTab(entry.id, entry.title, entry.source_type);
+								}
+							}}
+							oncontextmenu={(e) => showContextMenu(e, entry)}
+						>
+							<div class="tag-entry-body">
+								<span class="tag-entry-title">{entry.title}</span>
+								<div class="tag-entry-badges">
+									{#if entry.flags.includes('archive')}
+										<span class="entry-badge entry-badge-archive" title="archived"
+											><Archive size={15} /></span
+										>
+									{/if}
+									<span class="entry-badge entry-status-{entry.status}">
+										{#if entry.status === 'read'}
+											<Eye size={15} />
+										{:else}
+											<EyeClosed size={15} />
+										{/if}
+									</span>
+									{#if entry.flags.includes('bookmark')}
+										<span class="entry-badge entry-badge-bookmark"><Bookmark size={15} /></span>
+									{/if}
+									{#if entry.flags.includes('gem')}
+										<span class="entry-badge entry-badge-gem"><Gem size={15} /></span>
+									{/if}
+								</div>
+							</div>
+							<button
+								class="view-btn"
+								use:tooltip={'View graph'}
+								onclick={(e) => {
+									e.stopPropagation();
+									selectDashboardEntry(entry.id);
+								}}
+							>
+								<ChartNetwork size={15} />
+							</button>
+						</div>
+					{/each}
+				{/if}
+			</div>
+		{/snippet}
 		<div class="tags-dashboard">
 			<div class="tags-left">
 				<div class="tag-grid">
@@ -675,88 +748,45 @@
 					<div class="tag-op-error"><TriangleAlert size={13.25} />{renameError}</div>
 				{/if}
 
-				{#if expandedTag}
-					<div class="tag-entry-list">
-						<p class="tag-entry-header">#{expandedTag}</p>
-						{#if tagEntriesLoading}
-							<p class="hint">Loading…</p>
-						{:else if tagEntries.length === 0}
-							<p class="hint">No entries.</p>
-						{:else}
-							{#each tagEntries as entry (entry.id)}
-								<div
-									class="tag-entry-card"
-									role="button"
-									tabindex="0"
-									onclick={() => {
-										selectDashboardEntry(entry.id);
-									}}
-									onkeydown={(e) => {
-										if (e.key === 'Enter' || e.key === ' ') {
-											e.preventDefault();
-											selectDashboardEntry(entry.id);
-										}
-									}}
-									oncontextmenu={(e) => showContextMenu(e, entry)}
-								>
-									<div class="tag-entry-body">
-										<span class="tag-entry-title">{entry.title}</span>
-										<div class="tag-entry-badges">
-											{#if entry.flags.includes('archive')}
-												<span class="entry-badge entry-badge-archive" title="archived"
-													><Archive size={15} /></span
-												>
-											{/if}
-											<span class="entry-badge entry-status-{entry.status}">
-												{#if entry.status === 'read'}
-													<Eye size={15} />
-												{:else}
-													<EyeClosed size={15} />
-												{/if}
-											</span>
-											{#if entry.flags.includes('bookmark')}
-												<span class="entry-badge entry-badge-bookmark"><Bookmark size={15} /></span>
-											{/if}
-											{#if entry.flags.includes('gem')}
-												<span class="entry-badge entry-badge-gem"><Gem size={15} /></span>
-											{/if}
-										</div>
-									</div>
-									<button
-										class="view-btn"
-										onclick={(e) => {
-											e.stopPropagation();
-											navigateInTab(entry.id, entry.title, entry.source_type);
-										}}
-									>
-										View ↗
-									</button>
-								</div>
-							{/each}
-						{/if}
-					</div>
+				{#if expandedTag && $dashboardPreviewEntryId === null}
+					{@render tagEntryList()}
 				{/if}
 			</div>
 
-			{#if dashboardSelectedId !== null}
-				<div class="graph-column" bind:clientHeight={graphColumnHeight}>
-					{#if dashboardSubgraphLoading}
-						<p class="graph-hint">Loading…</p>
-					{:else if dashboardSubgraph}
-						<LocalGraph
-							nodes={dashboardSubgraph.nodes}
-							edges={dashboardSubgraph.edges}
-							focusNodeId={$sidebarTagPreview ? undefined : dashboardSubgraph.focus_node_id}
-							height={graphHeight}
-							onopen={(id) => {
-								selectDashboardEntry(id);
-							}}
-							ontagclick={(tagName) => {
-								selectedTag.set(tagName);
-								sidebarTagPreview.set(null);
-								rightSidebarOpen.set(true);
-							}}
-						/>
+			{#if $dashboardPreviewEntryId !== null}
+				<div class="graph-column">
+					<div class="graph-area" bind:clientHeight={graphColumnHeight}>
+						<button
+							class="graph-close-btn"
+							onclick={closeDashboardGraph}
+							use:tooltip={'Back to list'}
+							aria-label="Back to list"
+						>
+							<ScrollText size={18} />
+						</button>
+						{#if dashboardSubgraphLoading}
+							<p class="graph-hint">Loading…</p>
+						{:else if dashboardSubgraph}
+							<LocalGraph
+								nodes={dashboardSubgraph.nodes}
+								edges={dashboardSubgraph.edges}
+								focusNodeId={$sidebarTagPreview ? undefined : dashboardSubgraph.focus_node_id}
+								height={graphHeight}
+								onopen={(id) => {
+									selectDashboardEntry(id);
+								}}
+								ontagclick={(tagName) => {
+									selectedTag.set(tagName);
+									sidebarTagPreview.set(null);
+									rightSidebarOpen.set(true);
+								}}
+							/>
+						{/if}
+					</div>
+					{#if expandedTag}
+						<div class="graph-tag-entries">
+							{@render tagEntryList()}
+						</div>
 					{/if}
 				</div>
 			{/if}
@@ -811,10 +841,19 @@
 							selectDashboardEntry(entry.id);
 						}}
 						showStatusLabel={$activeSection === 'library'}
+						compact={$dashboardPreviewEntryId !== null}
 					/>
 				</div>
-				{#if dashboardSelectedId !== null}
+				{#if $dashboardPreviewEntryId !== null}
 					<div class="graph-column" bind:clientHeight={graphColumnHeight}>
+						<button
+							class="graph-close-btn"
+							onclick={closeDashboardGraph}
+							use:tooltip={'Back to list'}
+							aria-label="Back to list"
+						>
+							<ScrollText size={18} />
+						</button>
 						{#if dashboardSubgraphLoading}
 							<p class="graph-hint">Loading…</p>
 						{:else if dashboardSubgraph}
@@ -864,7 +903,8 @@
 	}
 
 	.graph-column {
-		flex: 0 0 570px;
+		position: relative;
+		flex: 0 0 33.53rem;
 		min-height: 0;
 		border-left: 1px solid var(--border);
 		overflow: hidden;
@@ -873,13 +913,37 @@
 		justify-content: flex-start;
 	}
 
+	.graph-close-btn {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		z-index: 2;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 6px;
+		background: var(--bg-alt);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		color: var(--fg-muted);
+		cursor: pointer;
+		transition:
+			color 0.12s,
+			border-color 0.12s;
+	}
+
+	.graph-close-btn:hover {
+		color: var(--accent);
+		border-color: var(--accent-dark);
+	}
+
 	@container (max-width: 620px) {
 		.dashboard-body {
 			flex-direction: column-reverse;
 		}
 
 		.graph-column {
-			flex: 0 0 470px;
+			flex: 0 0 27.65rem;
 			width: 100%;
 			border-left: none;
 			border-bottom: 1px solid var(--border);
@@ -893,7 +957,7 @@
 
 	.graph-hint {
 		padding: 1rem;
-		font-size: 13.25px;
+		font-size: var(--font-size-sublabel);
 		color: var(--fg-muted);
 		font-style: italic;
 		text-align: center;
@@ -918,6 +982,23 @@
 		gap: 1rem;
 	}
 
+	.graph-area {
+		position: relative;
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.graph-tag-entries {
+		flex: 0 0 auto;
+		max-height: 22rem;
+		overflow-y: auto;
+		padding: 0.25rem 1rem;
+		border-top: 1px solid var(--border);
+	}
+
 	/* Responsive stacking: graph above list when main is narrow.
 	   Uses <main container-type: inline-size> as the query container. */
 	@container (max-width: 620px) {
@@ -926,7 +1007,7 @@
 		}
 
 		.tags-dashboard .graph-column {
-			flex: 0 0 470px;
+			flex: 0 0 27.65rem;
 			width: 100%;
 			border-left: none;
 			border-bottom: 1px solid var(--border);
@@ -948,55 +1029,59 @@
 	.tag-chip {
 		display: flex;
 		align-items: center;
-		gap: 0.35rem;
-		padding: 0.3rem 0.7rem;
-		background: var(--bg-alt);
-		border: 1px solid var(--border);
-		border-radius: 20px;
+		gap: 0.3rem;
+		padding: 0.15rem 0.3rem;
+		background: var(--bg);
+		border: 1px solid var(--terminal);
+		border-radius: 3.75px;
 		cursor: pointer;
 		font-family: inherit;
 		transition:
 			border-color 0.15s,
-			background 0.15s;
+			box-shadow 0.15s;
 	}
 
 	.tag-chip:hover {
-		border-color: var(--accent-dark);
-		background: var(--bg-highlight);
+		border-color: var(--accent);
 	}
 
 	.tag-chip.active {
-		border-color: var(--accent);
-		background: var(--bg-alt);
+		border-color: var(--accent-dark);
+		box-shadow: 1.5px 1.5px 0 var(--accent-dark);
+	}
+
+	.tag-chip.active .tag-chip-name {
+		color: var(--accent);
 	}
 
 	.tag-chip-name {
-		font-size: 13px;
-		color: var(--fg);
+		font-size: var(--font-size-label);
+		color: var(--fg-dark);
 	}
 
 	.tag-chip-count {
-		font-size: 13px;
+		font-size: var(--font-size-count);
 		color: var(--fg-muted);
-		background: var(--bg-highlight);
-		border-radius: 10px;
-		padding: 0 5px;
-		min-width: 18px;
+		background: var(--bg);
+		border-radius: 3px;
+		padding: 0 2px;
+		min-width: 0.6rem;
 		text-align: center;
 	}
 
 	.tag-chip-edit {
 		display: flex;
 		align-items: center;
-		padding: 0.35rem 0.7rem;
+		padding: 0.2rem 0.5rem;
 		background: var(--bg-alt);
-		border: 1px solid var(--accent);
-		border-radius: 20px;
+		border: 1px solid var(--magenta);
+		border-radius: 3px;
+		box-shadow: 0 1px 0 var(--magenta);
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		outline: none;
-		min-width: 80px;
+		min-width: 4.71rem;
 	}
 
 	.tag-op-error {
@@ -1004,7 +1089,7 @@
 		align-items: flex-start;
 		gap: 4px;
 		color: var(--yellow);
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		line-height: 1.35;
 	}
 
@@ -1021,7 +1106,7 @@
 		border-radius: 6px;
 		padding: 3px;
 		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-		min-width: 140px;
+		min-width: 8.24rem;
 	}
 
 	.tag-menu-item {
@@ -1033,7 +1118,7 @@
 		border-radius: 4px;
 		color: var(--fg);
 		font-family: inherit;
-		font-size: 0.82rem;
+		font-size: var(--font-size-label);
 		text-align: left;
 		cursor: pointer;
 		transition:
@@ -1068,7 +1153,7 @@
 	}
 
 	.tag-entry-header {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		color: var(--accent);
 		padding: 0.25rem 0;
@@ -1107,7 +1192,7 @@
 	}
 
 	.tag-entry-title {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		color: var(--fg);
 		overflow: hidden;
@@ -1148,16 +1233,16 @@
 	}
 
 	.view-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		flex-shrink: 0;
-		padding: 3px 10px;
+		padding: 6px;
 		background: none;
 		border: 1px solid var(--border);
 		border-radius: 4px;
 		color: var(--fg-muted);
-		font-family: inherit;
-		font-size: 0.72rem;
 		cursor: pointer;
-		white-space: nowrap;
 		transition:
 			color 0.12s,
 			border-color 0.12s;
@@ -1171,7 +1256,7 @@
 	.hint {
 		padding: 1rem 0;
 		color: var(--fg-muted);
-		font-size: 13.25px;
+		font-size: var(--font-size-sublabel);
 	}
 
 	/* Collecta dashboard */
@@ -1203,7 +1288,7 @@
 	}
 
 	.metric-label {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		color: var(--fg-muted);
 		text-transform: uppercase;
@@ -1213,12 +1298,12 @@
 	}
 
 	.metric-value {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		color: var(--fg);
 	}
 
 	.metric-link {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		color: var(--accent);
 		background: none;
 		border: none;
@@ -1229,7 +1314,7 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		max-width: 260px;
+		max-width: 15.29rem;
 		transition: color 0.12s;
 	}
 
@@ -1277,14 +1362,14 @@
 	}
 
 	.collecta-card-label {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		color: var(--fg);
 		letter-spacing: 0.05em;
 	}
 
 	.collecta-card-count {
-		font-size: 16px;
+		font-size: 0.94rem;
 		font-weight: 700;
 		color: var(--accent);
 	}
@@ -1308,14 +1393,14 @@
 	}
 
 	.collecta-expanded-title {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		color: var(--accent);
 		letter-spacing: 0.05em;
 	}
 
 	.collecta-nav-btn {
-		font-size: 14px;
+		font-size: 0.82rem;
 		color: var(--fg-muted);
 		background: none;
 		border: none;
@@ -1337,7 +1422,7 @@
 	}
 
 	.collecta-tag-header {
-		font-size: 13.25px;
+		font-size: var(--font-size-label);
 		font-weight: 700;
 		color: var(--accent);
 		padding: 0.2rem 0;
