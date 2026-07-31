@@ -1,6 +1,6 @@
 {
   "name": "analecta-electron",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Local PKM desktop app — URL extraction to Markdown vault",
   "author": {
     "name": "Ezequiel Lazzari",
