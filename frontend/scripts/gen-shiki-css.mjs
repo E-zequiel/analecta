@@ -134,8 +134,10 @@ import css from '@shikijs/langs/css';
 import go from '@shikijs/langs/go';
 import java from '@shikijs/langs/java';
 import c from '@shikijs/langs/c';
+import cpp from '@shikijs/langs/cpp';
 import sql from '@shikijs/langs/sql';
 import yaml from '@shikijs/langs/yaml';
+import json from '@shikijs/langs/json';
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
@@ -146,7 +148,7 @@ const transformer = createStyleToClassTransformer();
 
 const highlighter = createHighlighterCoreSync({
 	themes: [tokyoNight],
-	langs: [python, bash, rust, typescript, javascript, html, css, go, java, c, sql, yaml],
+	langs: [python, bash, rust, typescript, javascript, html, css, go, java, c, cpp, sql, yaml, json],
 	engine: createJavaScriptRegexEngine(),
 });
 
@@ -426,6 +428,55 @@ int main(int argc, char *argv[]) {
 }
 `,
 
+	cpp: `\
+#include <iostream>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace analecta {
+
+template <typename T>
+class Cache {
+public:
+    explicit Cache(std::size_t capacity) : capacity_(capacity) {}
+
+    void put(const std::string& key, T value) {
+        if (entries_.size() >= capacity_) {
+            entries_.erase(entries_.begin());
+        }
+        entries_[key] = std::move(value);
+    }
+
+    const T* get(const std::string& key) const {
+        auto it = entries_.find(key);
+        return it != entries_.end() ? &it->second : nullptr;
+    }
+
+private:
+    std::size_t capacity_;
+    std::map<std::string, T> entries_;
+};
+
+}  // namespace analecta
+
+int main() {
+    auto cache = std::make_unique<analecta::Cache<int>>(16);
+    cache->put("answer", 42);
+
+    std::vector<std::string> keys = {"answer", "missing"};
+    for (const auto& key : keys) {
+        if (const int* value = cache->get(key)) {
+            std::cout << key << " = " << *value << '\\n';
+        } else {
+            std::cout << key << " not found\\n";
+        }
+    }
+    return 0;
+}
+`,
+
 	html: `\
 <!DOCTYPE html>
 <html lang="en">
@@ -549,6 +600,23 @@ service:
     list:
       - first
       - second
+`,
+
+	json: `\
+{
+  "name": "example",
+  "version": "1.0.0",
+  "private": true,
+  "port": 8080,
+  "ratio": 0.75,
+  "enabled": true,
+  "nullable": null,
+  "tags": ["web", "api", "public"],
+  "config": {
+    "timeout": 30,
+    "retries": 3
+  }
+}
 `,
 };
 
