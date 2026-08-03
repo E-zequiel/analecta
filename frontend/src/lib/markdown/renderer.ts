@@ -16,6 +16,7 @@ import langCss from '@shikijs/langs/css';
 import langGo from '@shikijs/langs/go';
 import langJava from '@shikijs/langs/java';
 import langC from '@shikijs/langs/c';
+import langCpp from '@shikijs/langs/cpp';
 import langSql from '@shikijs/langs/sql';
 import langYaml from '@shikijs/langs/yaml';
 import langJson from '@shikijs/langs/json';
@@ -37,6 +38,7 @@ const highlighter = createHighlighterCoreSync({
 		langGo,
 		langJava,
 		langC,
+		langCpp,
 		langSql,
 		langYaml,
 		langJson,

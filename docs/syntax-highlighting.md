@@ -1,7 +1,7 @@
 # Syntax Highlighting — Analecta
 
 Fenced code blocks in the markdown viewer are highlighted by
-[Shiki](https://shiki.style/) v4.1.0 using the **tokyo-night** theme.
+[Shiki](https://shiki.style/) v4.2.0 using the **tokyo-night** theme.
 
 ---
 
@@ -9,7 +9,7 @@ Fenced code blocks in the markdown viewer are highlighted by
 
 Shiki was chosen over highlight.js and Prism because it uses TextMate grammars
 (the same engine as VS Code), producing accurate token boundaries for complex
-languages. The fine-grained `@shikijs/*` bundle lets the app import only the 12
+languages. The fine-grained `@shikijs/*` bundle lets the app import only the
 needed language grammars instead of the full multi-MB registry.
 
 The **JavaScript RegExp engine** (`shiki/engine/javascript`) is used instead of
@@ -25,7 +25,7 @@ The highlighter is created once at module load with `createHighlighterCoreSync`
 ## Supported languages
 
 Python · Bash · Rust · TypeScript · JavaScript · HTML · CSS · Go · Java · C ·
-SQL · YAML
+C++ · SQL · YAML · JSON
 
 ---
 
@@ -107,8 +107,8 @@ populated regardless of sync vs async. The `cyrb53` hash implementation is
 identical to the one inside `@shikijs/transformers` — class names are
 inter-compatible if the upstream transformer is ever fixed.
 
-`@shikijs/transformers` is not currently a declared dependency (removed
-2026-07-02, unused) — re-add it if reviving this path.
+`@shikijs/transformers` is not a declared dependency (removed as unused) — re-add it if
+reviving this path.
 
 ---
 

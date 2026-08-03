@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- C++ syntax highlighting in the reading view and editor preview.
+
 ### Fixed
 
 - In-app auto-update: `latest-linux.yml`, the file `electron-updater` needs to resolve new releases, was generated on every build but never uploaded as a release asset — every update check has failed silently since the first release. Now uploaded alongside the installers.
