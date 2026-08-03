@@ -72,7 +72,7 @@ jobs:
       contents: write  # Minimum needed to create a GitHub Release
 ```
 
-`contents: write` is required because the release job uses `gh release create` to create the release and upload `.deb`, `.AppImage`, and `.rpm` assets via the GitHub Releases API.
+`contents: write` is required because the release job uses `gh release create` to create the release and upload the release assets (`.deb`, `.rpm`, `.AppImage`, `SHA256SUMS`, and `latest-linux.yml`) via the GitHub Releases API.
 
 `pull-requests: write` (plus `contents: write`) is required in the `commit-and-pr` job of `deps-update.yml` so that `git push` and `gh pr create` can open a PR for the weekly dependency update branch. These permissions are scoped to the `commit-and-pr` job only. The preceding `update` job — which executes new package code via `check.sh` — runs with `permissions: {}` and `persist-credentials: false` so no `GITHUB_TOKEN` is present in `.git/config` while untrusted code runs. See Control 7 for the full privilege-split rationale.
 
@@ -332,20 +332,16 @@ Steps 2 and 3 together provide an independent verification anchor: a registry-le
 |---|---|
 | Package was compromised after publication (hash mismatch with attested hash) | ✅ |
 | Fake attestation for malicious package (Sigstore signature invalid) | ✅ |
-| Package has no attestation (~60% of tree) | ❌ — covered only by Socket scan + lockfile integrity |
+| Package has no attestation (the majority of the tree) | ❌ — covered only by Socket scan + lockfile integrity |
 | Rekor + Fulcio infrastructure compromise (state-level attack) | ❌ — no practical mitigation exists |
 | Write-time registry compromise for packages WITH attestation | ✅ (subject hash check catches it) |
 | Write-time registry compromise for packages WITHOUT attestation | ❌ — mitigated only by Socket scan + minimum-age cooldown (10 days for routine updates; shorter minimum for active-CVE exceptions — see Maintenance Checklist) |
 
 ### Coverage
 
-Provenance attestation adoption in the npm ecosystem is incomplete. Packages without attestations are skipped without error — they are covered by other controls. Measured coverage as of 2026-05-31:
+Provenance attestation adoption in the npm ecosystem is incomplete. Packages without attestations are skipped without error — they are covered by other controls. A minority of installed packages have SLSA provenance attestations; coverage skews toward actively maintained, higher-profile packages (e.g. `svelte`, `vite`, `electron-builder`) and away from older utility packages that predate npm's provenance feature. `defuddle` is a diagnostic-only devDependency that never ships in a packaged build (see `docs/defuddle-decision.md`) — its missing attestation has no production-attestation implication the way another package's would; it's still tracked under the same verification protocol (`docs/dependency-verification.md`), just for a lower-stakes reason (dev-machine supply-chain integrity, not shipped-artifact provenance).
 
-- **52 of 386 installed packages** (13%) have SLSA provenance attestations.
-- Among key application-level deps: `svelte`, `vite`, `electron-builder`, `electron-updater`, `rolldown`, `socket` have attestations. `sigma`, `graphology`, `markdown-it`, `defuddle`, `electron`, `eslint`, `prettier`, `typescript` do not. `defuddle` is a diagnostic-only devDependency that never ships in a packaged build (see `docs/defuddle-decision.md`) — its missing attestation has no production-attestation implication the way the others' does; it's still tracked under the same verification protocol (`docs/dependency-verification.md`), just for a lower-stakes reason (dev-machine supply-chain integrity, not shipped-artifact provenance).
-- The 87% without attestations are primarily older utility packages (`acorn`, `semver`, `yargs`, etc.) and packages that predate npm's provenance feature.
-
-Coverage is expected to grow as the ecosystem adopts `--provenance` publishing. The script automatically picks up new attestations without code changes.
+Coverage is expected to grow as the ecosystem adopts `--provenance` publishing. The script automatically picks up new attestations without code changes; run it directly for a current count rather than relying on a written-down figure.
 
 ### Implementation
 
@@ -401,15 +397,15 @@ Only packages in this allowlist are permitted to run lifecycle scripts. All othe
 |---------|--------|-------------|
 | `electron-winstaller` | `select-7z-arch.js` | Blocked — Windows-only, irrelevant on Linux |
 
-`esbuild` was removed from the allowlist on 2026-05-31 — Vite 8 uses Rolldown, so esbuild is not in the dependency tree.
+`esbuild` was removed from the allowlist — Vite 8 uses Rolldown, so esbuild is not in the dependency tree.
 
-**`electron` had an entry here (`electron: true`) until 2026-07-27 — removed, not just set to `false`.** Electron 42.0.0 (currently pinned: 42.1.0) dropped its `postinstall` entirely — verified via a real tarball diff against 41.10.3 (the last 41.x release; every 41.x has `"postinstall": "node install.js"`, every 42.x has no `scripts` field at all) and Electron's own v42.0.0 release notes: *"Electron will now download itself dynamically the first time that its main `bin` script is run"* — done specifically to remove `postinstall` as a supply-chain attack vector. Leaving a stale `true` in place would silently re-grant script execution the moment a future Electron release ever reintroduces one — deleting the entry instead means that scenario fails loudly (`ERR_PNPM_IGNORED_BUILDS`, confirmed empirically: `ci.yml`'s `check-frontend` job and `release.yml` both install without `--ignore-scripts` and would catch it) rather than silently, which is what `false` would do — `false` and a stale `true` are equally quiet once a script actually appears. See `pnpm-workspace.yaml`'s comment for the re-adding procedure and the 41.x-downgrade caveat.
+**`electron` had an entry here (`electron: true`) — removed, not just set to `false`.** Electron 42.0.0 (currently pinned: 42.1.0) dropped its `postinstall` entirely — confirmed against a tarball diff versus the last 41.x release (which still has `"postinstall": "node install.js"`; 42.x has no `scripts` field at all) and Electron's own v42.0.0 release notes: *"Electron will now download itself dynamically the first time that its main `bin` script is run"* — done specifically to remove `postinstall` as a supply-chain attack vector. Leaving a stale `true` in place would silently re-grant script execution the moment a future Electron release ever reintroduces one — deleting the entry instead means that scenario fails loudly (`ERR_PNPM_IGNORED_BUILDS`, since `ci.yml`'s `check-frontend` job and `release.yml` both install without `--ignore-scripts`) rather than silently, which is what `false` would do — `false` and a stale `true` are equally quiet once a script actually appears. See `pnpm-workspace.yaml`'s comment for the re-adding procedure and the 41.x-downgrade caveat.
 
 ### Verifying allowlist entries
 
 When a package is in `allowBuilds`, its lifecycle script executes on every `pnpm install`. Before adding or retaining an entry, verify the script matches the published npm source:
 
-**First, a pnpm behavior to know about before you touch this file: if `pnpm install` or `pnpm add` (run locally, without `--ignore-scripts`) hits an unapproved package with a real lifecycle script, pnpm doesn't just print `ERR_PNPM_IGNORED_BUILDS` — it auto-writes a placeholder line into `pnpm-workspace.yaml` for you: `<pkg>: set this to true or false`.** That string is not `false`; pnpm's own approval check only cares whether an entry is exactly `false`, so this placeholder silently re-enables the script it was meant to gate — the exact opposite of what the message implies is pending. Verified 2026-07-27: reproduced on `pnpm install` and `pnpm add`, with and without `--frozen-lockfile`, with `node_modules` both fresh and already populated. **Never `git add`/commit this file with a placeholder like that still in it.** Either run `pnpm approve-builds` (interactive, or `--all` to approve everything pending) — it replaces the placeholder with a real `true`/`false` and, if approved, runs the script right then so you see what it does — or edit the line yourself to a deliberate `true`/`false` after doing the hash verification below. This applies to any package, not just `electron`; check `git diff pnpm-workspace.yaml` after any manual `pnpm install`/`pnpm add` before committing.
+**First, a pnpm behavior to know about before you touch this file: if `pnpm install` or `pnpm add` (run locally, without `--ignore-scripts`) hits an unapproved package with a real lifecycle script, pnpm doesn't just print `ERR_PNPM_IGNORED_BUILDS` — it auto-writes a placeholder line into `pnpm-workspace.yaml` for you: `<pkg>: set this to true or false`.** That string is not `false`; pnpm's own approval check only cares whether an entry is exactly `false`, so this placeholder silently re-enables the script it was meant to gate — the exact opposite of what the message implies is pending. This reproduces on both `pnpm install` and `pnpm add`, regardless of `--frozen-lockfile` or whether `node_modules` is already populated. **Never `git add`/commit this file with a placeholder like that still in it.** Either run `pnpm approve-builds` (interactive, or `--all` to approve everything pending) — it replaces the placeholder with a real `true`/`false` and, if approved, runs the script right then so you see what it does — or edit the line yourself to a deliberate `true`/`false` after doing the hash verification below. This applies to any package, not just `electron`; check `git diff pnpm-workspace.yaml` after any manual `pnpm install`/`pnpm add` before committing.
 
 ```bash
 # Hash the installed script
@@ -424,7 +420,7 @@ curl -sL "https://registry.npmjs.org/<pkg>/-/<pkg>-<version>.tgz" \
 
 Do **not** use `raw.githubusercontent.com` for this check — it is flagged as malicious by some security tools (it's GitHub's CDN for raw content, legitimately used but also widely used by malware as free hosting). Use the npm registry tarball or `api.github.com` instead.
 
-**Historical, no longer applicable:** as of 2026-05-31, `electron@42.1.0` `install.js` was hashed (sha256 `8a6e96a324147490ad5d474e2c6deec608018a90032e80ec8e3ae97a6cd02851`, matched the npm registry tarball) under the assumption it ran as a `postinstall`. Electron 42.0.0 dropped that wiring entirely (see the allowlist table above) — `install.js` still exists as a file but nothing in `package.json` invokes it anymore, so this specific verification no longer describes an active execution path. `electron` has no entry in `allowBuilds` now; if a future version reintroduces a real lifecycle script, re-run this same procedure before adding it back.
+**Historical, no longer applicable:** `electron`'s `install.js` was previously hashed and verified here under the assumption it ran as a `postinstall`. Electron 42.0.0 dropped that wiring entirely (see the allowlist table above) — `install.js` still exists as a file but nothing in `package.json` invokes it anymore. `electron` has no entry in `allowBuilds` now; if a future version reintroduces a real lifecycle script, re-run this same procedure before adding it back.
 
 ### Auditing the full installed tree
 
@@ -447,13 +443,13 @@ for pkg_dir in os.listdir(base):
                 print(f"{d.get('name')}@{d.get('version')} → {lc}")
 ```
 
-As of 2026-05-31: only `electron-winstaller@5.4.0` has a lifecycle script in the installed tree, and it is blocked. **Re-confirmed 2026-07-27, still true, now for a clearer reason:** `electron@42.1.0` has genuinely zero lifecycle scripts (`pnpm view electron@42.1.0 scripts --json` returns empty) — it isn't merely blocked, there's nothing to block.
+Only `electron-winstaller@5.4.0` has a lifecycle script in the installed tree, and it is blocked. `electron@42.1.0` has genuinely zero lifecycle scripts (`pnpm view electron@42.1.0 scripts --json` returns empty) — it isn't merely blocked, there's nothing to block.
 
 ---
 
 ## Control 12: Scan Ordering — Scan Before Lifecycle Scripts
 
-Controls 8, 9, and 11 together establish *which* packages run scripts and *when* the lockfile is scanned. This control addresses the sequencing gap: whatever package is in `allowBuilds` with a `true` entry, a compromised version of it introduced into the lockfile would have its lifecycle script execute during `pnpm install` **before** `socket ci` could flag it, unless install order is explicitly managed. (`electron` was the example here through 2026-07-27 — it no longer has a lifecycle script as of 42.0.0, and no longer has an `allowBuilds` entry; `electron-winstaller` remains in the allowlist as `false`, i.e. explicitly denied, so this gap doesn't currently apply to anything. It re-applies the moment any package is granted `true`.)
+Controls 8, 9, and 11 together establish *which* packages run scripts and *when* the lockfile is scanned. This control addresses the sequencing gap: whatever package is in `allowBuilds` with a `true` entry, a compromised version of it introduced into the lockfile would have its lifecycle script execute during `pnpm install` **before** `socket ci` could flag it, unless install order is explicitly managed. (`electron` used to be the example here — it no longer has a lifecycle script as of 42.0.0, and no longer has an `allowBuilds` entry; `electron-winstaller` remains in the allowlist as `false`, i.e. explicitly denied, so this gap doesn't currently apply to anything. It re-applies the moment any package is granted `true`.)
 
 ### CI: `socket` job installs with `--ignore-scripts`
 
@@ -466,7 +462,7 @@ The `socket` job in `ci.yml` installs dependencies with:
 
 `--ignore-scripts` blocks all `preinstall`, `install`, and `postinstall` scripts for every package — including `electron`. pnpm still downloads tarballs and populates `node_modules` (linking happens via symlinks, not scripts), but no script code executes. The security property is **no script execution before the scan**, not "no download."
 
-`socket` (the CLI, `v1.1.99`) is a pure-JavaScript tool with no native binary download; it runs correctly under `--ignore-scripts`. Verified locally: `pnpm install --frozen-lockfile --ignore-scripts && pnpm exec socket --version` → `1.1.99`.
+`socket` (the CLI, `v1.1.99`) is a pure-JavaScript tool with no native binary download; it runs correctly under `--ignore-scripts` (`pnpm install --frozen-lockfile --ignore-scripts && pnpm exec socket --version` confirms this directly).
 
 After install, `socket ci` reads `pnpm-lock.yaml` and `package.json` directly — it does not require `node_modules` to be populated beyond the tool itself. The scan therefore reflects the full lockfile diff against the base branch before any allowlisted script has run.
 
@@ -527,7 +523,7 @@ git add pnpm-lock.yaml && git commit   ← only if scan is clean
 
 Do not push before the scan completes. The CI gate (`socket` job) is the hard enforcement; local is advisory.
 
-### Fork PR caveat (relevant when the repo goes public)
+### Fork PR caveat
 
 The `socket` job is gated on:
 
@@ -535,12 +531,9 @@ The `socket` job is gated on:
 github.event.pull_request.head.repo.full_name == github.repository
 ```
 
-Fork PRs fail this check — `socket` is skipped. If `socket` is a required status check and the repo is public, fork PRs will have a permanently unresolvable required check (skipped ≠ passed). Mitigations:
+Fork PRs fail this check — `socket` is skipped, and since `socket` is a required status check, fork PRs can never pass CI and cannot be merged directly (skipped ≠ passed).
 
-- Remove `socket` from required checks (weakens the gate for internal PRs).
-- Or configure GitHub to allow fork PRs to use the Actions secrets needed for socket (requires careful scope review).
-
-This is tracked in `project_public_repo_checklist.md`.
+Resolved: fork PRs are not merged as-is. The maintainer reviews the contribution and cherry-picks it onto a branch within the repo, then opens the PR from there, where `socket` runs normally. Documented in `.github/CONTRIBUTING.md`.
 
 ---
 
@@ -648,23 +641,21 @@ Scope: the three installers only. Not `SHA256SUMS` itself (already covered by th
 
 ### Why the `if:` guard
 
-GitHub's artifact attestation storage/retrieval requires a public repository, or GitHub Enterprise Cloud for private repositories — confirmed against `actions/attest-build-provenance`'s own README, 2026-07-01. This repository is currently private on a non-Enterprise plan. Without the guard, the step would hard-fail on every tag push — and because it runs *before* "Create GitHub Release" with no `continue-on-error`, that failure would block the entire release job, not just skip the attestation.
+GitHub's artifact attestation storage/retrieval requires a public repository, or GitHub Enterprise Cloud for private repositories — confirmed against `actions/attest-build-provenance`'s own README. This repository was private when the guard was added; without it, the step would have hard-failed on every tag push — and because it runs *before* "Create GitHub Release" with no `continue-on-error`, that failure would have blocked the entire release job, not just skipped the attestation. Kept in place now that the repo is public: it's a correct no-op guard rather than dead code.
 
 ```yaml
 if: ${{ !github.event.repository.private }}
 ```
 
-The `${{ }}` wrapper is required here — a bare `if: !…` is invalid YAML, since a leading `!` is a tag indicator, not negation. `github.event.repository.private` is populated on tag-push events, so this is self-activating: once the repository goes public, the step starts running with no further edit to `release.yml`.
+The `${{ }}` wrapper is required here — a bare `if: !…` is invalid YAML, since a leading `!` is a tag indicator, not negation. `github.event.repository.private` is populated on tag-push events, so this is self-activating: it needed no edit when the repository went public — the step started running with `v0.5.0`.
 
-### Verification (once public)
+### Verification
 
-Not yet exercised end-to-end — deferred until the repository is public (see the project's pending release checklist). At that point:
+Confirmed working: the `v0.5.0` release's workflow run shows "Attest build provenance" completed with `success`, not skipped. To verify a specific installer's attestation:
 
 ```bash
 gh attestation verify analecta_X.Y.Z_amd64.deb --owner E-zequiel
 ```
-
-No end-user-facing verification documentation has been added yet — consistent with the same deliberate deferral applied to the SSH-signing procedure (no external party needs to verify a release yet; revisit if a second maintainer joins or a user asks).
 
 ---
 
@@ -689,9 +680,9 @@ Any action not in this list — even if added to a workflow file — cannot run.
 
 This is consistent with the `permissions: {}` / per-job grant pattern. The read-only default means a workflow author who forgets to declare permissions gets the safe default, not accidental write access.
 
-### Fork pull request workflows (action required when repo goes public)
+### Fork pull request workflows (configured 2026-07-31)
 
-When the repository is made public, the **"Fork pull request workflows"** section becomes visible under Actions → General. Set it to **"Require approval for first-time contributors"**. This prevents external fork PRs from triggering CI without prior review, blocking CI credit abuse and potential secret exfiltration from untrusted contributors.
+Under Actions → General → "Fork pull request workflows from outside collaborators", set to **"Require approval for all outside collaborators"**. This prevents external fork PRs from triggering CI without prior review, blocking CI credit abuse and potential secret exfiltration from untrusted contributors.
 
 ---
 
@@ -703,7 +694,7 @@ When the repository is made public, the **"Fork pull request workflows"** sectio
 2. **Socket GitHub App provides scan coverage.** The native App integration runs independently of `BWS_ACCESS_TOKEN` and posts its findings as a separate check on the PR. Review those results before merging.
 3. **For CLI-level enforcement:** trigger `socket-manual.yml` via GitHub → Actions → "Socket Manual Scan" → "Run workflow". Leave the branch as `main` and enter the Dependabot PR's branch name (e.g., `dependabot/npm_and_yarn/...`) in the `ref` input. See Control 13 for rationale.
 4. **Note on scan scope:** `socket ci` scans the pnpm tree. A Dependabot PR that bumps only Python packages (via `uv`) or workflow action SHAs produces no npm-tree diff — the scan would report "no dependency changes." CLI enforcement is only meaningful for PRs that modify `pnpm-lock.yaml`.
-5. **Check the release date (3-day cooldown).** The automated cooldown in `deps-update.yml` does not cover Dependabot PRs. Before merging, verify when the updated version was published: for npm packages, check `https://registry.npmjs.org/<pkg>` → `.time.<version>`; for PyPI packages, check `https://pypi.org/pypi/<pkg>/<version>/json` → `.urls[].upload_time`. If the version was published fewer than 3 days ago, hold the merge. Exception: if the PR patches an active CVE, evaluate the CVSS score and architecture-mismatch triage (step 4 above) — it is a deliberate tradeoff between known CVE exposure and supply-chain risk during the early-adoption window.
+5. **Check the release date (10-day cooldown).** The automated cooldown in `deps-update.yml` does not cover Dependabot PRs. Before merging, verify when the updated version was published: for npm packages, check `https://registry.npmjs.org/<pkg>` → `.time.<version>`; for PyPI packages, check `https://pypi.org/pypi/<pkg>/<version>/json` → `.urls[].upload_time`. If the version was published fewer than 10 days ago, hold the merge. Exception: if the PR patches an active CVE, evaluate the CVSS score and architecture-mismatch triage (step 4 above) — it is a deliberate tradeoff between known CVE exposure and supply-chain risk during the early-adoption window.
 
 ### When Dependabot opens a SHA-update PR (GitHub Actions)
 

@@ -91,9 +91,13 @@ Every handler registered via `ipcMain.handle()` validates its arguments before a
 | `notify` | Object with `title` (string) and `body` (string) |
 | `update-vault-scope` | String, non-empty |
 | `set-login-item` | Boolean |
+| `set-close-to-tray` | Boolean |
+| `window-start-resize` | String, must match one of 8 fixed edge names (`top`, `bottom`, `left`, `right`, and the four corners) |
 | `clipboard-read` | No arguments |
 
 The `open-url` handler explicitly blocks non-HTTP schemes. An `open-url` call with `file:///etc/passwd`, `javascript:alert(1)`, or any other non-HTTP scheme is rejected before `shell.openExternal` is invoked.
+
+The remaining handlers (`get-sidecar-port`, `check-update`, `download-and-install-update`, `relaunch`, `get-login-item`, `get-initial-deep-link`, `window-minimize`, `window-maximize`, `window-close`, `window-start-move`, `window-is-maximized`) take no renderer-supplied arguments — there is nothing to validate, they just act on main-process state.
 
 A shared type guard is used throughout:
 
@@ -161,19 +165,21 @@ The preload script is the only bridge between the renderer and the main process.
 A channel whitelist is enforced on every `ipcRenderer.invoke` call:
 
 ```ts
-const ALLOWED_CHANNELS = [
-  'get-sidecar-port', 'notify', 'update-vault-scope',
+const ALLOWED_CHANNELS = new Set([
+  'get-sidecar-port', 'update-vault-scope',
   'read-file', 'write-file', 'file-exists',
-  'open-dialog', 'show-message-box',
-  'clipboard-read', 'reveal-in-dir', 'open-url',
+  'open-dialog', 'show-message-box', 'open-url', 'reveal-in-dir',
+  'clipboard-read', 'notify',
   'check-update', 'download-and-install-update', 'relaunch',
-  'get-login-item', 'set-login-item', 'get-initial-deep-link',
-] as const;
+  'get-login-item', 'set-login-item', 'set-close-to-tray', 'get-initial-deep-link',
+  'window-minimize', 'window-maximize', 'window-close',
+  'window-start-move', 'window-start-resize', 'window-is-maximized',
+]);
 ```
 
-If the renderer calls `window.electronAPI.invoke('arbitrary-channel')`, the preload throws before `ipcRenderer.invoke` is called. The main process never receives the call.
+If the renderer calls `window.electronAPI.invoke('arbitrary-channel')`, the preload throws before `ipcRenderer.invoke` is called. The main process never receives the call. `electron/preload/index.ts` is the single source of truth for this list — this block is a snapshot, not authoritative; re-check it against the file when adding or removing a channel.
 
-The `on` method (for event listeners) is similarly guarded: only `sidecar-ready` and `deep-link` events are forwarded.
+The `on` method (for event listeners) is similarly guarded against a separate whitelist, `ALLOWED_PUSH_CHANNELS` (`sidecar-ready`, `deep-link`, `update-available`, `window-maximized`).
 
 ---
 

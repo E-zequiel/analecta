@@ -44,9 +44,8 @@ implementation block is considered complete **only after this script passes clea
 
 ### svelte-check
 
-`svelte-check` is run with `--fail-on-warnings`. As of 2026-05-29 there are **zero accepted
-warnings** — all previously known issues have been resolved. Any new warning must be
-investigated and resolved before considering a block complete.
+`svelte-check` is run with `--fail-on-warnings`. There are **zero accepted warnings** —
+any warning must be investigated and resolved before considering a block complete.
 
 ### vite build: accepted chunk size hints
 
@@ -76,7 +75,7 @@ are deferred until the user navigates to the relevant route.
 | `B` | flake8-bugbear | subtle anti-patterns |
 | `I` | isort | import ordering |
 | `D` | pydocstyle | docstrings (Google convention) |
-| `UP` | pyupgrade | modernises syntax for Python 3.14 |
+| `UP` | pyupgrade | modernises syntax for the configured target Python version (`target-version` in `pyproject.toml`) |
 | `RUF` | Ruff-native | rules with no equivalent in other linters |
 | `ASYNC` | flake8-async | anti-patterns in async code |
 | `PT` | flake8-pytest-style | consistency in test files |
@@ -169,7 +168,7 @@ future versions.
 
 | Warning | Reason |
 |---------|--------|
-| `DeprecationWarning` from `websockets` | `uvicorn 0.46` uses the `websockets.legacy` API deprecated in websockets 14+. Upstream issue, not fixable from this repo. |
+| `DeprecationWarning` from `websockets` | `uvicorn 0.49.0` uses the `websockets.legacy` API deprecated in websockets 14+. Upstream issue, not fixable from this repo. |
 | `DeprecationWarning` from `uvicorn` | Same root cause: the warning is attributed to the calling module (`uvicorn/protocols/websockets/websockets_impl.py`) due to the `stacklevel` set by websockets. |
 
 ---
@@ -184,7 +183,7 @@ Modules with intentionally low coverage:
 |--------|----------|--------|
 | `server.py` | ~0% | uvicorn entrypoint; tested via integration, not unit |
 | `__main__.py` | 0% | Three-line shim; no logic to test |
-| `config.py` | ~60% | `load_config` from file and `save_config` lack I/O tests |
+| `config.py` | ~69% | `load_config` from file and `save_config` lack I/O tests |
 
 ---
 

@@ -8,7 +8,7 @@ By participating in this project, you agree to the [Code of Conduct](CODE_OF_CON
 
 A single tool manages the entire toolchain:
 
-- **[mise](https://mise.jdx.dev/)** — installs Python 3.14, Node.js, and pnpm at the exact versions declared in `.mise.toml`.
+- **[mise](https://mise.jdx.dev/)** — installs Python, Node.js, and pnpm at the exact versions declared in `.mise.toml`.
 
 Install mise following the [official instructions](https://mise.jdx.dev/getting-started.html), then run:
 
@@ -24,7 +24,7 @@ No other global installations are required.
 git clone https://github.com/E-zequiel/analecta.git
 cd analecta
 
-# Install toolchain (Python 3.14, Node, pnpm)
+# Install toolchain (Python, Node, pnpm — versions pinned in .mise.toml)
 mise install
 
 # Install backend dependencies

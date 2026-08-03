@@ -47,10 +47,10 @@ Managed via mise:
 ```toml
 # .mise.toml
 [tools]
-python = "3.13"
+python = "3.14"
 node   = "lts"
-rust   = "stable"
 pnpm   = "latest"
+uv     = "latest"
 ```
 
 Workspace declaration at root:

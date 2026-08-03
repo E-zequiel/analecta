@@ -127,7 +127,7 @@ These are Wayland protocol constraints that cannot be resolved at the applicatio
 | # | Limitation | Impact on Analecta |
 |---|-----------|-------------------|
 | P10 | `win.focus()` without a valid xdg-activation token is ignored by the compositor (Wayland protocol restriction) | Deep-link handler may not foreground the window; the link is still processed and navigation occurs correctly. Tray-initiated clipboard access removed — see [`wayland-tray-focus.md`](wayland-tray-focus.md) |
-| P12 | System tray icon requires AppIndicator support from the compositor panel | Tray icon visibility on COSMIC depends on the panel version; must be verified early in testing |
+| P12 | System tray icon requires AppIndicator support from the compositor panel | GNOME/COSMIC's default panel doesn't render `StatusNotifierItem` tray icons at all — requires the AppIndicator and KStatusNotifierItem Support extension, documented as a user-side dependency in the README. KDE, i3, and Sway work out of the box |
 | P15 | Multi-monitor window positioning bug in Electron ≥ 38.4 ([#48749](https://github.com/electron/electron/issues/48749)) | Window may open on the wrong monitor in multi-display setups; workaround: launch with `--ozone-platform=x11` |
 
 ---

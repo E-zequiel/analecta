@@ -43,6 +43,9 @@ No code-signing key is used or stored anywhere in this pipeline. Instead:
   build, containing a SHA-512 checksum of each artifact.
 - `electron-updater` downloads and checks the artifact against that checksum before
   installing.
+- Generation alone isn't sufficient — `latest-linux.yml` also has to be uploaded as a
+  release asset, the same as the installers themselves. `release.yml`'s release-creation
+  step does this explicitly; see `docs/release-process.md`.
 
 This is separate from, and unrelated to, the maintainer-facing `SHA256SUMS` + SSH
 signature + Sigstore build provenance attestation described in `docs/github-actions-security.md` (Control 14).
@@ -69,12 +72,20 @@ package requires root. `.AppImage` installs silently, with no prompt.
 ## Scope
 
 Implemented and wired end to end in code (`updater.ts`, `ipc.ts`, `+layout.svelte`,
-`UpdateBanner.svelte`), verified 2026-07-02 by reading the full call chain plus the
-relevant `electron-updater` source. **Not yet exercised against a real packaged
-build** — no release has been published yet, so the full check → download → install →
-relaunch cycle, including which privilege-escalation prompt actually appears on Pop!_OS
-24.04/COSMIC for `.deb`, remains unverified. Tracked as the deferred "E9-13 updater
-banner smoke test."
+`UpdateBanner.svelte`).
+
+**`v0.3.1`, `v0.4.0`, and `v0.5.0` all shipped without `latest-linux.yml` attached as a
+release asset** — `release.yml`'s release-creation step never included it in the upload,
+even though electron-builder generated it correctly on every build. `electron-updater`'s
+GitHub provider had nothing to resolve, so every update check failed — silently, since
+only a `console.error` in the main process observes the `error` event, with nothing wired
+to the UI. This was masked for a while by the repo being private (which independently
+blocks the GitHub provider's unauthenticated API calls), but going public didn't fix it —
+the missing asset was the real gate. Fixed by adding the file to the upload step and a
+build-time check that fails the release job if it's ever missing again (see
+`docs/release-process.md`). `v0.5.0` itself was not patched retroactively — a
+locally-rebuilt `latest-linux.yml` isn't guaranteed to hash-match the installers already
+signed and distributed for that release.
 
 ## See also
 

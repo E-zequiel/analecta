@@ -1,6 +1,6 @@
 # Linux Package Naming: deb/rpm Artifact and Package Name
 
-**Status:** Implemented — pending CI verification (local `fpm` packaging is broken, see Scope)
+**Status:** Implemented and confirmed against real CI-built releases
 **Date:** 2026-07-01
 
 ---
@@ -28,10 +28,8 @@ the electron-builder project directory — in this repo, `electron/package.json`
 installed binary's filename, and — via `productFilename` — the `AppImage` artifact name, which
 is why `AppImage` builds were already correctly named.
 
-Confirmed by reading the vendored `app-builder-lib` source: `appInfo.js` (`name` /
-`linuxPackageName` getters), `targets/FpmTarget.js` (`packageName` option, default artifact
-name templates), and `util/macroExpander.js` (`${name}` always resolves to `appInfo.name`,
-with no hook for a `packageName` override).
+Confirmed by reading electron-builder's own source (`app-builder-lib`) — there is no config
+hook that redirects `${name}` away from `appInfo.name` for these two outputs.
 
 ---
 
@@ -74,3 +72,7 @@ file's `Package:` field. `artifactName` overrides the default `${name}_${version
 
 Fixed in `electron-builder.yml` only; no `package.json` or `pnpm --filter` references changed.
 `AppImage` was never affected.
+
+Confirmed against CI-built releases (`v0.4.0`, `v0.5.0`): downloaded artifact filenames
+match `artifactName` (`analecta_X.Y.Z_amd64.deb`), and `dpkg -s analecta` on an installed
+system reports `Package: analecta`, matching `packageName`.

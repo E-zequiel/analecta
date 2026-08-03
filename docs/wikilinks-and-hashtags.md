@@ -124,8 +124,8 @@ An earlier, more aggressive slugifier (`normalize_tag()`: Unicode NFKD → ASCII
 lowercase → non-alphanumeric runs collapsed to a single underscore) used to live
 alongside `title_to_hashtag_key()` in the same module, along with its one consumer,
 `append_tags()`, and an unrelated unwired helper, `find_heading_hashtags()`. None of
-the three was called from any route or pipeline, so all three were removed on
-2026-07-09 rather than kept as untested-in-production dead weight. If a
+the three was called from any route or pipeline, so all three were removed
+rather than kept as untested-in-production dead weight. If a
 manual-tag-entry UI ever needs a guaranteed-valid bare hashtag literal from arbitrary
 input, that slugifier can be reintroduced — but it must never be reused for
 hashtag-to-title resolution: folding `café` and `cafe` (or `Well-Being` and
@@ -400,18 +400,12 @@ tag-based connections for this one case than the vault-wide graph would suggest.
   `get_graph`) matches on Python `.lower()`, the frontend's `entryTitleIndex`
   (`entryTitles.ts`) independently matches the same titles on JS `.toLowerCase()`
   — and unlike hashtags, entry titles are arbitrary Unicode, not a restricted
-  charset, so "identical output" can't be claimed the same way. An exhaustive
-  per-codepoint comparison of the two (every codepoint 0x0–0x10FFFF, plus
-  Greek final-sigma word forms as the standard context-sensitive casing trap)
-  found agreement everywhere except 28 codepoints belonging to an extinct
-  historical script and a handful of rare Latin Extended-D letters — present in
-  one runtime's Unicode tables but not yet the other's, not an algorithmic
-  disagreement. Real web-page titles will never contain these. Even for those
-  28, resolution only breaks under a compound condition: the title contains one
-  of them *and* a `[[wikilink]]` references it in case-mismatched form on that
-  exact character — within either language alone, title and reference always go
-  through the same lowering, so the divergent codepoint by itself never desyncs
-  anything. Not a practical source of drift.
+  charset. An exhaustive per-codepoint comparison (including Greek final-sigma,
+  the standard context-sensitive casing trap) found agreement everywhere except
+  28 codepoints from an extinct historical script and a handful of rare Latin
+  Extended-D letters, present in one runtime's Unicode tables but not yet the
+  other's — not an algorithmic disagreement, and not something a real web-page
+  title will contain. Not a practical source of drift.
 - **Performance, not correctness:** `entries.title` has no index — only `url` is
   indexed (`UNIQUE`). `get_outgoing_links` and `get_subgraph` each resolve a
   single entry's references by loading the *entire* `entries` table and

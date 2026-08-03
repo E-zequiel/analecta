@@ -167,7 +167,7 @@ Hash from step 1 matches the lockfile from step 4 — verified.
 
 ## Worked example: `pnpm dedupe` after a multi-package bump
 
-Pinning `frontend/package.json` to exact versions (2026-07-13) bumped
+Pinning `frontend/package.json` to exact versions bumped
 `@codemirror/state` (6.6.0 → 6.7.0) and `@codemirror/view` (6.42.0 → 6.43.4)
 alongside several other direct dependencies. After `pnpm install`, both the
 old and new versions were still live in `pnpm-lock.yaml`.
@@ -349,7 +349,7 @@ counterpart in this repo. The table below is npm/pnpm-specific.
 They're complementary, not redundant: this procedure is the one
 person-in-the-loop check at the moment a *new* dependency enters the tree; the
 script is a broader, automatable check for packages that *publish*
-attestations (~40% of the ecosystem as of this writing).
+attestations — a growing but still partial share of the npm ecosystem.
 
 ## Two-mechanism split
 

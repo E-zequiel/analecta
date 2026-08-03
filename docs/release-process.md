@@ -49,13 +49,18 @@ Pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml`:
 2. Packages `.deb`, `.rpm`, and `.AppImage` with `electron-builder`.
 3. Generates `SHA256SUMS` over the three packaged installers.
 4. Generates a Sigstore build provenance attestation for the three installers via
-   `actions/attest-build-provenance` — skipped while the repository is private (requires a
-   public repo or GitHub Enterprise Cloud); see `docs/github-actions-security.md` Control 14.
+   `actions/attest-build-provenance` (confirmed running since the repo went public,
+   `v0.5.0`); see `docs/github-actions-security.md` Control 14.
 5. Extracts the `## [X.Y.Z]` section from `CHANGELOG.md` as the release notes. The job
    fails if no heading matches the tagged version — the CHANGELOG rename in the release
    PR must land before the tag is pushed.
-6. Creates the GitHub Release as a **draft**, with the built packages and `SHA256SUMS`
-   attached as assets.
+6. Verifies `dist-electron/latest-linux.yml` was generated (electron-builder writes it
+   automatically whenever `publish:` is configured, regardless of `--publish never`) —
+   `electron-updater`'s GitHub provider needs this file to resolve the latest version and
+   its SHA-512 checksum; see `docs/auto-update.md`. Fails the job loudly if it's missing,
+   rather than silently shipping a release existing installs can't discover.
+7. Creates the GitHub Release as a **draft**, with the built packages, `SHA256SUMS`, and
+   `latest-linux.yml` attached as assets.
 
 The workflow only runs against `E-zequiel/analecta` (guarded), so it never fires on forks.
 

@@ -102,7 +102,7 @@ Flag any job that declares `id-token: write`. This grants the job an OIDC token,
 
 Note it, explain what it enables, and ask the user whether it is intentional.
 
-**Analecta instance:** `release.yml` → `build-linux` declares `id-token: write` + `attestations: write` for `actions/attest-build-provenance`, generating a build provenance attestation for the packaged installers. Intentional, documented in `docs/github-actions-security.md` Control 14. The step itself is gated with `if: ${{ !github.event.repository.private }}` since attestation storage requires a public repo or GitHub Enterprise Cloud — this repo is currently private, so the step is a documented no-op until it goes public. No finding.
+**Analecta instance:** `release.yml` → `build-linux` declares `id-token: write` + `attestations: write` for `actions/attest-build-provenance`, generating a build provenance attestation for the packaged installers. Intentional, documented in `docs/github-actions-security.md` Control 14. The step is gated with `if: ${{ !github.event.repository.private }}` since attestation storage requires a public repo or GitHub Enterprise Cloud — the repo is public, so the step actively runs on every release. No finding.
 
 Severity: **LOW–MEDIUM** depending on whether cloud credentials are in scope.
 
@@ -208,7 +208,7 @@ grep "^sigstore==" scripts/requirements-provenance.lock
 | `.venv-provenance/` not in `.gitignore` | LOW | Add `.venv-provenance/` to `.gitignore` |
 | `sigstore` not pinned (version range instead of `==`) | LOW | Pin to exact version in lock file |
 
-**Context:** `scripts/verify-provenance.py` verifies Sigstore provenance attestations for ~13% of installed npm packages (those that publish them). It cross-checks the attested subject SHA-512 against `pnpm-lock.yaml` (independent of registry) and verifies the Sigstore bundle against Rekor + Fulcio. See `docs/github-actions-security.md` Control 10 for the full threat model and residual gap table.
+**Context:** `scripts/verify-provenance.py` verifies Sigstore provenance attestations for the minority of installed npm packages that publish them. It cross-checks the attested subject SHA-512 against `pnpm-lock.yaml` (independent of registry) and verifies the Sigstore bundle against Rekor + Fulcio. See `docs/github-actions-security.md` Control 10 for the full threat model and residual gap table.
 
 #### Build provenance attestation (producer-side)
 
@@ -236,7 +236,7 @@ grep -A3 "permissions:" .github/workflows/release.yml | grep -E "id-token|attest
 
 **Context:** this is the producer-side counterpart to the "Provenance verification infrastructure" check above — that one verifies *upstream* npm packages' attestations; this one confirms Analecta's *own* release artifacts get attested. See `docs/github-actions-security.md` Control 14 for the full threat model, the relationship to the SSH-signed `SHA256SUMS`, and why the guard is self-activating (no edit needed once the repo goes public).
 
-**Analecta instance:** implemented 2026-07-01. `if: ${{ !github.event.repository.private }}` on the step (repo currently private, step is a documented no-op); `id-token: write` + `attestations: write` on `build-linux`; `subject-path` scoped to `dist-electron/*.deb *.rpm *.AppImage` only. No finding.
+**Analecta instance:** `if: ${{ !github.event.repository.private }}` on the step (repo is public, step actively runs); `id-token: write` + `attestations: write` on `build-linux`; `subject-path` scoped to `dist-electron/*.deb *.rpm *.AppImage` only. No finding.
 
 #### Scan ordering: scan before lifecycle scripts
 
@@ -284,7 +284,7 @@ The `|| 'skipped'` clause is required: on `push` to `main`, the `socket` job doe
 
 **Branch protection (manual):** For `needs: [socket]` to block merges, add `socket` as a required status check in GitHub → Settings → Branches → `main`. A skipped required check is treated as "not passed."
 
-**Fork PR caveat:** The `socket` job is scoped to non-fork PRs (`head.repo.full_name == github.repository`). If the repo goes public and `socket` is a required status check, fork PRs will have a permanently unresolvable check. Tracked in `project_public_repo_checklist.md`.
+**Fork PR caveat:** The `socket` job is scoped to non-fork PRs (`head.repo.full_name == github.repository`). Since `socket` is a required status check, fork PRs can never pass CI and cannot be merged directly (skipped ≠ passed). Analecta's resolution: the maintainer reviews the contribution and cherry-picks it onto a branch within the repo, then opens the PR from there — documented in `.github/CONTRIBUTING.md`.
 
 Severity: **MEDIUM** (gap: a compromised `allowBuilds`-listed package's postinstall runs before the scan; `--ignore-scripts` closes this for CI, advisory workflow mitigates it locally)
 
