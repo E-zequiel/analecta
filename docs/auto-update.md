@@ -47,11 +47,12 @@ No code-signing key is used or stored anywhere in this pipeline. Instead:
   release asset, the same as the installers themselves. `release.yml`'s release-creation
   step does this explicitly; see `docs/release-process.md`.
 
-This is separate from, and unrelated to, the maintainer-facing `SHA256SUMS` + SSH
-signature + Sigstore build provenance attestation described in `docs/github-actions-security.md` (Control 14).
-Those exist for a human verifying a downloaded installer by hand; `latest-linux.yml`'s
-SHA-512 is what `electron-updater` itself checks automatically, unconditionally, on
-every in-app update.
+This is a separate, automated mechanism from the maintainer-facing `SHA256SUMS` + SSH
+signature + Sigstore build provenance attestation described in `docs/github-actions-security.md`
+(Control 14) — `latest-linux.yml` is now also covered by both of those (added alongside the
+three installers), but `electron-updater` itself never consults them. Those exist for a person
+verifying a downloaded installer by hand; `latest-linux.yml`'s SHA-512 is what
+`electron-updater` itself checks automatically, unconditionally, on every in-app update.
 
 ## Per-target install behavior
 
