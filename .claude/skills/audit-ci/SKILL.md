@@ -236,7 +236,7 @@ grep -A3 "permissions:" .github/workflows/release.yml | grep -E "id-token|attest
 
 **Context:** this is the producer-side counterpart to the "Provenance verification infrastructure" check above — that one verifies *upstream* npm packages' attestations; this one confirms Analecta's *own* release artifacts get attested. See `docs/github-actions-security.md` Control 14 for the full threat model, the relationship to the SSH-signed `SHA256SUMS`, and why the guard is self-activating (no edit needed once the repo goes public).
 
-**Analecta instance:** `if: ${{ !github.event.repository.private }}` on the step (repo is public, step actively runs); `id-token: write` + `attestations: write` on `build-linux`; `subject-path` scoped to `dist-electron/*.deb *.rpm *.AppImage` only. No finding.
+**Analecta instance:** `if: ${{ !github.event.repository.private }}` on the step (repo is public, step actively runs); `id-token: write` + `attestations: write` on `build-linux`; `subject-path` scoped to `dist-electron/*.deb *.rpm *.AppImage latest-linux.yml`. No finding.
 
 #### Scan ordering: scan before lifecycle scripts
 

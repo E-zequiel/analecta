@@ -604,7 +604,7 @@ With this pattern:
 
 ## Control 14: Build Provenance Attestation
 
-`actions/attest-build-provenance` generates a Sigstore-backed provenance attestation for the packaged `.deb`, `.rpm`, and `.AppImage` installers in `release.yml`'s `build-linux` job, immediately after "Package with electron-builder".
+`actions/attest-build-provenance` generates a Sigstore-backed provenance attestation for the packaged `.deb`, `.rpm`, and `.AppImage` installers, and `latest-linux.yml`, in `release.yml`'s `build-linux` job, immediately after "Package with electron-builder".
 
 ### What this proves, and what it doesn't
 
@@ -635,9 +635,10 @@ steps:
         dist-electron/*.deb
         dist-electron/*.rpm
         dist-electron/*.AppImage
+        dist-electron/latest-linux.yml
 ```
 
-Scope: the three installers only. Not `SHA256SUMS` itself (already covered by the SSH signature), not the bundled sidecar binary (it ships inside the installers, not as a separate release asset).
+Scope: the three installers plus `latest-linux.yml` — the file `electron-updater`'s GitHub provider relies on to resolve the latest version and its SHA-512 checksum (see `docs/auto-update.md`), so it gets the same provenance coverage as the artifacts it points at. `SHA256SUMS` itself is out of scope (already covered by the SSH signature); the bundled sidecar binary is also out of scope (it ships inside the installers, not as a separate release asset).
 
 ### Why the `if:` guard
 

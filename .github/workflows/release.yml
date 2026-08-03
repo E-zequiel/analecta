@@ -72,7 +72,7 @@ jobs:
           fi
 
       - name: Generate release checksums
-        run: sha256sum *.deb *.rpm *.AppImage > SHA256SUMS
+        run: sha256sum *.deb *.rpm *.AppImage latest-linux.yml > SHA256SUMS
         working-directory: dist-electron
 
       - name: Attest build provenance
@@ -87,6 +87,7 @@ jobs:
             dist-electron/*.deb
             dist-electron/*.rpm
             dist-electron/*.AppImage
+            dist-electron/latest-linux.yml
 
       - name: Extract changelog section
         run: |
