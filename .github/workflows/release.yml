@@ -64,6 +64,13 @@ jobs:
       - name: Package with electron-builder
         run: mise exec -- pnpm --filter analecta-electron run dist
 
+      - name: Verify updater metadata was generated
+        run: |
+          if [ ! -f dist-electron/latest-linux.yml ]; then
+            echo "::error::dist-electron/latest-linux.yml is missing — electron-updater's GitHub provider needs it to resolve new releases. Check electron-builder.yml's publish: block."
+            exit 1
+          fi
+
       - name: Generate release checksums
         run: sha256sum *.deb *.rpm *.AppImage > SHA256SUMS
         working-directory: dist-electron
@@ -108,7 +115,7 @@ jobs:
             --draft \
             --notes-file release-notes.md \
             $EXTRA_FLAGS \
-            dist-electron/*.deb dist-electron/*.rpm dist-electron/*.AppImage dist-electron/SHA256SUMS
+            dist-electron/*.deb dist-electron/*.rpm dist-electron/*.AppImage dist-electron/SHA256SUMS dist-electron/latest-linux.yml
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
