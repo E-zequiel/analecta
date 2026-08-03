@@ -110,6 +110,12 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 
 ## Resolved CVEs
 
+### 2026-08-03
+
+| Package | CVE(s) | Fix |
+|---------|--------|-----|
+| `brace-expansion@1.1.16` / `2.1.2` / `5.0.8` | GHSA-rgw5-rvv9-x895 (CVE-2026-69152, HIGH 7.5) — bypasses the `maxLength` mitigation `5.0.8` shipped for GHSA-mh99-v99m-4gvg: two intermediate arrays (`values` in `expand_()`, and `expandSequence()`'s padded-sequence output) were never bounded by `maxLength`, so a ~25 KB input can still OOM-crash the process, and a ~400 KB input can stall the event loop for minutes. Fixed upstream by bounding both. | `overrides: {'brace-expansion@1': '1.1.18', 'brace-expansion@2': '2.1.4', 'brace-expansion@5': '5.0.9'}` in `pnpm-workspace.yaml`. **Cooldown exception:** all three released 2026-07-30, 4 days before this bump (6 short of the 10-day window) — approved explicitly given the CVSS 7.5 rating; EPSS is 0.003 and exposure is build-time tooling on our own glob patterns, not attacker-controlled input, so real-world urgency was low. **Retires the 2026-07-27 residual-risk carve-out below:** that entry assumed no 1.x/2.x backport existed for GHSA-mh99-v99m-4gvg; `1.1.17`/`2.1.3` were published afterward, and this bump adopts their successors (`1.1.18`/`2.1.4`) directly, so both the original CVE and its bypass are closed on all three lines. `dist.integrity` cross-checked against the npm registry and `pnpm view` for all three versions before adoption. |
+
 ### 2026-07-27
 
 | Package | CVE(s) | Fix |
