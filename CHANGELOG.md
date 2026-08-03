@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-03
+
 ### Added
 
 - C++ syntax highlighting in the reading view and editor preview.
@@ -122,7 +124,8 @@ Initial public release.
 - Native Linux packaging — `.deb`, `.rpm`, `.AppImage` — with correct application identity and icons, including taskbar/alt-tab icon support on Wayland compositors, built with electron-builder.
 - Release integrity verification — SHA256SUMS checksums for all packaged installers, plus a Sigstore build provenance attestation (attaches automatically once the repository goes public).
 
-[Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/E-zequiel/analecta/releases/tag/v0.5.1
 [0.5.0]: https://github.com/E-zequiel/analecta/releases/tag/v0.5.0
 [0.4.0]: https://github.com/E-zequiel/analecta/releases/tag/v0.4.0
 [0.3.1]: https://github.com/E-zequiel/analecta/releases/tag/v0.3.1
