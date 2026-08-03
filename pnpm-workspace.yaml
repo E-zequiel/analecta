@@ -48,7 +48,14 @@ overrides:
   tar: '7.5.21'
   # GHSA-v2hh-gcrm-f6hx (backslash authority-delimiter host confusion) + GHSA-4c8g-83qw-93j6
   # (failed IDN canonicalization host confusion). Transitive via ajv (single consumer, ajv@8.20.0).
-  fast-uri: '3.1.4'
+  # 2026-08-03: + GHSA-7p8r-x3mc-p8w7 (CVE-2026-18446, CVSS 7.5) — fast-uri parses a `\\`/`/\`/`\/`
+  # authority introducer as no-authority (folds into path), while Node's native WHATWG URL (used by
+  # fetch()/undici/http) treats `\` as interchangeable with `/` for special schemes, so the two
+  # parsers extract different hosts from the same input. Cooldown exception: 3.1.5 released
+  # 2026-07-31, 3 days before this bump — approved explicitly given the CVSS 7.5 host-confusion
+  # rating (relevant here since ajv's URI parsing feeds JSON Schema validation, not attacker-facing
+  # network requests directly, but the fix is a straight upstream patch with no compatibility risk).
+  fast-uri: '3.1.5'
   # GHSA-mh99-v99m-4gvg (unbounded expansion length OOM) + GHSA-3jxr-9vmj-r5cp (exponential-time
   # DoS) + GHSA-rgw5-rvv9-x895 (CVSS 7.5, bypasses the maxLength mitigation 5.0.8 shipped for
   # GHSA-mh99-v99m-4gvg via unbounded intermediate arrays). Three major lines are pulled in by
@@ -72,14 +79,21 @@ overrides:
   # GHSA-fxqj-rqcc-2cmp. Transitive via vite/svelte-eslint-parser. Cooldown exception: 8.5.23
   # released 3 days before this patch, approved explicitly given the severity.
   postcss: '8.5.23'
-  # CVE-2026-9678 (shared-cache info disclosure, CVSS 5.9) + CVE-2026-9697 (TLS bypass via SOCKS5, CVSS 7.4).
-  # Scoped to @electron/get (7.x consumer). node-gyp uses a separate 6.x branch — see node-gyp>undici below.
-  '@electron/get>undici': '7.28.0'
+  # CVE-2026-9678 (shared-cache info disclosure, CVSS 5.9) + CVE-2026-9697 (TLS bypass via SOCKS5, CVSS 7.4) —
+  # both superseded by this bump. 2026-08-03: patches 5 more CVEs at once (CVE-2026-13697/GHSA-4cwx-7wf7-3272
+  # cross-user cache disclosure + parse crash, CVE-2026-16728/GHSA-8xcm-r25x-g524 response desync via retry
+  # interceptor, CVE-2026-16729/GHSA-v3r7-h72x-cjcm cookie injection, CVE-2026-14643/GHSA-jr45-8vmc-qm54
+  # cache-control whitespace parse bypass, CVE-2026-15157/GHSA-m8rv-5g2x-5cg5 CRLF injection via duck-typed
+  # blob.type). All 5 patched at 7.29.0 — no per-CVE version split needed.
+  # UNIFIED single override (was split @electron/get 7.x / node-gyp 6.x): node-gyp's own package.json still
+  # declares "undici": "^6.25.0" (7.x is outside its stated semver contract), but verified empirically before
+  # unifying — installed 7.29.0, required it directly from node-gyp's own dependency path, and replayed
+  # lib/download.js's exact calls (`new RetryAgent(new Agent(), {maxRetries: 3})`,
+  # `new RetryAgent(new EnvHttpProxyAgent(opts), {maxRetries: 3})`, a real `fetch()` through that dispatcher
+  # against a live URL) — all succeeded, no API break. `pnpm why undici` confirms one resolved version only.
+  undici: '7.29.0'
   # Opportunistic bump within ^12.2.0 (declared by @electron/rebuild@4.0.4). Released 2026-06-05.
   node-gyp: '12.4.0'
-  # GHSA-g8m3-5g58-fq7m + GHSA-vxpw-j846-p89q + GHSA-p88m-4jfj-68fv + GHSA-35p6-xmwp-9g52.
-  # Scoped to node-gyp (6.x consumer). @electron/get uses a separate 7.x branch — see @electron/get>undici above.
-  'node-gyp>undici': '6.27.0'
   # Socket obfuscatedFile/supplyChainRisk flag on the 1.11.1 minified bundle (package/dist/emnapi.min.mjs),
   # confidence 0.9 but Socket's own analyst note found no malicious behavior (dynamic Function used only for
   # environment capability probing). 1.11.2 doesn't reproduce the flag. Transitive via
