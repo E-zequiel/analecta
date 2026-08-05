@@ -1,11 +1,13 @@
 #!/usr/bin/env sh
-# Blocks feat/fix commits that don't stage a CHANGELOG.md entry.
-# Escape hatch for non-user-facing feat/fix commits: git commit --no-verify
+# Blocks feat/fix commits, and chore(deps) commits, that don't stage a CHANGELOG.md entry.
+# chore(deps) is included because every dependency update needs an entry regardless of
+# user-facing impact — see CLAUDE.md's Changelog Hard Constraint.
+# Escape hatch for non-user-facing feat/fix commits outside that exception: git commit --no-verify
 
 commit_msg_file="$1"
 subject=$(head -n1 "$commit_msg_file")
 
-if ! printf '%s\n' "$subject" | grep -qE '^(feat|fix)(\([^)]*\))?!?:'; then
+if ! printf '%s\n' "$subject" | grep -qE '^(feat|fix)(\([^)]*\))?!?:|^chore\(deps\)!?:'; then
   exit 0
 fi
 
@@ -14,10 +16,12 @@ if git diff --cached --name-only | grep -qx 'CHANGELOG.md'; then
 fi
 
 cat >&2 <<'EOF'
-error: 'feat'/'fix' commit without a CHANGELOG.md entry staged.
+error: 'feat'/'fix'/'chore(deps)' commit without a CHANGELOG.md entry staged.
 
 Add a line under ## [Unreleased] in CHANGELOG.md, then: git add CHANGELOG.md
 
-Not user-facing? Skip this check with: git commit --no-verify
+Not user-facing? feat/fix outside the dependency/security-hardening exception can
+skip this check with: git commit --no-verify (dependency updates and security/privacy
+hardening always need an entry — no escape hatch for those, see CLAUDE.md).
 EOF
 exit 1
