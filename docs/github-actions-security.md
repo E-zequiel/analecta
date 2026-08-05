@@ -399,7 +399,7 @@ Only packages in this allowlist are permitted to run lifecycle scripts. All othe
 
 `esbuild` was removed from the allowlist — Vite 8 uses Rolldown, so esbuild is not in the dependency tree.
 
-**`electron` had an entry here (`electron: true`) — removed, not just set to `false`.** Electron 42.0.0 (currently pinned: 42.1.0) dropped its `postinstall` entirely — confirmed against a tarball diff versus the last 41.x release (which still has `"postinstall": "node install.js"`; 42.x has no `scripts` field at all) and Electron's own v42.0.0 release notes: *"Electron will now download itself dynamically the first time that its main `bin` script is run"* — done specifically to remove `postinstall` as a supply-chain attack vector. Leaving a stale `true` in place would silently re-grant script execution the moment a future Electron release ever reintroduces one — deleting the entry instead means that scenario fails loudly (`ERR_PNPM_IGNORED_BUILDS`, since `ci.yml`'s `check-frontend` job and `release.yml` both install without `--ignore-scripts`) rather than silently, which is what `false` would do — `false` and a stale `true` are equally quiet once a script actually appears. See `pnpm-workspace.yaml`'s comment for the re-adding procedure and the 41.x-downgrade caveat.
+**`electron` had an entry here (`electron: true`) — removed, not just set to `false`.** Electron 42.0.0 dropped its `postinstall` entirely — confirmed against a tarball diff versus the last 41.x release (which still has `"postinstall": "node install.js"`; 42.x has no `scripts` field at all) and Electron's own v42.0.0 release notes: *"Electron will now download itself dynamically the first time that its main `bin` script is run"* — done specifically to remove `postinstall` as a supply-chain attack vector. Leaving a stale `true` in place would silently re-grant script execution the moment a future Electron release ever reintroduces one — deleting the entry instead means that scenario fails loudly (`ERR_PNPM_IGNORED_BUILDS`, since `ci.yml`'s `check-frontend` job and `release.yml` both install without `--ignore-scripts`) rather than silently, which is what `false` would do — `false` and a stale `true` are equally quiet once a script actually appears. See `pnpm-workspace.yaml`'s comment for the re-adding procedure and the 41.x-downgrade caveat.
 
 ### Verifying allowlist entries
 
@@ -443,7 +443,7 @@ for pkg_dir in os.listdir(base):
                 print(f"{d.get('name')}@{d.get('version')} → {lc}")
 ```
 
-Only `electron-winstaller@5.4.0` has a lifecycle script in the installed tree, and it is blocked. `electron@42.1.0` has genuinely zero lifecycle scripts (`pnpm view electron@42.1.0 scripts --json` returns empty) — it isn't merely blocked, there's nothing to block.
+Only `electron-winstaller@5.4.0` has a lifecycle script in the installed tree, and it is blocked. `electron` itself has genuinely zero lifecycle scripts on every 42.x release checked so far (`pnpm view electron@<pinned-version> scripts --json` returns empty) — it isn't merely blocked, there's nothing to block. Re-run this check on the next major bump (43.x or later) rather than assuming it still holds — a patch/minor bump within 42.x needs no re-check, since Electron 42.0.0 dropping `postinstall` (see above) is what the empty result depends on.
 
 ---
 
