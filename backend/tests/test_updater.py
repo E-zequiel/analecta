@@ -6,9 +6,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "scripts"))
 from deps_update import (  # pyright: ignore[reportMissingImports]
+    _WORKSPACE_DIR,
     _age_ok,
     _parse_iso,
     _parse_pnpm_outdated,
@@ -77,3 +79,26 @@ class TestParsePnpmOutdated:
 
     def test_empty_returns_empty(self) -> None:
         assert _parse_pnpm_outdated(json.dumps({})) == {}
+
+
+class TestWorkspaceDirCoverage:
+    def test_covers_every_pnpm_workspace_project(self) -> None:
+        """Every project pnpm's workspace resolves to must have a _WORKSPACE_DIR entry.
+
+        Guards against the failure mode this suite is named after: a new
+        workspace (or the root package) added to the monorepo without a
+        matching entry here would have its dependencies age silently —
+        `update_node()` is only ever called for names in this dict, so a
+        missed workspace is never even checked against `pnpm outdated`.
+        """
+        repo_root = Path(__file__).parents[2]
+        workspace_config = yaml.safe_load(
+            (repo_root / "pnpm-workspace.yaml").read_text()
+        )
+        project_dirs = [repo_root] + [
+            repo_root / rel_dir for rel_dir in workspace_config["packages"]
+        ]
+        actual_names = {
+            json.loads((d / "package.json").read_text())["name"] for d in project_dirs
+        }
+        assert actual_names == set(_WORKSPACE_DIR)
