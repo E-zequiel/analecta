@@ -10,6 +10,11 @@ For each ecosystem (Python/uv, Node/pnpm):
      replay the batch one package at a time to isolate and exclude only the
      package(s) that actually broke it, instead of discarding the batch.
 
+A hard error in one Node workspace (or in the Python ecosystem) does not
+prevent a PR for the others — it is reported in the PR body next to that
+ecosystem's section. The exit code only signals failure when nothing
+succeeded anywhere in the run.
+
 Usage (from repo root):
     python scripts/deps_update.py [--cooldown DAYS] [--pr-body-file PATH]
 """
@@ -135,7 +140,7 @@ def _apply_python_package(name: str, backend: Path) -> tuple[bool, str]:
     return True, ""
 
 
-def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], bool]:
+def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], list[str]]:
     """Check and apply Python dependency updates via uv."""
     print("\n=== Python (uv) ===")
     backend = REPO_ROOT / "backend"
@@ -160,7 +165,7 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], bool]:
 
     updated: list[Updated] = []
     skipped: list[Skipped] = []
-    had_error = False
+    errors: list[str] = []
     fetch_attempted = 0
     fetch_ok = 0
 
@@ -191,18 +196,17 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], bool]:
         ok, err = _apply_python_package(name, backend)
         if not ok:
             print(f"::error::{name}: {err}")
-            had_error = True
+            errors.append(f"{name}: {err}")
         else:
             print("    [ok] updated")
             updated.append((name, current, latest, release_dt))
 
     if fetch_attempted > 0 and fetch_ok == 0:
-        print(
-            "::error::All PyPI registry fetches failed — no packages could be checked"
-        )
-        had_error = True
+        msg = "All PyPI registry fetches failed — no packages could be checked"
+        print(f"::error::{msg}")
+        errors.append(msg)
 
-    return updated, skipped, had_error
+    return updated, skipped, errors
 
 
 def _verify_python(
@@ -307,9 +311,26 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
     (type-checking, lint, vite build) launches Electron or needs its binary,
     so skipping scripts here costs nothing functionally.
 
+    A (False, reason) return is guaranteed to be a no-op on disk: the exact-pin
+    rewrite (a direct file write, not a pnpm operation) can succeed and then
+    have its follow-up lockfile resync fail, which would otherwise leave
+    package.json and pnpm-lock.yaml mutually inconsistent for a package that
+    was never actually applied — this function snapshots both before touching
+    them and restores on any failure path, so callers never have to reason
+    about partial state.
+
     Returns:
         (True, "") on success, (False, reason) on failure at any step.
     """
+    pkg_path = REPO_ROOT / _WORKSPACE_DIR[workspace] / "package.json"
+    lock_path = REPO_ROOT / "pnpm-lock.yaml"
+    pkg_snap = pkg_path.read_bytes()
+    lock_snap = lock_path.read_bytes()
+
+    def _restore() -> None:
+        _ = pkg_path.write_bytes(pkg_snap)
+        _ = lock_path.write_bytes(lock_snap)
+
     result = _run(
         [
             "pnpm",
@@ -323,6 +344,7 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
         cwd=REPO_ROOT,
     )
     if result.returncode != 0:
+        _restore()
         return False, f"pnpm add failed — {result.stderr.strip()}"
 
     if _ensure_exact_specifier(_WORKSPACE_DIR[workspace], name, version):
@@ -343,6 +365,7 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
         if resync.returncode != 0:
             # pnpm reports ERR_PNPM_OUTDATED_LOCKFILE etc. on stdout, not stderr.
             detail = resync.stderr.strip() or resync.stdout.strip()
+            _restore()
             return False, f"lockfile resync failed after exact-pin fix — {detail}"
 
     # A direct-dependency bump can leave an older resolution of the same
@@ -353,6 +376,7 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
     dedupe = _run(["pnpm", "dedupe", "--ignore-scripts"], cwd=REPO_ROOT)
     if dedupe.returncode != 0:
         detail = dedupe.stderr.strip() or dedupe.stdout.strip()
+        _restore()
         return False, f"dedupe failed — {detail}"
 
     return True, ""
@@ -360,7 +384,7 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
 
 def update_node(
     cooldown: int, workspace: str
-) -> tuple[list[Updated], list[Skipped], bool]:
+) -> tuple[list[Updated], list[Skipped], list[str]]:
     """Check and apply Node dependency updates via pnpm for a given workspace."""
     print(f"\n=== Node (pnpm) — {workspace} ===")
 
@@ -370,16 +394,16 @@ def update_node(
         cwd=REPO_ROOT,
     )
     if result.returncode not in {0, 1}:
-        print(
-            f"::error::pnpm outdated failed (exit {result.returncode}):"
-            f" {result.stderr.strip()}"
+        msg = (
+            f"pnpm outdated failed (exit {result.returncode}): {result.stderr.strip()}"
         )
-        return [], [], True
+        print(f"::error::{msg}")
+        return [], [], [msg]
 
     raw = result.stdout.strip()
     if not raw:
         print("  nothing outdated")
-        return [], [], False
+        return [], [], []
 
     try:
         outdated = _parse_pnpm_outdated(raw)
@@ -388,12 +412,12 @@ def update_node(
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         if not m:
             print("  [warn] could not parse pnpm outdated output")
-            return [], [], False
+            return [], [], []
         outdated = _parse_pnpm_outdated(m.group())
 
     updated: list[Updated] = []
     skipped: list[Skipped] = []
-    had_error = False
+    errors: list[str] = []
     fetch_attempted = 0
     fetch_ok = 0
 
@@ -419,17 +443,18 @@ def update_node(
         ok, err = _apply_node_package(workspace, name, latest)
         if not ok:
             print(f"::error::{name}: {err}")
-            had_error = True
+            errors.append(f"{name}: {err}")
             continue
 
         print("    [ok] updated")
         updated.append((name, current, latest, release_dt))
 
     if fetch_attempted > 0 and fetch_ok == 0:
-        print("::error::All npm registry fetches failed — no packages could be checked")
-        had_error = True
+        msg = "All npm registry fetches failed — no packages could be checked"
+        print(f"::error::{msg}")
+        errors.append(msg)
 
-    return updated, skipped, had_error
+    return updated, skipped, errors
 
 
 def _verify_node(
@@ -481,9 +506,13 @@ def _pr_body(
     py_up: list[Updated],
     py_sk: list[Skipped],
     py_blocked: list[Blocked],
+    py_errors: list[str],
     nd_up: list[Updated],
     nd_sk: list[Skipped],
     nd_blocked: list[Blocked],
+    *,
+    nd_errors: list[str],
+    nd_ws: list[str],
     cooldown: int,
 ) -> str:
     today = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -495,16 +524,33 @@ def _pr_body(
     ]
 
     def _section(
-        title: str, up: list[Updated], sk: list[Skipped], blocked: list[Blocked]
+        title: str,
+        up: list[Updated],
+        sk: list[Skipped],
+        blocked: list[Blocked],
+        errors: list[str],
+        workspaces: list[str] | None = None,
     ) -> None:
         lines.append(f"### {title}")
         if up:
-            lines.append("| Package | Old | New | Released |")
-            lines.append("|---------|-----|-----|----------|")
-            for name, old, new, release_dt in up:
-                lines.append(
-                    f"| `{name}` | {old} | {new} | {release_dt.strftime('%Y-%m-%d')} |"
-                )
+            if workspaces is not None:
+                lines.append("| Package | Workspace | Old | New | Released |")
+                lines.append("|---------|-----------|-----|-----|----------|")
+                for (name, old, new, release_dt), ws in zip(
+                    up, workspaces, strict=True
+                ):
+                    lines.append(
+                        f"| `{name}` | `{ws}` | {old} | {new}"
+                        f" | {release_dt.strftime('%Y-%m-%d')} |"
+                    )
+            else:
+                lines.append("| Package | Old | New | Released |")
+                lines.append("|---------|-----|-----|----------|")
+                for name, old, new, release_dt in up:
+                    lines.append(
+                        f"| `{name}` | {old} | {new}"
+                        f" | {release_dt.strftime('%Y-%m-%d')} |"
+                    )
         else:
             lines.append("_No updates applied._")
         if sk:
@@ -522,10 +568,16 @@ def _pr_body(
                 f"**Blocked — broke `check.sh`, excluded from this update:**"
                 f" {'; '.join(items)}"
             )
+        if errors:
+            lines.append("")
+            lines.append(
+                "**Errors — some packages may not have been checked:**"
+                f" {'; '.join(errors)}"
+            )
         lines.append("")
 
-    _section("Python", py_up, py_sk, py_blocked)
-    _section("Node / pnpm", nd_up, nd_sk, nd_blocked)
+    _section("Python", py_up, py_sk, py_blocked, py_errors)
+    _section("Node / pnpm", nd_up, nd_sk, nd_blocked, nd_errors, workspaces=nd_ws)
 
     lines += [
         "---",
@@ -663,42 +715,45 @@ def main() -> None:
     backend = REPO_ROOT / "backend"
     uv_lock_path = backend / "uv.lock"
     pnpm_lock_path = REPO_ROOT / "pnpm-lock.yaml"
-    fe_pkg_path = REPO_ROOT / _WORKSPACE_DIR["frontend"] / "package.json"
-    el_pkg_path = REPO_ROOT / _WORKSPACE_DIR["analecta-electron"] / "package.json"
-    root_pkg_path = REPO_ROOT / _WORKSPACE_DIR["analecta"] / "package.json"
 
     uv_snap: bytes | None = uv_lock_path.read_bytes() if verify else None
     node_snap: dict[Path, bytes] | None = (
         {
             p: p.read_bytes()
-            for p in (pnpm_lock_path, fe_pkg_path, el_pkg_path, root_pkg_path)
+            for p in (
+                pnpm_lock_path,
+                *(REPO_ROOT / d / "package.json" for d in _WORKSPACE_DIR.values()),
+            )
         }
         if verify
         else None
     )
 
-    py_up, py_sk, py_err = update_python(cooldown)
-    nd_up_fe, nd_sk_fe, nd_err_fe = update_node(cooldown, "frontend")
-    nd_up_el, nd_sk_el, nd_err_el = update_node(cooldown, "analecta-electron")
-    nd_up_root, nd_sk_root, nd_err_root = update_node(cooldown, "analecta")
-    nd_sk = nd_sk_fe + nd_sk_el + nd_sk_root
-    nd_err = nd_err_fe or nd_err_el or nd_err_root
+    py_up, py_sk, py_errors = update_python(cooldown)
+
+    nd_sk: list[Skipped] = []
+    nd_up_tagged: list[tuple[str, Updated]] = []
+    nd_errors_by_ws: dict[str, list[str]] = {}
+    for workspace in _WORKSPACE_DIR:
+        up, sk, errs = update_node(cooldown, workspace)
+        nd_up_tagged += [(workspace, u) for u in up]
+        nd_sk += sk
+        if errs:
+            nd_errors_by_ws[workspace] = errs
 
     py_blocked: list[Blocked] = []
     nd_blocked: list[Blocked] = []
 
-    if uv_snap is not None and py_up and not py_err:
+    if uv_snap is not None and py_up and not py_errors:
         py_up, py_blocked = _verify_python(backend, uv_lock_path, uv_snap, py_up)
 
-    nd_up_tagged: list[tuple[str, Updated]] = (
-        [("frontend", u) for u in nd_up_fe]
-        + [("analecta-electron", u) for u in nd_up_el]
-        + [("analecta", u) for u in nd_up_root]
-    )
-
-    if node_snap is not None and nd_up_tagged and not nd_err:
+    if node_snap is not None and nd_up_tagged:
         nd_up_tagged, nd_blocked = _verify_node(node_snap, nd_up_tagged)
     nd_up = [u for _, u in nd_up_tagged]
+    nd_ws = [w for w, _ in nd_up_tagged]
+    nd_errors = [
+        f"`{ws}`: {msg}" for ws, msgs in nd_errors_by_ws.items() for msg in msgs
+    ]
 
     total_up = len(py_up) + len(nd_up)
     total_sk = len(py_sk) + len(nd_sk)
@@ -709,7 +764,18 @@ def main() -> None:
     )
 
     if pr_body_file:
-        body = _pr_body(py_up, py_sk, py_blocked, nd_up, nd_sk, nd_blocked, cooldown)
+        body = _pr_body(
+            py_up,
+            py_sk,
+            py_blocked,
+            py_errors,
+            nd_up,
+            nd_sk,
+            nd_blocked,
+            nd_errors=nd_errors,
+            nd_ws=nd_ws,
+            cooldown=cooldown,
+        )
         _ = pr_body_file.write_text(body)
         print(f"    PR body written to {pr_body_file}")
 
@@ -728,8 +794,8 @@ def main() -> None:
                 _ = changelog_path.write_text(updated_changelog)
                 print("    CHANGELOG.md updated")
 
-    had_error = py_err or nd_err
-    if had_error:
+    had_error = bool(py_errors) or bool(nd_errors_by_ws)
+    if had_error and total_up == 0:
         sys.exit(1)
 
 
