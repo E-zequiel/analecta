@@ -4,11 +4,13 @@ import json
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "scripts"))
+import deps_update  # pyright: ignore[reportMissingImports]
 from deps_update import (  # pyright: ignore[reportMissingImports]
     _WORKSPACE_DIR,
     _age_ok,
@@ -98,7 +100,43 @@ class TestWorkspaceDirCoverage:
         project_dirs = [repo_root] + [
             repo_root / rel_dir for rel_dir in workspace_config["packages"]
         ]
+        for d in project_dirs:
+            assert d.is_dir(), (
+                f"{d} is not a directory — pnpm-workspace.yaml's packages: entries"
+                " are assumed to be literal dirs, not globs"
+            )
         actual_names = {
             json.loads((d / "package.json").read_text())["name"] for d in project_dirs
         }
         assert actual_names == set(_WORKSPACE_DIR)
+
+    def test_main_calls_update_node_for_every_workspace(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """main() must actually process every workspace listed in _WORKSPACE_DIR.
+
+        The sibling test above only guards that _WORKSPACE_DIR's keys match
+        pnpm's real workspace projects — it says nothing about whether main()
+        itself calls update_node() for each one. main() wires those calls as
+        hardcoded literals, not a loop derived from _WORKSPACE_DIR, so a future
+        workspace could be added to the dict (passing the sibling test) while
+        main() never picks it up.
+        """
+        called_workspaces: list[str] = []
+
+        def fake_update_node(
+            cooldown: int, workspace: str
+        ) -> tuple[list[Any], list[Any], bool]:
+            called_workspaces.append(workspace)
+            return [], [], False
+
+        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], bool]:
+            return [], [], False
+
+        monkeypatch.setattr(deps_update, "update_node", fake_update_node)
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(sys, "argv", ["deps_update.py"])
+
+        deps_update.main()
+
+        assert set(called_workspaces) == set(_WORKSPACE_DIR)

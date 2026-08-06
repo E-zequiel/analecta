@@ -28,6 +28,8 @@ The procedure below adds that moment, and produces a paper trail in the PR/commi
 
 **Applies regardless of whether a dependency ships.** A devDependency used only by a local diagnostic script (e.g. `defuddle`, see `docs/defuddle-decision.md`) is exposed to the exact same threat — a compromised tarball lands in a developer's `node_modules/` and runs the moment the script is invoked — even though it's never part of a packaged build. "It's just a diagnostic tool" is not a reason to skip this procedure or the Socket scan; both apply to every direct dependency in the lockfile, not only the ones that ship.
 
+**Automated updates (`scripts/deps_update.py`) age-gate these devDependencies but don't check-gate them.** The updater applies its cooldown-and-verify batch logic to the root workspace (`analecta`, which holds `defuddle` and `socket`) the same as it does to `frontend`/`electron` — but its `--verify` step only ever runs `check.sh backend`/`check.sh frontend`, and neither exercises `defuddle` (invoked manually, per `docs/defuddle-decision.md`) or `socket` (invoked only by `scripts/socket-audit.sh`). A version bump to either can land in the auto-generated PR with a clean integrity hash and a passing `check.sh`, yet be functionally untested — treat those two lines in the PR body as unverified beyond the pnpm integrity check until manually exercised.
+
 ## Procedure (npm / pnpm)
 
 ### 1. Pre-install — fetch the published hash
