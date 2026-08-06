@@ -31,7 +31,11 @@ from typing import Any, cast
 REPO_ROOT = Path(__file__).parent.parent
 COOLDOWN_DAYS = 10
 _REGISTRY_TIMEOUT = 15
-_WORKSPACE_DIR = {"frontend": "frontend", "analecta-electron": "electron"}
+_WORKSPACE_DIR = {
+    "frontend": "frontend",
+    "analecta-electron": "electron",
+    "analecta": ".",
+}
 
 # ---------------------------------------------------------------------------
 # Types
@@ -429,15 +433,16 @@ def update_node(
 
 
 def _verify_node(
-    pnpm_lock_path: Path,
-    pnpm_snap: bytes,
-    fe_pkg_path: Path,
-    fe_pkg_snap: bytes,
-    el_pkg_path: Path,
-    el_pkg_snap: bytes,
+    snapshots: dict[Path, bytes],
     batch: list[tuple[str, Updated]],
 ) -> tuple[list[tuple[str, Updated]], list[Blocked]]:
-    """Verify a batch of Node updates with check.sh frontend; bisect on failure."""
+    """Verify a batch of Node updates with check.sh frontend; bisect on failure.
+
+    *snapshots* covers every file `_apply_node_package` can touch across all
+    workspaces (pnpm-lock.yaml plus each workspace's package.json) — restore
+    is a single loop over the dict instead of one write-back per path, so
+    adding or removing a workspace can't leave a path out of the rollback.
+    """
     if _run_check(REPO_ROOT, "frontend"):
         return batch, []
 
@@ -445,18 +450,13 @@ def _verify_node(
         "::warning::check.sh frontend failed on the full batch"
         " — isolating the offending package(s)"
     )
-    _ = pnpm_lock_path.write_bytes(pnpm_snap)
-    _ = fe_pkg_path.write_bytes(fe_pkg_snap)
-    _ = el_pkg_path.write_bytes(el_pkg_snap)
+    for path, data in snapshots.items():
+        _ = path.write_bytes(data)
 
     survivors: list[tuple[str, Updated]] = []
     blocked: list[Blocked] = []
     for workspace, (name, old, new, release_dt) in batch:
-        step_snap = {
-            pnpm_lock_path: pnpm_lock_path.read_bytes(),
-            fe_pkg_path: fe_pkg_path.read_bytes(),
-            el_pkg_path: el_pkg_path.read_bytes(),
-        }
+        step_snap = {path: path.read_bytes() for path in snapshots}
         ok, reason = _apply_node_package(workspace, name, new)
         if ok:
             ok = _run_check(REPO_ROOT, "frontend")
@@ -665,17 +665,24 @@ def main() -> None:
     pnpm_lock_path = REPO_ROOT / "pnpm-lock.yaml"
     fe_pkg_path = REPO_ROOT / _WORKSPACE_DIR["frontend"] / "package.json"
     el_pkg_path = REPO_ROOT / _WORKSPACE_DIR["analecta-electron"] / "package.json"
+    root_pkg_path = REPO_ROOT / _WORKSPACE_DIR["analecta"] / "package.json"
 
     uv_snap: bytes | None = uv_lock_path.read_bytes() if verify else None
-    pnpm_snap: bytes | None = pnpm_lock_path.read_bytes() if verify else None
-    fe_pkg_snap: bytes | None = fe_pkg_path.read_bytes() if verify else None
-    el_pkg_snap: bytes | None = el_pkg_path.read_bytes() if verify else None
+    node_snap: dict[Path, bytes] | None = (
+        {
+            p: p.read_bytes()
+            for p in (pnpm_lock_path, fe_pkg_path, el_pkg_path, root_pkg_path)
+        }
+        if verify
+        else None
+    )
 
     py_up, py_sk, py_err = update_python(cooldown)
     nd_up_fe, nd_sk_fe, nd_err_fe = update_node(cooldown, "frontend")
     nd_up_el, nd_sk_el, nd_err_el = update_node(cooldown, "analecta-electron")
-    nd_sk = nd_sk_fe + nd_sk_el
-    nd_err = nd_err_fe or nd_err_el
+    nd_up_root, nd_sk_root, nd_err_root = update_node(cooldown, "analecta")
+    nd_sk = nd_sk_fe + nd_sk_el + nd_sk_root
+    nd_err = nd_err_fe or nd_err_el or nd_err_root
 
     py_blocked: list[Blocked] = []
     nd_blocked: list[Blocked] = []
@@ -683,26 +690,14 @@ def main() -> None:
     if uv_snap is not None and py_up and not py_err:
         py_up, py_blocked = _verify_python(backend, uv_lock_path, uv_snap, py_up)
 
-    nd_up_tagged: list[tuple[str, Updated]] = [("frontend", u) for u in nd_up_fe] + [
-        ("analecta-electron", u) for u in nd_up_el
-    ]
+    nd_up_tagged: list[tuple[str, Updated]] = (
+        [("frontend", u) for u in nd_up_fe]
+        + [("analecta-electron", u) for u in nd_up_el]
+        + [("analecta", u) for u in nd_up_root]
+    )
 
-    if (
-        pnpm_snap is not None
-        and fe_pkg_snap is not None
-        and el_pkg_snap is not None
-        and nd_up_tagged
-        and not nd_err
-    ):
-        nd_up_tagged, nd_blocked = _verify_node(
-            pnpm_lock_path,
-            pnpm_snap,
-            fe_pkg_path,
-            fe_pkg_snap,
-            el_pkg_path,
-            el_pkg_snap,
-            nd_up_tagged,
-        )
+    if node_snap is not None and nd_up_tagged and not nd_err:
+        nd_up_tagged, nd_blocked = _verify_node(node_snap, nd_up_tagged)
     nd_up = [u for _, u in nd_up_tagged]
 
     total_up = len(py_up) + len(nd_up)
