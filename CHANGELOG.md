@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Electron bumped from 42.1.0 to 42.5.1, patching a session-isolation flaw in protocol response handling (GHSA-r4w5-6pfg-jxp5, CVE-2026-70606) where a `ProtocolResponse` omitting an explicit session could leak cached responses across isolated session partitions. Not reachable in this app: both custom protocol handlers (`app://`, `analecta-file://`) return `Response` objects via `protocol.handle()` rather than the legacy `ProtocolResponse` shape, and only `session.defaultSession` is used — no partitioned sessions exist to leak across.
 
+### Changed
+
+- Dependency updates: 2 packages (2026-08-06).
+
 ## [0.5.1] - 2026-08-03
 
 ### Added
