@@ -16,6 +16,7 @@ from deps_update import (  # pyright: ignore[reportMissingImports]
     _age_ok,
     _parse_iso,
     _parse_pnpm_outdated,
+    _pr_body,
 )
 
 
@@ -85,13 +86,17 @@ class TestParsePnpmOutdated:
 
 class TestWorkspaceDirCoverage:
     def test_covers_every_pnpm_workspace_project(self) -> None:
-        """Every project pnpm's workspace resolves to must have a _WORKSPACE_DIR entry.
+        """Every project pnpm's workspace resolves to must have a _WORKSPACE_DIR entry,
+        and each entry's directory must actually be that project (not another one).
 
         Guards against the failure mode this suite is named after: a new
         workspace (or the root package) added to the monorepo without a
         matching entry here would have its dependencies age silently —
         `update_node()` is only ever called for names in this dict, so a
-        missed workspace is never even checked against `pnpm outdated`.
+        missed workspace is never even checked against `pnpm outdated`. The
+        key->value check guards a narrower variant: a swapped or mistyped
+        directory would still pass a keys-only comparison while writing
+        version bumps into the wrong package.json.
         """
         repo_root = Path(__file__).parents[2]
         workspace_config = yaml.safe_load(
@@ -110,33 +115,83 @@ class TestWorkspaceDirCoverage:
         }
         assert actual_names == set(_WORKSPACE_DIR)
 
-    def test_main_calls_update_node_for_every_workspace(
+        for name, rel_dir in _WORKSPACE_DIR.items():
+            pkg_path = repo_root / rel_dir / "package.json"
+            actual_name = json.loads(pkg_path.read_text())["name"]
+            assert actual_name == name, (
+                f"_WORKSPACE_DIR[{name!r}] = {rel_dir!r} points at a package.json"
+                f" named {actual_name!r}, not {name!r}"
+            )
+
+
+class TestMainPartialWorkspaceFailure:
+    """main() must not let a hard error in one workspace/ecosystem block a PR
+    for the others — only a run that produces zero successful updates anywhere
+    should exit non-zero.
+    """
+
+    def test_one_workspace_error_does_not_abort_the_run(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """main() must actually process every workspace listed in _WORKSPACE_DIR.
-
-        The sibling test above only guards that _WORKSPACE_DIR's keys match
-        pnpm's real workspace projects — it says nothing about whether main()
-        itself calls update_node() for each one. main() wires those calls as
-        hardcoded literals, not a loop derived from _WORKSPACE_DIR, so a future
-        workspace could be added to the dict (passing the sibling test) while
-        main() never picks it up.
-        """
-        called_workspaces: list[str] = []
+        release_dt = datetime.now(UTC) - timedelta(days=30)
 
         def fake_update_node(
             cooldown: int, workspace: str
-        ) -> tuple[list[Any], list[Any], bool]:
-            called_workspaces.append(workspace)
-            return [], [], False
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            if workspace == "analecta":
+                return [], [], ["All npm registry fetches failed"]
+            return [("svelte", "5.0.0", "5.1.0", release_dt)], [], []
 
-        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], bool]:
-            return [], [], False
+        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+            return [], [], []
 
         monkeypatch.setattr(deps_update, "update_node", fake_update_node)
         monkeypatch.setattr(deps_update, "update_python", fake_update_python)
         monkeypatch.setattr(sys, "argv", ["deps_update.py"])
 
-        deps_update.main()
+        deps_update.main()  # must return normally, not sys.exit(1)
 
-        assert set(called_workspaces) == set(_WORKSPACE_DIR)
+    def test_total_failure_still_exits_nonzero(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If nothing succeeded anywhere and something errored, fail loudly."""
+
+        def fake_update_node(
+            cooldown: int, workspace: str
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            return [], [], ["All npm registry fetches failed"]
+
+        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+            return [], [], []
+
+        monkeypatch.setattr(deps_update, "update_node", fake_update_node)
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(sys, "argv", ["deps_update.py"])
+
+        with pytest.raises(SystemExit) as exc_info:
+            deps_update.main()
+        assert exc_info.value.code == 1
+
+
+class TestPrBody:
+    def test_reports_workspace_column_and_errors(self) -> None:
+        """The Node section must tag each row with its workspace and surface
+        per-workspace errors so a reviewer sees them without checking Action
+        logs — the PR is opened with the default GITHUB_TOKEN, which never
+        triggers ci.yml, so the PR body is the only review surface.
+        """
+        release_dt = datetime.now(UTC) - timedelta(days=30)
+        body = _pr_body(
+            py_up=[],
+            py_sk=[],
+            py_blocked=[],
+            py_errors=[],
+            nd_up=[("svelte", "5.0.0", "5.1.0", release_dt)],
+            nd_sk=[],
+            nd_blocked=[],
+            nd_errors=["`analecta`: All npm registry fetches failed"],
+            nd_ws=["frontend"],
+            cooldown=10,
+        )
+        assert "| `svelte` | `frontend` |" in body
+        assert "`analecta`: All npm registry fetches failed" in body
