@@ -138,7 +138,7 @@ class TestMainPartialWorkspaceFailure:
         release_dt = datetime.now(UTC) - timedelta(days=30)
 
         def fake_update_node(
-            cooldown: int, workspace: str
+            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
         ) -> tuple[list[Any], list[Any], list[str]]:
             if workspace == "analecta":
                 return [], [], ["All npm registry fetches failed"]
@@ -159,7 +159,7 @@ class TestMainPartialWorkspaceFailure:
         """If nothing succeeded anywhere and something errored, fail loudly."""
 
         def fake_update_node(
-            cooldown: int, workspace: str
+            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
         ) -> tuple[list[Any], list[Any], list[str]]:
             return [], [], ["All npm registry fetches failed"]
 
@@ -244,7 +244,7 @@ class TestVerifyGateIncludesErroredBatch:
             return applied, [], ["other-pkg: uv lock failed — boom"]
 
         def fake_update_node(
-            cooldown: int, workspace: str
+            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
         ) -> tuple[list[Any], list[Any], list[str]]:
             return [], [], []
 
@@ -310,6 +310,46 @@ class TestApplyNodePackageExceptionSafety:
         assert pkg_path.read_text() == original_pkg
         assert lock_path.read_text() == original_lock
 
+    def test_restores_files_on_unexpected_non_oserror(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A prior version of this except clause only caught OSError — any
+        other exception type (e.g. from subprocess.run's text-mode decoding,
+        or a bug in a called helper) propagated straight past the finally's
+        restore and out of _apply_node_package uncaught.
+        """
+        pkg_dir = tmp_path / "frontend"
+        pkg_dir.mkdir()
+        pkg_path = pkg_dir / "package.json"
+        lock_path = tmp_path / "pnpm-lock.yaml"
+        original_pkg = '{"dependencies": {"svelte": "5.0.0"}}'
+        original_lock = "lockfileVersion: 9\n"
+        pkg_path.write_text(original_pkg)
+        lock_path.write_text(original_lock)
+
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(deps_update, "_WORKSPACE_DIR", {"frontend": "frontend"})
+
+        def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        def fake_ensure_exact_specifier(
+            workspace_dir: str, name: str, version: str
+        ) -> bool:
+            raise ValueError("unexpected shape")
+
+        monkeypatch.setattr(deps_update, "_run", fake_run)
+        monkeypatch.setattr(
+            deps_update, "_ensure_exact_specifier", fake_ensure_exact_specifier
+        )
+
+        ok, reason = deps_update._apply_node_package("frontend", "svelte", "5.1.0")
+
+        assert ok is False
+        assert "unexpected shape" in reason
+        assert pkg_path.read_text() == original_pkg
+        assert lock_path.read_text() == original_lock
+
 
 class TestVerifyNodeResyncsNodeModules:
     """Restoring package.json/pnpm-lock.yaml bytes during bisection must be
@@ -334,9 +374,10 @@ class TestVerifyNodeResyncsNodeModules:
 
         resync_calls = 0
 
-        def fake_resync() -> None:
+        def fake_resync() -> bool:
             nonlocal resync_calls
             resync_calls += 1
+            return True
 
         # Full-batch check.sh fails, then the one per-step check.sh also fails.
         check_results = iter([False, False])
@@ -351,11 +392,112 @@ class TestVerifyNodeResyncsNodeModules:
         monkeypatch.setattr(deps_update, "_run_check", fake_run_check)
         monkeypatch.setattr(deps_update, "_apply_node_package", fake_apply)
 
-        survivors, blocked = deps_update._verify_node(snapshots, batch)
+        survivors, blocked, errors = deps_update._verify_node(snapshots, batch)
 
         assert survivors == []
         assert len(blocked) == 1
+        assert errors == []
         assert resync_calls == 2  # full-batch restore + the one blocked step
+
+
+class TestVerifyNodeResyncFailure:
+    """A failed `_resync_node_modules()` mid-bisection means node_modules no
+    longer reliably reflects the manifests on disk — every check.sh result
+    after that point would be measuring a broken environment, not the
+    package under test. See scripts/deps_update.py's docstring on
+    `_verify_node` for the two failure points this covers.
+    """
+
+    def _snapshots(self, tmp_path: Path) -> dict[Path, bytes]:
+        pkg_path = tmp_path / "package.json"
+        lock_path = tmp_path / "pnpm-lock.yaml"
+        pkg_bytes = b"{}"
+        lock_bytes = b"lockfileVersion: 9\n"
+        pkg_path.write_bytes(pkg_bytes)
+        lock_path.write_bytes(lock_bytes)
+        return {pkg_path: pkg_bytes, lock_path: lock_bytes}
+
+    def test_initial_resync_failure_discards_the_whole_batch(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The pre-batch resync (restoring the state before any package in
+        the batch was applied) failing means bisection can't even start on
+        a trustworthy tree — the whole batch must be dropped with an error,
+        not silently bisected against a stale node_modules.
+        """
+        snapshots = self._snapshots(tmp_path)
+        release_dt = datetime.now(UTC) - timedelta(days=30)
+        batch = [("frontend", ("svelte", "5.0.0", "5.1.0", release_dt))]
+
+        apply_calls = 0
+
+        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+            nonlocal apply_calls
+            apply_calls += 1
+            return True, ""
+
+        def fake_run_check(repo_root: Path, scope: str) -> bool:
+            return False
+
+        def fake_resync() -> bool:
+            return False
+
+        monkeypatch.setattr(deps_update, "_run_check", fake_run_check)
+        monkeypatch.setattr(deps_update, "_resync_node_modules", fake_resync)
+        monkeypatch.setattr(deps_update, "_apply_node_package", fake_apply)
+
+        survivors, blocked, errors = deps_update._verify_node(snapshots, batch)
+
+        assert survivors == []
+        assert blocked == []
+        assert len(errors) == 1
+        assert "node_modules resync failed" in errors[0]
+        assert apply_calls == 0  # bisection never started
+
+    def test_per_step_resync_failure_keeps_current_verdict_but_stops(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The package whose isolation check just ran gets recorded (that
+        verdict was measured against a valid, fully-applied tree before the
+        restore) — but once the resync that prepares the *next* candidate's
+        clean baseline fails, remaining packages must not be bisected
+        against an unreliable environment.
+        """
+        snapshots = self._snapshots(tmp_path)
+        release_dt = datetime.now(UTC) - timedelta(days=30)
+        batch = [
+            ("frontend", ("svelte", "5.0.0", "5.1.0", release_dt)),
+            ("frontend", ("vite", "6.0.0", "6.1.0", release_dt)),
+        ]
+
+        # Full-batch check.sh fails; first package's isolation check.sh also
+        # fails (so it gets blocked); the second package is never reached.
+        check_results = iter([False, False])
+
+        def fake_run_check(repo_root: Path, scope: str) -> bool:
+            return next(check_results)
+
+        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+            return True, ""
+
+        # First call is the initial full-batch restore (succeeds); second
+        # call is the per-step resync after isolating "svelte" (fails).
+        resync_results = iter([True, False])
+
+        def fake_resync() -> bool:
+            return next(resync_results)
+
+        monkeypatch.setattr(deps_update, "_run_check", fake_run_check)
+        monkeypatch.setattr(deps_update, "_resync_node_modules", fake_resync)
+        monkeypatch.setattr(deps_update, "_apply_node_package", fake_apply)
+
+        survivors, blocked, errors = deps_update._verify_node(snapshots, batch)
+
+        assert survivors == []
+        assert [name for name, _, _ in blocked] == ["svelte"]
+        assert len(errors) == 1
+        assert "node_modules resync failed" in errors[0]
+        assert "1 package(s) dropped from this batch" in errors[0]
 
 
 class TestNpmReleaseDateFetchTracking:
@@ -369,7 +511,9 @@ class TestNpmReleaseDateFetchTracking:
     def test_missing_version_timestamp_is_not_a_fetch_failure(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        def fake_registry_data(name: str) -> dict[str, Any] | None:
+        def fake_registry_data(
+            name: str, cache: dict[str, Any] | None = None
+        ) -> dict[str, Any] | None:
             return {"time": {}}  # reachable, but no entry for the target version
 
         def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -384,3 +528,266 @@ class TestNpmReleaseDateFetchTracking:
         assert updated == []
         assert skipped == []
         assert errors == []
+
+
+class TestUpdateNodeResyncsOnApplyFailure:
+    """A package that fails inside _apply_node_package can still have
+    mutated node_modules before its own manifest rollback ran (pnpm add
+    succeeded, dedupe didn't) — update_node's loop must resync node_modules
+    on that failure path so the next package in the same workspace isn't
+    checked against a tree that no longer matches the restored manifests.
+    """
+
+    def test_resync_called_after_apply_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        release_dt = datetime.now(UTC) - timedelta(days=30)
+
+        def fake_registry_data(
+            name: str, cache: dict[str, Any] | None = None
+        ) -> dict[str, Any] | None:
+            return {"time": {"5.1.0": release_dt.isoformat()}}
+
+        def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            stdout = json.dumps({"svelte": {"current": "5.0.0", "latest": "5.1.0"}})
+            return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+            return False, "dedupe failed — boom"
+
+        resync_calls = 0
+
+        def fake_resync() -> bool:
+            nonlocal resync_calls
+            resync_calls += 1
+            return True
+
+        monkeypatch.setattr(deps_update, "_npm_registry_data", fake_registry_data)
+        monkeypatch.setattr(deps_update, "_run", fake_run)
+        monkeypatch.setattr(deps_update, "_apply_node_package", fake_apply)
+        monkeypatch.setattr(deps_update, "_resync_node_modules", fake_resync)
+
+        updated, _skipped, errors = deps_update.update_node(10, "frontend")
+
+        assert updated == []
+        assert len(errors) == 1
+        assert "dedupe failed" in errors[0]
+        assert resync_calls == 1
+
+
+class TestRegistryCacheAcrossWorkspaces:
+    """A shared registry_cache must save repeat npm fetches for a package
+    outdated in more than one workspace's package.json (e.g. @types/node
+    kept version-aligned across root/frontend/electron) — but only once a
+    fetch has actually succeeded, so a transient failure stays retryable.
+    """
+
+    def test_cache_hit_skips_the_network_call(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cache: dict[str, dict[str, Any]] = {"svelte": {"time": {"5.1.0": "x"}}}
+        calls = 0
+
+        def fake_fetch_json(url: str, *, headers: Any = None) -> dict[str, Any] | None:
+            nonlocal calls
+            calls += 1
+            return {"time": {}}
+
+        monkeypatch.setattr(deps_update, "_fetch_json", fake_fetch_json)
+
+        data = deps_update._npm_registry_data("svelte", cache)
+
+        assert data == {"time": {"5.1.0": "x"}}
+        assert calls == 0
+
+    def test_failure_is_not_cached(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cache: dict[str, dict[str, Any]] = {}
+        calls = 0
+
+        def fake_fetch_json(url: str, *, headers: Any = None) -> dict[str, Any] | None:
+            nonlocal calls
+            calls += 1
+            return None
+
+        monkeypatch.setattr(deps_update, "_fetch_json", fake_fetch_json)
+
+        first = deps_update._npm_registry_data("svelte", cache)
+        second = deps_update._npm_registry_data("svelte", cache)
+
+        assert first is None
+        assert second is None
+        assert calls == 2  # not cached, so both calls hit the network
+        assert "svelte" not in cache
+
+    def test_success_is_cached_and_not_refetched(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cache: dict[str, dict[str, Any]] = {}
+        calls = 0
+
+        def fake_fetch_json(url: str, *, headers: Any = None) -> dict[str, Any] | None:
+            nonlocal calls
+            calls += 1
+            return {"time": {"5.1.0": "2025-01-01T00:00:00Z"}}
+
+        monkeypatch.setattr(deps_update, "_fetch_json", fake_fetch_json)
+
+        first = deps_update._npm_registry_data("svelte", cache)
+        second = deps_update._npm_registry_data("svelte", cache)
+
+        assert first == second
+        assert calls == 1
+
+
+class TestMainExceptionIsolation:
+    """The module docstring promises a hard error in one workspace/ecosystem
+    never prevents a PR for the others — that promise is only real if it
+    holds for unexpected exceptions, not just the (ok, reason) tuples the
+    functions normally return. See scripts/deps_update.py's earlier bug
+    where an exception from update_node/_verify_node/_verify_python on one
+    workspace crashed main() before the PR body (and CHANGELOG entry) for
+    every other workspace's already-applied updates was ever written.
+    """
+
+    def test_update_node_exception_does_not_abort_other_workspaces(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        release_dt = datetime.now(UTC) - timedelta(days=30)
+
+        def fake_update_node(
+            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            if workspace == "analecta":
+                raise RuntimeError("pnpm outdated returned garbage")
+            return [("svelte", "5.0.0", "5.1.0", release_dt)], [], []
+
+        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+            return [], [], []
+
+        monkeypatch.setattr(deps_update, "update_node", fake_update_node)
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(sys, "argv", ["deps_update.py"])
+
+        deps_update.main()  # must return normally, not raise RuntimeError
+
+    def test_verify_node_exception_still_writes_pr_body(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        release_dt = datetime.now(UTC) - timedelta(days=30)
+
+        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+            return [("ruff", "0.1.0", "0.2.0", release_dt)], [], []
+
+        def fake_update_node(
+            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            if workspace == "frontend":
+                return [("svelte", "5.0.0", "5.1.0", release_dt)], [], []
+            return [], [], []
+
+        def fake_verify_node(
+            snapshots: dict[Path, bytes], batch: list[Any]
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            raise RuntimeError("check.sh subprocess vanished")
+
+        def fake_verify_python(
+            backend: Path, uv_lock_path: Path, snap: bytes, batch: list[Any]
+        ) -> tuple[list[Any], list[Any]]:
+            return batch, []
+
+        pr_body_file = tmp_path / "pr-body.md"
+        for name in deps_update._WORKSPACE_DIR.values():
+            pkg = (
+                tmp_path / name / "package.json"
+                if name != "."
+                else tmp_path / "package.json"
+            )
+            pkg.parent.mkdir(parents=True, exist_ok=True)
+            pkg.write_text("{}")
+        (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
+        (tmp_path / "backend").mkdir(exist_ok=True)
+        (tmp_path / "backend" / "uv.lock").write_text("")
+        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
+
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(deps_update, "update_node", fake_update_node)
+        monkeypatch.setattr(deps_update, "_verify_python", fake_verify_python)
+        monkeypatch.setattr(deps_update, "_verify_node", fake_verify_node)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["deps_update.py", "--verify", "--pr-body-file", str(pr_body_file)],
+        )
+
+        deps_update.main()  # must not raise, and must still write the PR body
+
+        body = pr_body_file.read_text()
+        assert "`ruff`" in body
+        assert "_verify_node crashed unexpectedly" in body
+
+    def test_verify_python_exception_restores_uv_lock(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_verify_python's own rollback (restoring step_snap) only runs on
+        its normal bisection-failure path — an exception raised mid-batch
+        must not leave uv.lock carrying updates the PR body then claims (via
+        an emptied py_up) were never applied. main()'s except block must
+        restore the pre-batch snapshot itself.
+        """
+        release_dt = datetime.now(UTC) - timedelta(days=30)
+        original_lock = b"lockfileVersion: original\n"
+
+        (tmp_path / "backend").mkdir()
+        uv_lock_path = tmp_path / "backend" / "uv.lock"
+        uv_lock_path.write_bytes(original_lock)
+        for name in deps_update._WORKSPACE_DIR.values():
+            pkg = (
+                tmp_path / name / "package.json"
+                if name != "."
+                else tmp_path / "package.json"
+            )
+            pkg.parent.mkdir(parents=True, exist_ok=True)
+            pkg.write_text("{}")
+        (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
+        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
+
+        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+            return [("ruff", "0.1.0", "0.2.0", release_dt)], [], []
+
+        def fake_update_node(
+            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            return [], [], []
+
+        def fake_verify_python(
+            backend: Path, uv_lock_path: Path, snap: bytes, batch: list[Any]
+        ) -> tuple[list[Any], list[Any]]:
+            # Simulate a partial bisection write before the crash — this is
+            # the state main()'s except block must undo.
+            uv_lock_path.write_bytes(b"lockfileVersion: mid-bisection\n")
+            raise RuntimeError("uv subprocess vanished")
+
+        pr_body_file = tmp_path / "pr-body.md"
+
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(deps_update, "update_node", fake_update_node)
+        monkeypatch.setattr(deps_update, "_verify_python", fake_verify_python)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["deps_update.py", "--verify", "--pr-body-file", str(pr_body_file)],
+        )
+
+        # Nothing succeeded anywhere in this run (py_up got zeroed by the
+        # crash, no Node updates), so main() exits 1 by its own "only fail
+        # loudly when nothing succeeded" rule — the PR body write happens
+        # before that exit check, so it's still there to assert on.
+        with pytest.raises(SystemExit):
+            deps_update.main()
+
+        assert uv_lock_path.read_bytes() == original_lock
+        body = pr_body_file.read_text()
+        assert "`ruff`" not in body
+        assert "_verify_python crashed unexpectedly" in body

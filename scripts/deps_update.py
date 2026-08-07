@@ -87,6 +87,12 @@ def _run_check(repo_root: Path, scope: str) -> bool:
     return result.returncode == 0
 
 
+def _record_error(errors: list[str], msg: str) -> None:
+    """Emit a GitHub Actions ::error:: annotation and record msg for the PR body."""
+    print(f"::error::{msg}")
+    errors.append(msg)
+
+
 def _sanitize_reason(text: str, limit: int = 200) -> str:
     """Make subprocess-derived text safe to interpolate into the committed PR body.
 
@@ -195,16 +201,15 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], list[str
 
         ok, err = _apply_python_package(name, backend)
         if not ok:
-            print(f"::error::{name}: {err}")
-            errors.append(f"{name}: {err}")
+            _record_error(errors, f"{name}: {err}")
         else:
             print("    [ok] updated")
             updated.append((name, current, latest, release_dt))
 
     if fetch_attempted > 0 and fetch_ok == 0:
-        msg = "All PyPI registry fetches failed — no packages could be checked"
-        print(f"::error::{msg}")
-        errors.append(msg)
+        _record_error(
+            errors, "All PyPI registry fetches failed — no packages could be checked"
+        )
 
     return updated, skipped, errors
 
@@ -262,9 +267,22 @@ def _parse_pnpm_outdated(raw: str) -> dict[str, dict[str, Any]]:
     return merged
 
 
-def _npm_registry_data(name: str) -> dict[str, Any] | None:
+def _npm_registry_data(
+    name: str, cache: dict[str, dict[str, Any]] | None = None
+) -> dict[str, Any] | None:
+    """Fetch npm registry metadata for name, optionally through a shared cache.
+
+    Only successful responses are cached: a transient registry failure must
+    stay retryable on the next lookup (e.g. the same package checked again
+    in another workspace), not get pinned as a permanent miss.
+    """
+    if cache is not None and name in cache:
+        return cache[name]
     encoded = name.replace("/", "%2F")
-    return _fetch_json(f"https://registry.npmjs.org/{encoded}")
+    data = _fetch_json(f"https://registry.npmjs.org/{encoded}")
+    if data is not None and cache is not None:
+        cache[name] = data
+    return data
 
 
 def _npm_release_date(data: dict[str, Any], version: str) -> datetime | None:
@@ -312,14 +330,20 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
     (type-checking, lint, vite build) launches Electron or needs its binary,
     so skipping scripts here costs nothing functionally.
 
-    A (False, reason) return is guaranteed to be a no-op on disk: the exact-pin
+    A (False, reason) return is guaranteed to leave the manifest pair —
+    package.json and pnpm-lock.yaml — exactly as it found them: the exact-pin
     rewrite (a direct file write, not a pnpm operation) can succeed and then
-    have its follow-up lockfile resync fail, which would otherwise leave
-    package.json and pnpm-lock.yaml mutually inconsistent for a package that
-    was never actually applied — this function snapshots both before touching
-    them and restores on any failure path (including an unexpected exception,
-    via the try/finally below — not just the checked pnpm/dedupe returncodes),
-    so callers never have to reason about partial state.
+    have its follow-up lockfile resync fail, which would otherwise leave the
+    two files mutually inconsistent for a package that was never actually
+    applied — this function snapshots both before touching them and restores
+    on any failure path (including an unexpected exception, via the
+    try/finally below — not just the checked pnpm/dedupe returncodes).
+
+    It says nothing about node_modules, which `pnpm add`/install/dedupe can
+    already have mutated before a later step fails — callers that need
+    node_modules to match the restored manifests must call
+    `_resync_node_modules()` themselves on a False return (update_node's
+    loop does this).
 
     Returns:
         (True, "") on success, (False, reason) on failure at any step.
@@ -380,7 +404,9 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
 
         applied = True
         return True, ""
-    except OSError as exc:
+    except Exception as exc:
+        # Broad on purpose: any exception here must still hit the finally
+        # below and restore package.json/pnpm-lock.yaml, not just OSError.
         return False, f"unexpected error applying {name} — {exc}"
     finally:
         if not applied:
@@ -389,9 +415,17 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
 
 
 def update_node(
-    cooldown: int, workspace: str
+    cooldown: int,
+    workspace: str,
+    registry_cache: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[list[Updated], list[Skipped], list[str]]:
-    """Check and apply Node dependency updates via pnpm for a given workspace."""
+    """Check and apply Node dependency updates via pnpm for a given workspace.
+
+    *registry_cache*, when passed, is shared across sibling workspaces by the
+    caller so a package outdated in more than one of them (e.g. @types/node
+    kept version-aligned across root/frontend/electron) isn't fetched from
+    the npm registry once per workspace for identical data.
+    """
     print(f"\n=== Node (pnpm) — {workspace} ===")
 
     # pnpm outdated exits 1 when packages are outdated — capture regardless
@@ -400,11 +434,12 @@ def update_node(
         cwd=REPO_ROOT,
     )
     if result.returncode not in {0, 1}:
-        msg = (
-            f"pnpm outdated failed (exit {result.returncode}): {result.stderr.strip()}"
+        errs: list[str] = []
+        _record_error(
+            errs,
+            f"pnpm outdated failed (exit {result.returncode}): {result.stderr.strip()}",
         )
-        print(f"::error::{msg}")
-        return [], [], [msg]
+        return [], [], errs
 
     raw = result.stdout.strip()
     if not raw:
@@ -435,7 +470,7 @@ def update_node(
         print(f"  {name}: {current} -> {latest}")
 
         fetch_attempted += 1
-        data = _npm_registry_data(name)
+        data = _npm_registry_data(name, registry_cache)
         if data is None:
             continue
         fetch_ok += 1
@@ -451,22 +486,26 @@ def update_node(
 
         ok, err = _apply_node_package(workspace, name, latest)
         if not ok:
-            print(f"::error::{name}: {err}")
-            errors.append(f"{name}: {err}")
+            _record_error(errors, f"{name}: {err}")
+            # A failed apply can still have mutated node_modules (pnpm add
+            # succeeded, a later step didn't) before package.json/pnpm-lock
+            # were rolled back — resync so the next package in this loop
+            # isn't checked against a tree that no longer matches them.
+            _ = _resync_node_modules()
             continue
 
         print("    [ok] updated")
         updated.append((name, current, latest, release_dt))
 
     if fetch_attempted > 0 and fetch_ok == 0:
-        msg = "All npm registry fetches failed — no packages could be checked"
-        print(f"::error::{msg}")
-        errors.append(msg)
+        _record_error(
+            errors, "All npm registry fetches failed — no packages could be checked"
+        )
 
     return updated, skipped, errors
 
 
-def _resync_node_modules() -> None:
+def _resync_node_modules() -> bool:
     """Reinstall node_modules to match package.json/pnpm-lock.yaml on disk.
 
     check.sh frontend resolves its tools (`pnpm exec eslint`, `pnpm exec
@@ -479,6 +518,12 @@ def _resync_node_modules() -> None:
     one of check.sh's own tools (e.g. eslint, itself a root-workspace
     dependency) can't keep failing against a stale installed binary and
     misattribute the block to an unrelated package.
+
+    Returns:
+        True on success, False if the reinstall itself failed — callers
+        must not trust node_modules to match the manifests on disk when
+        this returns False, since whatever check.sh runs next would be
+        measuring a broken environment, not the package under test.
     """
     result = _run(
         ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"], cwd=REPO_ROOT
@@ -492,21 +537,33 @@ def _resync_node_modules() -> None:
             "::error::node_modules resync failed after restoring"
             f" package.json/pnpm-lock.yaml — {result.stderr.strip()}"
         )
+        return False
+    return True
 
 
 def _verify_node(
     snapshots: dict[Path, bytes],
     batch: list[tuple[str, Updated]],
-) -> tuple[list[tuple[str, Updated]], list[Blocked]]:
+) -> tuple[list[tuple[str, Updated]], list[Blocked], list[str]]:
     """Verify a batch of Node updates with check.sh frontend; bisect on failure.
 
     *snapshots* covers every file `_apply_node_package` can touch across all
     workspaces (pnpm-lock.yaml plus each workspace's package.json) — restore
     is a single loop over the dict instead of one write-back per path, so
     adding or removing a workspace can't leave a path out of the rollback.
+
+    A failed `_resync_node_modules()` means node_modules no longer reliably
+    reflects the manifests just restored — any check.sh result after that
+    point would be measuring a broken environment, not the package under
+    test. The initial resync (restoring the pre-batch state) failing aborts
+    the whole batch. A per-step resync failing (restoring the pre-package
+    state before testing the next candidate) still keeps the package just
+    isolated — that verdict was measured before the resync ran — but stops
+    bisection there instead of testing further candidates against a tree
+    that's no longer trustworthy.
     """
     if _run_check(REPO_ROOT, "frontend"):
-        return batch, []
+        return batch, [], []
 
     print(
         "::warning::check.sh frontend failed on the full batch"
@@ -514,11 +571,17 @@ def _verify_node(
     )
     for path, data in snapshots.items():
         _ = path.write_bytes(data)
-    _resync_node_modules()
+    if not _resync_node_modules():
+        msg = (
+            "node_modules resync failed while restoring the pre-batch state"
+            " — aborting bisection, batch discarded"
+        )
+        return [], [], [msg]
 
     survivors: list[tuple[str, Updated]] = []
     blocked: list[Blocked] = []
-    for workspace, (name, old, new, release_dt) in batch:
+    errors: list[str] = []
+    for i, (workspace, (name, old, new, release_dt)) in enumerate(batch):
         step_snap = {path: path.read_bytes() for path in snapshots}
         ok, reason = _apply_node_package(workspace, name, new)
         if ok:
@@ -527,13 +590,22 @@ def _verify_node(
         if ok:
             print(f"    [ok] {name} ({workspace}): confirmed in isolation")
             survivors.append((workspace, (name, old, new, release_dt)))
-        else:
-            for path, data in step_snap.items():
-                _ = path.write_bytes(data)
-            _resync_node_modules()
-            print(f"::warning::{name} ({workspace}): blocked — {reason}")
-            blocked.append((name, new, _sanitize_reason(reason)))
-    return survivors, blocked
+            continue
+
+        for path, data in step_snap.items():
+            _ = path.write_bytes(data)
+        print(f"::warning::{name} ({workspace}): blocked — {reason}")
+        blocked.append((name, new, _sanitize_reason(reason)))
+        if not _resync_node_modules():
+            remaining = len(batch) - i - 1
+            msg = (
+                f"node_modules resync failed after isolating {name} — aborting"
+                f" bisection; {remaining} package(s) dropped from this batch"
+                " without being verified"
+            )
+            errors.append(msg)
+            break
+    return survivors, blocked, errors
 
 
 # ---------------------------------------------------------------------------
@@ -572,24 +644,17 @@ def _pr_body(
     ) -> None:
         lines.append(f"### {title}")
         if up:
-            if workspaces is not None:
-                lines.append("| Package | Workspace | Old | New | Released |")
-                lines.append("|---------|-----------|-----|-----|----------|")
-                for (name, old, new, release_dt), ws in zip(
-                    up, workspaces, strict=True
-                ):
-                    lines.append(
-                        f"| `{name}` | `{ws}` | {old} | {new}"
-                        f" | {release_dt.strftime('%Y-%m-%d')} |"
-                    )
-            else:
-                lines.append("| Package | Old | New | Released |")
-                lines.append("|---------|-----|-----|----------|")
-                for name, old, new, release_dt in up:
-                    lines.append(
-                        f"| `{name}` | {old} | {new}"
-                        f" | {release_dt.strftime('%Y-%m-%d')} |"
-                    )
+            header = ["Package", *(["Workspace"] if workspaces is not None else [])]
+            header += ["Old", "New", "Released"]
+            lines.append(f"| {' | '.join(header)} |")
+            lines.append(f"|{'|'.join('-' * (len(h) + 2) for h in header)}|")
+            ws_col: list[str | None] = (
+                list(workspaces) if workspaces is not None else [None] * len(up)
+            )
+            for (name, old, new, release_dt), ws in zip(up, ws_col, strict=True):
+                cells = [f"`{name}`", *([f"`{ws}`"] if ws is not None else [])]
+                cells += [old, new, release_dt.strftime("%Y-%m-%d")]
+                lines.append(f"| {' | '.join(cells)} |")
         else:
             lines.append("_No updates applied._")
         if sk:
@@ -769,13 +834,25 @@ def main() -> None:
         else None
     )
 
-    py_up, py_sk, py_errors = update_python(cooldown)
+    try:
+        py_up, py_sk, py_errors = update_python(cooldown)
+    except Exception as exc:
+        msg = f"update_python crashed unexpectedly — {exc}"
+        print(f"::error::{msg}")
+        py_up, py_sk, py_errors = [], [], [msg]
 
     nd_sk: list[Skipped] = []
     nd_up_tagged: list[tuple[str, Updated]] = []
     nd_errors_by_ws: dict[str, list[str]] = {}
+    registry_cache: dict[str, dict[str, Any]] = {}
     for workspace in _WORKSPACE_DIR:
-        up, sk, errs = update_node(cooldown, workspace)
+        try:
+            up, sk, errs = update_node(cooldown, workspace, registry_cache)
+        except Exception as exc:
+            msg = f"update_node crashed unexpectedly — {exc}"
+            print(f"::error::{msg}")
+            nd_errors_by_ws[workspace] = [msg]
+            continue
         nd_up_tagged += [(workspace, u) for u in up]
         nd_sk += sk
         if errs:
@@ -785,15 +862,35 @@ def main() -> None:
     nd_blocked: list[Blocked] = []
 
     if uv_snap is not None and py_up:
-        py_up, py_blocked = _verify_python(backend, uv_lock_path, uv_snap, py_up)
+        try:
+            py_up, py_blocked = _verify_python(backend, uv_lock_path, uv_snap, py_up)
+        except Exception as exc:
+            msg = f"_verify_python crashed unexpectedly — {exc}"
+            print(f"::error::{msg}")
+            py_errors = [*py_errors, msg]
+            # _verify_python's own rollback (restoring step_snap) only runs
+            # on its normal bisection-failure path — an exception can leave
+            # uv.lock mid-bisection, still carrying updates that py_up=[]
+            # below is about to claim (in the PR body) were never applied.
+            _ = uv_lock_path.write_bytes(uv_snap)
+            py_up = []
 
+    nd_verify_errors: list[str] = []
     if node_snap is not None and nd_up_tagged:
-        nd_up_tagged, nd_blocked = _verify_node(node_snap, nd_up_tagged)
+        try:
+            nd_up_tagged, nd_blocked, nd_verify_errors = _verify_node(
+                node_snap, nd_up_tagged
+            )
+        except Exception as exc:
+            msg = f"_verify_node crashed unexpectedly — {exc}"
+            print(f"::error::{msg}")
+            nd_verify_errors = [msg]
+            nd_up_tagged = []
     nd_up = [u for _, u in nd_up_tagged]
     nd_ws = [w for w, _ in nd_up_tagged]
     nd_errors = [
         f"`{ws}`: {msg}" for ws, msgs in nd_errors_by_ws.items() for msg in msgs
-    ]
+    ] + nd_verify_errors
 
     total_up = len(py_up) + len(nd_up)
     total_sk = len(py_sk) + len(nd_sk)
@@ -834,7 +931,7 @@ def main() -> None:
                 _ = changelog_path.write_text(updated_changelog)
                 print("    CHANGELOG.md updated")
 
-    had_error = bool(py_errors) or bool(nd_errors_by_ws)
+    had_error = bool(py_errors) or bool(nd_errors_by_ws) or bool(nd_verify_errors)
     if had_error and total_up == 0:
         sys.exit(1)
 
