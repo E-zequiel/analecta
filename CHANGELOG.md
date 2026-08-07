@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Electron bumped from 42.1.0 to 42.5.1, patching a session-isolation flaw in protocol response handling (GHSA-r4w5-6pfg-jxp5, CVE-2026-70606) where a `ProtocolResponse` omitting an explicit session could leak cached responses across isolated session partitions. Not reachable in this app: both custom protocol handlers (`app://`, `analecta-file://`) return `Response` objects via `protocol.handle()` rather than the legacy `ProtocolResponse` shape, and only `session.defaultSession` is used — no partitioned sessions exist to leak across.
+- `scripts/deps_update.py`: an unhandled exception during a dependency update run could leave `uv.lock`/`pnpm-lock.yaml`/a workspace `package.json` carrying an unverified, unreported mutation on disk — 3 of the run's 4 crash-recovery paths restored the report (`_up=[]`, an `::error::`) but not the file, and `deps-update.yml`'s CI job commits any diff it finds in those files unconditionally. Every crash path now shares one restore-then-record helper, closing the gap.
 
 ### Changed
 

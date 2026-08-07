@@ -29,6 +29,7 @@ import sys
 import tomllib
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -91,6 +92,37 @@ def _record_error(errors: list[str], msg: str) -> None:
     """Emit a GitHub Actions ::error:: annotation and record msg for the PR body."""
     print(f"::error::{msg}")
     errors.append(msg)
+
+
+def _restore_snapshot(snapshot: dict[Path, bytes]) -> None:
+    """Write every path in *snapshot* back to its captured bytes."""
+    for path, data in snapshot.items():
+        _ = path.write_bytes(data)
+
+
+def _guard[T](
+    label: str,
+    errors: list[str],
+    snapshot: dict[Path, bytes] | None,
+    fn: Callable[[], T],
+) -> T | None:
+    """Run fn(); on any exception, restore *snapshot* and record the crash.
+
+    Centralizes what main()'s crash handlers must each do — restore state
+    before recording the error, not after or not at all — so a new call
+    site can't independently forget the restore half of that pair the way
+    three of the four hand-written handlers this replaces once did.
+
+    Returns:
+        fn()'s result, or None if it raised.
+    """
+    try:
+        return fn()
+    except Exception as exc:
+        if snapshot is not None:
+            _restore_snapshot(snapshot)
+        _record_error(errors, f"{label} crashed unexpectedly — {exc}")
+        return None
 
 
 def _sanitize_reason(text: str, limit: int = 200) -> str:
@@ -174,6 +206,8 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], list[str
     errors: list[str] = []
     fetch_attempted = 0
     fetch_ok = 0
+    candidates = 0
+    date_unknown = 0
 
     for name in names:
         fetch_attempted += 1
@@ -187,11 +221,13 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], list[str
         if not latest or latest == current:
             continue
         print(f"  {name}: {current} -> {latest}")
+        candidates += 1
 
         releases = cast(dict[str, Any], data.get("releases", {}))
         release_dt = _pypi_release_date(name, latest, releases)
         if release_dt is None:
             print("    [warn] release date unavailable, skipping")
+            date_unknown += 1
             continue
         if not _age_ok(release_dt, cooldown):
             days_old = (datetime.now(UTC) - release_dt).days
@@ -210,6 +246,12 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], list[str
         _record_error(
             errors, "All PyPI registry fetches failed — no packages could be checked"
         )
+    elif candidates > 0 and date_unknown == candidates:
+        _record_error(
+            errors,
+            "All release-date lookups failed for packages with an available"
+            " update — cooldown could not be evaluated",
+        )
 
     return updated, skipped, errors
 
@@ -225,7 +267,7 @@ def _verify_python(
         "::warning::check.sh backend failed on the full batch"
         " — isolating the offending package(s)"
     )
-    _ = uv_lock_path.write_bytes(snap)
+    _restore_snapshot({uv_lock_path: snap})
 
     survivors: list[Updated] = []
     blocked: list[Blocked] = []
@@ -239,7 +281,7 @@ def _verify_python(
             print(f"    [ok] {name}: confirmed in isolation")
             survivors.append((name, old, new, release_dt))
         else:
-            _ = uv_lock_path.write_bytes(step_snap)
+            _restore_snapshot({uv_lock_path: step_snap})
             print(f"::warning::{name}: blocked — {reason}")
             blocked.append((name, new, _sanitize_reason(reason)))
     return survivors, blocked
@@ -461,6 +503,8 @@ def update_node(
     errors: list[str] = []
     fetch_attempted = 0
     fetch_ok = 0
+    candidates = 0
+    date_unknown = 0
 
     for name, info in sorted(outdated.items()):
         current: str = cast(str, info.get("current", ""))
@@ -468,6 +512,7 @@ def update_node(
         if not latest or latest == current:
             continue
         print(f"  {name}: {current} -> {latest}")
+        candidates += 1
 
         fetch_attempted += 1
         data = _npm_registry_data(name, registry_cache)
@@ -477,6 +522,7 @@ def update_node(
         release_dt = _npm_release_date(data, latest)
         if release_dt is None:
             print("    [warn] release date unavailable, skipping")
+            date_unknown += 1
             continue
         if not _age_ok(release_dt, cooldown):
             days_old = (datetime.now(UTC) - release_dt).days
@@ -491,7 +537,10 @@ def update_node(
             # succeeded, a later step didn't) before package.json/pnpm-lock
             # were rolled back — resync so the next package in this loop
             # isn't checked against a tree that no longer matches them.
-            _ = _resync_node_modules()
+            if not _resync_node_modules():
+                _record_error(
+                    errors, f"node_modules resync failed after {name} failed to apply"
+                )
             continue
 
         print("    [ok] updated")
@@ -500,6 +549,12 @@ def update_node(
     if fetch_attempted > 0 and fetch_ok == 0:
         _record_error(
             errors, "All npm registry fetches failed — no packages could be checked"
+        )
+    elif candidates > 0 and date_unknown == candidates:
+        _record_error(
+            errors,
+            "All release-date lookups failed for packages with an available"
+            " update — cooldown could not be evaluated",
         )
 
     return updated, skipped, errors
@@ -569,8 +624,7 @@ def _verify_node(
         "::warning::check.sh frontend failed on the full batch"
         " — isolating the offending package(s)"
     )
-    for path, data in snapshots.items():
-        _ = path.write_bytes(data)
+    _restore_snapshot(snapshots)
     if not _resync_node_modules():
         msg = (
             "node_modules resync failed while restoring the pre-batch state"
@@ -592,8 +646,7 @@ def _verify_node(
             survivors.append((workspace, (name, old, new, release_dt)))
             continue
 
-        for path, data in step_snap.items():
-            _ = path.write_bytes(data)
+        _restore_snapshot(step_snap)
         print(f"::warning::{name} ({workspace}): blocked — {reason}")
         blocked.append((name, new, _sanitize_reason(reason)))
         if not _resync_node_modules():
@@ -623,6 +676,7 @@ def _pr_body(
     nd_blocked: list[Blocked],
     *,
     nd_errors: list[str],
+    nd_error_ws: list[str | None],
     nd_ws: list[str],
     cooldown: int,
 ) -> str:
@@ -641,6 +695,7 @@ def _pr_body(
         blocked: list[Blocked],
         errors: list[str],
         workspaces: list[str] | None = None,
+        error_workspaces: list[str | None] | None = None,
     ) -> None:
         lines.append(f"### {title}")
         if up:
@@ -674,15 +729,33 @@ def _pr_body(
             )
         if errors:
             lines.append("")
-            sanitized = [_sanitize_reason(e) for e in errors]
+            err_ws_col: list[str | None] = (
+                list(error_workspaces)
+                if error_workspaces is not None
+                else [None] * len(errors)
+            )
+            items = [
+                f"`{ws}`: {_sanitize_reason(e)}"
+                if ws is not None
+                else _sanitize_reason(e)
+                for e, ws in zip(errors, err_ws_col, strict=True)
+            ]
             lines.append(
                 "**Errors — some packages may not have been checked:**"
-                f" {'; '.join(sanitized)}"
+                f" {'; '.join(items)}"
             )
         lines.append("")
 
     _section("Python", py_up, py_sk, py_blocked, py_errors)
-    _section("Node / pnpm", nd_up, nd_sk, nd_blocked, nd_errors, workspaces=nd_ws)
+    _section(
+        "Node / pnpm",
+        nd_up,
+        nd_sk,
+        nd_blocked,
+        nd_errors,
+        workspaces=nd_ws,
+        error_workspaces=nd_error_ws,
+    )
 
     lines += [
         "---",
@@ -834,25 +907,46 @@ def main() -> None:
         else None
     )
 
-    try:
-        py_up, py_sk, py_errors = update_python(cooldown)
-    except Exception as exc:
-        msg = f"update_python crashed unexpectedly — {exc}"
-        print(f"::error::{msg}")
-        py_up, py_sk, py_errors = [], [], [msg]
+    py_errors: list[str] = []
+    py_snap = {uv_lock_path: uv_snap} if uv_snap is not None else None
+    py_result = _guard(
+        "update_python", py_errors, py_snap, lambda: update_python(cooldown)
+    )
+    if py_result is None:
+        py_up, py_sk = [], []
+    else:
+        py_up, py_sk, fn_errors = py_result
+        py_errors += fn_errors
 
     nd_sk: list[Skipped] = []
     nd_up_tagged: list[tuple[str, Updated]] = []
     nd_errors_by_ws: dict[str, list[str]] = {}
     registry_cache: dict[str, dict[str, Any]] = {}
     for workspace in _WORKSPACE_DIR:
-        try:
-            up, sk, errs = update_node(cooldown, workspace, registry_cache)
-        except Exception as exc:
-            msg = f"update_node crashed unexpectedly — {exc}"
-            print(f"::error::{msg}")
-            nd_errors_by_ws[workspace] = [msg]
+        ws_errors: list[str] = []
+        # A fresh snapshot per iteration, not the single global node_snap:
+        # pnpm-lock.yaml is shared across every workspace, so restoring the
+        # very first pre-run snapshot on this workspace's crash would also
+        # wipe out an earlier workspace's already-applied, already-tracked
+        # updates still on disk — undoing more than this workspace broke.
+        step_snap = (
+            {p: p.read_bytes() for p in node_snap} if node_snap is not None else None
+        )
+        result = _guard(
+            "update_node",
+            ws_errors,
+            step_snap,
+            lambda ws=workspace: update_node(cooldown, ws, registry_cache),
+        )
+        if result is None:
+            if step_snap is not None and not _resync_node_modules():
+                _record_error(
+                    ws_errors,
+                    "node_modules resync failed after restoring the pre-crash state",
+                )
+            nd_errors_by_ws[workspace] = ws_errors
             continue
+        up, sk, errs = result
         nd_up_tagged += [(workspace, u) for u in up]
         nd_sk += sk
         if errs:
@@ -862,35 +956,41 @@ def main() -> None:
     nd_blocked: list[Blocked] = []
 
     if uv_snap is not None and py_up:
-        try:
-            py_up, py_blocked = _verify_python(backend, uv_lock_path, uv_snap, py_up)
-        except Exception as exc:
-            msg = f"_verify_python crashed unexpectedly — {exc}"
-            print(f"::error::{msg}")
-            py_errors = [*py_errors, msg]
-            # _verify_python's own rollback (restoring step_snap) only runs
-            # on its normal bisection-failure path — an exception can leave
-            # uv.lock mid-bisection, still carrying updates that py_up=[]
-            # below is about to claim (in the PR body) were never applied.
-            _ = uv_lock_path.write_bytes(uv_snap)
+        verify_result = _guard(
+            "_verify_python",
+            py_errors,
+            {uv_lock_path: uv_snap},
+            lambda: _verify_python(backend, uv_lock_path, uv_snap, py_up),
+        )
+        if verify_result is None:
             py_up = []
+        else:
+            py_up, py_blocked = verify_result
 
     nd_verify_errors: list[str] = []
     if node_snap is not None and nd_up_tagged:
-        try:
-            nd_up_tagged, nd_blocked, nd_verify_errors = _verify_node(
-                node_snap, nd_up_tagged
-            )
-        except Exception as exc:
-            msg = f"_verify_node crashed unexpectedly — {exc}"
-            print(f"::error::{msg}")
-            nd_verify_errors = [msg]
+        verify_result = _guard(
+            "_verify_node",
+            nd_verify_errors,
+            node_snap,
+            lambda: _verify_node(node_snap, nd_up_tagged),
+        )
+        if verify_result is None:
             nd_up_tagged = []
+        else:
+            nd_up_tagged, nd_blocked, verify_errors = verify_result
+            nd_verify_errors += verify_errors
     nd_up = [u for _, u in nd_up_tagged]
     nd_ws = [w for w, _ in nd_up_tagged]
-    nd_errors = [
-        f"`{ws}`: {msg}" for ws, msgs in nd_errors_by_ws.items() for msg in msgs
-    ] + nd_verify_errors
+    nd_errors: list[str] = []
+    nd_error_ws: list[str | None] = []
+    for ws, msgs in nd_errors_by_ws.items():
+        for msg in msgs:
+            nd_errors.append(msg)
+            nd_error_ws.append(ws)
+    for msg in nd_verify_errors:
+        nd_errors.append(msg)
+        nd_error_ws.append(None)
 
     total_up = len(py_up) + len(nd_up)
     total_sk = len(py_sk) + len(nd_sk)
@@ -910,6 +1010,7 @@ def main() -> None:
             nd_sk,
             nd_blocked,
             nd_errors=nd_errors,
+            nd_error_ws=nd_error_ws,
             nd_ws=nd_ws,
             cooldown=cooldown,
         )

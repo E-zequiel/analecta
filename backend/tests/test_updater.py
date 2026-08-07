@@ -183,7 +183,7 @@ class TestPrBody:
         triggers ci.yml, so the PR body is the only review surface.
         """
         release_dt = datetime.now(UTC) - timedelta(days=30)
-        nd_error_raw = "`analecta`: All npm registry fetches failed"
+        nd_error_msg = "All npm registry fetches failed"
         body = _pr_body(
             py_up=[],
             py_sk=[],
@@ -192,15 +192,16 @@ class TestPrBody:
             nd_up=[("svelte", "5.0.0", "5.1.0", release_dt)],
             nd_sk=[],
             nd_blocked=[],
-            nd_errors=[nd_error_raw],
+            nd_errors=[nd_error_msg],
+            nd_error_ws=["analecta"],
             nd_ws=["frontend"],
             cooldown=10,
         )
         assert "| `svelte` | `frontend` |" in body
-        # Errors are sanitized at the join site (see test_errors_are_sanitized_
-        # before_joining below), so the backticks around the workspace name
-        # come out as quotes rather than verbatim.
-        assert _sanitize_reason(nd_error_raw) in body
+        # The workspace name is trusted (code-controlled, from
+        # _WORKSPACE_DIR) — its backticks are applied after sanitizing only
+        # the free-form message, so they survive into the PR body intact.
+        assert f"`analecta`: {nd_error_msg}" in body
 
     def test_errors_are_sanitized_before_joining(self) -> None:
         """Unlike `blocked`, `errors` carries raw subprocess stderr straight
@@ -218,11 +219,34 @@ class TestPrBody:
             nd_sk=[],
             nd_blocked=[],
             nd_errors=[],
+            nd_error_ws=[],
             nd_ws=[],
             cooldown=10,
         )
         assert raw not in body
         assert _sanitize_reason(raw) in body
+
+    def test_node_error_message_is_sanitized_even_with_workspace(self) -> None:
+        """The workspace-name backticks are trusted, but the message next to
+        them is still attacker-reachable subprocess output and must still go
+        through _sanitize_reason.
+        """
+        raw = "uv lock failed — `oops` | broke\nthings"
+        body = _pr_body(
+            py_up=[],
+            py_sk=[],
+            py_blocked=[],
+            py_errors=[],
+            nd_up=[],
+            nd_sk=[],
+            nd_blocked=[],
+            nd_errors=[raw],
+            nd_error_ws=["frontend"],
+            nd_ws=[],
+            cooldown=10,
+        )
+        assert raw not in body
+        assert f"`frontend`: {_sanitize_reason(raw)}" in body
 
 
 class TestVerifyGateIncludesErroredBatch:
@@ -500,12 +524,83 @@ class TestVerifyNodeResyncFailure:
         assert "1 package(s) dropped from this batch" in errors[0]
 
 
+class TestPypiReleaseDateFetchTracking:
+    """Mirrors TestNpmReleaseDateFetchTracking below for the Python/uv side —
+    fixing this diagnostic gap in one ecosystem but not the other would
+    leave the exact same silent-degradation risk on whichever side got
+    skipped.
+    """
+
+    def _backend(self, tmp_path: Path, dep_version: str = "0.1.0") -> Path:
+        backend = tmp_path / "backend"
+        backend.mkdir()
+        (backend / "pyproject.toml").write_text(
+            f'[project]\ndependencies = ["ruff=={dep_version}"]\n'
+        )
+        (backend / "uv.lock").write_text(
+            f'[[package]]\nname = "ruff"\nversion = "{dep_version}"\n'
+        )
+        return backend
+
+    def test_missing_version_timestamp_is_not_a_fetch_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._backend(tmp_path)
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+
+        def fake_fetch_json(url: str, *, headers: Any = None) -> dict[str, Any] | None:
+            # Reachable, valid JSON, but no upload_time for the target version.
+            return {"info": {"version": "0.2.0"}, "releases": {"0.2.0": []}}
+
+        monkeypatch.setattr(deps_update, "_fetch_json", fake_fetch_json)
+
+        updated, skipped, errors = deps_update.update_python(10)
+
+        assert updated == []
+        assert skipped == []
+        assert "registry fetches failed" not in "".join(errors)
+        assert len(errors) == 1
+        assert "release-date lookups failed" in errors[0]
+
+    def test_partial_missing_timestamps_does_not_escalate(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        backend = self._backend(tmp_path)
+        (backend / "pyproject.toml").write_text(
+            '[project]\ndependencies = ["ruff==0.1.0", "httpx2==0.1.0"]\n'
+        )
+        (backend / "uv.lock").write_text(
+            '[[package]]\nname = "ruff"\nversion = "0.1.0"\n'
+            '[[package]]\nname = "httpx2"\nversion = "0.1.0"\n'
+        )
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        recent = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+
+        def fake_fetch_json(url: str, *, headers: Any = None) -> dict[str, Any] | None:
+            if "ruff" in url:
+                return {"info": {"version": "0.2.0"}, "releases": {"0.2.0": []}}
+            return {
+                "info": {"version": "0.2.0"},
+                "releases": {"0.2.0": [{"upload_time_iso_8601": recent}]},
+            }
+
+        monkeypatch.setattr(deps_update, "_fetch_json", fake_fetch_json)
+
+        _updated, skipped, errors = deps_update.update_python(10)
+
+        assert errors == []
+        assert [name for name, _, _ in skipped] == ["httpx2"]
+
+
 class TestNpmReleaseDateFetchTracking:
     """fetch_ok must only count registry reachability, not whether the
-    specific version has a `time` entry — otherwise a real npm data gap
-    (version present, timestamp missing) renders as a false 'all registry
-    fetches failed' error in the committed PR body, even though the
-    registry was fully reachable.
+    specific version has a `time` entry — a real npm data gap (version
+    present, timestamp missing) must not render as a "registry
+    unreachable"-flavored error, since the registry answered fine. But it
+    also can't go completely unreported: if literally every candidate
+    package in the workspace hits this gap, cooldown couldn't be evaluated
+    for any of them, which is worth its own distinct, accurately-labeled
+    error — see the candidates/date_unknown counters in update_node.
     """
 
     def test_missing_version_timestamp_is_not_a_fetch_failure(
@@ -527,7 +622,43 @@ class TestNpmReleaseDateFetchTracking:
 
         assert updated == []
         assert skipped == []
+        assert "registry fetches failed" not in "".join(errors)
+        assert len(errors) == 1
+        assert "release-date lookups failed" in errors[0]
+
+    def test_partial_missing_timestamps_does_not_escalate(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Only a 100% failure rate across candidates is worth an error —
+        one package's stale registry data alongside another's healthy data
+        stays a per-package [warn], same as before this counter existed.
+        """
+
+        recent = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+
+        def fake_registry_data(
+            name: str, cache: dict[str, Any] | None = None
+        ) -> dict[str, Any] | None:
+            if name == "svelte":
+                return {"time": {}}  # missing
+            return {"time": {"6.1.0": recent}}  # present, but too recent (cooldown)
+
+        def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            stdout = json.dumps(
+                {
+                    "svelte": {"current": "5.0.0", "latest": "5.1.0"},
+                    "vite": {"current": "6.0.0", "latest": "6.1.0"},
+                }
+            )
+            return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+        monkeypatch.setattr(deps_update, "_npm_registry_data", fake_registry_data)
+        monkeypatch.setattr(deps_update, "_run", fake_run)
+
+        _updated, skipped, errors = deps_update.update_node(10, "frontend")
+
         assert errors == []
+        assert [name for name, _, _ in skipped] == ["vite"]
 
 
 class TestUpdateNodeResyncsOnApplyFailure:
@@ -791,3 +922,153 @@ class TestMainExceptionIsolation:
         body = pr_body_file.read_text()
         assert "`ruff`" not in body
         assert "_verify_python crashed unexpectedly" in body
+
+    def test_verify_node_exception_restores_node_snap(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Mirrors test_verify_python_exception_restores_uv_lock above: an
+        exception raised mid-verification must not leave pnpm-lock.yaml
+        carrying a partial mutation the PR body then claims (via an emptied
+        nd_up_tagged) was never applied.
+        """
+        release_dt = datetime.now(UTC) - timedelta(days=30)
+        original_lock = b"lockfileVersion: original\n"
+
+        for name in deps_update._WORKSPACE_DIR.values():
+            pkg = (
+                tmp_path / name / "package.json"
+                if name != "."
+                else tmp_path / "package.json"
+            )
+            pkg.parent.mkdir(parents=True, exist_ok=True)
+            pkg.write_text("{}")
+        lock_path = tmp_path / "pnpm-lock.yaml"
+        lock_path.write_bytes(original_lock)
+        (tmp_path / "backend").mkdir()
+        (tmp_path / "backend" / "uv.lock").write_text("")
+        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
+
+        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+            return [], [], []
+
+        def fake_update_node(
+            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            if workspace == "frontend":
+                return [("svelte", "5.0.0", "5.1.0", release_dt)], [], []
+            return [], [], []
+
+        def fake_verify_node(
+            snapshots: dict[Path, bytes], batch: list[Any]
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            # Simulate a partial bisection write before the crash — this is
+            # the state main()'s except block must undo.
+            lock_path.write_bytes(b"lockfileVersion: mid-bisection\n")
+            raise RuntimeError("check.sh subprocess vanished")
+
+        pr_body_file = tmp_path / "pr-body.md"
+
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(deps_update, "update_node", fake_update_node)
+        monkeypatch.setattr(deps_update, "_verify_node", fake_verify_node)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["deps_update.py", "--verify", "--pr-body-file", str(pr_body_file)],
+        )
+
+        # Nothing succeeded anywhere (nd_up_tagged got zeroed by the crash,
+        # no Python updates), so main() exits 1 by its own "only fail loudly
+        # when nothing succeeded" rule — the PR body write happens before
+        # that exit check, so it's still there to assert on.
+        with pytest.raises(SystemExit):
+            deps_update.main()
+
+        assert lock_path.read_bytes() == original_lock
+        body = pr_body_file.read_text()
+        assert "`svelte`" not in body
+        assert "_verify_node crashed unexpectedly" in body
+
+    def test_update_node_exception_preserves_prior_workspace_and_resyncs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A crash in one workspace's update_node() call must restore only
+        that workspace's own damage to the *shared* pnpm-lock.yaml, not the
+        single global pre-run snapshot — the latter would also wipe out an
+        earlier workspace's already-applied, already-tracked update still on
+        disk. The crash path must also resync node_modules so the environment
+        is trustworthy again before check.sh (via _verify_node) runs on
+        whatever the surviving workspaces contributed.
+        """
+        release_dt = datetime.now(UTC) - timedelta(days=30)
+        original_lock = b"lockfileVersion: original\n"
+        workspace_dirs = {"frontend": "frontend", "electron-ws": "electron"}
+        monkeypatch.setattr(deps_update, "_WORKSPACE_DIR", workspace_dirs)
+
+        for rel_dir in workspace_dirs.values():
+            pkg = tmp_path / rel_dir / "package.json"
+            pkg.parent.mkdir(parents=True, exist_ok=True)
+            pkg.write_text("{}")
+        lock_path = tmp_path / "pnpm-lock.yaml"
+        lock_path.write_bytes(original_lock)
+        (tmp_path / "backend").mkdir()
+        (tmp_path / "backend" / "uv.lock").write_text("")
+        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
+
+        applied_frontend_pkg = b'{"dependencies": {"svelte": "5.1.0"}}'
+
+        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+            return [], [], []
+
+        def fake_update_node(
+            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            if workspace == "frontend":
+                (tmp_path / "frontend" / "package.json").write_bytes(
+                    applied_frontend_pkg
+                )
+                return [("svelte", "5.0.0", "5.1.0", release_dt)], [], []
+            # electron-ws: partially mutate the shared lockfile, then crash.
+            lock_path.write_bytes(b"lockfileVersion: mid-crash\n")
+            raise RuntimeError("pnpm add vanished mid-apply")
+
+        def fake_verify_node(
+            snapshots: dict[Path, bytes], batch: list[Any]
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            return batch, [], []
+
+        resync_calls = 0
+
+        def fake_resync() -> bool:
+            nonlocal resync_calls
+            resync_calls += 1
+            return True
+
+        pr_body_file = tmp_path / "pr-body.md"
+
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(deps_update, "update_node", fake_update_node)
+        monkeypatch.setattr(deps_update, "_verify_node", fake_verify_node)
+        monkeypatch.setattr(deps_update, "_resync_node_modules", fake_resync)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["deps_update.py", "--verify", "--pr-body-file", str(pr_body_file)],
+        )
+
+        deps_update.main()  # must not raise — frontend's update still lands
+
+        # frontend's legitimate update survives the sibling workspace's crash.
+        assert (tmp_path / "frontend" / "package.json").read_bytes() == (
+            applied_frontend_pkg
+        )
+        # electron-ws's own partial mutation to the *shared* lockfile is
+        # reverted — not the frontend workspace's contribution to it.
+        assert lock_path.read_bytes() == original_lock
+        assert resync_calls == 1
+
+        body = pr_body_file.read_text()
+        assert "`svelte`" in body
+        assert "`electron-ws`: update_node crashed unexpectedly" in body
