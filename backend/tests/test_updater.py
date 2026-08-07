@@ -1,6 +1,7 @@
 """Tests for scripts/deps_update.py pure utility functions."""
 
 import json
+import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -17,6 +18,7 @@ from deps_update import (  # pyright: ignore[reportMissingImports]
     _parse_iso,
     _parse_pnpm_outdated,
     _pr_body,
+    _sanitize_reason,
 )
 
 
@@ -181,6 +183,7 @@ class TestPrBody:
         triggers ci.yml, so the PR body is the only review surface.
         """
         release_dt = datetime.now(UTC) - timedelta(days=30)
+        nd_error_raw = "`analecta`: All npm registry fetches failed"
         body = _pr_body(
             py_up=[],
             py_sk=[],
@@ -189,9 +192,195 @@ class TestPrBody:
             nd_up=[("svelte", "5.0.0", "5.1.0", release_dt)],
             nd_sk=[],
             nd_blocked=[],
-            nd_errors=["`analecta`: All npm registry fetches failed"],
+            nd_errors=[nd_error_raw],
             nd_ws=["frontend"],
             cooldown=10,
         )
         assert "| `svelte` | `frontend` |" in body
-        assert "`analecta`: All npm registry fetches failed" in body
+        # Errors are sanitized at the join site (see test_errors_are_sanitized_
+        # before_joining below), so the backticks around the workspace name
+        # come out as quotes rather than verbatim.
+        assert _sanitize_reason(nd_error_raw) in body
+
+    def test_errors_are_sanitized_before_joining(self) -> None:
+        """Unlike `blocked`, `errors` carries raw subprocess stderr straight
+        through to the committed PR body — a stray backtick or embedded
+        newline (routine for a multi-line uv/pnpm failure) must not be able
+        to break out of its single-line context.
+        """
+        raw = "evil-pkg: uv lock failed — `oops` | broke\nthings"
+        body = _pr_body(
+            py_up=[],
+            py_sk=[],
+            py_blocked=[],
+            py_errors=[raw],
+            nd_up=[],
+            nd_sk=[],
+            nd_blocked=[],
+            nd_errors=[],
+            nd_ws=[],
+            cooldown=10,
+        )
+        assert raw not in body
+        assert _sanitize_reason(raw) in body
+
+
+class TestVerifyGateIncludesErroredBatch:
+    """A package failing in one Python update must not skip verification for
+    the packages that DID apply — see scripts/deps_update.py's earlier bug
+    where `and not py_errors` silently skipped `_verify_python` whenever any
+    package errored, letting unverified bumps ship in the PR.
+    """
+
+    def test_verify_python_runs_despite_sibling_errors(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        release_dt = datetime.now(UTC) - timedelta(days=30)
+        applied = [("svelte-check", "1.0.0", "1.1.0", release_dt)]
+
+        def fake_update_python(
+            cooldown: int,
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            return applied, [], ["other-pkg: uv lock failed — boom"]
+
+        def fake_update_node(
+            cooldown: int, workspace: str
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            return [], [], []
+
+        verify_calls: list[list[Any]] = []
+
+        def fake_verify_python(
+            backend: Path, uv_lock_path: Path, snap: bytes, batch: list[Any]
+        ) -> tuple[list[Any], list[Any]]:
+            verify_calls.append(batch)
+            return batch, []
+
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(deps_update, "update_node", fake_update_node)
+        monkeypatch.setattr(deps_update, "_verify_python", fake_verify_python)
+        monkeypatch.setattr(sys, "argv", ["deps_update.py", "--verify"])
+
+        deps_update.main()
+
+        assert verify_calls == [applied]
+
+
+class TestApplyNodePackageExceptionSafety:
+    """A write failure between `pnpm add` and the lockfile resync must not
+    leave package.json/pnpm-lock.yaml mutually inconsistent — see
+    scripts/deps_update.py's earlier bug where only the checked
+    returncode != 0 branches called the restore closure, leaving an
+    unexpected exception free to propagate past the snapshot and crash the
+    whole run, discarding every other workspace's already-applied updates.
+    """
+
+    def test_restores_files_on_unexpected_oserror(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pkg_dir = tmp_path / "frontend"
+        pkg_dir.mkdir()
+        pkg_path = pkg_dir / "package.json"
+        lock_path = tmp_path / "pnpm-lock.yaml"
+        original_pkg = '{"dependencies": {"svelte": "5.0.0"}}'
+        original_lock = "lockfileVersion: 9\n"
+        pkg_path.write_text(original_pkg)
+        lock_path.write_text(original_lock)
+
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(deps_update, "_WORKSPACE_DIR", {"frontend": "frontend"})
+
+        def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        def fake_ensure_exact_specifier(
+            workspace_dir: str, name: str, version: str
+        ) -> bool:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(deps_update, "_run", fake_run)
+        monkeypatch.setattr(
+            deps_update, "_ensure_exact_specifier", fake_ensure_exact_specifier
+        )
+
+        ok, reason = deps_update._apply_node_package("frontend", "svelte", "5.1.0")
+
+        assert ok is False
+        assert "disk full" in reason
+        assert pkg_path.read_text() == original_pkg
+        assert lock_path.read_text() == original_lock
+
+
+class TestVerifyNodeResyncsNodeModules:
+    """Restoring package.json/pnpm-lock.yaml bytes during bisection must be
+    followed by a node_modules resync — check.sh resolves its tools
+    (eslint, prettier, tsc) from the installed tree, not the manifests, so a
+    stale node_modules can misattribute a block to an innocent package.
+    """
+
+    def test_resync_runs_after_every_restore(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pkg_path = tmp_path / "package.json"
+        lock_path = tmp_path / "pnpm-lock.yaml"
+        pkg_bytes = b"{}"
+        lock_bytes = b"lockfileVersion: 9\n"
+        pkg_path.write_bytes(pkg_bytes)
+        lock_path.write_bytes(lock_bytes)
+        snapshots = {pkg_path: pkg_bytes, lock_path: lock_bytes}
+
+        release_dt = datetime.now(UTC) - timedelta(days=30)
+        batch = [("frontend", ("svelte", "5.0.0", "5.1.0", release_dt))]
+
+        resync_calls = 0
+
+        def fake_resync() -> None:
+            nonlocal resync_calls
+            resync_calls += 1
+
+        # Full-batch check.sh fails, then the one per-step check.sh also fails.
+        check_results = iter([False, False])
+
+        def fake_run_check(repo_root: Path, scope: str) -> bool:
+            return next(check_results)
+
+        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+            return True, ""
+
+        monkeypatch.setattr(deps_update, "_resync_node_modules", fake_resync)
+        monkeypatch.setattr(deps_update, "_run_check", fake_run_check)
+        monkeypatch.setattr(deps_update, "_apply_node_package", fake_apply)
+
+        survivors, blocked = deps_update._verify_node(snapshots, batch)
+
+        assert survivors == []
+        assert len(blocked) == 1
+        assert resync_calls == 2  # full-batch restore + the one blocked step
+
+
+class TestNpmReleaseDateFetchTracking:
+    """fetch_ok must only count registry reachability, not whether the
+    specific version has a `time` entry — otherwise a real npm data gap
+    (version present, timestamp missing) renders as a false 'all registry
+    fetches failed' error in the committed PR body, even though the
+    registry was fully reachable.
+    """
+
+    def test_missing_version_timestamp_is_not_a_fetch_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fake_registry_data(name: str) -> dict[str, Any] | None:
+            return {"time": {}}  # reachable, but no entry for the target version
+
+        def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            stdout = json.dumps({"svelte": {"current": "5.0.0", "latest": "5.1.0"}})
+            return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+        monkeypatch.setattr(deps_update, "_npm_registry_data", fake_registry_data)
+        monkeypatch.setattr(deps_update, "_run", fake_run)
+
+        updated, skipped, errors = deps_update.update_node(10, "frontend")
+
+        assert updated == []
+        assert skipped == []
+        assert errors == []

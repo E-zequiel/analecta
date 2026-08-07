@@ -262,11 +262,12 @@ def _parse_pnpm_outdated(raw: str) -> dict[str, dict[str, Any]]:
     return merged
 
 
-def _npm_release_date(name: str, version: str) -> datetime | None:
+def _npm_registry_data(name: str) -> dict[str, Any] | None:
     encoded = name.replace("/", "%2F")
-    data = _fetch_json(f"https://registry.npmjs.org/{encoded}")
-    if data is None:
-        return None
+    return _fetch_json(f"https://registry.npmjs.org/{encoded}")
+
+
+def _npm_release_date(data: dict[str, Any], version: str) -> datetime | None:
     time_dict = cast(dict[str, str], data.get("time", {}))
     ts = time_dict.get(version)
     if not ts:
@@ -316,8 +317,9 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
     have its follow-up lockfile resync fail, which would otherwise leave
     package.json and pnpm-lock.yaml mutually inconsistent for a package that
     was never actually applied — this function snapshots both before touching
-    them and restores on any failure path, so callers never have to reason
-    about partial state.
+    them and restores on any failure path (including an unexpected exception,
+    via the try/finally below — not just the checked pnpm/dedupe returncodes),
+    so callers never have to reason about partial state.
 
     Returns:
         (True, "") on success, (False, reason) on failure at any step.
@@ -326,60 +328,64 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
     lock_path = REPO_ROOT / "pnpm-lock.yaml"
     pkg_snap = pkg_path.read_bytes()
     lock_snap = lock_path.read_bytes()
+    applied = False
 
-    def _restore() -> None:
-        _ = pkg_path.write_bytes(pkg_snap)
-        _ = lock_path.write_bytes(lock_snap)
-
-    result = _run(
-        [
-            "pnpm",
-            "add",
-            f"{name}@{version}",
-            "--save-exact",
-            "--ignore-scripts",
-            "--filter",
-            workspace,
-        ],
-        cwd=REPO_ROOT,
-    )
-    if result.returncode != 0:
-        _restore()
-        return False, f"pnpm add failed — {result.stderr.strip()}"
-
-    if _ensure_exact_specifier(_WORKSPACE_DIR[workspace], name, version):
-        # --no-frozen-lockfile: this resync intentionally updates the
-        # lockfile, but pnpm defaults frozen-lockfile to on in CI (CI=true),
-        # which rejects any install that would change it.
-        resync = _run(
+    try:
+        result = _run(
             [
                 "pnpm",
-                "install",
+                "add",
+                f"{name}@{version}",
+                "--save-exact",
+                "--ignore-scripts",
                 "--filter",
                 workspace,
-                "--no-frozen-lockfile",
-                "--ignore-scripts",
             ],
             cwd=REPO_ROOT,
         )
-        if resync.returncode != 0:
-            # pnpm reports ERR_PNPM_OUTDATED_LOCKFILE etc. on stdout, not stderr.
-            detail = resync.stderr.strip() or resync.stdout.strip()
-            _restore()
-            return False, f"lockfile resync failed after exact-pin fix — {detail}"
+        if result.returncode != 0:
+            return False, f"pnpm add failed — {result.stderr.strip()}"
 
-    # A direct-dependency bump can leave an older resolution of the same
-    # package alive elsewhere in the graph (pulled in transitively by an
-    # unrelated consumer) unless the lockfile is deduped afterward — this
-    # surfaces as duplicate-type errors in svelte-check/tsc, not as a pnpm
-    # error, so it has to be handled here rather than left to the caller.
-    dedupe = _run(["pnpm", "dedupe", "--ignore-scripts"], cwd=REPO_ROOT)
-    if dedupe.returncode != 0:
-        detail = dedupe.stderr.strip() or dedupe.stdout.strip()
-        _restore()
-        return False, f"dedupe failed — {detail}"
+        if _ensure_exact_specifier(_WORKSPACE_DIR[workspace], name, version):
+            # --no-frozen-lockfile: this resync intentionally updates the
+            # lockfile, but pnpm defaults frozen-lockfile to on in CI
+            # (CI=true), which rejects any install that would change it.
+            resync = _run(
+                [
+                    "pnpm",
+                    "install",
+                    "--filter",
+                    workspace,
+                    "--no-frozen-lockfile",
+                    "--ignore-scripts",
+                ],
+                cwd=REPO_ROOT,
+            )
+            if resync.returncode != 0:
+                # pnpm reports ERR_PNPM_OUTDATED_LOCKFILE etc. on stdout,
+                # not stderr.
+                detail = resync.stderr.strip() or resync.stdout.strip()
+                return False, f"lockfile resync failed after exact-pin fix — {detail}"
 
-    return True, ""
+        # A direct-dependency bump can leave an older resolution of the same
+        # package alive elsewhere in the graph (pulled in transitively by an
+        # unrelated consumer) unless the lockfile is deduped afterward — this
+        # surfaces as duplicate-type errors in svelte-check/tsc, not as a
+        # pnpm error, so it has to be handled here rather than left to the
+        # caller.
+        dedupe = _run(["pnpm", "dedupe", "--ignore-scripts"], cwd=REPO_ROOT)
+        if dedupe.returncode != 0:
+            detail = dedupe.stderr.strip() or dedupe.stdout.strip()
+            return False, f"dedupe failed — {detail}"
+
+        applied = True
+        return True, ""
+    except OSError as exc:
+        return False, f"unexpected error applying {name} — {exc}"
+    finally:
+        if not applied:
+            _ = pkg_path.write_bytes(pkg_snap)
+            _ = lock_path.write_bytes(lock_snap)
 
 
 def update_node(
@@ -429,11 +435,14 @@ def update_node(
         print(f"  {name}: {current} -> {latest}")
 
         fetch_attempted += 1
-        release_dt = _npm_release_date(name, latest)
+        data = _npm_registry_data(name)
+        if data is None:
+            continue
+        fetch_ok += 1
+        release_dt = _npm_release_date(data, latest)
         if release_dt is None:
             print("    [warn] release date unavailable, skipping")
             continue
-        fetch_ok += 1
         if not _age_ok(release_dt, cooldown):
             days_old = (datetime.now(UTC) - release_dt).days
             print(f"    [skip] {days_old}d old (cooldown: {cooldown}d)")
@@ -457,6 +466,34 @@ def update_node(
     return updated, skipped, errors
 
 
+def _resync_node_modules() -> None:
+    """Reinstall node_modules to match package.json/pnpm-lock.yaml on disk.
+
+    check.sh frontend resolves its tools (`pnpm exec eslint`, `pnpm exec
+    prettier`, `tsc`, `svelte-check`) from node_modules/.bin, not from the
+    manifests directly. Restoring package.json/pnpm-lock.yaml bytes after a
+    failed verification step brings the source-of-truth files back in line,
+    but says nothing about node_modules — this makes node_modules match them
+    explicitly, the same `pnpm install --frozen-lockfile` step CI already
+    runs before deps_update.py, so a bisection step that follows a bump to
+    one of check.sh's own tools (e.g. eslint, itself a root-workspace
+    dependency) can't keep failing against a stale installed binary and
+    misattribute the block to an unrelated package.
+    """
+    result = _run(
+        ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"], cwd=REPO_ROOT
+    )
+    if result.returncode != 0:
+        # A restored lockfile failing --frozen-lockfile against its own
+        # restored package.json would mean the snapshot pair was already
+        # inconsistent — surface it rather than silently leaving
+        # node_modules stale for the next bisection step.
+        print(
+            "::error::node_modules resync failed after restoring"
+            f" package.json/pnpm-lock.yaml — {result.stderr.strip()}"
+        )
+
+
 def _verify_node(
     snapshots: dict[Path, bytes],
     batch: list[tuple[str, Updated]],
@@ -477,6 +514,7 @@ def _verify_node(
     )
     for path, data in snapshots.items():
         _ = path.write_bytes(data)
+    _resync_node_modules()
 
     survivors: list[tuple[str, Updated]] = []
     blocked: list[Blocked] = []
@@ -492,6 +530,7 @@ def _verify_node(
         else:
             for path, data in step_snap.items():
                 _ = path.write_bytes(data)
+            _resync_node_modules()
             print(f"::warning::{name} ({workspace}): blocked — {reason}")
             blocked.append((name, new, _sanitize_reason(reason)))
     return survivors, blocked
@@ -570,9 +609,10 @@ def _pr_body(
             )
         if errors:
             lines.append("")
+            sanitized = [_sanitize_reason(e) for e in errors]
             lines.append(
                 "**Errors — some packages may not have been checked:**"
-                f" {'; '.join(errors)}"
+                f" {'; '.join(sanitized)}"
             )
         lines.append("")
 
@@ -744,7 +784,7 @@ def main() -> None:
     py_blocked: list[Blocked] = []
     nd_blocked: list[Blocked] = []
 
-    if uv_snap is not None and py_up and not py_errors:
+    if uv_snap is not None and py_up:
         py_up, py_blocked = _verify_python(backend, uv_lock_path, uv_snap, py_up)
 
     if node_snap is not None and nd_up_tagged:
