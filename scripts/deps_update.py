@@ -894,21 +894,23 @@ def main() -> None:
     uv_lock_path = backend / "uv.lock"
     pnpm_lock_path = REPO_ROOT / "pnpm-lock.yaml"
 
-    uv_snap: bytes | None = uv_lock_path.read_bytes() if verify else None
-    node_snap: dict[Path, bytes] | None = (
-        {
-            p: p.read_bytes()
-            for p in (
-                pnpm_lock_path,
-                *(REPO_ROOT / d / "package.json" for d in _WORKSPACE_DIR.values()),
-            )
-        }
-        if verify
-        else None
-    )
+    # Captured unconditionally, regardless of --verify: update_python/
+    # update_node mutate their lockfile as they go, so an unhandled
+    # exception needs something to restore to even when --verify was never
+    # passed. --verify's own meaning (whether _verify_python/_verify_node's
+    # check.sh bisection runs at all) is gated separately, below, on the
+    # `verify` flag itself — never on these snapshots being present.
+    uv_snap: bytes = uv_lock_path.read_bytes()
+    node_snap: dict[Path, bytes] = {
+        p: p.read_bytes()
+        for p in (
+            pnpm_lock_path,
+            *(REPO_ROOT / d / "package.json" for d in _WORKSPACE_DIR.values()),
+        )
+    }
 
     py_errors: list[str] = []
-    py_snap = {uv_lock_path: uv_snap} if uv_snap is not None else None
+    py_snap = {uv_lock_path: uv_snap}
     py_result = _guard(
         "update_python", py_errors, py_snap, lambda: update_python(cooldown)
     )
@@ -929,9 +931,7 @@ def main() -> None:
         # very first pre-run snapshot on this workspace's crash would also
         # wipe out an earlier workspace's already-applied, already-tracked
         # updates still on disk — undoing more than this workspace broke.
-        step_snap = (
-            {p: p.read_bytes() for p in node_snap} if node_snap is not None else None
-        )
+        step_snap = {p: p.read_bytes() for p in node_snap}
         result = _guard(
             "update_node",
             ws_errors,
@@ -939,7 +939,7 @@ def main() -> None:
             lambda ws=workspace: update_node(cooldown, ws, registry_cache),
         )
         if result is None:
-            if step_snap is not None and not _resync_node_modules():
+            if not _resync_node_modules():
                 _record_error(
                     ws_errors,
                     "node_modules resync failed after restoring the pre-crash state",
@@ -955,7 +955,7 @@ def main() -> None:
     py_blocked: list[Blocked] = []
     nd_blocked: list[Blocked] = []
 
-    if uv_snap is not None and py_up:
+    if verify and py_up:
         verify_result = _guard(
             "_verify_python",
             py_errors,
@@ -968,7 +968,7 @@ def main() -> None:
             py_up, py_blocked = verify_result
 
     nd_verify_errors: list[str] = []
-    if node_snap is not None and nd_up_tagged:
+    if verify and nd_up_tagged:
         verify_result = _guard(
             "_verify_node",
             nd_verify_errors,
@@ -976,6 +976,11 @@ def main() -> None:
             lambda: _verify_node(node_snap, nd_up_tagged),
         )
         if verify_result is None:
+            if not _resync_node_modules():
+                _record_error(
+                    nd_verify_errors,
+                    "node_modules resync failed after restoring the pre-crash state",
+                )
             nd_up_tagged = []
         else:
             nd_up_tagged, nd_blocked, verify_errors = verify_result

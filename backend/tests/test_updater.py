@@ -795,11 +795,21 @@ class TestMainExceptionIsolation:
         def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
             return [], [], []
 
+        resync_calls = 0
+
+        def fake_resync() -> bool:
+            nonlocal resync_calls
+            resync_calls += 1
+            return True
+
         monkeypatch.setattr(deps_update, "update_node", fake_update_node)
         monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(deps_update, "_resync_node_modules", fake_resync)
         monkeypatch.setattr(sys, "argv", ["deps_update.py"])
 
         deps_update.main()  # must return normally, not raise RuntimeError
+
+        assert resync_calls == 1
 
     def test_verify_node_exception_still_writes_pr_body(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -826,6 +836,13 @@ class TestMainExceptionIsolation:
         ) -> tuple[list[Any], list[Any]]:
             return batch, []
 
+        resync_calls = 0
+
+        def fake_resync() -> bool:
+            nonlocal resync_calls
+            resync_calls += 1
+            return True
+
         pr_body_file = tmp_path / "pr-body.md"
         for name in deps_update._WORKSPACE_DIR.values():
             pkg = (
@@ -845,6 +862,7 @@ class TestMainExceptionIsolation:
         monkeypatch.setattr(deps_update, "update_node", fake_update_node)
         monkeypatch.setattr(deps_update, "_verify_python", fake_verify_python)
         monkeypatch.setattr(deps_update, "_verify_node", fake_verify_node)
+        monkeypatch.setattr(deps_update, "_resync_node_modules", fake_resync)
         monkeypatch.setattr(
             sys,
             "argv",
@@ -853,6 +871,7 @@ class TestMainExceptionIsolation:
 
         deps_update.main()  # must not raise, and must still write the PR body
 
+        assert resync_calls == 1
         body = pr_body_file.read_text()
         assert "`ruff`" in body
         assert "_verify_node crashed unexpectedly" in body
@@ -988,7 +1007,10 @@ class TestMainExceptionIsolation:
         """Mirrors test_verify_python_exception_restores_uv_lock above: an
         exception raised mid-verification must not leave pnpm-lock.yaml
         carrying a partial mutation the PR body then claims (via an emptied
-        nd_up_tagged) was never applied.
+        nd_up_tagged) was never applied. Must also resync node_modules —
+        restoring the manifests without it would leave node_modules holding
+        whatever _verify_node's bisection last installed, a mismatch that
+        wouldn't show up in `git status` since node_modules is gitignored.
         """
         release_dt = datetime.now(UTC) - timedelta(days=30)
         original_lock = b"lockfileVersion: original\n"
@@ -1025,12 +1047,20 @@ class TestMainExceptionIsolation:
             lock_path.write_bytes(b"lockfileVersion: mid-bisection\n")
             raise RuntimeError("check.sh subprocess vanished")
 
+        resync_calls = 0
+
+        def fake_resync() -> bool:
+            nonlocal resync_calls
+            resync_calls += 1
+            return True
+
         pr_body_file = tmp_path / "pr-body.md"
 
         monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
         monkeypatch.setattr(deps_update, "update_python", fake_update_python)
         monkeypatch.setattr(deps_update, "update_node", fake_update_node)
         monkeypatch.setattr(deps_update, "_verify_node", fake_verify_node)
+        monkeypatch.setattr(deps_update, "_resync_node_modules", fake_resync)
         monkeypatch.setattr(
             sys,
             "argv",
@@ -1045,6 +1075,7 @@ class TestMainExceptionIsolation:
             deps_update.main()
 
         assert lock_path.read_bytes() == original_lock
+        assert resync_calls == 1
         body = pr_body_file.read_text()
         assert "`svelte`" not in body
         assert "_verify_node crashed unexpectedly" in body
@@ -1131,3 +1162,110 @@ class TestMainExceptionIsolation:
         body = pr_body_file.read_text()
         assert "`svelte`" in body
         assert "`electron-ws`: update_node crashed unexpectedly" in body
+
+    def test_update_python_exception_restores_uv_lock_without_verify(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """update_python() itself applies packages one at a time regardless
+        of --verify — the snapshot _guard() restores from must exist whether
+        or not --verify was passed, or a crash on this path leaves uv.lock
+        holding an unreported mutation the PR body claims never happened.
+        This is the gap --verify used to gate the snapshot capture on.
+        """
+        original_lock = b"lockfileVersion: original\n"
+
+        (tmp_path / "backend").mkdir()
+        uv_lock_path = tmp_path / "backend" / "uv.lock"
+        uv_lock_path.write_bytes(original_lock)
+        for name in deps_update._WORKSPACE_DIR.values():
+            pkg = (
+                tmp_path / name / "package.json"
+                if name != "."
+                else tmp_path / "package.json"
+            )
+            pkg.parent.mkdir(parents=True, exist_ok=True)
+            pkg.write_text("{}")
+        (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
+        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
+
+        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+            uv_lock_path.write_bytes(b"lockfileVersion: mid-loop\n")
+            raise RuntimeError("uv lock --upgrade-package vanished")
+
+        def fake_update_node(
+            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            return [], [], []
+
+        pr_body_file = tmp_path / "pr-body.md"
+
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(deps_update, "update_node", fake_update_node)
+        monkeypatch.setattr(
+            sys, "argv", ["deps_update.py", "--pr-body-file", str(pr_body_file)]
+        )
+
+        with pytest.raises(SystemExit):
+            deps_update.main()  # no --verify — the flag under test
+
+        assert uv_lock_path.read_bytes() == original_lock
+        assert "update_python crashed unexpectedly" in pr_body_file.read_text()
+
+    def test_update_node_exception_resyncs_without_verify(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Mirrors the test above for the Node side: a crash in one
+        workspace's update_node() call must restore pnpm-lock.yaml and
+        resync node_modules even when --verify was never passed, since
+        --verify only ever gated whether check.sh bisection runs — never
+        whether main() has something to restore to on a crash.
+        """
+        original_lock = b"lockfileVersion: original\n"
+
+        for name in deps_update._WORKSPACE_DIR.values():
+            pkg = (
+                tmp_path / name / "package.json"
+                if name != "."
+                else tmp_path / "package.json"
+            )
+            pkg.parent.mkdir(parents=True, exist_ok=True)
+            pkg.write_text("{}")
+        lock_path = tmp_path / "pnpm-lock.yaml"
+        lock_path.write_bytes(original_lock)
+        (tmp_path / "backend").mkdir()
+        (tmp_path / "backend" / "uv.lock").write_text("")
+        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
+
+        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+            return [], [], []
+
+        def fake_update_node(
+            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            lock_path.write_bytes(b"lockfileVersion: mid-crash\n")
+            raise RuntimeError("pnpm add vanished mid-apply")
+
+        resync_calls = 0
+
+        def fake_resync() -> bool:
+            nonlocal resync_calls
+            resync_calls += 1
+            return True
+
+        pr_body_file = tmp_path / "pr-body.md"
+
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(deps_update, "update_node", fake_update_node)
+        monkeypatch.setattr(deps_update, "_resync_node_modules", fake_resync)
+        monkeypatch.setattr(
+            sys, "argv", ["deps_update.py", "--pr-body-file", str(pr_body_file)]
+        )
+
+        with pytest.raises(SystemExit):
+            deps_update.main()  # no --verify — the flag under test
+
+        assert lock_path.read_bytes() == original_lock
+        assert resync_calls == len(deps_update._WORKSPACE_DIR)
+        assert "update_node crashed unexpectedly" in pr_body_file.read_text()
