@@ -857,6 +857,65 @@ class TestMainExceptionIsolation:
         assert "`ruff`" in body
         assert "_verify_node crashed unexpectedly" in body
 
+    def test_update_python_exception_restores_uv_lock(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Mirrors test_verify_python_exception_restores_uv_lock below, but
+        for the earlier of the two Python _guard() sites: update_python()
+        itself applies packages one at a time via `uv lock --upgrade-package`,
+        so a crash partway through its own loop can leave uv.lock carrying
+        an unverified mutation — main()'s _guard around update_python() must
+        restore it, the same as the other three call sites already do.
+        """
+        original_lock = b"lockfileVersion: original\n"
+
+        (tmp_path / "backend").mkdir()
+        uv_lock_path = tmp_path / "backend" / "uv.lock"
+        uv_lock_path.write_bytes(original_lock)
+        for name in deps_update._WORKSPACE_DIR.values():
+            pkg = (
+                tmp_path / name / "package.json"
+                if name != "."
+                else tmp_path / "package.json"
+            )
+            pkg.parent.mkdir(parents=True, exist_ok=True)
+            pkg.write_text("{}")
+        (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
+        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
+
+        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+            # Simulate one already-applied package before the crash — this
+            # is the state main()'s except block must undo.
+            uv_lock_path.write_bytes(b"lockfileVersion: mid-loop\n")
+            raise RuntimeError("uv lock --upgrade-package vanished")
+
+        def fake_update_node(
+            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            return [], [], []
+
+        pr_body_file = tmp_path / "pr-body.md"
+
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(deps_update, "update_node", fake_update_node)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["deps_update.py", "--verify", "--pr-body-file", str(pr_body_file)],
+        )
+
+        # Nothing succeeded anywhere in this run (py_up got zeroed by the
+        # crash, no Node updates), so main() exits 1 by its own "only fail
+        # loudly when nothing succeeded" rule — the PR body write happens
+        # before that exit check, so it's still there to assert on.
+        with pytest.raises(SystemExit):
+            deps_update.main()
+
+        assert uv_lock_path.read_bytes() == original_lock
+        body = pr_body_file.read_text()
+        assert "update_python crashed unexpectedly" in body
+
     def test_verify_python_exception_restores_uv_lock(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
