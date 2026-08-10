@@ -89,8 +89,18 @@ def _run_check(repo_root: Path, scope: str) -> bool:
 
 
 def _record_error(errors: list[str], msg: str) -> None:
-    """Emit a GitHub Actions ::error:: annotation and record msg for the PR body."""
-    print(f"::error::{msg}")
+    """Emit a GitHub Actions ::error:: annotation and record msg for the PR body.
+
+    The ::error:: print is newline-collapsed the same way _pr_body sanitizes
+    msg before committing it — an embedded newline in subprocess-derived
+    text would otherwise let a later line in the same message get parsed as
+    its own workflow command (e.g. ::stop-commands::) by the Actions runner.
+    A much higher limit than _sanitize_reason's PR-body default (200, sized
+    for a markdown table cell): this print has no such width constraint, and
+    the CI log annotation was never truncated before this fix — only the
+    newline-collapsing is the point here.
+    """
+    print(f"::error::{_sanitize_reason(msg, limit=2000)}")
     errors.append(msg)
 
 
@@ -228,8 +238,17 @@ def _apply_python_package(name: str, backend: Path) -> tuple[bool, str]:
     return True, ""
 
 
-def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], list[str]]:
-    """Check and apply Python dependency updates via uv."""
+def update_python(
+    cooldown: int, errors: list[str]
+) -> tuple[list[Updated], list[Skipped]]:
+    """Check and apply Python dependency updates via uv.
+
+    *errors* is a caller-owned list mutated in place rather than built
+    locally and returned — a locally-built list would be lost in its
+    entirety if an unhandled exception aborted the loop below partway
+    through, discarding every error already recorded for packages processed
+    before the one that crashed. The caller's list still holds them.
+    """
     print("\n=== Python (uv) ===")
     backend = REPO_ROOT / "backend"
 
@@ -253,7 +272,6 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], list[str
 
     updated: list[Updated] = []
     skipped: list[Skipped] = []
-    errors: list[str] = []
     fetch_attempted = 0
     fetch_ok = 0
     candidates = 0
@@ -301,7 +319,7 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], list[str
         registry_label="PyPI",
     )
 
-    return updated, skipped, errors
+    return updated, skipped
 
 
 def _verify_python(
@@ -393,6 +411,12 @@ def _ensure_exact_specifier(workspace_dir: str, name: str, version: str) -> bool
     rewriting an existing specifier — observed leaving ^8.0.0 in place
     after `pnpm add pkg@8.0.0 --save-exact` over a prior ^7 range.
 
+    The search starts at the first `dependencies`/`devDependencies`/etc. key
+    found in the file, not at offset 0 — the root package.json has a
+    `scripts` block ahead of `devDependencies`, and a bare first-match regex
+    over the whole file text could rewrite a same-named script's command
+    string instead of the actual specifier if one is ever added there.
+
     Returns:
         True if the specifier was rewritten, meaning the lockfile needs
         a resync via `pnpm install`.
@@ -400,10 +424,13 @@ def _ensure_exact_specifier(workspace_dir: str, name: str, version: str) -> bool
     pkg_path = REPO_ROOT / workspace_dir / "package.json"
     text = pkg_path.read_text()
     pattern = re.compile(rf'("{re.escape(name)}":\s*")([^"]*)(")')
-    match = pattern.search(text)
+    dep_key_positions = [m.start() for m in re.finditer(r'"\w*[Dd]ependencies"', text)]
+    search_start = min(dep_key_positions, default=0)
+    match = pattern.search(text, search_start)
     if match is None or match.group(2) == version:
         return False
-    new_text = pattern.sub(rf"\g<1>{version}\g<3>", text, count=1)
+    replacement = f"{match.group(1)}{version}{match.group(3)}"
+    new_text = text[: match.start()] + replacement + text[match.end() :]
     _ = pkg_path.write_text(new_text)
     return True
 
@@ -507,14 +534,18 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
 def update_node(
     cooldown: int,
     workspace: str,
+    errors: list[str],
     registry_cache: dict[str, dict[str, Any]] | None = None,
-) -> tuple[list[Updated], list[Skipped], list[str]]:
+) -> tuple[list[Updated], list[Skipped]]:
     """Check and apply Node dependency updates via pnpm for a given workspace.
 
     *registry_cache*, when passed, is shared across sibling workspaces by the
     caller so a package outdated in more than one of them (e.g. @types/node
     kept version-aligned across root/frontend/electron) isn't fetched from
     the npm registry once per workspace for identical data.
+
+    *errors* is a caller-owned list mutated in place rather than built
+    locally and returned — see update_python's docstring for why.
     """
     print(f"\n=== Node (pnpm) — {workspace} ===")
 
@@ -524,17 +555,16 @@ def update_node(
         cwd=REPO_ROOT,
     )
     if result.returncode not in {0, 1}:
-        errs: list[str] = []
         _record_error(
-            errs,
+            errors,
             f"pnpm outdated failed (exit {result.returncode}): {result.stderr.strip()}",
         )
-        return [], [], errs
+        return [], []
 
     raw = result.stdout.strip()
     if not raw:
         print("  nothing outdated")
-        return [], [], []
+        return [], []
 
     try:
         outdated = _parse_pnpm_outdated(raw)
@@ -543,12 +573,11 @@ def update_node(
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         if not m:
             print("  [warn] could not parse pnpm outdated output")
-            return [], [], []
+            return [], []
         outdated = _parse_pnpm_outdated(m.group())
 
     updated: list[Updated] = []
     skipped: list[Skipped] = []
-    errors: list[str] = []
     fetch_attempted = 0
     fetch_ok = 0
     candidates = 0
@@ -611,7 +640,7 @@ def update_node(
         registry_label="npm",
     )
 
-    return updated, skipped, errors
+    return updated, skipped
 
 
 def _resync_node_modules() -> bool:
@@ -643,11 +672,11 @@ def _resync_node_modules() -> bool:
         # inconsistent — surface it rather than silently leaving
         # node_modules stale for the next bisection step.
         # pnpm reports ERR_PNPM_OUTDATED_LOCKFILE etc. on stdout, not stderr
-        # (same fallback as _apply_node_package's lockfile resync below).
+        # (same fallback as _apply_node_package's lockfile resync above).
         detail = result.stderr.strip() or result.stdout.strip()
         print(
             "::error::node_modules resync failed after restoring"
-            f" package.json/pnpm-lock.yaml — {detail}"
+            f" package.json/pnpm-lock.yaml — {_sanitize_reason(detail, limit=2000)}"
         )
         return False
     return True
@@ -969,13 +998,9 @@ def main() -> None:
     py_errors: list[str] = []
     py_snap = {uv_lock_path: uv_snap}
     py_result = _guard(
-        "update_python", py_errors, py_snap, lambda: update_python(cooldown)
+        "update_python", py_errors, py_snap, lambda: update_python(cooldown, py_errors)
     )
-    if py_result is None:
-        py_up, py_sk = [], []
-    else:
-        py_up, py_sk, fn_errors = py_result
-        py_errors += fn_errors
+    py_up, py_sk = py_result if py_result is not None else ([], [])
 
     nd_sk: list[Skipped] = []
     nd_up_tagged: list[tuple[str, Updated]] = []
@@ -1001,16 +1026,16 @@ def main() -> None:
             "update_node",
             ws_errors,
             step_snap,
-            lambda ws=workspace: update_node(cooldown, ws, registry_cache),
+            lambda ws=workspace, errs=ws_errors: update_node(
+                cooldown, ws, errs, registry_cache
+            ),
             on_restore=_resync_hook,
         )
-        if result is None:
-            nd_errors_tagged += [(workspace, msg) for msg in ws_errors]
-            continue
-        up, sk, errs = result
-        nd_up_tagged += [(workspace, u) for u in up]
-        nd_sk += sk
-        nd_errors_tagged += [(workspace, msg) for msg in errs]
+        if result is not None:
+            up, sk = result
+            nd_up_tagged += [(workspace, u) for u in up]
+            nd_sk += sk
+        nd_errors_tagged += [(workspace, msg) for msg in ws_errors]
 
     py_blocked: list[Blocked] = []
     nd_blocked: list[Blocked] = []
