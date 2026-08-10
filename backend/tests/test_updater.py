@@ -138,14 +138,20 @@ class TestMainPartialWorkspaceFailure:
         release_dt = datetime.now(UTC) - timedelta(days=30)
 
         def fake_update_node(
-            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
-        ) -> tuple[list[Any], list[Any], list[str]]:
+            cooldown: int,
+            workspace: str,
+            errors: list[str],
+            registry_cache: dict[str, Any] | None = None,
+        ) -> tuple[list[Any], list[Any]]:
             if workspace == "analecta":
-                return [], [], ["All npm registry fetches failed"]
-            return [("svelte", "5.0.0", "5.1.0", release_dt)], [], []
+                errors.append("All npm registry fetches failed")
+                return [], []
+            return [("svelte", "5.0.0", "5.1.0", release_dt)], []
 
-        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
-            return [], [], []
+        def fake_update_python(
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
+            return [], []
 
         monkeypatch.setattr(deps_update, "update_node", fake_update_node)
         monkeypatch.setattr(deps_update, "update_python", fake_update_python)
@@ -159,12 +165,18 @@ class TestMainPartialWorkspaceFailure:
         """If nothing succeeded anywhere and something errored, fail loudly."""
 
         def fake_update_node(
-            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
-        ) -> tuple[list[Any], list[Any], list[str]]:
-            return [], [], ["All npm registry fetches failed"]
+            cooldown: int,
+            workspace: str,
+            errors: list[str],
+            registry_cache: dict[str, Any] | None = None,
+        ) -> tuple[list[Any], list[Any]]:
+            errors.append("All npm registry fetches failed")
+            return [], []
 
-        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
-            return [], [], []
+        def fake_update_python(
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
+            return [], []
 
         monkeypatch.setattr(deps_update, "update_node", fake_update_node)
         monkeypatch.setattr(deps_update, "update_python", fake_update_python)
@@ -263,14 +275,18 @@ class TestVerifyGateIncludesErroredBatch:
         applied = [("svelte-check", "1.0.0", "1.1.0", release_dt)]
 
         def fake_update_python(
-            cooldown: int,
-        ) -> tuple[list[Any], list[Any], list[str]]:
-            return applied, [], ["other-pkg: uv lock failed — boom"]
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
+            errors.append("other-pkg: uv lock failed — boom")
+            return applied, []
 
         def fake_update_node(
-            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
-        ) -> tuple[list[Any], list[Any], list[str]]:
-            return [], [], []
+            cooldown: int,
+            workspace: str,
+            errors: list[str],
+            registry_cache: dict[str, Any] | None = None,
+        ) -> tuple[list[Any], list[Any]]:
+            return [], []
 
         verify_calls: list[list[Any]] = []
 
@@ -373,6 +389,53 @@ class TestApplyNodePackageExceptionSafety:
         assert "unexpected shape" in reason
         assert pkg_path.read_text() == original_pkg
         assert lock_path.read_text() == original_lock
+
+
+class TestEnsureExactSpecifierScopedToDependencies:
+    """A bare first-match regex over the whole package.json text could hit a
+    same-named key in `scripts` before ever reaching the real specifier in
+    `devDependencies` — reachable now that the root package.json (whose
+    `scripts` block precedes `devDependencies`) is a workspace this function
+    runs against. The search must be scoped to start at the first
+    dependencies-flavored key.
+    """
+
+    def test_same_named_script_key_is_not_mistaken_for_the_specifier(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pkg_path = tmp_path / "package.json"
+        pkg_path.write_text(
+            "{\n"
+            '  "scripts": {\n'
+            '    "eslint": "eslint ."\n'
+            "  },\n"
+            '  "devDependencies": {\n'
+            '    "eslint": "10.4.0"\n'
+            "  }\n"
+            "}\n"
+        )
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+
+        changed = deps_update._ensure_exact_specifier(".", "eslint", "10.5.0")
+
+        assert changed is True
+        text = pkg_path.read_text()
+        assert '"eslint": "eslint ."' in text
+        assert '"eslint": "10.5.0"' in text
+        assert text.count('"10.5.0"') == 1
+
+    def test_rewrites_the_specifier_with_no_preceding_scripts_block(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pkg_path = tmp_path / "frontend" / "package.json"
+        pkg_path.parent.mkdir()
+        pkg_path.write_text('{\n  "dependencies": {\n    "svelte": "^5.0.0"\n  }\n}\n')
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+
+        changed = deps_update._ensure_exact_specifier("frontend", "svelte", "5.1.0")
+
+        assert changed is True
+        assert '"svelte": "5.1.0"' in pkg_path.read_text()
 
 
 class TestVerifyNodeResyncsNodeModules:
@@ -554,7 +617,8 @@ class TestPypiReleaseDateFetchTracking:
 
         monkeypatch.setattr(deps_update, "_fetch_json", fake_fetch_json)
 
-        updated, skipped, errors = deps_update.update_python(10)
+        errors: list[str] = []
+        updated, skipped = deps_update.update_python(10, errors)
 
         assert updated == []
         assert skipped == []
@@ -586,7 +650,8 @@ class TestPypiReleaseDateFetchTracking:
 
         monkeypatch.setattr(deps_update, "_fetch_json", fake_fetch_json)
 
-        _updated, skipped, errors = deps_update.update_python(10)
+        errors: list[str] = []
+        _updated, skipped = deps_update.update_python(10, errors)
 
         assert errors == []
         assert [name for name, _, _ in skipped] == ["httpx2"]
@@ -608,7 +673,8 @@ class TestPypiReleaseDateFetchTracking:
 
         monkeypatch.setattr(deps_update, "_fetch_json", fake_fetch_json)
 
-        updated, skipped, errors = deps_update.update_python(10)
+        errors: list[str] = []
+        updated, skipped = deps_update.update_python(10, errors)
 
         assert updated == []
         assert skipped == []
@@ -644,7 +710,8 @@ class TestNpmReleaseDateFetchTracking:
         monkeypatch.setattr(deps_update, "_npm_registry_data", fake_registry_data)
         monkeypatch.setattr(deps_update, "_run", fake_run)
 
-        updated, skipped, errors = deps_update.update_node(10, "frontend")
+        errors: list[str] = []
+        updated, skipped = deps_update.update_node(10, "frontend", errors)
 
         assert updated == []
         assert skipped == []
@@ -681,7 +748,8 @@ class TestNpmReleaseDateFetchTracking:
         monkeypatch.setattr(deps_update, "_npm_registry_data", fake_registry_data)
         monkeypatch.setattr(deps_update, "_run", fake_run)
 
-        _updated, skipped, errors = deps_update.update_node(10, "frontend")
+        errors: list[str] = []
+        _updated, skipped = deps_update.update_node(10, "frontend", errors)
 
         assert errors == []
         assert [name for name, _, _ in skipped] == ["vite"]
@@ -720,7 +788,8 @@ class TestNpmReleaseDateFetchTracking:
         monkeypatch.setattr(deps_update, "_npm_registry_data", fake_registry_data)
         monkeypatch.setattr(deps_update, "_run", fake_run)
 
-        updated, skipped, errors = deps_update.update_node(10, "frontend")
+        errors: list[str] = []
+        updated, skipped = deps_update.update_node(10, "frontend", errors)
 
         assert updated == []
         assert skipped == []
@@ -747,7 +816,8 @@ class TestNpmReleaseDateFetchTracking:
         monkeypatch.setattr(deps_update, "_npm_registry_data", fake_registry_data)
         monkeypatch.setattr(deps_update, "_run", fake_run)
 
-        updated, skipped, errors = deps_update.update_node(10, "frontend")
+        errors: list[str] = []
+        updated, skipped = deps_update.update_node(10, "frontend", errors)
 
         assert updated == []
         assert skipped == []
@@ -794,7 +864,8 @@ class TestUpdateNodeResyncsOnApplyFailure:
         monkeypatch.setattr(deps_update, "_apply_node_package", fake_apply)
         monkeypatch.setattr(deps_update, "_resync_node_modules", fake_resync)
 
-        updated, _skipped, errors = deps_update.update_node(10, "frontend")
+        errors: list[str] = []
+        updated, _skipped = deps_update.update_node(10, "frontend", errors)
 
         assert updated == []
         assert len(errors) == 1
@@ -882,14 +953,19 @@ class TestMainExceptionIsolation:
         release_dt = datetime.now(UTC) - timedelta(days=30)
 
         def fake_update_node(
-            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
-        ) -> tuple[list[Any], list[Any], list[str]]:
+            cooldown: int,
+            workspace: str,
+            errors: list[str],
+            registry_cache: dict[str, Any] | None = None,
+        ) -> tuple[list[Any], list[Any]]:
             if workspace == "analecta":
                 raise RuntimeError("pnpm outdated returned garbage")
-            return [("svelte", "5.0.0", "5.1.0", release_dt)], [], []
+            return [("svelte", "5.0.0", "5.1.0", release_dt)], []
 
-        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
-            return [], [], []
+        def fake_update_python(
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
+            return [], []
 
         resync_calls = 0
 
@@ -912,15 +988,20 @@ class TestMainExceptionIsolation:
     ) -> None:
         release_dt = datetime.now(UTC) - timedelta(days=30)
 
-        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
-            return [("ruff", "0.1.0", "0.2.0", release_dt)], [], []
+        def fake_update_python(
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
+            return [("ruff", "0.1.0", "0.2.0", release_dt)], []
 
         def fake_update_node(
-            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
-        ) -> tuple[list[Any], list[Any], list[str]]:
+            cooldown: int,
+            workspace: str,
+            errors: list[str],
+            registry_cache: dict[str, Any] | None = None,
+        ) -> tuple[list[Any], list[Any]]:
             if workspace == "frontend":
-                return [("svelte", "5.0.0", "5.1.0", release_dt)], [], []
-            return [], [], []
+                return [("svelte", "5.0.0", "5.1.0", release_dt)], []
+            return [], []
 
         def fake_verify_node(
             snapshots: dict[Path, bytes], batch: list[Any]
@@ -998,16 +1079,21 @@ class TestMainExceptionIsolation:
         (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
         (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
-        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+        def fake_update_python(
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
             # Simulate one already-applied package before the crash — this
             # is the state main()'s except block must undo.
             uv_lock_path.write_bytes(b"lockfileVersion: mid-loop\n")
             raise RuntimeError("uv lock --upgrade-package vanished")
 
         def fake_update_node(
-            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
-        ) -> tuple[list[Any], list[Any], list[str]]:
-            return [], [], []
+            cooldown: int,
+            workspace: str,
+            errors: list[str],
+            registry_cache: dict[str, Any] | None = None,
+        ) -> tuple[list[Any], list[Any]]:
+            return [], []
 
         pr_body_file = tmp_path / "pr-body.md"
 
@@ -1057,13 +1143,18 @@ class TestMainExceptionIsolation:
         (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
         (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
-        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
-            return [("ruff", "0.1.0", "0.2.0", release_dt)], [], []
+        def fake_update_python(
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
+            return [("ruff", "0.1.0", "0.2.0", release_dt)], []
 
         def fake_update_node(
-            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
-        ) -> tuple[list[Any], list[Any], list[str]]:
-            return [], [], []
+            cooldown: int,
+            workspace: str,
+            errors: list[str],
+            registry_cache: dict[str, Any] | None = None,
+        ) -> tuple[list[Any], list[Any]]:
+            return [], []
 
         def fake_verify_python(
             backend: Path, uv_lock_path: Path, snap: bytes, batch: list[Any]
@@ -1125,15 +1216,20 @@ class TestMainExceptionIsolation:
         (tmp_path / "backend" / "uv.lock").write_text("")
         (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
-        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
-            return [], [], []
+        def fake_update_python(
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
+            return [], []
 
         def fake_update_node(
-            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
-        ) -> tuple[list[Any], list[Any], list[str]]:
+            cooldown: int,
+            workspace: str,
+            errors: list[str],
+            registry_cache: dict[str, Any] | None = None,
+        ) -> tuple[list[Any], list[Any]]:
             if workspace == "frontend":
-                return [("svelte", "5.0.0", "5.1.0", release_dt)], [], []
-            return [], [], []
+                return [("svelte", "5.0.0", "5.1.0", release_dt)], []
+            return [], []
 
         def fake_verify_node(
             snapshots: dict[Path, bytes], batch: list[Any]
@@ -1204,17 +1300,22 @@ class TestMainExceptionIsolation:
 
         applied_frontend_pkg = b'{"dependencies": {"svelte": "5.1.0"}}'
 
-        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
-            return [], [], []
+        def fake_update_python(
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
+            return [], []
 
         def fake_update_node(
-            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
-        ) -> tuple[list[Any], list[Any], list[str]]:
+            cooldown: int,
+            workspace: str,
+            errors: list[str],
+            registry_cache: dict[str, Any] | None = None,
+        ) -> tuple[list[Any], list[Any]]:
             if workspace == "frontend":
                 (tmp_path / "frontend" / "package.json").write_bytes(
                     applied_frontend_pkg
                 )
-                return [("svelte", "5.0.0", "5.1.0", release_dt)], [], []
+                return [("svelte", "5.0.0", "5.1.0", release_dt)], []
             # electron-ws: partially mutate the shared lockfile, then crash.
             lock_path.write_bytes(b"lockfileVersion: mid-crash\n")
             raise RuntimeError("pnpm add vanished mid-apply")
@@ -1284,14 +1385,19 @@ class TestMainExceptionIsolation:
         (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
         (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
-        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+        def fake_update_python(
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
             uv_lock_path.write_bytes(b"lockfileVersion: mid-loop\n")
             raise RuntimeError("uv lock --upgrade-package vanished")
 
         def fake_update_node(
-            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
-        ) -> tuple[list[Any], list[Any], list[str]]:
-            return [], [], []
+            cooldown: int,
+            workspace: str,
+            errors: list[str],
+            registry_cache: dict[str, Any] | None = None,
+        ) -> tuple[list[Any], list[Any]]:
+            return [], []
 
         pr_body_file = tmp_path / "pr-body.md"
 
@@ -1333,12 +1439,17 @@ class TestMainExceptionIsolation:
         (tmp_path / "backend" / "uv.lock").write_text("")
         (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
-        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
-            return [], [], []
+        def fake_update_python(
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
+            return [], []
 
         def fake_update_node(
-            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
-        ) -> tuple[list[Any], list[Any], list[str]]:
+            cooldown: int,
+            workspace: str,
+            errors: list[str],
+            registry_cache: dict[str, Any] | None = None,
+        ) -> tuple[list[Any], list[Any]]:
             lock_path.write_bytes(b"lockfileVersion: mid-crash\n")
             raise RuntimeError("pnpm add vanished mid-apply")
 
@@ -1390,12 +1501,17 @@ class TestMainExceptionIsolation:
         (tmp_path / "backend" / "uv.lock").write_text("")
         (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
-        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
-            return [], [], []
+        def fake_update_python(
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
+            return [], []
 
         def fake_update_node(
-            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
-        ) -> tuple[list[Any], list[Any], list[str]]:
+            cooldown: int,
+            workspace: str,
+            errors: list[str],
+            registry_cache: dict[str, Any] | None = None,
+        ) -> tuple[list[Any], list[Any]]:
             raise RuntimeError("pnpm outdated returned garbage")
 
         def fake_resync() -> bool:
@@ -1437,15 +1553,20 @@ class TestMainExceptionIsolation:
         (tmp_path / "backend" / "uv.lock").write_text("")
         (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
-        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
-            return [], [], []
+        def fake_update_python(
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
+            return [], []
 
         def fake_update_node(
-            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
-        ) -> tuple[list[Any], list[Any], list[str]]:
+            cooldown: int,
+            workspace: str,
+            errors: list[str],
+            registry_cache: dict[str, Any] | None = None,
+        ) -> tuple[list[Any], list[Any]]:
             if workspace == "frontend":
-                return [("svelte", "5.0.0", "5.1.0", release_dt)], [], []
-            return [], [], []
+                return [("svelte", "5.0.0", "5.1.0", release_dt)], []
+            return [], []
 
         def fake_verify_node(
             snapshots: dict[Path, bytes], batch: list[Any]
@@ -1474,3 +1595,158 @@ class TestMainExceptionIsolation:
         body = pr_body_file.read_text()
         assert "_verify_node crashed unexpectedly" in body
         assert "_verify_node restore hook crashed unexpectedly" in body
+
+
+class TestErrorsSurviveMidLoopCrash:
+    """A prior version of update_python()/update_node() built `errors`
+    locally and only returned it at the very end of the per-package loop —
+    an unhandled exception partway through the loop discarded every error
+    already recorded for packages processed before the one that crashed,
+    along with the crash itself. `errors` is now a caller-owned list
+    mutated in place, so whatever was recorded before the crash survives it
+    (and is still there for _guard()'s crash message to join alongside).
+    """
+
+    def test_update_python_preserves_errors_recorded_before_a_later_crash(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        backend = tmp_path / "backend"
+        backend.mkdir()
+        (backend / "pyproject.toml").write_text(
+            '[project]\ndependencies = ["pkg-a==1.0.0", "pkg-b==1.0.0"]\n'
+        )
+        (backend / "uv.lock").write_text(
+            '[[package]]\nname = "pkg-a"\nversion = "1.0.0"\n'
+            '[[package]]\nname = "pkg-b"\nversion = "1.0.0"\n'
+        )
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        old = datetime.now(UTC) - timedelta(days=30)
+
+        def fake_fetch_json(url: str, *, headers: Any = None) -> dict[str, Any] | None:
+            if "pkg-a" in url:
+                return {"info": {"version": "2.0.0"}, "releases": {}}
+            # Simulates an unexpected exception type _fetch_json's own
+            # except clause doesn't already handle — not a registry error.
+            raise ValueError("registry client bug")
+
+        def fake_apply(name: str, backend: Path) -> tuple[bool, str]:
+            return False, "pkg-a failed to apply"
+
+        def fake_release_date(
+            name: str, version: str, all_releases: dict[str, Any]
+        ) -> datetime | None:
+            return old
+
+        monkeypatch.setattr(deps_update, "_fetch_json", fake_fetch_json)
+        monkeypatch.setattr(deps_update, "_apply_python_package", fake_apply)
+        monkeypatch.setattr(deps_update, "_pypi_release_date", fake_release_date)
+
+        errors: list[str] = []
+        with pytest.raises(ValueError, match="registry client bug"):
+            deps_update.update_python(10, errors)
+
+        assert any("pkg-a failed to apply" in e for e in errors)
+
+    def test_update_node_preserves_errors_recorded_before_a_later_crash(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        old = datetime.now(UTC) - timedelta(days=30)
+
+        def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            stdout = json.dumps(
+                {
+                    "pkg-a": {"current": "1.0.0", "latest": "2.0.0"},
+                    "pkg-b": {"current": "1.0.0", "latest": "2.0.0"},
+                }
+            )
+            return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+        def fake_registry_data(
+            name: str, cache: dict[str, Any] | None = None
+        ) -> dict[str, Any] | None:
+            if name == "pkg-a":
+                return {"time": {"2.0.0": old.isoformat()}}
+            # Simulates an unexpected exception mid-loop, not a normal
+            # unreachable-registry failure (which returns None, not raises).
+            raise ValueError("registry client bug")
+
+        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+            return False, "pkg-a failed to apply"
+
+        monkeypatch.setattr(deps_update, "_run", fake_run)
+        monkeypatch.setattr(deps_update, "_npm_registry_data", fake_registry_data)
+        monkeypatch.setattr(deps_update, "_apply_node_package", fake_apply)
+        monkeypatch.setattr(deps_update, "_resync_node_modules", lambda: True)
+
+        errors: list[str] = []
+        with pytest.raises(ValueError, match="registry client bug"):
+            deps_update.update_node(10, "frontend", errors)
+
+        assert any("pkg-a failed to apply" in e for e in errors)
+
+    def test_update_node_crash_and_prior_error_both_reach_the_pr_body(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """End-to-end version of the test above: through main() itself
+        (real update_node(), real _guard()), not just checking the list
+        the two functions above assert on directly — the CHANGELOG entry's
+        actual promise is that both messages reach the committed PR body.
+        """
+        old = datetime.now(UTC) - timedelta(days=30)
+        monkeypatch.setattr(deps_update, "_WORKSPACE_DIR", {"frontend": "frontend"})
+
+        (tmp_path / "frontend").mkdir()
+        (tmp_path / "frontend" / "package.json").write_text("{}")
+        (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
+        (tmp_path / "backend").mkdir()
+        (tmp_path / "backend" / "uv.lock").write_text("")
+        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
+
+        def fake_update_python(
+            cooldown: int, errors: list[str]
+        ) -> tuple[list[Any], list[Any]]:
+            return [], []
+
+        def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            stdout = json.dumps(
+                {
+                    "pkg-a": {"current": "1.0.0", "latest": "2.0.0"},
+                    "pkg-b": {"current": "1.0.0", "latest": "2.0.0"},
+                }
+            )
+            return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+        def fake_registry_data(
+            name: str, cache: dict[str, Any] | None = None
+        ) -> dict[str, Any] | None:
+            if name == "pkg-a":
+                return {"time": {"2.0.0": old.isoformat()}}
+            raise ValueError("registry client bug")
+
+        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+            return False, "pkg-a failed to apply"
+
+        pr_body_file = tmp_path / "pr-body.md"
+
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(deps_update, "_run", fake_run)
+        monkeypatch.setattr(deps_update, "_npm_registry_data", fake_registry_data)
+        monkeypatch.setattr(deps_update, "_apply_node_package", fake_apply)
+        monkeypatch.setattr(deps_update, "_resync_node_modules", lambda: True)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["deps_update.py", "--pr-body-file", str(pr_body_file)],
+        )
+
+        # Nothing succeeded anywhere in this run, so main() exits 1 by its
+        # own "only fail loudly when nothing succeeded" rule — the PR body
+        # write happens before that exit check, so it's still there to
+        # assert on.
+        with pytest.raises(SystemExit):
+            deps_update.main()
+
+        body = pr_body_file.read_text()
+        assert "pkg-a failed to apply" in body
+        assert "`frontend`: update_node crashed unexpectedly" in body
