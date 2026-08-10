@@ -136,6 +136,8 @@ def _guard[T](
     errors: list[str],
     snapshot: dict[Path, bytes],
     fn: Callable[[], T],
+    *,
+    on_restore: Callable[[], None] | None = None,
 ) -> T | None:
     """Run fn(); on any exception, restore *snapshot* and record the crash.
 
@@ -146,6 +148,15 @@ def _guard[T](
     call site always has a snapshot to restore (captured unconditionally in
     main(), regardless of --verify) — *snapshot* is not Optional here.
 
+    *on_restore*, if given, runs after the snapshot restore and the crash
+    message are recorded (preserving that message order) — e.g. a
+    Node-domain node_modules resync, so a future Node call site can't
+    independently forget that follow-up the same way the restore itself
+    was once forgotten at 3 of the original 4 crash sites. Exceptions it
+    raises are caught and recorded the same way fn()'s are, so a broken
+    hook can't escape _guard uncaught either — reproducing this exact bug
+    class one level up would defeat the point of moving it in here.
+
     Returns:
         fn()'s result, or None if it raised.
     """
@@ -154,6 +165,13 @@ def _guard[T](
     except Exception as exc:
         _restore_snapshot(snapshot)
         _record_error(errors, f"{label} crashed unexpectedly — {exc}")
+        if on_restore is not None:
+            try:
+                on_restore()
+            except Exception as hook_exc:
+                _record_error(
+                    errors, f"{label} restore hook crashed unexpectedly — {hook_exc}"
+                )
         return None
 
 
@@ -542,13 +560,21 @@ def update_node(
         if not latest or latest == current:
             continue
         print(f"  {name}: {current} -> {latest}")
-        candidates += 1
 
         fetch_attempted += 1
         data = _npm_registry_data(name, registry_cache)
         if data is None:
             continue
         fetch_ok += 1
+        # Only counted once the fetch that would tell us its release date
+        # has actually succeeded — matching update_python's ordering, so
+        # fetch_ok == 0 implies candidates == 0 in both ecosystems. Counting
+        # it earlier (right after pnpm outdated confirms an update exists,
+        # before the npm fetch) let a package whose fetch failed outright
+        # inflate `candidates` without ever incrementing `date_unknown`,
+        # which could silently zero out both escalation checks below in a
+        # workspace mixing total-fetch-failures with date-unknown packages.
+        candidates += 1
         release_dt = _npm_release_date(data, latest)
         if release_dt is None:
             print("    [warn] release date unavailable, skipping")
@@ -616,9 +642,12 @@ def _resync_node_modules() -> bool:
         # restored package.json would mean the snapshot pair was already
         # inconsistent — surface it rather than silently leaving
         # node_modules stale for the next bisection step.
+        # pnpm reports ERR_PNPM_OUTDATED_LOCKFILE etc. on stdout, not stderr
+        # (same fallback as _apply_node_package's lockfile resync below).
+        detail = result.stderr.strip() or result.stdout.strip()
         print(
             "::error::node_modules resync failed after restoring"
-            f" package.json/pnpm-lock.yaml — {result.stderr.strip()}"
+            f" package.json/pnpm-lock.yaml — {detail}"
         )
         return False
     return True
@@ -960,18 +989,22 @@ def main() -> None:
         # wipe out an earlier workspace's already-applied, already-tracked
         # updates still on disk — undoing more than this workspace broke.
         step_snap = {p: p.read_bytes() for p in node_snap}
-        result = _guard(
-            "update_node",
-            ws_errors,
-            step_snap,
-            lambda ws=workspace: update_node(cooldown, ws, registry_cache),
-        )
-        if result is None:
+
+        def _resync_hook(ws_errors: list[str] = ws_errors) -> None:
             if not _resync_node_modules():
                 _record_error(
                     ws_errors,
                     "node_modules resync failed after restoring the pre-crash state",
                 )
+
+        result = _guard(
+            "update_node",
+            ws_errors,
+            step_snap,
+            lambda ws=workspace: update_node(cooldown, ws, registry_cache),
+            on_restore=_resync_hook,
+        )
+        if result is None:
             nd_errors_tagged += [(workspace, msg) for msg in ws_errors]
             continue
         up, sk, errs = result
@@ -996,18 +1029,22 @@ def main() -> None:
 
     nd_verify_errors: list[str] = []
     if verify and nd_up_tagged:
-        verify_result = _guard(
-            "_verify_node",
-            nd_verify_errors,
-            node_snap,
-            lambda: _verify_node(node_snap, nd_up_tagged),
-        )
-        if verify_result is None:
+
+        def _verify_node_resync_hook() -> None:
             if not _resync_node_modules():
                 _record_error(
                     nd_verify_errors,
                     "node_modules resync failed after restoring the pre-crash state",
                 )
+
+        verify_result = _guard(
+            "_verify_node",
+            nd_verify_errors,
+            node_snap,
+            lambda: _verify_node(node_snap, nd_up_tagged),
+            on_restore=_verify_node_resync_hook,
+        )
+        if verify_result is None:
             nd_up_tagged = []
         else:
             nd_up_tagged, nd_blocked, verify_errors = verify_result
