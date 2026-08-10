@@ -16,7 +16,7 @@ ecosystem's section. The exit code only signals failure when nothing
 succeeded anywhere in the run.
 
 Usage (from repo root):
-    python scripts/deps_update.py [--cooldown DAYS] [--pr-body-file PATH]
+    python scripts/deps_update.py [--cooldown DAYS] [--pr-body-file PATH] [--verify]
 """
 
 from __future__ import annotations
@@ -103,7 +103,7 @@ def _restore_snapshot(snapshot: dict[Path, bytes]) -> None:
 def _guard[T](
     label: str,
     errors: list[str],
-    snapshot: dict[Path, bytes] | None,
+    snapshot: dict[Path, bytes],
     fn: Callable[[], T],
 ) -> T | None:
     """Run fn(); on any exception, restore *snapshot* and record the crash.
@@ -111,7 +111,9 @@ def _guard[T](
     Centralizes what main()'s crash handlers must each do — restore state
     before recording the error, not after or not at all — so a new call
     site can't independently forget the restore half of that pair the way
-    three of the four hand-written handlers this replaces once did.
+    three of the four hand-written handlers this replaces once did. Every
+    call site always has a snapshot to restore (captured unconditionally in
+    main(), regardless of --verify) — *snapshot* is not Optional here.
 
     Returns:
         fn()'s result, or None if it raised.
@@ -119,8 +121,7 @@ def _guard[T](
     try:
         return fn()
     except Exception as exc:
-        if snapshot is not None:
-            _restore_snapshot(snapshot)
+        _restore_snapshot(snapshot)
         _record_error(errors, f"{label} crashed unexpectedly — {exc}")
         return None
 
