@@ -686,6 +686,47 @@ class TestNpmReleaseDateFetchTracking:
         assert errors == []
         assert [name for name, _, _ in skipped] == ["vite"]
 
+    def test_mixed_fetch_failure_and_missing_timestamp_escalates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A total fetch failure for one candidate alongside a missing
+        timestamp for another must still add up to "every candidate went
+        unevaluated". Regression test for moving `candidates` to only count
+        after a successful fetch (mirroring update_python's ordering):
+        counting it earlier, right after `pnpm outdated` confirms an update
+        exists, let a package whose fetch failed outright inflate
+        `candidates` without ever touching `date_unknown` — a workspace
+        mixing both failure types (fetch_ok > 0, date_unknown < candidates)
+        cleared *both* escalation checks and reported zero errors despite
+        100% of its candidates going unevaluated.
+        """
+
+        def fake_registry_data(
+            name: str, cache: dict[str, Any] | None = None
+        ) -> dict[str, Any] | None:
+            if name == "svelte":
+                return None  # registry unreachable for this one
+            return {"time": {}}  # reachable, but no entry for the target version
+
+        def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            stdout = json.dumps(
+                {
+                    "svelte": {"current": "5.0.0", "latest": "5.1.0"},
+                    "vite": {"current": "6.0.0", "latest": "6.1.0"},
+                }
+            )
+            return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+        monkeypatch.setattr(deps_update, "_npm_registry_data", fake_registry_data)
+        monkeypatch.setattr(deps_update, "_run", fake_run)
+
+        updated, skipped, errors = deps_update.update_node(10, "frontend")
+
+        assert updated == []
+        assert skipped == []
+        assert len(errors) == 1
+        assert "release-date lookups failed" in errors[0]
+
     def test_all_fetches_failing_escalates_with_exact_message(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1324,3 +1365,112 @@ class TestMainExceptionIsolation:
         assert lock_path.read_bytes() == original_lock
         assert resync_calls == len(deps_update._WORKSPACE_DIR)
         assert "update_node crashed unexpectedly" in pr_body_file.read_text()
+
+    def test_update_node_resync_hook_exception_does_not_crash_main(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_guard()'s on_restore hook is itself wrapped in a try/except — if
+        _resync_node_modules() raises (not just returns False) after a
+        workspace crash, main() must record it and keep going, not crash
+        uncaught before the PR body is ever written. This is the exact bug
+        class an unguarded resync call sitting right next to a _guard() call
+        used to reproduce: correctness insurance for one crash path, with a
+        second, unguarded crash path one line below it.
+        """
+        for name in deps_update._WORKSPACE_DIR.values():
+            pkg = (
+                tmp_path / name / "package.json"
+                if name != "."
+                else tmp_path / "package.json"
+            )
+            pkg.parent.mkdir(parents=True, exist_ok=True)
+            pkg.write_text("{}")
+        (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
+        (tmp_path / "backend").mkdir()
+        (tmp_path / "backend" / "uv.lock").write_text("")
+        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
+
+        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+            return [], [], []
+
+        def fake_update_node(
+            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            raise RuntimeError("pnpm outdated returned garbage")
+
+        def fake_resync() -> bool:
+            raise RuntimeError("pnpm vanished from PATH")
+
+        pr_body_file = tmp_path / "pr-body.md"
+
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(deps_update, "update_node", fake_update_node)
+        monkeypatch.setattr(deps_update, "_resync_node_modules", fake_resync)
+        monkeypatch.setattr(
+            sys, "argv", ["deps_update.py", "--pr-body-file", str(pr_body_file)]
+        )
+
+        with pytest.raises(SystemExit):
+            deps_update.main()  # must reach here, not crash on the hook's own raise
+
+        body = pr_body_file.read_text()
+        assert "update_node crashed unexpectedly" in body
+        assert "update_node restore hook crashed unexpectedly" in body
+
+    def test_verify_node_resync_hook_exception_does_not_crash_main(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Mirrors the test above for _verify_node's on_restore hook."""
+        release_dt = datetime.now(UTC) - timedelta(days=30)
+
+        for name in deps_update._WORKSPACE_DIR.values():
+            pkg = (
+                tmp_path / name / "package.json"
+                if name != "."
+                else tmp_path / "package.json"
+            )
+            pkg.parent.mkdir(parents=True, exist_ok=True)
+            pkg.write_text("{}")
+        (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
+        (tmp_path / "backend").mkdir()
+        (tmp_path / "backend" / "uv.lock").write_text("")
+        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
+
+        def fake_update_python(cooldown: int) -> tuple[list[Any], list[Any], list[str]]:
+            return [], [], []
+
+        def fake_update_node(
+            cooldown: int, workspace: str, registry_cache: dict[str, Any] | None = None
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            if workspace == "frontend":
+                return [("svelte", "5.0.0", "5.1.0", release_dt)], [], []
+            return [], [], []
+
+        def fake_verify_node(
+            snapshots: dict[Path, bytes], batch: list[Any]
+        ) -> tuple[list[Any], list[Any], list[str]]:
+            raise RuntimeError("check.sh subprocess vanished")
+
+        def fake_resync() -> bool:
+            raise RuntimeError("pnpm vanished from PATH")
+
+        pr_body_file = tmp_path / "pr-body.md"
+
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+        monkeypatch.setattr(deps_update, "update_node", fake_update_node)
+        monkeypatch.setattr(deps_update, "_verify_node", fake_verify_node)
+        monkeypatch.setattr(deps_update, "_resync_node_modules", fake_resync)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["deps_update.py", "--verify", "--pr-body-file", str(pr_body_file)],
+        )
+
+        with pytest.raises(SystemExit):
+            deps_update.main()  # must reach here, not crash on the hook's own raise
+
+        body = pr_body_file.read_text()
+        assert "_verify_node crashed unexpectedly" in body
+        assert "_verify_node restore hook crashed unexpectedly" in body
