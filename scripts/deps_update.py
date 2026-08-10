@@ -94,6 +94,37 @@ def _record_error(errors: list[str], msg: str) -> None:
     errors.append(msg)
 
 
+def _record_registry_health(
+    errors: list[str],
+    *,
+    fetch_attempted: int,
+    fetch_ok: int,
+    candidates: int,
+    date_unknown: int,
+    registry_label: str,
+) -> None:
+    """Escalate a fully-failed registry check to a run-level error.
+
+    Shared by update_python/update_node: "every fetch failed" (the registry
+    was unreachable) and "every release date was unusable" (the registry
+    answered, but cooldown couldn't be evaluated for anything) both leave
+    every candidate unchecked, but are distinct failures worth telling apart
+    in the PR body rather than collapsing into one generic message.
+    """
+    if fetch_attempted > 0 and fetch_ok == 0:
+        _record_error(
+            errors,
+            f"All {registry_label} registry fetches failed — no packages could"
+            " be checked",
+        )
+    elif candidates > 0 and date_unknown == candidates:
+        _record_error(
+            errors,
+            "All release-date lookups failed for packages with an available"
+            " update — cooldown could not be evaluated",
+        )
+
+
 def _restore_snapshot(snapshot: dict[Path, bytes]) -> None:
     """Write every path in *snapshot* back to its captured bytes."""
     for path, data in snapshot.items():
@@ -243,16 +274,14 @@ def update_python(cooldown: int) -> tuple[list[Updated], list[Skipped], list[str
             print("    [ok] updated")
             updated.append((name, current, latest, release_dt))
 
-    if fetch_attempted > 0 and fetch_ok == 0:
-        _record_error(
-            errors, "All PyPI registry fetches failed — no packages could be checked"
-        )
-    elif candidates > 0 and date_unknown == candidates:
-        _record_error(
-            errors,
-            "All release-date lookups failed for packages with an available"
-            " update — cooldown could not be evaluated",
-        )
+    _record_registry_health(
+        errors,
+        fetch_attempted=fetch_attempted,
+        fetch_ok=fetch_ok,
+        candidates=candidates,
+        date_unknown=date_unknown,
+        registry_label="PyPI",
+    )
 
     return updated, skipped, errors
 
@@ -547,16 +576,14 @@ def update_node(
         print("    [ok] updated")
         updated.append((name, current, latest, release_dt))
 
-    if fetch_attempted > 0 and fetch_ok == 0:
-        _record_error(
-            errors, "All npm registry fetches failed — no packages could be checked"
-        )
-    elif candidates > 0 and date_unknown == candidates:
-        _record_error(
-            errors,
-            "All release-date lookups failed for packages with an available"
-            " update — cooldown could not be evaluated",
-        )
+    _record_registry_health(
+        errors,
+        fetch_attempted=fetch_attempted,
+        fetch_ok=fetch_ok,
+        candidates=candidates,
+        date_unknown=date_unknown,
+        registry_label="npm",
+    )
 
     return updated, skipped, errors
 
@@ -923,7 +950,7 @@ def main() -> None:
 
     nd_sk: list[Skipped] = []
     nd_up_tagged: list[tuple[str, Updated]] = []
-    nd_errors_by_ws: dict[str, list[str]] = {}
+    nd_errors_tagged: list[tuple[str, str]] = []
     registry_cache: dict[str, dict[str, Any]] = {}
     for workspace in _WORKSPACE_DIR:
         ws_errors: list[str] = []
@@ -945,13 +972,12 @@ def main() -> None:
                     ws_errors,
                     "node_modules resync failed after restoring the pre-crash state",
                 )
-            nd_errors_by_ws[workspace] = ws_errors
+            nd_errors_tagged += [(workspace, msg) for msg in ws_errors]
             continue
         up, sk, errs = result
         nd_up_tagged += [(workspace, u) for u in up]
         nd_sk += sk
-        if errs:
-            nd_errors_by_ws[workspace] = errs
+        nd_errors_tagged += [(workspace, msg) for msg in errs]
 
     py_blocked: list[Blocked] = []
     nd_blocked: list[Blocked] = []
@@ -988,12 +1014,8 @@ def main() -> None:
             nd_verify_errors += verify_errors
     nd_up = [u for _, u in nd_up_tagged]
     nd_ws = [w for w, _ in nd_up_tagged]
-    nd_errors: list[str] = []
-    nd_error_ws: list[str | None] = []
-    for ws, msgs in nd_errors_by_ws.items():
-        for msg in msgs:
-            nd_errors.append(msg)
-            nd_error_ws.append(ws)
+    nd_errors: list[str] = [msg for _, msg in nd_errors_tagged]
+    nd_error_ws: list[str | None] = [ws for ws, _ in nd_errors_tagged]
     for msg in nd_verify_errors:
         nd_errors.append(msg)
         nd_error_ws.append(None)
@@ -1038,7 +1060,7 @@ def main() -> None:
                 _ = changelog_path.write_text(updated_changelog)
                 print("    CHANGELOG.md updated")
 
-    had_error = bool(py_errors) or bool(nd_errors_by_ws) or bool(nd_verify_errors)
+    had_error = bool(py_errors) or bool(nd_errors_tagged) or bool(nd_verify_errors)
     if had_error and total_up == 0:
         sys.exit(1)
 
