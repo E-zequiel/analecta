@@ -508,15 +508,15 @@ The `needs:` coupling above prevents wasting runner minutes, but the actual merg
 
 This split means that even if a package that cleared the 10-day cooldown contains a malicious payload, it cannot access or exfiltrate the repository write token. The blast radius of a compromise in the `update` job is limited to the runner instance itself.
 
-### Local: advisory workflow (`deps_update.py` does not pass `--ignore-scripts`)
+### Local: advisory workflow (`deps_update.py` is `--ignore-scripts`-only; a manual `pnpm add` is not)
 
-`scripts/deps_update.py` calls `pnpm add <pkg>@<latest> --save-exact` for each outdated Node package. This command supports `--ignore-scripts` but the script does not pass it, so `electron`'s postinstall may run before `socket-audit.sh` can scan the result.
+`scripts/deps_update.py` itself needs no ordering discipline here — every `pnpm add`/`install`/`dedupe` call it makes passes `--ignore-scripts` (Control 9's script-free note above), so no lifecycle script ever runs on that path. The ordering risk is a developer running `pnpm add <pkg>@<latest> --save-exact` by hand, outside the script: that command has no `--ignore-scripts` guard, so a package holding a `true` entry in `allowBuilds` can run its lifecycle script before `socket-audit.sh` gets a chance to scan the result.
 
 The compensating control is sequencing discipline:
 
 ```
-deps_update.py           ← updates lockfile + installs (electron postinstall may run)
-./scripts/socket-audit.sh   ← scans the updated lockfile
+pnpm add <pkg> --save-exact   ← lifecycle script may run (allowBuilds entries only)
+./scripts/socket-audit.sh     ← scans the updated lockfile
 <review output>
 git add pnpm-lock.yaml && git commit   ← only if scan is clean
 ```
