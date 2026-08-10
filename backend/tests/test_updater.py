@@ -591,6 +591,32 @@ class TestPypiReleaseDateFetchTracking:
         assert errors == []
         assert [name for name, _, _ in skipped] == ["httpx2"]
 
+    def test_all_fetches_failing_escalates_with_exact_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reaches _record_registry_health's `if fetch_attempted > 0 and
+        fetch_ok == 0` branch — untested until now, unlike its `elif`
+        sibling covered above. Asserts the full string rather than a
+        substring: the message is built from two concatenated literals, and
+        a substring check wouldn't catch a wrong space landing at the join.
+        """
+        self._backend(tmp_path)
+        monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
+
+        def fake_fetch_json(url: str, *, headers: Any = None) -> dict[str, Any] | None:
+            return None  # registry unreachable for every package
+
+        monkeypatch.setattr(deps_update, "_fetch_json", fake_fetch_json)
+
+        updated, skipped, errors = deps_update.update_python(10)
+
+        assert updated == []
+        assert skipped == []
+        assert len(errors) == 1
+        assert errors[0] == (
+            "All PyPI registry fetches failed — no packages could be checked"
+        )
+
 
 class TestNpmReleaseDateFetchTracking:
     """fetch_ok must only count registry reachability, not whether the
@@ -659,6 +685,35 @@ class TestNpmReleaseDateFetchTracking:
 
         assert errors == []
         assert [name for name, _, _ in skipped] == ["vite"]
+
+    def test_all_fetches_failing_escalates_with_exact_message(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Mirrors TestPypiReleaseDateFetchTracking's test of the same name —
+        fixing this diagnostic gap in one ecosystem but not the other would
+        leave the exact same untested branch on whichever side got skipped.
+        """
+
+        def fake_registry_data(
+            name: str, cache: dict[str, Any] | None = None
+        ) -> dict[str, Any] | None:
+            return None  # registry unreachable for every package
+
+        def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            stdout = json.dumps({"svelte": {"current": "5.0.0", "latest": "5.1.0"}})
+            return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+        monkeypatch.setattr(deps_update, "_npm_registry_data", fake_registry_data)
+        monkeypatch.setattr(deps_update, "_run", fake_run)
+
+        updated, skipped, errors = deps_update.update_node(10, "frontend")
+
+        assert updated == []
+        assert skipped == []
+        assert len(errors) == 1
+        assert errors[0] == (
+            "All npm registry fetches failed — no packages could be checked"
+        )
 
 
 class TestUpdateNodeResyncsOnApplyFailure:
