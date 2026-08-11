@@ -300,6 +300,7 @@ class TestVerifyGateIncludesErroredBatch:
             batch: list[Any],
             survivors: list[Any],
             blocked: list[Any],
+            errors: list[str],
         ) -> None:
             verify_calls.append(batch)
             survivors.extend(batch)
@@ -564,6 +565,134 @@ class TestApplyNodePackageExceptionSafety:
         assert "dedupe failed" in reason
         assert "boom" in reason
         assert restore_calls == 1  # attempted pkg_path first, raised, stopped there
+        assert len(errors) == 1
+        assert "failed to restore" in errors[0]
+        assert "disk full" in errors[0]
+
+
+class TestApplyPythonPackageExceptionSafety:
+    """uv.lock's own write (per its upstream source) is a direct, non-atomic
+    fs write, not temp-file-then-rename — a killed/crashed `uv` subprocess
+    mid-write can leave it truncated even behind a plain non-zero
+    returncode, which update_python's loop treats as a handled per-package
+    failure, not a crash _guard() would restore from. _apply_python_package
+    must therefore give the same (False, reason)-leaves-uv.lock-untouched
+    guarantee _apply_node_package already gives for
+    package.json/pnpm-lock.yaml, for the same reason.
+    """
+
+    def test_restores_uv_lock_after_a_mid_write_partial_mutation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The actual gap this class exists to close, not just the
+        finally-guard's own exception safety: a subprocess killed mid-write
+        (OOM, disk-full, SIGKILL — surfacing to subprocess.run as a
+        negative returncode) can leave uv.lock mutated behind a plain
+        (False, reason) return, no exception raised at all. That's a
+        handled failure update_python's loop just continues past — nothing
+        else in this file would ever restore uv.lock for it.
+        """
+        backend = tmp_path / "backend"
+        backend.mkdir()
+        lock_path = backend / "uv.lock"
+        original_lock = '[[package]]\nname = "ruff"\nversion = "0.1.0"\n'
+        lock_path.write_text(original_lock)
+
+        def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            lock_path.write_bytes(b"truncated")
+            return subprocess.CompletedProcess(cmd, -9, stdout="", stderr="")
+
+        monkeypatch.setattr(deps_update, "_run", fake_run)
+
+        errors: list[str] = []
+        ok, _reason = deps_update._apply_python_package("ruff", backend, errors)
+
+        assert ok is False
+        assert lock_path.read_text() == original_lock
+        assert errors == []  # restore itself succeeded, nothing to record
+
+    def test_restores_uv_lock_on_unexpected_oserror(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        backend = tmp_path / "backend"
+        backend.mkdir()
+        lock_path = backend / "uv.lock"
+        original_lock = '[[package]]\nname = "ruff"\nversion = "0.1.0"\n'
+        lock_path.write_text(original_lock)
+
+        def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(deps_update, "_run", fake_run)
+
+        errors: list[str] = []
+        ok, reason = deps_update._apply_python_package("ruff", backend, errors)
+
+        assert ok is False
+        assert "disk full" in reason
+        assert lock_path.read_text() == original_lock
+        assert errors == []  # restore itself succeeded, nothing to record
+
+    def test_restores_uv_lock_on_unexpected_non_oserror(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Mirrors _apply_node_package's equivalent test: an except clause
+        narrowed to OSError alone would let any other exception type
+        propagate straight past the finally's restore.
+        """
+        backend = tmp_path / "backend"
+        backend.mkdir()
+        lock_path = backend / "uv.lock"
+        original_lock = '[[package]]\nname = "ruff"\nversion = "0.1.0"\n'
+        lock_path.write_text(original_lock)
+
+        def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            raise ValueError("unexpected shape")
+
+        monkeypatch.setattr(deps_update, "_run", fake_run)
+
+        errors: list[str] = []
+        ok, reason = deps_update._apply_python_package("ruff", backend, errors)
+
+        assert ok is False
+        assert "unexpected shape" in reason
+        assert lock_path.read_text() == original_lock
+        assert errors == []  # restore itself succeeded, nothing to record
+
+    def test_finally_restore_failure_does_not_mask_the_original_reason(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A bare `finally: write_bytes(...)` would let a restore failure
+        there (e.g. the same disk-full condition that failed `uv lock`
+        itself) raise out of the finally block, silently replacing the
+        already-computed (False, reason) with an unrelated, uncaught
+        exception — same regression class as _apply_node_package's
+        equivalent test.
+        """
+        backend = tmp_path / "backend"
+        backend.mkdir()
+        lock_path = backend / "uv.lock"
+        lock_path.write_text('[[package]]\nname = "ruff"\nversion = "0.1.0"\n')
+
+        def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
+
+        real_write_bytes = Path.write_bytes
+
+        def flaky_write_bytes(self: Path, data: bytes) -> int:
+            if self == lock_path:
+                raise OSError("disk full")
+            return real_write_bytes(self, data)
+
+        monkeypatch.setattr(deps_update, "_run", fake_run)
+        monkeypatch.setattr(Path, "write_bytes", flaky_write_bytes)
+
+        errors: list[str] = []
+        ok, reason = deps_update._apply_python_package("ruff", backend, errors)
+
+        assert ok is False
+        assert "uv lock failed" in reason
+        assert "boom" in reason
         assert len(errors) == 1
         assert "failed to restore" in errors[0]
         assert "disk full" in errors[0]
@@ -901,7 +1030,7 @@ class TestVerifyResultsSurviveMidBatchCrash:
         def fake_run_check(repo_root: Path, scope: str) -> bool:
             return next(check_results)
 
-        def fake_apply(name: str, backend: Path) -> tuple[bool, str]:
+        def fake_apply(name: str, backend: Path, errors: list[str]) -> tuple[bool, str]:
             if name == "pkg-b":
                 raise RuntimeError("uv subprocess vanished")
             uv_lock_path.write_bytes(pristine + b"+pkg-a")
@@ -917,7 +1046,7 @@ class TestVerifyResultsSurviveMidBatchCrash:
 
         def run_verify_python() -> None:
             deps_update._verify_python(
-                backend, uv_lock_path, snapshot, batch, survivors, blocked
+                backend, uv_lock_path, snapshot, batch, survivors, blocked, errors
             )
 
         result = deps_update._guard(
@@ -1579,6 +1708,7 @@ class TestMainExceptionIsolation:
             batch: list[Any],
             survivors: list[Any],
             blocked: list[Any],
+            errors: list[str],
         ) -> None:
             survivors.extend(batch)
 
@@ -1732,6 +1862,7 @@ class TestMainExceptionIsolation:
             batch: list[Any],
             survivors: list[Any],
             blocked: list[Any],
+            errors: list[str],
         ) -> None:
             # Simulate a partial bisection write before the crash — this is
             # the state main()'s except block must undo.
@@ -2215,7 +2346,7 @@ class TestErrorsSurviveMidLoopCrash:
             # except clause doesn't already handle — not a registry error.
             raise ValueError("registry client bug")
 
-        def fake_apply(name: str, backend: Path) -> tuple[bool, str]:
+        def fake_apply(name: str, backend: Path, errors: list[str]) -> tuple[bool, str]:
             return False, "pkg-a failed to apply"
 
         def fake_release_date(
