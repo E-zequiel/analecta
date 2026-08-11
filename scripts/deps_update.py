@@ -130,8 +130,8 @@ def _record_registry_health(
     elif candidates > 0 and date_unknown == candidates:
         _record_error(
             errors,
-            "All release-date lookups failed for packages with an available"
-            " update — cooldown could not be evaluated",
+            f"All {registry_label} release-date lookups failed for packages"
+            " with an available update — cooldown could not be evaluated",
         )
 
 
@@ -149,7 +149,7 @@ def _guard[T](
     *,
     on_restore: Callable[[], None] | None = None,
 ) -> T | None:
-    """Run fn(); on any exception, restore *snapshot* and record the crash.
+    """Run fn(); on any exception (or Ctrl+C), restore *snapshot* and record the crash.
 
     Centralizes what main()'s crash handlers must each do — restore state
     before recording the error, not after or not at all — so a new call
@@ -157,6 +157,19 @@ def _guard[T](
     three of the four hand-written handlers this replaces once did. Every
     call site always has a snapshot to restore (captured unconditionally in
     main(), regardless of --verify) — *snapshot* is not Optional here.
+
+    The restore itself can fail too (e.g. the same disk-full condition that
+    triggered fn()'s crash also blocks the write-back) — that's caught and
+    recorded rather than left to propagate uncaught out of _guard, which
+    would otherwise abort the whole run before the crash it was trying to
+    report ever reaches the PR body.
+
+    KeyboardInterrupt is caught alongside Exception so a manual Ctrl+C mid-fn
+    still triggers the same restore-and-record path instead of leaving
+    mutated state (e.g. one already-applied package bump) unrecorded on
+    disk. It is re-raised after cleanup so the process still stops, rather
+    than _guard silently swallowing the interrupt and continuing on to the
+    next workspace.
 
     *on_restore*, if given, runs after the snapshot restore and the crash
     message are recorded (preserving that message order) — e.g. a
@@ -168,12 +181,18 @@ def _guard[T](
     class one level up would defeat the point of moving it in here.
 
     Returns:
-        fn()'s result, or None if it raised.
+        fn()'s result, or None if it raised (KeyboardInterrupt re-raises
+        after cleanup instead of returning).
     """
     try:
         return fn()
-    except Exception as exc:
-        _restore_snapshot(snapshot)
+    except (Exception, KeyboardInterrupt) as exc:
+        try:
+            _restore_snapshot(snapshot)
+        except Exception as restore_exc:
+            _record_error(
+                errors, f"{label} restore failed unexpectedly — {restore_exc}"
+            )
         _record_error(errors, f"{label} crashed unexpectedly — {exc}")
         if on_restore is not None:
             try:
@@ -182,6 +201,8 @@ def _guard[T](
                 _record_error(
                     errors, f"{label} restore hook crashed unexpectedly — {hook_exc}"
                 )
+        if isinstance(exc, KeyboardInterrupt):
+            raise
         return None
 
 
@@ -323,11 +344,24 @@ def update_python(
 
 
 def _verify_python(
-    backend: Path, uv_lock_path: Path, snap: bytes, batch: list[Updated]
-) -> tuple[list[Updated], list[Blocked]]:
-    """Verify a batch of Python updates with check.sh backend; bisect on failure."""
+    backend: Path,
+    uv_lock_path: Path,
+    snap: bytes,
+    batch: list[Updated],
+    survivors: list[Updated],
+    blocked: list[Blocked],
+) -> None:
+    """Verify a batch of Python updates with check.sh backend; bisect on failure.
+
+    *survivors* and *blocked* are caller-owned lists mutated in place, not
+    built locally and returned — a crash partway through bisection (caught
+    by _guard) must not discard packages already reconfirmed, or already
+    ruled out, before the crash point. Same reasoning as update_python's
+    caller-owned *errors* list.
+    """
     if _run_check(REPO_ROOT, "backend"):
-        return batch, []
+        survivors.extend(batch)
+        return
 
     print(
         "::warning::check.sh backend failed on the full batch"
@@ -335,8 +369,6 @@ def _verify_python(
     )
     _restore_snapshot({uv_lock_path: snap})
 
-    survivors: list[Updated] = []
-    blocked: list[Blocked] = []
     for name, old, new, release_dt in batch:
         step_snap = uv_lock_path.read_bytes()
         ok, reason = _apply_python_package(name, backend)
@@ -350,7 +382,6 @@ def _verify_python(
             _restore_snapshot({uv_lock_path: step_snap})
             print(f"::warning::{name}: blocked — {reason}")
             blocked.append((name, new, _sanitize_reason(reason)))
-    return survivors, blocked
 
 
 # ---------------------------------------------------------------------------
@@ -404,6 +435,60 @@ def _npm_release_date(data: dict[str, Any], version: str) -> datetime | None:
         return None
 
 
+_DEP_KEY_RE = re.compile(
+    r'"(?:dependencies|devDependencies|peerDependencies|optionalDependencies'
+    r'|bundledDependencies|bundleDependencies)"\s*:'
+)
+
+
+def _dependency_block_spans(text: str) -> list[tuple[int, int]]:
+    r"""Find the [start, end) span of each real dependency-type object's body.
+
+    Only the six standard npm dependency-type keys are recognized as block
+    openers — not any `"\w*[Dd]ependencies"`-shaped string, which would also
+    match a `scripts` entry like `"checkDependencies"` or a plain string
+    value such as a `"keywords"` array containing `"dependencies"`.
+
+    Each span is found via string/escape-aware brace-depth counting from the
+    key's own `{`, not just "from here to the next occurrence of anything" —
+    so a match is only ever accepted from inside a block that is actually
+    one of those six keys' object, never from unrelated text between or
+    after them.
+    """
+    spans: list[tuple[int, int]] = []
+    for key_match in _DEP_KEY_RE.finditer(text):
+        pos = key_match.end()
+        while pos < len(text) and text[pos] in " \t\r\n":
+            pos += 1
+        if pos >= len(text) or text[pos] != "{":
+            continue
+        start = pos
+        depth = 0
+        in_string = False
+        escape = False
+        i = pos
+        while i < len(text):
+            ch = text[i]
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+            elif ch == '"':
+                in_string = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    spans.append((start, i + 1))
+                    break
+            i += 1
+    return spans
+
+
 def _ensure_exact_specifier(workspace_dir: str, name: str, version: str) -> bool:
     """Rewrite the package.json specifier for name to an exact pin.
 
@@ -411,11 +496,13 @@ def _ensure_exact_specifier(workspace_dir: str, name: str, version: str) -> bool
     rewriting an existing specifier — observed leaving ^8.0.0 in place
     after `pnpm add pkg@8.0.0 --save-exact` over a prior ^7 range.
 
-    The search starts at the first `dependencies`/`devDependencies`/etc. key
-    found in the file, not at offset 0 — the root package.json has a
-    `scripts` block ahead of `devDependencies`, and a bare first-match regex
-    over the whole file text could rewrite a same-named script's command
-    string instead of the actual specifier if one is ever added there.
+    The rewrite only considers text inside a real dependency-type object
+    (see `_dependency_block_spans`), tried in file order, never anywhere
+    else in the file — the root package.json has a `scripts` block ahead of
+    `devDependencies`, and a bare regex anchored merely at the first
+    dependency-type key (without a block end boundary) could still match a
+    same-named script, or a same-named package listed in a later, unrelated
+    section, instead of the actual specifier.
 
     Returns:
         True if the specifier was rewritten, meaning the lockfile needs
@@ -424,9 +511,12 @@ def _ensure_exact_specifier(workspace_dir: str, name: str, version: str) -> bool
     pkg_path = REPO_ROOT / workspace_dir / "package.json"
     text = pkg_path.read_text()
     pattern = re.compile(rf'("{re.escape(name)}":\s*")([^"]*)(")')
-    dep_key_positions = [m.start() for m in re.finditer(r'"\w*[Dd]ependencies"', text)]
-    search_start = min(dep_key_positions, default=0)
-    match = pattern.search(text, search_start)
+    match = None
+    for start, end in _dependency_block_spans(text):
+        candidate = pattern.search(text, start, end)
+        if candidate is not None:
+            match = candidate
+            break
     if match is None or match.group(2) == version:
         return False
     replacement = f"{match.group(1)}{version}{match.group(3)}"
@@ -526,9 +616,21 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
         # below and restore package.json/pnpm-lock.yaml, not just OSError.
         return False, f"unexpected error applying {name} — {exc}"
     finally:
+        # Guarded so a restore failure here (e.g. the same disk-full
+        # condition that caused the failure being handled) can't raise out
+        # of a `finally` block — that would silently replace whatever
+        # (False, reason) the try/except above was already returning with
+        # an unrelated, uncaught exception, discarding the real diagnostic.
         if not applied:
-            _ = pkg_path.write_bytes(pkg_snap)
-            _ = lock_path.write_bytes(lock_snap)
+            try:
+                _ = pkg_path.write_bytes(pkg_snap)
+                _ = lock_path.write_bytes(lock_snap)
+            except Exception as restore_exc:
+                print(
+                    "::error::_apply_node_package: failed to restore"
+                    f" package.json/pnpm-lock.yaml for {name} after a failed"
+                    f" apply — {restore_exc}"
+                )
 
 
 def update_node(
@@ -583,7 +685,8 @@ def update_node(
     candidates = 0
     date_unknown = 0
 
-    for name, info in sorted(outdated.items()):
+    items = sorted(outdated.items())
+    for i, (name, info) in enumerate(items):
         current: str = cast(str, info.get("current", ""))
         latest: str = cast(str, info.get("latest", ""))
         if not latest or latest == current:
@@ -621,11 +724,21 @@ def update_node(
             # A failed apply can still have mutated node_modules (pnpm add
             # succeeded, a later step didn't) before package.json/pnpm-lock
             # were rolled back — resync so the next package in this loop
-            # isn't checked against a tree that no longer matches them.
+            # isn't checked against a tree that no longer matches them. If
+            # the resync itself fails, node_modules can no longer be
+            # trusted to match the manifests (`_resync_node_modules`'s own
+            # docstring) — stop rather than risk applying more bumps on top
+            # of a tree that might already be inconsistent with them,
+            # mirroring _verify_node's equivalent bisection loop.
             if not _resync_node_modules():
+                remaining = len(items) - i - 1
                 _record_error(
-                    errors, f"node_modules resync failed after {name} failed to apply"
+                    errors,
+                    f"node_modules resync failed after {name} failed to apply —"
+                    f" aborting; {remaining} package(s) in this workspace"
+                    " dropped without being checked",
                 )
+                break
             continue
 
         print("    [ok] updated")
@@ -658,14 +771,24 @@ def _resync_node_modules() -> bool:
     misattribute the block to an unrelated package.
 
     Returns:
-        True on success, False if the reinstall itself failed — callers
-        must not trust node_modules to match the manifests on disk when
-        this returns False, since whatever check.sh runs next would be
-        measuring a broken environment, not the package under test.
+        True on success, False if the reinstall itself failed, or could not
+        even be started (e.g. pnpm missing from PATH) — callers must not
+        trust node_modules to match the manifests on disk when this returns
+        False, since whatever check.sh runs next would be measuring a
+        broken environment, not the package under test.
     """
-    result = _run(
-        ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"], cwd=REPO_ROOT
-    )
+    try:
+        result = _run(
+            ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"], cwd=REPO_ROOT
+        )
+    except Exception as exc:
+        # Every call site treats a bool return as the sole failure signal —
+        # an unexpected raise here (e.g. pnpm vanishing from PATH mid-run)
+        # must not escape as an exception instead, or it would abort the
+        # caller's loop mid-iteration rather than letting it react to a
+        # plain False the way it already does for a bad pnpm returncode.
+        print(f"::error::node_modules resync failed to run — {exc}")
+        return False
     if result.returncode != 0:
         # A restored lockfile failing --frozen-lockfile against its own
         # restored package.json would mean the snapshot pair was already
@@ -685,8 +808,20 @@ def _resync_node_modules() -> bool:
 def _verify_node(
     snapshots: dict[Path, bytes],
     batch: list[tuple[str, Updated]],
-) -> tuple[list[tuple[str, Updated]], list[Blocked], list[str]]:
+    survivors: list[tuple[str, Updated]],
+    blocked: list[tuple[str, Blocked]],
+    errors: list[str],
+) -> None:
     """Verify a batch of Node updates with check.sh frontend; bisect on failure.
+
+    *survivors*, *blocked*, and *errors* are caller-owned lists mutated in
+    place, not built locally and returned — a crash partway through
+    bisection (caught by _guard) must not discard packages already
+    reconfirmed, or already ruled out, before the crash point. Same
+    reasoning as update_python/update_node's caller-owned *errors* list.
+    *blocked* entries are tagged with their workspace, same as *survivors*
+    and update_node's own accounting — a package blocked in more than one
+    workspace in the same run must stay distinguishable in the PR body.
 
     *snapshots* covers every file `_apply_node_package` can touch across all
     workspaces (pnpm-lock.yaml plus each workspace's package.json) — restore
@@ -704,7 +839,8 @@ def _verify_node(
     that's no longer trustworthy.
     """
     if _run_check(REPO_ROOT, "frontend"):
-        return batch, [], []
+        survivors.extend(batch)
+        return
 
     print(
         "::warning::check.sh frontend failed on the full batch"
@@ -712,15 +848,12 @@ def _verify_node(
     )
     _restore_snapshot(snapshots)
     if not _resync_node_modules():
-        msg = (
+        errors.append(
             "node_modules resync failed while restoring the pre-batch state"
             " — aborting bisection, batch discarded"
         )
-        return [], [], [msg]
+        return
 
-    survivors: list[tuple[str, Updated]] = []
-    blocked: list[Blocked] = []
-    errors: list[str] = []
     for i, (workspace, (name, old, new, release_dt)) in enumerate(batch):
         step_snap = {path: path.read_bytes() for path in snapshots}
         ok, reason = _apply_node_package(workspace, name, new)
@@ -734,17 +867,15 @@ def _verify_node(
 
         _restore_snapshot(step_snap)
         print(f"::warning::{name} ({workspace}): blocked — {reason}")
-        blocked.append((name, new, _sanitize_reason(reason)))
+        blocked.append((workspace, (name, new, _sanitize_reason(reason))))
         if not _resync_node_modules():
             remaining = len(batch) - i - 1
-            msg = (
+            errors.append(
                 f"node_modules resync failed after isolating {name} — aborting"
                 f" bisection; {remaining} package(s) dropped from this batch"
                 " without being verified"
             )
-            errors.append(msg)
             break
-    return survivors, blocked, errors
 
 
 # ---------------------------------------------------------------------------
@@ -764,6 +895,7 @@ def _pr_body(
     nd_errors: list[str],
     nd_error_ws: list[str | None],
     nd_ws: list[str],
+    nd_blocked_ws: list[str],
     cooldown: int,
 ) -> str:
     today = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -782,6 +914,7 @@ def _pr_body(
         errors: list[str],
         workspaces: list[str] | None = None,
         error_workspaces: list[str | None] | None = None,
+        blocked_workspaces: list[str] | None = None,
     ) -> None:
         lines.append(f"### {title}")
         if up:
@@ -808,7 +941,17 @@ def _pr_body(
             lines.append(f"**Skipped — too recent:** {', '.join(eligible)}")
         if blocked:
             lines.append("")
-            items = [f"`{n}` {v} — _{reason}_" for n, v, reason in blocked]
+            blocked_ws_col: list[str | None] = (
+                list(blocked_workspaces)
+                if blocked_workspaces is not None
+                else [None] * len(blocked)
+            )
+            items = [
+                f"`{n}` {v} (`{ws}`) — _{reason}_"
+                if ws is not None
+                else f"`{n}` {v} — _{reason}_"
+                for (n, v, reason), ws in zip(blocked, blocked_ws_col, strict=True)
+            ]
             lines.append(
                 f"**Blocked — broke `check.sh`, excluded from this update:**"
                 f" {'; '.join(items)}"
@@ -841,6 +984,7 @@ def _pr_body(
         nd_errors,
         workspaces=nd_ws,
         error_workspaces=nd_error_ws,
+        blocked_workspaces=nd_blocked_ws,
     )
 
     lines += [
@@ -1037,22 +1181,27 @@ def main() -> None:
             nd_sk += sk
         nd_errors_tagged += [(workspace, msg) for msg in ws_errors]
 
+    # py_blocked/nd_blocked_tagged are caller-owned: _verify_python/
+    # _verify_node mutate them in place as they go, so whatever they already
+    # confirmed or ruled out before a mid-batch crash survives even though
+    # _guard discards fn()'s own return value on that path.
     py_blocked: list[Blocked] = []
-    nd_blocked: list[Blocked] = []
+    nd_blocked_tagged: list[tuple[str, Blocked]] = []
 
     if verify and py_up:
-        verify_result = _guard(
+        py_survivors: list[Updated] = []
+        _ = _guard(
             "_verify_python",
             py_errors,
             {uv_lock_path: uv_snap},
-            lambda: _verify_python(backend, uv_lock_path, uv_snap, py_up),
+            lambda: _verify_python(
+                backend, uv_lock_path, uv_snap, py_up, py_survivors, py_blocked
+            ),
         )
-        if verify_result is None:
-            py_up = []
-        else:
-            py_up, py_blocked = verify_result
+        py_up = py_survivors
 
     nd_verify_errors: list[str] = []
+    nd_survivors_tagged: list[tuple[str, Updated]] = []
     if verify and nd_up_tagged:
 
         def _verify_node_resync_hook() -> None:
@@ -1062,20 +1211,24 @@ def main() -> None:
                     "node_modules resync failed after restoring the pre-crash state",
                 )
 
-        verify_result = _guard(
+        _ = _guard(
             "_verify_node",
             nd_verify_errors,
             node_snap,
-            lambda: _verify_node(node_snap, nd_up_tagged),
+            lambda: _verify_node(
+                node_snap,
+                nd_up_tagged,
+                nd_survivors_tagged,
+                nd_blocked_tagged,
+                nd_verify_errors,
+            ),
             on_restore=_verify_node_resync_hook,
         )
-        if verify_result is None:
-            nd_up_tagged = []
-        else:
-            nd_up_tagged, nd_blocked, verify_errors = verify_result
-            nd_verify_errors += verify_errors
+        nd_up_tagged = nd_survivors_tagged
     nd_up = [u for _, u in nd_up_tagged]
     nd_ws = [w for w, _ in nd_up_tagged]
+    nd_blocked = [b for _, b in nd_blocked_tagged]
+    nd_blocked_ws = [w for w, _ in nd_blocked_tagged]
     nd_errors: list[str] = [msg for _, msg in nd_errors_tagged]
     nd_error_ws: list[str | None] = [ws for ws, _ in nd_errors_tagged]
     for msg in nd_verify_errors:
@@ -1102,6 +1255,7 @@ def main() -> None:
             nd_errors=nd_errors,
             nd_error_ws=nd_error_ws,
             nd_ws=nd_ws,
+            nd_blocked_ws=nd_blocked_ws,
             cooldown=cooldown,
         )
         _ = pr_body_file.write_text(body)

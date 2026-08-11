@@ -739,7 +739,7 @@ Run this whenever `pnpm-workspace.yaml` `allowBuilds` changes or when upgrading 
 
 1. Run the script as usual: `mise exec -- python scripts/deps_update.py`.
 2. Immediately run `./scripts/socket-audit.sh` — do not commit or push before the scan completes.
-3. Review any new alerts. If clean, commit `pnpm-lock.yaml`, `backend/uv.lock`, and any updated `frontend/package.json` or `electron/package.json` (not `node_modules`). The script calls `pnpm add --save-exact` per package, which updates both the lockfile and the relevant `package.json`.
+3. Review any new alerts. If clean, commit `pnpm-lock.yaml`, `backend/uv.lock`, and any updated `package.json`, `frontend/package.json`, or `electron/package.json` (not `node_modules`). The script calls `pnpm add --save-exact` per package, which updates both the lockfile and the relevant `package.json` — including the root workspace's.
 4. The CI `socket` job will re-scan on the resulting PR as the hard enforcement gate.
 
 ### When the `deps-update.yml` weekly PR lands
