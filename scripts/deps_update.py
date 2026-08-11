@@ -251,12 +251,52 @@ def _pypi_release_date(
         return None
 
 
-def _apply_python_package(name: str, backend: Path) -> tuple[bool, str]:
-    """Apply a single Python package bump via `uv lock --upgrade-package`."""
-    result = _run(["uv", "lock", "--upgrade-package", name], cwd=backend)
-    if result.returncode != 0:
-        return False, f"uv lock failed — {result.stderr.strip()}"
-    return True, ""
+def _apply_python_package(
+    name: str, backend: Path, errors: list[str]
+) -> tuple[bool, str]:
+    """Apply a single Python package bump via `uv lock --upgrade-package`.
+
+    `uv lock` resolves fully in memory and only writes uv.lock once, as its
+    very last (and — per its own source — only) fallible step: a direct,
+    non-atomic write, not a temp-file-then-rename. An ordinary resolution
+    failure (conflict, missing package, registry error) never touches
+    uv.lock at all, but the `uv` subprocess itself dying mid-write (OOM,
+    disk-full, SIGKILL) can leave it truncated — surfacing here as a
+    negative/non-zero returncode with the file already mutated. A (False,
+    reason) return is guaranteed to leave uv.lock exactly as it found it,
+    the same guarantee `_apply_node_package` already gives for
+    package.json/pnpm-lock.yaml, and for the same reason: nothing else in
+    this file's crash handling restores mid-loop unless fn() itself raises,
+    and a bad returncode here never does.
+    """
+    lock_path = backend / "uv.lock"
+    lock_snap = lock_path.read_bytes()
+    applied = False
+
+    try:
+        result = _run(["uv", "lock", "--upgrade-package", name], cwd=backend)
+        if result.returncode != 0:
+            return False, f"uv lock failed — {result.stderr.strip()}"
+        applied = True
+        return True, ""
+    except Exception as exc:
+        # Broad on purpose, mirroring _apply_node_package: any exception
+        # here must still hit the finally below and restore uv.lock, not
+        # just OSError.
+        return False, f"unexpected error applying {name} — {exc}"
+    finally:
+        # Guarded so a restore failure here can't raise out of a `finally`
+        # and mask the (False, reason) already computed above — same
+        # reasoning as _apply_node_package's finally block.
+        if not applied:
+            try:
+                _ = lock_path.write_bytes(lock_snap)
+            except Exception as restore_exc:
+                _record_error(
+                    errors,
+                    "_apply_python_package: failed to restore uv.lock for"
+                    f" {name} after a failed apply — {restore_exc}",
+                )
 
 
 def update_python(
@@ -324,7 +364,7 @@ def update_python(
             skipped.append((name, latest, release_dt))
             continue
 
-        ok, err = _apply_python_package(name, backend)
+        ok, err = _apply_python_package(name, backend, errors)
         if not ok:
             _record_error(errors, f"{name}: {err}")
         else:
@@ -350,6 +390,7 @@ def _verify_python(
     batch: list[Updated],
     survivors: list[Updated],
     blocked: list[Blocked],
+    errors: list[str],
 ) -> None:
     """Verify a batch of Python updates with check.sh backend; bisect on failure.
 
@@ -357,7 +398,9 @@ def _verify_python(
     built locally and returned — a crash partway through bisection (caught
     by _guard) must not discard packages already reconfirmed, or already
     ruled out, before the crash point. Same reasoning as update_python's
-    caller-owned *errors* list.
+    caller-owned *errors* list — *errors* itself is threaded through here
+    only to hand to _apply_python_package, for its own uv.lock restore-
+    failure recording, same as _verify_node already does.
 
     *snapshot* is the same dict object _guard restores from on a crash, not
     a private copy — this function updates snapshot[uv_lock_path] in place
@@ -382,7 +425,7 @@ def _verify_python(
 
     for name, old, new, release_dt in batch:
         step_snap = uv_lock_path.read_bytes()
-        ok, reason = _apply_python_package(name, backend)
+        ok, reason = _apply_python_package(name, backend, errors)
         if ok:
             ok = _run_check(REPO_ROOT, "backend")
             reason = "check.sh backend failed"
@@ -1232,7 +1275,13 @@ def main() -> None:
             py_errors,
             py_verify_snap,
             lambda: _verify_python(
-                backend, uv_lock_path, py_verify_snap, py_up, py_survivors, py_blocked
+                backend,
+                uv_lock_path,
+                py_verify_snap,
+                py_up,
+                py_survivors,
+                py_blocked,
+                py_errors,
             ),
         )
         py_up = py_survivors
