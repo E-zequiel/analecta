@@ -296,7 +296,7 @@ class TestVerifyGateIncludesErroredBatch:
         def fake_verify_python(
             backend: Path,
             uv_lock_path: Path,
-            snap: bytes,
+            snapshot: dict[Path, bytes],
             batch: list[Any],
             survivors: list[Any],
             blocked: list[Any],
@@ -449,12 +449,16 @@ class TestApplyNodePackageExceptionSafety:
             deps_update, "_ensure_exact_specifier", fake_ensure_exact_specifier
         )
 
-        ok, reason = deps_update._apply_node_package("frontend", "svelte", "5.1.0")
+        errors: list[str] = []
+        ok, reason = deps_update._apply_node_package(
+            "frontend", "svelte", "5.1.0", errors
+        )
 
         assert ok is False
         assert "disk full" in reason
         assert pkg_path.read_text() == original_pkg
         assert lock_path.read_text() == original_lock
+        assert errors == []  # restore itself succeeded, nothing to record
 
     def test_restores_files_on_unexpected_non_oserror(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -489,12 +493,16 @@ class TestApplyNodePackageExceptionSafety:
             deps_update, "_ensure_exact_specifier", fake_ensure_exact_specifier
         )
 
-        ok, reason = deps_update._apply_node_package("frontend", "svelte", "5.1.0")
+        errors: list[str] = []
+        ok, reason = deps_update._apply_node_package(
+            "frontend", "svelte", "5.1.0", errors
+        )
 
         assert ok is False
         assert "unexpected shape" in reason
         assert pkg_path.read_text() == original_pkg
         assert lock_path.read_text() == original_lock
+        assert errors == []  # restore itself succeeded, nothing to record
 
     def test_finally_restore_failure_does_not_mask_the_original_reason(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -506,7 +514,10 @@ class TestApplyNodePackageExceptionSafety:
         replace the already-computed (False, "dedupe failed...") with an
         unrelated, uncaught exception. The restore is now guarded, so the
         original (False, reason) survives even when the restore itself
-        fails.
+        fails. A still-later version printed the restore failure to stdout
+        only, without recording it in *errors* — the PR body's Errors
+        section never mentioned that the manifest pair might now be
+        mutually inconsistent. It must now reach *errors* too.
         """
         pkg_dir = tmp_path / "frontend"
         pkg_dir.mkdir()
@@ -544,12 +555,18 @@ class TestApplyNodePackageExceptionSafety:
         )
         monkeypatch.setattr(Path, "write_bytes", flaky_write_bytes)
 
-        ok, reason = deps_update._apply_node_package("frontend", "svelte", "5.1.0")
+        errors: list[str] = []
+        ok, reason = deps_update._apply_node_package(
+            "frontend", "svelte", "5.1.0", errors
+        )
 
         assert ok is False
         assert "dedupe failed" in reason
         assert "boom" in reason
         assert restore_calls == 1  # attempted pkg_path first, raised, stopped there
+        assert len(errors) == 1
+        assert "failed to restore" in errors[0]
+        assert "disk full" in errors[0]
 
 
 class TestEnsureExactSpecifierScopedToDependencies:
@@ -718,7 +735,9 @@ class TestVerifyNodeResyncsNodeModules:
         def fake_run_check(repo_root: Path, scope: str) -> bool:
             return next(check_results)
 
-        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+        def fake_apply(
+            workspace: str, name: str, version: str, errors: list[str]
+        ) -> tuple[bool, str]:
             return True, ""
 
         monkeypatch.setattr(deps_update, "_resync_node_modules", fake_resync)
@@ -767,7 +786,9 @@ class TestVerifyNodeResyncFailure:
 
         apply_calls = 0
 
-        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+        def fake_apply(
+            workspace: str, name: str, version: str, errors: list[str]
+        ) -> tuple[bool, str]:
             nonlocal apply_calls
             apply_calls += 1
             return True, ""
@@ -816,7 +837,9 @@ class TestVerifyNodeResyncFailure:
         def fake_run_check(repo_root: Path, scope: str) -> bool:
             return next(check_results)
 
-        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+        def fake_apply(
+            workspace: str, name: str, version: str, errors: list[str]
+        ) -> tuple[bool, str]:
             return True, ""
 
         # First call is the initial full-batch restore (succeeds); second
@@ -854,9 +877,18 @@ class TestVerifyResultsSurviveMidBatchCrash:
     def test_verify_python_preserves_earlier_survivor_on_later_crash(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """A mocked _apply_python_package that never writes real bytes can't
+        tell a "still-applied on disk" survivor apart from a fully-reverted
+        one — both leave uv.lock at the same untouched bytes, so this test
+        must simulate a real `uv lock --upgrade-package` mutation to be able
+        to assert on the actual regression: _guard restoring past a
+        confirmed survivor's own change, not just past the crashing
+        candidate's.
+        """
         backend = tmp_path / "backend"
         uv_lock_path = tmp_path / "uv.lock"
-        uv_lock_path.write_bytes(b"original")
+        pristine = b"original"
+        uv_lock_path.write_bytes(pristine)
         release_dt = datetime.now(UTC) - timedelta(days=30)
         batch = [
             ("pkg-a", "1.0.0", "1.1.0", release_dt),
@@ -872,6 +904,7 @@ class TestVerifyResultsSurviveMidBatchCrash:
         def fake_apply(name: str, backend: Path) -> tuple[bool, str]:
             if name == "pkg-b":
                 raise RuntimeError("uv subprocess vanished")
+            uv_lock_path.write_bytes(pristine + b"+pkg-a")
             return True, ""
 
         monkeypatch.setattr(deps_update, "_run_check", fake_run_check)
@@ -880,30 +913,40 @@ class TestVerifyResultsSurviveMidBatchCrash:
         survivors: list[Any] = []
         blocked: list[Any] = []
         errors: list[str] = []
+        snapshot = {uv_lock_path: pristine}
 
         def run_verify_python() -> None:
             deps_update._verify_python(
-                backend, uv_lock_path, b"original", batch, survivors, blocked
+                backend, uv_lock_path, snapshot, batch, survivors, blocked
             )
 
         result = deps_update._guard(
-            "_verify_python", errors, {uv_lock_path: b"original"}, run_verify_python
+            "_verify_python", errors, snapshot, run_verify_python
         )
 
         assert result is None  # _guard caught pkg-b's crash
         assert survivors == [("pkg-a", "1.0.0", "1.1.0", release_dt)]
         assert any("_verify_python crashed unexpectedly" in e for e in errors)
+        # The regression this guards: _guard must not restore all the way
+        # back to the pre-batch pristine bytes once pkg-a's own change is
+        # confirmed on disk — that would silently contradict what
+        # `survivors` (preserved through the crash) still reports as
+        # applied, so the committed uv.lock and the PR body would disagree.
+        assert uv_lock_path.read_bytes() == pristine + b"+pkg-a"
 
     def test_verify_node_preserves_earlier_survivor_on_later_crash(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """See test_verify_python_preserves_earlier_survivor_on_later_crash's
+        docstring for why fake_apply must write real bytes, not just return
+        (True, "")."""
         pkg_path = tmp_path / "package.json"
         lock_path = tmp_path / "pnpm-lock.yaml"
-        pkg_bytes = b"{}"
-        lock_bytes = b"lockfileVersion: 9\n"
-        pkg_path.write_bytes(pkg_bytes)
-        lock_path.write_bytes(lock_bytes)
-        snapshots = {pkg_path: pkg_bytes, lock_path: lock_bytes}
+        pkg_pristine = b"{}"
+        lock_pristine = b"lockfileVersion: 9\n"
+        pkg_path.write_bytes(pkg_pristine)
+        lock_path.write_bytes(lock_pristine)
+        snapshots = {pkg_path: pkg_pristine, lock_path: lock_pristine}
 
         release_dt = datetime.now(UTC) - timedelta(days=30)
         batch = [
@@ -917,9 +960,13 @@ class TestVerifyResultsSurviveMidBatchCrash:
         def fake_run_check(repo_root: Path, scope: str) -> bool:
             return next(check_results)
 
-        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+        def fake_apply(
+            workspace: str, name: str, version: str, errors: list[str]
+        ) -> tuple[bool, str]:
             if name == "vite":
                 raise RuntimeError("check.sh subprocess vanished")
+            pkg_path.write_bytes(pkg_pristine + b"svelte")
+            lock_path.write_bytes(lock_pristine + b"svelte\n")
             return True, ""
 
         monkeypatch.setattr(deps_update, "_run_check", fake_run_check)
@@ -938,6 +985,14 @@ class TestVerifyResultsSurviveMidBatchCrash:
         assert result is None  # _guard caught vite's crash
         assert [name for _, (name, *_rest) in survivors] == ["svelte"]
         assert any("_verify_node crashed unexpectedly" in e for e in errors)
+        # The regression this guards: _guard must not restore both files all
+        # the way back to the pre-batch pristine bytes once svelte's own
+        # change is confirmed on disk — that would silently contradict what
+        # `survivors` (preserved through the crash) still reports as
+        # applied, so the committed manifests and the PR body would
+        # disagree.
+        assert pkg_path.read_bytes() == pkg_pristine + b"svelte"
+        assert lock_path.read_bytes() == lock_pristine + b"svelte\n"
 
 
 class TestBlockedEntriesAreWorkspaceTagged:
@@ -969,7 +1024,9 @@ class TestBlockedEntriesAreWorkspaceTagged:
         def fake_run_check(repo_root: Path, scope: str) -> bool:
             return False  # full batch fails, and every isolation check fails
 
-        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+        def fake_apply(
+            workspace: str, name: str, version: str, errors: list[str]
+        ) -> tuple[bool, str]:
             return True, ""
 
         monkeypatch.setattr(deps_update, "_run_check", fake_run_check)
@@ -1295,7 +1352,9 @@ class TestUpdateNodeResyncsOnApplyFailure:
             stdout = json.dumps({"svelte": {"current": "5.0.0", "latest": "5.1.0"}})
             return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
 
-        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+        def fake_apply(
+            workspace: str, name: str, version: str, errors: list[str]
+        ) -> tuple[bool, str]:
             return False, "dedupe failed — boom"
 
         resync_calls = 0
@@ -1346,7 +1405,9 @@ class TestUpdateNodeResyncsOnApplyFailure:
 
         apply_calls: list[str] = []
 
-        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+        def fake_apply(
+            workspace: str, name: str, version: str, errors: list[str]
+        ) -> tuple[bool, str]:
             apply_calls.append(name)
             return False, "dedupe failed — boom"
 
@@ -1514,7 +1575,7 @@ class TestMainExceptionIsolation:
         def fake_verify_python(
             backend: Path,
             uv_lock_path: Path,
-            snap: bytes,
+            snapshot: dict[Path, bytes],
             batch: list[Any],
             survivors: list[Any],
             blocked: list[Any],
@@ -1667,7 +1728,7 @@ class TestMainExceptionIsolation:
         def fake_verify_python(
             backend: Path,
             uv_lock_path: Path,
-            snap: bytes,
+            snapshot: dict[Path, bytes],
             batch: list[Any],
             survivors: list[Any],
             blocked: list[Any],
@@ -2195,7 +2256,9 @@ class TestErrorsSurviveMidLoopCrash:
             # unreachable-registry failure (which returns None, not raises).
             raise ValueError("registry client bug")
 
-        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+        def fake_apply(
+            workspace: str, name: str, version: str, errors: list[str]
+        ) -> tuple[bool, str]:
             return False, "pkg-a failed to apply"
 
         monkeypatch.setattr(deps_update, "_run", fake_run)
@@ -2248,7 +2311,9 @@ class TestErrorsSurviveMidLoopCrash:
                 return {"time": {"2.0.0": old.isoformat()}}
             raise ValueError("registry client bug")
 
-        def fake_apply(workspace: str, name: str, version: str) -> tuple[bool, str]:
+        def fake_apply(
+            workspace: str, name: str, version: str, errors: list[str]
+        ) -> tuple[bool, str]:
             return False, "pkg-a failed to apply"
 
         pr_body_file = tmp_path / "pr-body.md"

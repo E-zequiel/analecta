@@ -346,7 +346,7 @@ def update_python(
 def _verify_python(
     backend: Path,
     uv_lock_path: Path,
-    snap: bytes,
+    snapshot: dict[Path, bytes],
     batch: list[Updated],
     survivors: list[Updated],
     blocked: list[Blocked],
@@ -358,6 +358,16 @@ def _verify_python(
     by _guard) must not discard packages already reconfirmed, or already
     ruled out, before the crash point. Same reasoning as update_python's
     caller-owned *errors* list.
+
+    *snapshot* is the same dict object _guard restores from on a crash, not
+    a private copy — this function updates snapshot[uv_lock_path] in place
+    to the just-applied bytes after every confirmed survivor. Without this,
+    a crash later in the loop would still make _guard restore all the way
+    back to the pre-batch pristine bytes, silently wiping the on-disk change
+    for every survivor already confirmed before the crash — while
+    *survivors* (deliberately preserved through the crash) keeps reporting
+    them as applied, so the committed uv.lock and the PR body/CHANGELOG
+    would disagree about what actually changed.
     """
     if _run_check(REPO_ROOT, "backend"):
         survivors.extend(batch)
@@ -367,7 +377,8 @@ def _verify_python(
         "::warning::check.sh backend failed on the full batch"
         " — isolating the offending package(s)"
     )
-    _restore_snapshot({uv_lock_path: snap})
+    pristine = dict(snapshot)
+    _restore_snapshot(pristine)
 
     for name, old, new, release_dt in batch:
         step_snap = uv_lock_path.read_bytes()
@@ -378,6 +389,7 @@ def _verify_python(
         if ok:
             print(f"    [ok] {name}: confirmed in isolation")
             survivors.append((name, old, new, release_dt))
+            snapshot[uv_lock_path] = uv_lock_path.read_bytes()
         else:
             _restore_snapshot({uv_lock_path: step_snap})
             print(f"::warning::{name}: blocked — {reason}")
@@ -525,7 +537,9 @@ def _ensure_exact_specifier(workspace_dir: str, name: str, version: str) -> bool
     return True
 
 
-def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, str]:
+def _apply_node_package(
+    workspace: str, name: str, version: str, errors: list[str]
+) -> tuple[bool, str]:
     """Apply a single Node package bump: pnpm add, enforce exact pin, resync, dedupe.
 
     --ignore-scripts on every pnpm call here: this function's only output is
@@ -621,15 +635,20 @@ def _apply_node_package(workspace: str, name: str, version: str) -> tuple[bool, 
         # of a `finally` block — that would silently replace whatever
         # (False, reason) the try/except above was already returning with
         # an unrelated, uncaught exception, discarding the real diagnostic.
+        # Routed through _record_error, not a raw print, so this — the
+        # manifests possibly left mutually inconsistent — reaches the
+        # committed PR body too, not just the CI log, the same as every
+        # other failure class in this file.
         if not applied:
             try:
                 _ = pkg_path.write_bytes(pkg_snap)
                 _ = lock_path.write_bytes(lock_snap)
             except Exception as restore_exc:
-                print(
-                    "::error::_apply_node_package: failed to restore"
+                _record_error(
+                    errors,
+                    "_apply_node_package: failed to restore"
                     f" package.json/pnpm-lock.yaml for {name} after a failed"
-                    f" apply — {restore_exc}"
+                    f" apply — {restore_exc}",
                 )
 
 
@@ -718,7 +737,7 @@ def update_node(
             skipped.append((name, latest, release_dt))
             continue
 
-        ok, err = _apply_node_package(workspace, name, latest)
+        ok, err = _apply_node_package(workspace, name, latest, errors)
         if not ok:
             _record_error(errors, f"{name}: {err}")
             # A failed apply can still have mutated node_modules (pnpm add
@@ -827,6 +846,14 @@ def _verify_node(
     workspaces (pnpm-lock.yaml plus each workspace's package.json) — restore
     is a single loop over the dict instead of one write-back per path, so
     adding or removing a workspace can't leave a path out of the rollback.
+    It is the same dict object _guard restores from on a crash, not a
+    private copy — this function updates it in place to the just-applied
+    bytes after every confirmed survivor, so a crash later in the loop
+    makes _guard restore to the latest confirmed-good state instead of the
+    pre-batch pristine bytes, which would otherwise silently wipe the
+    on-disk change for every survivor already confirmed before the crash —
+    while *survivors* (deliberately preserved through the crash) keeps
+    reporting them as applied. Same reasoning as _verify_python's *snapshot*.
 
     A failed `_resync_node_modules()` means node_modules no longer reliably
     reflects the manifests just restored — any check.sh result after that
@@ -846,23 +873,27 @@ def _verify_node(
         "::warning::check.sh frontend failed on the full batch"
         " — isolating the offending package(s)"
     )
-    _restore_snapshot(snapshots)
+    pristine = dict(snapshots)
+    _restore_snapshot(pristine)
     if not _resync_node_modules():
-        errors.append(
+        _record_error(
+            errors,
             "node_modules resync failed while restoring the pre-batch state"
-            " — aborting bisection, batch discarded"
+            " — aborting bisection, batch discarded",
         )
         return
 
     for i, (workspace, (name, old, new, release_dt)) in enumerate(batch):
         step_snap = {path: path.read_bytes() for path in snapshots}
-        ok, reason = _apply_node_package(workspace, name, new)
+        ok, reason = _apply_node_package(workspace, name, new, errors)
         if ok:
             ok = _run_check(REPO_ROOT, "frontend")
             reason = "check.sh frontend failed"
         if ok:
             print(f"    [ok] {name} ({workspace}): confirmed in isolation")
             survivors.append((workspace, (name, old, new, release_dt)))
+            for path in snapshots:
+                snapshots[path] = path.read_bytes()
             continue
 
         _restore_snapshot(step_snap)
@@ -870,10 +901,11 @@ def _verify_node(
         blocked.append((workspace, (name, new, _sanitize_reason(reason))))
         if not _resync_node_modules():
             remaining = len(batch) - i - 1
-            errors.append(
+            _record_error(
+                errors,
                 f"node_modules resync failed after isolating {name} — aborting"
                 f" bisection; {remaining} package(s) dropped from this batch"
-                " without being verified"
+                " without being verified",
             )
             break
 
@@ -1190,12 +1222,17 @@ def main() -> None:
 
     if verify and py_up:
         py_survivors: list[Updated] = []
+        # Same dict object passed to _guard and _verify_python: _verify_python
+        # updates it in place as bisection confirms survivors, so a crash
+        # later in its loop makes _guard restore the latest confirmed-good
+        # state rather than the pre-batch pristine bytes captured here.
+        py_verify_snap = {uv_lock_path: uv_snap}
         _ = _guard(
             "_verify_python",
             py_errors,
-            {uv_lock_path: uv_snap},
+            py_verify_snap,
             lambda: _verify_python(
-                backend, uv_lock_path, uv_snap, py_up, py_survivors, py_blocked
+                backend, uv_lock_path, py_verify_snap, py_up, py_survivors, py_blocked
             ),
         )
         py_up = py_survivors
