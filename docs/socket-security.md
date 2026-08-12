@@ -110,6 +110,14 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 
 ## Resolved CVEs
 
+### 2026-08-12
+
+| Package | CVE(s) | Fix |
+|---------|--------|-----|
+| `js-yaml@4.3.0` | GHSA-5p4m-2wfm-xmqj (no CVE assigned; CVSS 7.5 HIGH, quadratic-time DoS in `!!omap` resolution — the CVE-2026-59870 fix from the 5.x line, never backported to 4.x) | `overrides: {js-yaml: '4.3.1'}` in `pnpm-workspace.yaml`. Transitive via `electron-builder`/`dmg-builder`/`app-builder-lib` (build-time tooling only) **and** `electron-updater` (a real runtime dependency — parses `latest-linux.yml` fetched from GitHub Releases when checking for updates). Runtime-reachable, but low practical severity despite the CVSS score: that YAML comes from Analecta's own release feed over HTTPS with SHA-512 verification, not attacker-controlled input — worst case is an updater hang, not compromise. |
+| `nanoid@3.3.16` | CVE-2026-67213 / GHSA-2v37-7h3g-55p8 (CVSS 8.2 HIGH, infinite loop in `customAlphabet`/`customRandom` when called with `size: 0`) | `overrides: {nanoid: '3.3.17'}` in `pnpm-workspace.yaml`. **Cooldown exception:** `3.3.17` released 2026-08-03, 9 days before this bump (1 short of the 10-day window) — approved explicitly given the CVSS 8.2 rating; EPSS is 0.003 and the only consumer in this tree is `postcss@8.5.23` (build-time CSS tooling), which never calls either custom-generator function, let alone with `size: 0` — not reachable regardless. |
+| `@sveltejs/kit@2.70.1` | CVE-2026-66062 / GHSA-29g2-3rmr-qm68 (CVSS 5.3 MODERATE, ReDoS in `Accept`-header content negotiation) | Bumped to `2.70.2` via Dependabot PR #82 (squash-merged 2026-08-12). Direct `devDependency`; not reachable in the packaged app — `@sveltejs/adapter-static` means the vulnerable server-side content-negotiation code never ships, present only in the local `pnpm dev` dev server. |
+
 ### 2026-08-03
 
 | Package | CVE(s) | Fix |
