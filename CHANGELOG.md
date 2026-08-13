@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-08-13
+
 ### Security
 
 - Electron bumped from 42.1.0 to 42.5.1, patching a session-isolation flaw in protocol response handling (GHSA-r4w5-6pfg-jxp5, CVE-2026-70606) where a `ProtocolResponse` omitting an explicit session could leak cached responses across isolated session partitions. Not reachable in this app: both custom protocol handlers (`app://`, `analecta-file://`) return `Response` objects via `protocol.handle()` rather than the legacy `ProtocolResponse` shape, and only `session.defaultSession` is used — no partitioned sessions exist to leak across.
@@ -14,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `js-yaml` bumped from 4.3.0 to 4.3.1 (`overrides:` in `pnpm-workspace.yaml`), patching a quadratic-time DoS in `!!omap` resolution (GHSA-5p4m-2wfm-xmqj, CVSS 7.5 — the CVE-2026-59870 fix from the 5.x line, never backported to 4.x). Transitive via `electron-builder`/`dmg-builder`/`app-builder-lib` (build-time only) and via `electron-updater`, a real runtime dependency that parses `latest-linux.yml` fetched from GitHub Releases when checking for updates. Runtime-reachable, but low practical severity: that YAML comes from Analecta's own release feed over HTTPS with SHA-512 verification, not attacker-controlled input — worst case is an updater hang, not compromise.
 - `nanoid` pinned to 3.3.17 via a new `overrides:` entry in `pnpm-workspace.yaml`, patching an infinite loop in `customAlphabet`/`customRandom` when called with `size: 0` (CVE-2026-67213, GHSA-2v37-7h3g-55p8, CVSS 8.2). Adopted 1 day inside the project's 10-day minimum-age window, approved given the CVSS rating — see `docs/socket-security.md` for the full exception writeup. Not reachable in this app regardless: the only consumer is `postcss@8.5.23` (build-time CSS tooling), which never calls either custom-generator function.
 - `@sveltejs/kit` bumped from 2.70.1 to 2.70.2 (#82, via Dependabot), patching a ReDoS in `Accept`-header content negotiation (CVE-2026-66062, GHSA-29g2-3rmr-qm68, CVSS 5.3). Not reachable in the packaged app: `@sveltejs/kit` is a `devDependency` built through `@sveltejs/adapter-static` — the vulnerable server-side content-negotiation code never ships, present only in the local `pnpm dev` dev server.
+- `nanoid` bumped from 3.3.17 to 3.3.18 (`overrides:` in `pnpm-workspace.yaml`), correcting the entry directly above: `3.3.17` was still inside GHSA-2v37-7h3g-55p8's own vulnerable range (`< 3.3.18`) — `3.3.18` is the actual first patched version. Same reachability as before (`postcss@8.5.23`, build-time only, never calls the affected functions). Cooldown exception, larger than the original: `3.3.18` released 2026-08-07, 6 days before this bump — approved given the unchanged CVSS 8.2. See `docs/socket-security.md`.
+- `@xmldom/xmldom` bumped from `0.8.13`/`0.9.10` to `0.8.14`/`0.9.11` (two version-scoped `overrides:` entries in `pnpm-workspace.yaml`, kept separate rather than unified — see `docs/socket-security.md`), patching GHSA-w2rr-34g9-rvrj and GHSA-4w3w-2rp5-g8jm (both CVSS 8.7, unvalidated element/attribute names surviving serialization into injected attributes or event handlers, bypassing the `requireWellFormed: true` mitigation previously recommended against this) and GHSA-g53g-w8rj-fmg7 (CVSS 8.7, `0.9.x` line only — quadratic-time backtracking on an unterminated processing instruction, event-loop stall on untrusted XML). Transitive via `plist` (electron-builder's macOS `.pkg`/code-signing packaging, and an Electron-alternative framework Analecta doesn't use — never reached when packaging `.deb`/`.rpm`/`.AppImage`) and via `mathml-to-latex` (a `defuddle` dependency, dev-only diagnostic tool, never a shipped runtime dep). Cooldown exception, the largest in this project's history: both versions released 2026-08-12, 1 day before this bump — approved given the CVSS 8.7 rating despite the non-reachability above.
 
 ### Fixed
 
@@ -158,7 +162,8 @@ Initial public release.
 - Native Linux packaging — `.deb`, `.rpm`, `.AppImage` — with correct application identity and icons, including taskbar/alt-tab icon support on Wayland compositors, built with electron-builder.
 - Release integrity verification — SHA256SUMS checksums for all packaged installers, plus a Sigstore build provenance attestation (attaches automatically once the repository goes public).
 
-[Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/E-zequiel/analecta/releases/tag/v0.5.2
 [0.5.1]: https://github.com/E-zequiel/analecta/releases/tag/v0.5.1
 [0.5.0]: https://github.com/E-zequiel/analecta/releases/tag/v0.5.0
 [0.4.0]: https://github.com/E-zequiel/analecta/releases/tag/v0.4.0

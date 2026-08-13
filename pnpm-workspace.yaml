@@ -104,8 +104,37 @@ overrides:
   # @rolldown/binding-wasm32-wasi (optional WASM fallback binding for Vite's Rolldown bundler).
   '@emnapi/runtime': '1.11.2'
   # CVE-2026-67213 / GHSA-2v37-7h3g-55p8 (CVSS 8.2, infinite loop in customAlphabet/customRandom
-  # when called with size: 0) — transitive via postcss@8.5.23 (build-time CSS tooling), which never
-  # calls either custom-generator function. Cooldown exception: 3.3.17 released 2026-08-03, 9 days
-  # before this bump (1 short of the 10-day window) — approved explicitly given the CVSS 8.2 rating;
-  # see docs/socket-security.md for the full writeup.
-  nanoid: '3.3.17'
+  # when called with size: 0) — transitive via postcss@8.5.23 (build-time CSS tooling; declares
+  # nanoid: ^3.3.16), which never calls either custom-generator function.
+  # 2026-08-13: corrects the 2026-08-12 pin below — 3.3.17 (adopted then) is still inside the
+  # advisory's own vulnerable range (< 3.3.18); 3.3.18 is the actual first patched version per
+  # GHSA-2v37-7h3g-55p8 and npm's registry timestamps (3.3.17 released 2026-08-03, 3.3.18 released
+  # 2026-08-07). See docs/socket-security.md for the full writeup. Cooldown exception, larger than
+  # the original: 3.3.18 released 2026-08-07, 6 days before this bump (4 short of the 10-day
+  # window) — approved explicitly given the unchanged CVSS 8.2 rating.
+  nanoid: '3.3.18'
+  # GHSA-w2rr-34g9-rvrj + GHSA-4w3w-2rp5-g8jm (both CVSS 8.7, no CVE assigned): createElement()/
+  # setAttribute() don't validate the element/attribute name, so a crafted name survives
+  # serialization and injects extra attributes/event handlers — even requireWellFormed: true,
+  # previously the recommended mitigation, didn't catch it. Plus GHSA-g53g-w8rj-fmg7 (CVSS 8.7,
+  # 0.9.x line only): quadratic-time backtracking on an unterminated `<?` processing instruction,
+  # stalls the event loop on untrusted XML. All three fixed at 0.8.14 (0.7.0-0.8.13 affected;
+  # GHSA-g53g-w8rj-fmg7 never affected 0.8.x — different, bounded parser) and 0.9.11
+  # (0.9.0-beta.9-0.9.10 affected by all three).
+  # Two branches in the tree, NOT unified to one version — verified empirically, not just by
+  # declared range: plist@3.1.0 calls `new DOMParser().parseFromString(xml)` with no mimeType arg;
+  # plist@3.1.1's same call adds an explicit "text/xml" second arg (confirmed via a real tarball
+  # diff of both versions' lib/parse.js, the only file that differs between them). xmldom 0.9.11's
+  # parseFromString throws `TypeError` when isValidMimeType(undefined) is false — forcing 0.9.11
+  # onto the 3.1.0 branch would break plist.parse() outright, not just risk it.
+  # Reachability: both branches are transitive via app-builder-lib (electron-builder), whose own
+  # `plist` usage lives in electronMac.js, targets/pkg.js (macOS .pkg target), and LibUiFramework.js
+  # (an Electron-alternative framework Analecta doesn't use) — none of those run when packaging
+  # `.deb`/`.rpm`/`.AppImage`, Analecta's only targets. The mathml-to-latex branch (via defuddle) is
+  # a dev-only diagnostic tool, never a shipped runtime dep (see docs/defuddle-decision.md).
+  # Cooldown exception, the largest in this project's history: both 0.8.14 and 0.9.11 released
+  # 2026-08-12, 1 day before this bump (9 short of the 10-day window) — approved explicitly given
+  # the CVSS 8.7 rating despite the non-reachability above. See docs/socket-security.md.
+  'plist@3.1.0>@xmldom/xmldom': '0.8.14'
+  'plist@3.1.1>@xmldom/xmldom': '0.9.11'
+  'mathml-to-latex@1.8.0>@xmldom/xmldom': '0.9.11'
