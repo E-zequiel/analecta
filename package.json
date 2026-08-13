@@ -10,12 +10,12 @@
   },
   "devDependencies": {
     "@types/node": "24.9.2",
-    "defuddle": "0.19.1",
+    "defuddle": "0.19.2",
     "eslint": "10.4.0",
     "eslint-config-prettier": "10.1.8",
-    "eslint-plugin-svelte": "3.17.1",
+    "eslint-plugin-svelte": "3.22.0",
     "prettier": "3.8.3",
-    "prettier-plugin-svelte": "4.0.1",
+    "prettier-plugin-svelte": "4.1.1",
     "socket": "1.1.99",
     "typescript-eslint": "8.60.0"
   },
