@@ -19,6 +19,7 @@ from analecta.extraction.article import (
     _readability_class_weight,
     _rescue_linked_lists,
     _rescue_linked_tables,
+    _rescue_list_item_paragraphs,
     _rescue_orphaned_header,
     _rescue_short_figure_labels,
     _rescue_short_nested_lists,
@@ -2364,6 +2365,155 @@ def test_rescue_short_nested_lists_survives_readability_min_text_length():
 
 
 # ---------------------------------------------------------------------------
+# _rescue_list_item_paragraphs
+# ---------------------------------------------------------------------------
+
+
+def test_rescue_list_item_paragraphs_unwraps_plain_li():
+    html = "<ul><li><p>First item</p></li><li><p>Second item</p></li></ul>"
+    result = _rescue_list_item_paragraphs(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("p") is None
+    assert [li.get_text(strip=True) for li in soup.find_all("li")] == [
+        "First item",
+        "Second item",
+    ]
+
+
+def test_rescue_list_item_paragraphs_keeps_nested_list_structure():
+    # The <p> wrapper is unwrapped, but the <ul>/<ol>/<li> nesting itself is
+    # untouched -- markdownify still needs it to render indented sub-bullets.
+    html = (
+        "<ul><li><p>Run the file directly</p>"
+        "<ul><li><p>the special variable is set</p></li></ul>"
+        "</li></ul>"
+    )
+    result = _rescue_list_item_paragraphs(html)
+    soup = _BS(result, "html.parser")
+    outer_li = soup.find("li")
+    assert outer_li.find("p") is None
+    nested_ul = outer_li.find("ul")
+    assert nested_ul is not None
+    assert nested_ul.find("li").get_text(strip=True) == "the special variable is set"
+
+
+def test_rescue_list_item_paragraphs_skips_nav_context():
+    html = "<nav><ul><li><p>Docs</p></li></ul></nav>"
+    result = _rescue_list_item_paragraphs(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("li").find("p") is not None
+
+
+def test_rescue_list_item_paragraphs_noop_without_p_wrapper():
+    html = "<ul><li>Just plain text</li></ul>"
+    result = _rescue_list_item_paragraphs(html)
+    assert "Just plain text" in result
+
+
+def test_rescue_list_item_paragraphs_separates_multiple_paragraphs_with_space():
+    # bs4's unwrap() abuts adjacent text nodes with no separator of its own
+    # -- without inserting one, two sibling <p>s in the same <li> would read
+    # as a single run-on sentence ("Alpha sentence.Beta sentence.").
+    html = "<ul><li><p>Alpha sentence.</p><p>Beta sentence.</p></li></ul>"
+    result = _rescue_list_item_paragraphs(html)
+    soup = _BS(result, "html.parser")
+    assert soup.find("p") is None
+    assert soup.find("li").get_text() == "Alpha sentence. Beta sentence."
+
+
+def test_rescue_list_item_paragraphs_survives_readability_nested_negative_score():
+    # Regression test for the general form of the bug: readability's
+    # score_node() gives every <ul>/<ol> a flat -3 base score. A nested
+    # <ul> whose <li> children wrap their text in <p> becomes a scoring
+    # candidate via that <p>'s parent/grandparent relationship, and a
+    # handful of short items rarely earns back enough paragraph score to
+    # clear the -3 floor -- sanitize()'s `weight + content_score < 0` check
+    # then drops the whole nested list, unlike the (different,
+    # length-only) rule _rescue_short_nested_lists guards against. The
+    # outer list carries two other, substantial standalone items so it
+    # survives on its own merit either way -- isolating this to a pure
+    # nested-list drop, not the sparse-top-level-list case covered below.
+    from readability import Document
+
+    html = (
+        "<html><body><article>"
+        "<p>Padding paragraph one, long enough to give the surrounding "
+        "article region enough weight for readability to pick it as the "
+        "main content candidate for this fixture.</p>"
+        "<ul>"
+        "<li><p>Loop through all station codes</p>"
+        "<ul>"
+        "<li><p>Fetch each station's data</p></li>"
+        "<li><p>Keep the non-empty results</p></li>"
+        "</ul></li>"
+        "<li><p>Combine every fetched station's records into one big "
+        "DataFrame before returning it to the caller</p></li>"
+        "<li><p>Print a short summary line reporting exactly how many "
+        "rows were fetched for this run</p></li>"
+        "</ul>"
+        "<p>Padding paragraph two, also long enough to keep this region "
+        "scored as the main content by readability's own algorithm.</p>"
+        "</article></body></html>"
+    )
+
+    without_fix = Document(html).summary() or ""
+    assert "Combine every fetched" in without_fix, (
+        "fixture's outer list doesn't survive on its own -- adjust padding"
+    )
+    assert "Fetch each station's data" not in without_fix, (
+        "fixture doesn't reproduce the nested-list readability drop"
+    )
+
+    fixed_html = _rescue_list_item_paragraphs(html)
+    with_fix = Document(fixed_html).summary() or ""
+    assert "Fetch each station's data" in with_fix
+    assert "Combine every fetched" in with_fix
+
+
+def test_rescue_list_item_paragraphs_survives_readability_sparse_top_level_list():
+    # The same trap also fires one level up: a top-level list made of just
+    # a couple of short, <p>-wrapped items -- each one a label over its own
+    # nested sub-list, e.g. the `if __name__ == "__main__":` guard's
+    # "run directly" / "import as a module" breakdown -- never accumulates
+    # enough paragraph score either, so the *entire* top-level list (both
+    # branches, everything nested inside) is dropped, not just a nested
+    # sub-list. The fix must apply at every list depth, not just nested
+    # ones, to cover this.
+    from readability import Document
+
+    html = (
+        "<html><body><article>"
+        "<p>Padding paragraph one, long enough to give the surrounding "
+        "article region enough weight for readability to pick it as the "
+        "main content candidate for this fixture.</p>"
+        "<ul>"
+        "<li><p>Run the file directly</p>"
+        '<ul><li><p>the special variable __name__ is set to "__main__"</p></li>'
+        "<li><p>the condition evaluates to True</p></li>"
+        "<li><p>main() executes as expected</p></li></ul>"
+        "</li>"
+        "<li><p>Import the file as a module elsewhere instead</p>"
+        "<ul><li><p>__name__ is set to the module's own name</p></li>"
+        "<li><p>the condition evaluates to False</p></li></ul>"
+        "</li>"
+        "</ul>"
+        "<p>Padding paragraph two, also long enough to keep this region "
+        "scored as the main content by readability's own algorithm.</p>"
+        "</article></body></html>"
+    )
+
+    without_fix = Document(html).summary() or ""
+    assert "special variable" not in without_fix, (
+        "fixture doesn't reproduce the readability drop -- adjust padding"
+    )
+
+    fixed_html = _rescue_list_item_paragraphs(html)
+    with_fix = Document(fixed_html).summary() or ""
+    assert "special variable" in with_fix
+    assert "module's own name" in with_fix
+
+
+# ---------------------------------------------------------------------------
 # _rescue_short_figure_labels
 # ---------------------------------------------------------------------------
 
@@ -3060,6 +3210,65 @@ def test_strip_heading_classes_ignores_comment_when_counting_meaningful_children
     h2 = soup.find("h2")
     assert h2 is not None
     assert h2.find("a") is None
+
+
+def test_strip_heading_classes_drops_heading_id():
+    # A heading id is never consumed downstream (Markdown headings carry no
+    # id), and readability's remove_unlikely_candidates() scans id the same
+    # way it scans class -- see the substring-collision regression below.
+    html = '<h2 id="heading-code-level-walkthrough">Code-level walkthrough</h2>'
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    h2 = soup.find("h2")
+    assert h2 is not None
+    assert h2.get("id") is None
+    assert h2.get_text(strip=True) == "Code-level walkthrough"
+
+
+def test_strip_heading_classes_drops_id_after_permalink_anchor_check():
+    # The self-referencing-permalink unwrap needs the id to compare against
+    # the anchor's href -- must still fire correctly before the id is gone.
+    html = '<h2 id="key_concepts"><a href="#key_concepts">Key concepts</a></h2>'
+    result = _strip_heading_classes(html)
+    soup = _BS(result, "html.parser")
+    h2 = soup.find("h2")
+    assert h2 is not None
+    assert h2.find("a") is None
+    assert h2.get("id") is None
+    assert h2.get_text(strip=True) == "Key concepts"
+
+
+def test_strip_heading_classes_survives_readability_id_substring_collision():
+    # Regression test for the real freeCodeCamp bug: readability's
+    # remove_unlikely_candidates() drops any element whose class/id string
+    # matches unlikelyCandidatesRe via a plain (non-word-bounded) substring
+    # search. An auto-generated TOC-anchor id like
+    # "heading-part-4-the-extraction-step" contains "extra" (from
+    # "extraction"), one of that pattern's terms -- so the heading is
+    # discarded as boilerplate before scoring, independent of class-based
+    # checks. "the-extraction-step" alone (no "part-4-"/"heading-" prefix
+    # noise) is enough to reproduce it.
+    from readability import Document
+
+    html = (
+        "<html><body><article>"
+        "<p>Padding paragraph one, long enough to give the surrounding "
+        "article region enough weight for readability to pick it as the "
+        "main content candidate for this fixture.</p>"
+        '<h2 id="heading-the-extraction-step">The Extraction Step</h2>'
+        "<p>Padding paragraph two, also long enough to keep this region "
+        "scored as the main content by readability's own algorithm.</p>"
+        "</article></body></html>"
+    )
+
+    without_fix = Document(html).summary() or ""
+    assert "The Extraction Step" not in without_fix, (
+        "fixture doesn't reproduce the readability drop -- adjust padding"
+    )
+
+    fixed_html = _strip_heading_classes(html)
+    with_fix = Document(fixed_html).summary() or ""
+    assert "The Extraction Step" in with_fix
 
 
 # ---------------------------------------------------------------------------
