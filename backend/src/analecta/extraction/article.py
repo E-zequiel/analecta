@@ -378,6 +378,77 @@ def _rescue_short_nested_lists(html: str) -> str:
     return str(soup)
 
 
+def _rescue_list_item_paragraphs(html: str) -> str:
+    """Unwrap a ``<li>``'s own ``<p>`` wrapper before readability, at any list depth.
+
+    readability-lxml's ``score_node()`` gives every ``<ul>``/``<ol>``/``<li>``
+    tag a flat ``-3`` base content score — lists are assumed non-content by
+    default. A ``<ul>``/``<ol>`` only escapes that penalty if its own
+    ``score_paragraphs()`` candidate score (accumulated from any ``<p>``
+    child that is the *parent or grandparent* of a qualifying paragraph)
+    climbs back above zero. CMS output that wraps each item's text in its
+    own ``<p>`` — ``<li><p>text</p></li>``, or ``<li><p>text</p><ul>
+    nested</ul></li>`` for a labeled sub-list — makes exactly that ``<p>``
+    relationship: parent = ``<li>``, grandparent = the enclosing
+    ``<ul>``/``<ol>``. A short or sparse list (few items, or items that are
+    themselves just a one-line label over a nested sub-list — the ``if
+    __name__ == "__main__":`` guard's "run directly" / "import as a module"
+    breakdown is exactly this shape) rarely accumulates enough paragraph
+    score to outweigh the ``-3`` floor, and ``sanitize()``'s ``weight +
+    content_score < 0`` check drops the *entire* list — every item, and
+    anything nested inside it — even though the content is substantial and
+    clearly not boilerplate.
+
+    Unwrapping the ``<p>`` (replacing it with its own bare text) removes
+    that ``<li>`` from ``score_paragraphs()``'s candidacy sweep entirely:
+    the enclosing ``<ul>``/``<ol>`` never becomes a scored candidate and
+    defaults to ``content_score = 0`` in ``sanitize()``, clearing the
+    ``< 0`` check regardless of how few or short its items are. The
+    ``<ul>``/``<ol>``/``<li>`` structure itself is untouched, so
+    markdownify still renders proper indented (sub-)bullets — unlike
+    ``_rescue_short_nested_lists`` above, which *dissolves* a short nested
+    list into inline text and loses the nesting on purpose (right call for
+    a single short line; wrong for a genuine multi-item breakdown, which is
+    what this function targets).
+
+    Applies at every list depth, not just nested lists: a top-level list
+    made of short, ``<p>``-wrapped, sparse items (e.g. the two-item
+    ``__main__``-guard list above, each item just a label over its own
+    nested sub-list) is exposed to the identical scoring trap one level up,
+    since a ``<p>``'s score only ever propagates to its parent and
+    grandparent — never further. A list's own items therefore never
+    contribute to *its parent's* candidacy either way, so unwrapping every
+    depth uniformly costs nothing: it can only remove list items from
+    contention for a scoring role they never usefully filled.
+
+    Lists inside ``<nav>``/``<header>``/``<footer>``/``<aside>`` are left
+    alone, matching ``_rescue_linked_lists``'s and
+    ``_rescue_short_nested_lists``'s own guard, so readability can still
+    prune navigation menus.
+
+    A ``<li>`` with more than one direct ``<p>`` child (a genuinely
+    multi-paragraph item) gets a plain space inserted between them before
+    unwrapping — bs4's ``unwrap()`` abuts adjacent text nodes with no
+    separator of its own, and without one two sibling paragraphs would
+    read as a single run-on sentence. This trades away markdownify's
+    normal blank-line paragraph break *within* that one item (it would
+    otherwise render each ``<p>`` as its own indented paragraph under the
+    bullet) in exchange for the item surviving readability at all — the
+    same "some fidelity for no total loss" trade ``_rescue_short_nested_lists``
+    above already makes by joining short items with ``", "``.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for li in soup.find_all("li"):
+        if any(p.name in _NAV_TAGS for p in li.parents if p.name):
+            continue
+        paragraphs = li.find_all("p", recursive=False)
+        for i, p in enumerate(paragraphs):
+            if i > 0:
+                p.insert_before(" ")
+            p.unwrap()
+    return str(soup)
+
+
 def _rescue_short_figure_labels(html: str) -> str:
     """Unwrap a short label <div> immediately preceding a <figure>.
 
@@ -607,6 +678,20 @@ def _strip_heading_classes(html: str) -> str:
        meaningful child is an ``<a>`` whose ``href`` points back at the
        heading's own ``id``, the anchor is unwrapped so the bare text
        survives scoring.
+
+    5. **Auto-generated anchor slug matching an unrelated substring**
+       (freeCodeCamp and similar CMSes that stamp every heading with a
+       TOC-anchor ``id`` derived from its own text, e.g.
+       ``id="heading-part-4-the-extraction-step"``): readability's
+       ``remove_unlikely_candidates()`` pass drops any element whose
+       ``class``/``id`` string matches ``unlikelyCandidatesRe`` — a plain
+       substring search, not word-bounded. ``extraction`` contains
+       ``extra``, one of that pattern's terms, so the heading is discarded
+       as boilerplate before scoring ever runs, independent of the
+       class-based checks above. The heading ``id`` is never consumed
+       downstream (Markdown headings carry no id), so it's dropped
+       unconditionally here rather than pattern-matched against
+       readability's specific (and version-specific) regex.
     """
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup.find_all(_HEADING_TAGS):
@@ -627,6 +712,7 @@ def _strip_heading_classes(html: str) -> str:
                 anchor = meaningful[0]
                 if anchor.get("href") == f"#{heading_id}":
                     anchor.unwrap()
+        tag.attrs.pop("id", None)
         # Remove empty or link-only children inside the heading itself.
         for child in tag.find_all(["div", "a"]):
             if not child.get_text(strip=True):
@@ -990,6 +1076,7 @@ class ArticleExtractor(SourceExtractor):
         clean = _rescue_linked_tables(clean)
         clean = _expand_table_spans(clean)
         clean = _rescue_short_nested_lists(clean)
+        clean = _rescue_list_item_paragraphs(clean)
         clean = _rescue_short_figure_labels(clean)
         clean = _rescue_syntax_footnote(clean)
         clean = _unwrap_code_examples(clean)

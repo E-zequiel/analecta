@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `backend/src/analecta/extraction/article.py`: readability-lxml's `remove_unlikely_candidates()` matches an element's `class`/`id` string against a boilerplate-pattern regex via plain substring search, not word-bounded — an auto-generated TOC-anchor heading `id` (e.g. `heading-part-4-the-extraction-step`) containing `extra` (from "extraction") was enough to get the whole heading dropped as boilerplate before scoring ever ran, independent of the class-based heading checks `_strip_heading_classes()` already covered. Heading `id` is never consumed downstream (Markdown headings carry no id), so `_strip_heading_classes()` now drops it unconditionally after its own permalink-anchor-unwrap logic is done reading it.
+- `backend/src/analecta/extraction/article.py`: readability-lxml's `score_node()` gives every `<ul>`/`<ol>`/`<li>` a flat `-3` base content score. A CMS that wraps each list item's own text in a `<p>` (`<li><p>text</p></li>`, or `<li><p>label</p><ul>nested</ul></li>` for a labeled sub-list) makes that `<p>` the parent/grandparent of a `score_paragraphs()` candidate, so the enclosing `<ul>`/`<ol>` only survives if enough accumulated paragraph score clears the `-3` floor. A short or sparse list — few items, or items that are themselves just a one-line label over a nested sub-list (the `if __name__ == "__main__":` guard's "run directly" / "import as a module" breakdown is exactly this shape) — rarely does, and `sanitize()`'s `weight + content_score < 0` check then silently dropped the *entire* list, at any nesting depth, even when the content was substantial and clearly not boilerplate. New `_rescue_list_item_paragraphs()` unwraps each `<li>`'s own `<p>` wrapper before readability runs, at every list depth — this removes the `<li>` from `score_paragraphs()`'s candidacy sweep entirely (a `<p>`'s score only ever propagates to its parent and grandparent, never further, so a list's own items never usefully contributed to its *parent's* candidacy either way) while leaving the `<ul>`/`<ol>`/`<li>` structure itself untouched, so markdownify still renders proper indented (sub-)bullets.
+
 ## [0.5.2] - 2026-08-13
 
 ### Security
