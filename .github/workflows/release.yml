@@ -31,7 +31,7 @@ jobs:
       - name: Install system dependencies
         run: bash scripts/system_deps.sh
 
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654  # v4.2.4
 
       - name: Install Python dependencies
         run: mise exec -- uv sync --frozen
@@ -81,7 +81,7 @@ jobs:
         # visibility can't fail the job and block the release. Self-activating: no
         # edit needed here once the repo is public.
         if: ${{ !github.event.repository.private }}
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
           subject-path: |
             dist-electron/*.deb
