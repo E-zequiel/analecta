@@ -1,7 +1,7 @@
 # Syntax Highlighting — Analecta
 
 Fenced code blocks in the markdown viewer are highlighted by
-[Shiki](https://shiki.style/) v4.2.0 using the **tokyo-night** theme.
+[Shiki](https://shiki.style/) using the **tokyo-night** theme.
 
 ---
 
@@ -133,6 +133,14 @@ in `frontend/package.json` — the generator runs inline, independent of pnpm's
 When upgrading `shiki`, `@shikijs/themes`, or `@shikijs/langs`, the new CSS is
 produced during the next `pnpm build` (step 10 of `check.sh`). Commit the
 updated `shiki-classes.css` alongside the package changes.
+
+`@shikijs/markdown-it` pins `markdown-it` as a direct (non-peer) dependency —
+`^14.3.0` as of `@shikijs/markdown-it@4.4.3` (`pnpm view @shikijs/markdown-it@<version>
+dependencies` shows the exact range for a given release). `markdown-it` cannot
+be upgraded past that ceiling until `@shikijs/markdown-it` itself widens it —
+expect `markdown-it` to keep appearing under "Blocked" in automated
+dependency-update PRs for this reason specifically, not as a `check.sh`
+regression to chase.
 
 To regenerate manually without a full build:
 
