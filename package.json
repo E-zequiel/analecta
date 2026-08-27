@@ -13,7 +13,7 @@
     "defuddle": "0.19.2",
     "eslint": "10.8.1",
     "eslint-config-prettier": "10.1.8",
-    "eslint-plugin-svelte": "3.22.0",
+    "eslint-plugin-svelte": "3.23.0",
     "prettier": "3.8.3",
     "prettier-plugin-svelte": "4.1.1",
     "socket": "1.1.99",
