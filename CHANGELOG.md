@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `jdx/mise-action` bumped from v4.2.4 to v4.2.5, across `ci.yml`, `deps-update.yml`, `release.yml`, and `socket-manual.yml` (#93).
 - Dependency updates: 7 packages (2026-08-27).
 
+### Security
+
+- `@xmldom/xmldom` bumped from `0.8.14`/`0.9.11` to `0.8.15`/`0.9.12` (two version-scoped `overrides:` entries in `pnpm-workspace.yaml`, kept separate rather than unified — see `docs/socket-security.md`), patching 12 GHSAs published 2026-08-21, no CVE IDs assigned yet (well-formedness/validation bypasses letting crafted input inject content past `requireWellFormed`, plus quadratic-time and ReDoS denial-of-service on untrusted XML/HTML input). Not reachable in the packaged app: transitive via `plist` (electron-builder's macOS `.pkg`/code-signing packaging and an Electron-alternative framework Analecta doesn't use — never reached when packaging `.deb`/`.rpm`/`.AppImage`, Analecta's only build targets) and via `mathml-to-latex` (a `defuddle` dependency, dev-only diagnostic tool, never a shipped runtime dep). Cooldown exception: both versions released 2026-08-21, 7 days before this bump — approved given severity is GitHub-rated "high" on most of the 12 advisories and both superseded versions carry an upstream deprecation notice, despite the non-reachability above.
+
 ## [0.5.3] - 2026-08-19
 
 ### Fixed
