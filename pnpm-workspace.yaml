@@ -113,28 +113,46 @@ overrides:
   # the original: 3.3.18 released 2026-08-07, 6 days before this bump (4 short of the 10-day
   # window) — approved explicitly given the unchanged CVSS 8.2 rating.
   nanoid: '3.3.18'
-  # GHSA-w2rr-34g9-rvrj + GHSA-4w3w-2rp5-g8jm (both CVSS 8.7, no CVE assigned): createElement()/
-  # setAttribute() don't validate the element/attribute name, so a crafted name survives
-  # serialization and injects extra attributes/event handlers — even requireWellFormed: true,
-  # previously the recommended mitigation, didn't catch it. Plus GHSA-g53g-w8rj-fmg7 (CVSS 8.7,
-  # 0.9.x line only): quadratic-time backtracking on an unterminated `<?` processing instruction,
-  # stalls the event loop on untrusted XML. All three fixed at 0.8.14 (0.7.0-0.8.13 affected;
-  # GHSA-g53g-w8rj-fmg7 never affected 0.8.x — different, bounded parser) and 0.9.11
-  # (0.9.0-beta.9-0.9.10 affected by all three).
-  # Two branches in the tree, NOT unified to one version — verified empirically, not just by
-  # declared range: plist@3.1.0 calls `new DOMParser().parseFromString(xml)` with no mimeType arg;
-  # plist@3.1.1's same call adds an explicit "text/xml" second arg (confirmed via a real tarball
-  # diff of both versions' lib/parse.js, the only file that differs between them). xmldom 0.9.11's
-  # parseFromString throws `TypeError` when isValidMimeType(undefined) is false — forcing 0.9.11
-  # onto the 3.1.0 branch would break plist.parse() outright, not just risk it.
-  # Reachability: both branches are transitive via app-builder-lib (electron-builder), whose own
-  # `plist` usage lives in electronMac.js, targets/pkg.js (macOS .pkg target), and LibUiFramework.js
-  # (an Electron-alternative framework Analecta doesn't use) — none of those run when packaging
-  # `.deb`/`.rpm`/`.AppImage`, Analecta's only targets. The mathml-to-latex branch (via defuddle) is
-  # a dev-only diagnostic tool, never a shipped runtime dep (see docs/defuddle-decision.md).
-  # Cooldown exception, the largest in this project's history: both 0.8.14 and 0.9.11 released
-  # 2026-08-12, 1 day before this bump (9 short of the 10-day window) — approved explicitly given
-  # the CVSS 8.7 rating despite the non-reachability above. See docs/socket-security.md.
-  'plist@3.1.0>@xmldom/xmldom': '0.8.14'
-  'plist@3.1.1>@xmldom/xmldom': '0.9.11'
-  'mathml-to-latex@1.8.0>@xmldom/xmldom': '0.9.11'
+  # 12 GHSAs published 2026-08-21 (no CVE IDs assigned yet, self-disclosed by the xmldom
+  # maintainers), superseding the 0.8.14/0.9.11 pair adopted below on 2026-08-13 — both are
+  # themselves in-range for most of this batch. 7 affect both lines (0.7.0-0.8.14 and
+  # 0.9.0-0.9.11): GHSA-c7q8-3ch8-vqpv (PI target injection bypasses requireWellFormed),
+  # GHSA-965w-775f-mr7g (quadratic-memory consumption), GHSA-6gmq-8vp8-gcm6 (XML fragment
+  # injection via EntityReference.nodeName), GHSA-8344-3jmq-59r6 (quadratic-time attribute
+  # dedup), GHSA-93r5-fhx6-vmg9 (quadratic-time malformed-input recovery),
+  # GHSA-27p8-2357-5qqv (DocType name injection bypasses requireWellFormed), GHSA-6h8r-xr42-gp59
+  # (end-tag name followed by line break + trailing content silently accepted). 1 affects only
+  # 0.8.x: GHSA-x4fp-j954-r2f4 (ReDoS in the 0.8.x end-tag whitespace-trim regex). 4 affect only
+  # 0.9.x: GHSA-6mj3-qw4j-hgrw (HTML raw-text closing-tag case mismatch, O(n²) output
+  # amplification), GHSA-3px3-54cx-rmw9 (Name/QName validation bypass via embedded line
+  # terminator), GHSA-vr34-hp96-76pp (DocType publicId/systemId bypass via line terminator,
+  # 0.9.10-0.9.11 only), GHSA-jxjr-3g7g-3944 (element/attribute name validation bypass via line
+  # terminator, 0.9.11 only). Fixed at 0.8.15 and 0.9.12 respectively (both non-deprecated;
+  # `pnpm view @xmldom/xmldom@0.9.11 deprecated` / `@0.8.14` both return "this version has
+  # critical issues, please update to the latest version" — the Socket alert that surfaced this
+  # was that deprecation notice, not a CVSS-scored finding).
+  # Two branches in the tree, still NOT unified to one version — the 2026-08-13 finding
+  # (plist@3.1.0 calls `new DOMParser().parseFromString(xml)` with no mimeType arg; xmldom 0.9.x's
+  # parseFromString throws TypeError when isValidMimeType(undefined) is false) still holds, so
+  # 0.9.12 cannot go under the 3.1.0 branch. Re-verified for this round, isolated install:
+  # plist@3.1.0 + xmldom@0.8.15 override, ran plist.parse()/plist.build() on a sample Info.plist —
+  # both succeed, no TypeError. The 0.8.x line's mimeType handling wasn't tightened by this
+  # batch's requireWellFormed fixes, so 0.8.15 stays compatible with plist@3.1.0 as-is. Considered
+  # and rejected: forcing a `plist: '3.1.1'` override to collapse both branches and drop the
+  # 0.8.x pin entirely — mechanically viable, but buys zero extra security (0.8.x already has a
+  # clean, non-deprecated patch) at the cost of overriding app-builder-lib's own exact `"3.1.0"`
+  # pin (unchanged from 26.15.1 through the 27.0.0 alphas as of 2026-08-28) on a code path already
+  # established as unreachable below.
+  # Reachability unchanged from 2026-08-13: both branches are transitive via app-builder-lib
+  # (electron-builder), whose own `plist` usage lives in electronMac.js, targets/pkg.js (macOS
+  # .pkg target), and LibUiFramework.js (an Electron-alternative framework Analecta doesn't use)
+  # — none of those run when packaging `.deb`/`.rpm`/`.AppImage`, Analecta's only targets. The
+  # mathml-to-latex branch (via defuddle) is a dev-only diagnostic tool, never a shipped runtime
+  # dep (see docs/defuddle-decision.md).
+  # Cooldown exception: both 0.8.15 and 0.9.12 released 2026-08-21, 7 days before this bump (3
+  # short of the 10-day window) — approved explicitly despite no CVE ID/CVSS score yet and the
+  # non-reachability above, given severity is GitHub-rated "high" on most of the 12 and the
+  # deprecation notice on the superseded versions. See docs/socket-security.md.
+  'plist@3.1.0>@xmldom/xmldom': '0.8.15'
+  'plist@3.1.1>@xmldom/xmldom': '0.9.12'
+  'mathml-to-latex@1.8.0>@xmldom/xmldom': '0.9.12'
