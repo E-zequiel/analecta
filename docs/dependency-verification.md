@@ -28,7 +28,7 @@ The procedure below adds that moment, and produces a paper trail in the PR/commi
 
 **Applies regardless of whether a dependency ships.** A devDependency used only by a local diagnostic script (e.g. `defuddle`, see `docs/defuddle-decision.md`) is exposed to the exact same threat — a compromised tarball lands in a developer's `node_modules/` and runs the moment the script is invoked — even though it's never part of a packaged build. "It's just a diagnostic tool" is not a reason to skip this procedure or the Socket scan; both apply to every direct dependency in the lockfile, not only the ones that ship.
 
-**Automated updates (`scripts/deps_update.py`) age-gate these devDependencies but don't check-gate them.** The updater applies its cooldown-and-verify batch logic to the root workspace (`analecta`, which holds `defuddle` and `socket`) the same as it does to `frontend`/`electron` — but its `--verify` step only ever runs `check.sh backend`/`check.sh frontend`, and neither exercises `defuddle` (invoked manually, per `docs/defuddle-decision.md`) or `socket` (invoked only by `scripts/socket-audit.sh`). A version bump to either can land in the auto-generated PR with a clean integrity hash and a passing `check.sh`, yet be functionally untested — treat those two lines in the PR body as unverified beyond the pnpm integrity check until manually exercised.
+**Automated updates (`scripts/deps_update.py`) age-gate these devDependencies but don't check-gate them.** The updater applies its cooldown-and-verify batch logic to the root workspace (`analecta`, which holds `defuddle` and `socket`) the same as it does to `frontend`/`electron` — but its `--verify` step only ever runs `check.sh backend`/`check.sh frontend`, and neither exercises `defuddle` (invoked manually, per `docs/defuddle-decision.md`) or `socket` (invoked only by `scripts/socket-audit.sh`). A version bump to either can land in the auto-generated PR with a clean integrity hash and a passing `check.sh`, yet be functionally untested — treat those two lines in the PR body as unverified beyond the pnpm integrity check until manually exercised (see step 5 below for what "manually exercised" means).
 
 ## Procedure (npm / pnpm)
 
@@ -146,6 +146,77 @@ different machine gets the same guarantee without re-running this procedure.
 Run this check against the lockfile state *after* any `pnpm dedupe` from step
 3 — a hash check against a lockfile that dedupe is about to rewrite verifies
 an artifact you won't end up committing.
+
+### 5. When `check.sh` doesn't exercise the package — manual consumer smoke test
+
+Steps 1–4 prove the tarball is authentic and that the rest of the app still
+builds and tests green. Neither proves the bumped package's own code still
+behaves the way its actual consumer expects — `check.sh` only catches that
+when the consumer's code path is itself covered by the frontend build,
+`svelte-check`, or a backend test. It isn't, in two recurring cases: a
+`overrides:`-forced transitive dependency whose real consumer only runs in a
+code path this project's own build never exercises (e.g. `plist`'s macOS
+`.pkg`/code-signing code, dead weight in a `.deb`/`.rpm`/`.AppImage`-only
+build — see `docs/socket-security.md`'s xmldom entries), and a devDependency
+invoked only by a manual/diagnostic script (`defuddle`, `socket` — the case
+already named above at line 31). "Resolved-and-ignored is not the same as
+taking effect."
+
+When either case applies, `require()` the package directly from its real,
+already-installed location and run the same call the actual consumer makes,
+on representative input. Use `path.resolve()` — a bare relative path is a
+module specifier, not a filesystem path, and `require()` will send it through
+node_modules resolution instead of finding the package:
+
+```bash
+mise exec -- node -e "
+const pkg = require(require('path').resolve('node_modules/.pnpm/<pkg>@<version>/node_modules/<pkg>'));
+// exercise the same function/method the real consumer calls
+"
+```
+
+Two rules this step is easy to get wrong:
+
+- **Run it against every touched branch, not just one.** A CVE-driven
+  override often touches several version-scoped branches at once (see
+  [Scoped overrides](#scoped-overrides) below) — each is a separately
+  resolved package instance and needs its own smoke test.
+- **Run it against the real repo's `node_modules/.pnpm/`, not a scratch-dir
+  install.** An isolated sandbox with matching `package.json` specifiers is
+  legitimate *earlier*, while deciding whether a fix is even viable (e.g.
+  probing whether a candidate version still tolerates a known-fragile call
+  pattern before committing to a plan) — but it doesn't substitute for this
+  step. It can silently diverge from the real graph's peer resolution,
+  nested overrides, or hoisting, so a pass there proves the plan is sound,
+  not that the actual change is verified.
+
+No equivalent step exists in the Python/uv flow below, deliberately: `uv
+sync` verifies installed packages against `uv.lock` directly, and `check.sh
+backend` runs the actual backend test suite against the real dependency
+graph — the "consumer never runs under the gate" case this step exists for
+doesn't arise there.
+
+**Worked example:** the `@xmldom/xmldom` 0.8.14/0.9.11 → 0.8.15/0.9.12 bump
+(three `overrides:`-scoped branches — two under `plist`, one under
+`mathml-to-latex`) touched code `check.sh` never runs: the `plist` branches
+only execute inside electron-builder's macOS packaging, `mathml-to-latex`
+only inside `defuddle`'s manual diagnostic. After `pnpm install`:
+
+```js
+const resolve = (p) => require('path').resolve(p);
+require(resolve('node_modules/.pnpm/plist@3.1.0/node_modules/plist')).parse(sampleInfoPlist);
+require(resolve('node_modules/.pnpm/plist@3.1.1/node_modules/plist')).parse(sampleInfoPlist);
+require(resolve('node_modules/.pnpm/mathml-to-latex@1.8.0/node_modules/mathml-to-latex'))
+  .MathMLToLaTeX.convert(sampleMathml);
+```
+
+against all three real installed instances, confirming each still works.
+A sandbox-only test of the first branch (same package versions, scratch
+directory) had already answered the planning question — whether `0.8.15`
+still tolerates `plist@3.1.0`'s missing `mimeType` argument — but got
+mistaken for having verified the real change too, and the `0.9.x` branches
+had no smoke test at all until a later audit caught the gap. See
+`docs/socket-security.md`'s 2026-08-28 entry for the full advisory list.
 
 ## Worked example (npm / pnpm)
 
