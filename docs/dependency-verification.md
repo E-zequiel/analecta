@@ -159,8 +159,8 @@ code path this project's own build never exercises (e.g. `plist`'s macOS
 `.pkg`/code-signing code, dead weight in a `.deb`/`.rpm`/`.AppImage`-only
 build — see `docs/socket-security.md`'s xmldom entries), and a devDependency
 invoked only by a manual/diagnostic script (`defuddle`, `socket` — the case
-already named above at line 31). "Resolved-and-ignored is not the same as
-taking effect."
+the `deps_update.py` note above already names). "Resolved-and-ignored is not
+the same as taking effect."
 
 When either case applies, `require()` the package directly from its real,
 already-installed location and run the same call the actual consumer makes,
@@ -189,6 +189,10 @@ Two rules this step is easy to get wrong:
   step. It can silently diverge from the real graph's peer resolution,
   nested overrides, or hoisting, so a pass there proves the plan is sound,
   not that the actual change is verified.
+
+This runs after step 4, independently of `check.sh` — it doesn't matter which
+side of that gate it lands on, only that it happens before the change is
+considered done.
 
 No equivalent step exists in the Python/uv flow below, deliberately: `uv
 sync` verifies installed packages against `uv.lock` directly, and `check.sh
@@ -324,7 +328,10 @@ separately and comparing it to the diff.
 ### 4. Gate on `check.sh`
 
 Both the npm/pnpm and Python/uv flows end the same way: `./scripts/check.sh`
-must pass before the change is considered done (see `docs/quality-gate.md`).
+must pass before the change is considered done (see `docs/quality-gate.md`) —
+except where npm/pnpm's step 5 above applies, in which case a passing
+`check.sh` is necessary but not sufficient; the Python/uv flow has no
+equivalent gap to close.
 
 ### Why Python uses floors instead of exact pins
 
