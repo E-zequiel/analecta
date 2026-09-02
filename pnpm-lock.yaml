@@ -15,6 +15,7 @@ overrides:
   brace-expansion@2: 2.1.4
   brace-expansion@5: 5.0.9
   postcss: 8.5.23
+  postcss-selector-parser: 7.1.5
   undici: 7.29.0
   node-gyp: 12.4.0
   '@emnapi/runtime': 1.11.2
@@ -1930,8 +1931,8 @@ packages:
     peerDependencies:
       postcss: 8.5.23
 
-  postcss-selector-parser@7.1.1:
-    resolution: {integrity: sha512-orRsuYpJVw8LdAwqqLykBj9ecS5/cRHlI5+nvTo8LcCKmzDmqVORXtOIYEEQuL9D4BxtA1lm5isAqzQZCoQ6Eg==}
+  postcss-selector-parser@7.1.5:
+    resolution: {integrity: sha512-KvvtD7SrlBP7dlgkBghEE3r84CABm5SmV2aNcG4oCA+qDnJ/tvKonFVvwWAyyWUEwxuNawdfEAZKP9zM3oZ2Uw==}
     engines: {node: '>=4'}
 
   postcss@8.5.23:
@@ -4403,7 +4404,7 @@ snapshots:
     dependencies:
       postcss: 8.5.23
 
-  postcss-selector-parser@7.1.1:
+  postcss-selector-parser@7.1.5:
     dependencies:
       cssesc: 3.0.0
       util-deprecate: 1.0.2
@@ -4679,7 +4680,7 @@ snapshots:
       espree: 10.4.0
       postcss: 8.5.23
       postcss-scss: 4.0.9(postcss@8.5.23)
-      postcss-selector-parser: 7.1.1
+      postcss-selector-parser: 7.1.5
       semver: 7.8.5
     optionalDependencies:
       svelte: 5.56.8(@typescript-eslint/types@8.60.0)
