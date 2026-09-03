@@ -59,7 +59,29 @@ overrides:
   # 2026-07-31, 3 days before this bump — approved explicitly given the CVSS 7.5 host-confusion
   # rating (relevant here since ajv's URI parsing feeds JSON Schema validation, not attacker-facing
   # network requests directly, but the fix is a straight upstream patch with no compatibility risk).
-  fast-uri: '3.1.5'
+  # 2026-09-03: 3.1.5 → 3.1.7, closing 6 more GHSAs (all HIGH, all CVSS 7.5
+  # AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N). Four are fixed at 3.1.6 (published 2026-08-23) — two
+  # surfaced as Dependabot alerts #47/#48, two not yet alerted but already in GitHub's global DB:
+  #   GHSA-5jgf-p345-68v8 (CVE-2026-75931) skipped IDN canonicalization on scheme-relative refs
+  #   GHSA-fph4-wmhf-6fwf (CVE-2026-75899) SSRF via repeated hostname percent-decoding
+  #   GHSA-f65p-4m7j-42xc (CVE-2026-75975) SSRF via malformed IPv6 normalization
+  #   GHSA-jqff-g426-hqxp (CVE-2026-76172) host confusion via percent-encoded scheme normalization
+  # Two are fixed only at 3.1.7 (published 2026-09-02) — repo-level advisories on fastify/fast-uri,
+  # not yet propagated to the global DB, so no Dependabot alert yet:
+  #   GHSA-qw65-cvwx-89v3 authority injection via an unvalidated port in serialize()
+  #   GHSA-58mr-gqgx-xq4g host confusion via unbalanced or misplaced IP-literal brackets
+  # 3.1.6 clears the 10-day window on its own (11 days old) and would close the first four; 3.1.7 is
+  # the target to also close the 3.1.7-only pair and pre-empt their alerts. Cooldown exception:
+  # 3.1.7 released 2026-09-02, 1 day before this bump (9 short of the 10-day window — tied for the
+  # project's largest) — approved explicitly given the uniform CVSS 7.5 host-confusion/SSRF rating
+  # and that ajv's fast-uri use is build-time JSON Schema $id/$ref resolution (electron-builder is a
+  # devDependency), never attacker-facing input. A pin, not a force: ajv@8.20.0 declares
+  # `fast-uri: ^3.0.1`. Consumer smoke test (docs/dependency-verification.md step 5): ajv@8.20.0
+  # compiles and validates schemas carrying $id/$ref/$recursiveRef unchanged under 3.1.7, export
+  # shape (`parse`/`serialize`/`resolve`/`equal`/`normalize`/`serialize`) intact, and both
+  # 3.1.7-only PoCs (a bad-port `serialize()` input, an unbalanced `[` IP literal) now fail closed.
+  # See docs/socket-security.md.
+  fast-uri: '3.1.7'
   # GHSA-mh99-v99m-4gvg (unbounded expansion length OOM) + GHSA-3jxr-9vmj-r5cp (exponential-time
   # DoS) + GHSA-rgw5-rvv9-x895 (CVSS 7.5, bypasses the maxLength mitigation 5.0.8 shipped for
   # GHSA-mh99-v99m-4gvg via unbounded intermediate arrays). Three major lines are pulled in by
