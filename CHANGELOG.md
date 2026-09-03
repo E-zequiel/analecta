@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `shiki` and `@shikijs/markdown-it` bumped from 4.2.0 to 4.4.3 (2026-08-21), unblocking the pair excluded from the 2026-08-20 automated update (#92) after `@shikijs/themes`/`@shikijs/langs` moved to 4.4.3 while these two stayed pinned. `markdown-it` stays at 14.3.0: the published `@shikijs/markdown-it@4.4.3` hard-pins `markdown-it: ^14.3.0` as a direct (non-peer) dependency, incompatible with `markdown-it@15.0.0` — not fixable locally, needs an upstream `@shikijs/markdown-it` release.
 - `jdx/mise-action` bumped from v4.2.4 to v4.2.5, across `ci.yml`, `deps-update.yml`, `release.yml`, and `socket-manual.yml` (#93).
 - Dependency updates: 7 packages (2026-08-27).
+- Dependency updates: 7 packages (2026-09-03).
 
 ### Security
 
