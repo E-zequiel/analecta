@@ -34,7 +34,7 @@ uses: actions/checkout@v4
 | Action | Tag | SHA | Last verified |
 |--------|-----|-----|---------------|
 | `actions/checkout` | `v7.0.1` | `3d3c42e5aac5ba805825da76410c181273ba90b1` | 2026-07-31 |
-| `jdx/mise-action` | `v4.2.5` | `3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518` | 2026-08-24 |
+| `jdx/mise-action` | `v4.3.0` | `c2a87611a18de5b3828c5652fe268e992400cb5c` | 2026-09-03 |
 | `bitwarden/sm-action` | `v3.0.1` | `1238aae8fc64b212641190a9227c8a734ab1a793` | 2026-07-27 |
 | `actions/attest-build-provenance` | `v4.2.2` | `4d101475d8b20a2381f78447822ac1eab6504dd8` | 2026-08-24 |
 
