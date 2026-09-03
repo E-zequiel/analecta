@@ -168,7 +168,7 @@ future versions.
 
 | Warning | Reason |
 |---------|--------|
-| `DeprecationWarning` from `websockets` | `uvicorn 0.49.0` uses the `websockets.legacy` API deprecated in websockets 14+. Upstream issue, not fixable from this repo. |
+| `DeprecationWarning` from `websockets` | uvicorn's `websockets` protocol implementation imports the `websockets.legacy` API, which `websockets` emits a `DeprecationWarning` for. Upstream issue, not fixable from this repo. |
 | `DeprecationWarning` from `uvicorn` | Same root cause: the warning is attributed to the calling module (`uvicorn/protocols/websockets/websockets_impl.py`) due to the `stacklevel` set by websockets. |
 
 ---
