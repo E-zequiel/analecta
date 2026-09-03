@@ -76,7 +76,8 @@ asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--cov=analecta --cov-branch --cov-report=term-missing"
 filterwarnings = [
-    # uvicorn 0.49.0 uses websockets.legacy API deprecated in websockets 14+
+    # uvicorn's websockets protocol impl imports the deprecated websockets.legacy
+    # API; the DeprecationWarning is emitted upstream, not by this repo
     "ignore::DeprecationWarning:websockets",
     "ignore::DeprecationWarning:uvicorn",
 ]
