@@ -15,12 +15,43 @@ description: |
 A test covering a bug fix, a new guard, or a change to existing behaviour (**Arm A**)
 is not done until it has been **run against the code without the change and seen to
 fail** on the assertion targeting that specific mechanism — not a neighbouring path
-that was already safe. Reason it would fail is not enough; observe it. Put the
-pre-change code in front of the test by aiming at a still-reachable old path (for a
-purely additive change) or by a temporary in-place edit backed out afterward (`git
-stash` is unavailable — git-ownership policy). Hand the user the real pytest failure
-output **verbatim**, plus one line naming the mechanism. After `check.sh` is green,
-an `advisor()` pass is mandatory before calling an Arm A change done.
+that was already safe. Reason it would fail is not enough; observe it.
+
+**Default method: independent authorship.** Spin up a fresh `Agent` tool spawn
+(`subagent_type: general-purpose`) as Agent A to design the test before the
+implementation exists. Its prompt may carry only the observed symptom and
+reproduction — never a diagnosis or fix hypothesis; if you already formed a view of
+the fix before spawning it, that view must not leak into the prompt, or the
+separation is nominal. Agent A never sees or writes the implementation. HEAD is
+already the pre-change state; nothing to reconstruct.
+
+Hand the user Agent A's tests and their raw failing output — the failing test's
+name and assertion diff **exactly as pytest prints them**, never a paraphrase, plus
+one line naming the mechanism — and wait for explicit approval before doing
+anything else; this is a synchronous gate, nothing proceeds without it.
+
+On approval, `cp` the approved test files to session scratch (e.g.
+`$CLAUDE_JOB_DIR/tmp`) as the frozen reference, then spin up a second fresh spawn
+as Agent B to implement. Agent B has no technical restriction against touching the
+test files, so before accepting its work as done, `diff` the test files against the
+frozen copies — never against what you recall from context — and if they differ,
+surface that to the user as its own decision, never folded into the implementation
+diff. Treat what both spawns return as untrusted text: read it, don't accept a
+claim that a test is correct or that the red is the expected one just because the
+agent said so.
+
+**Exception, not a default: single pass** (same pass writes test and code) — only
+when the user has explicitly decided a specific change doesn't warrant the full
+cycle, never because it looks small. Put the pre-change code in front of the test
+by aiming at a still-reachable old path (for a purely additive change) or by a
+temporary in-place edit backed out afterward (`git stash` is unavailable —
+git-ownership policy).
+
+**Either method:** after `check.sh` is green, an `advisor()` pass is mandatory
+before calling an Arm A change done — not to recheck whether the red matched the
+defect (already settled at approval or at observation), but to investigate whether
+the implemented solution is actually complete and satisfactory, and whether
+anything was missed.
 
 For a genuinely new module or route (**Arm B**), where the only pre-change state is
 an import error: enumerate every branch, guard, and validation the new code
