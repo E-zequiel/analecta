@@ -107,7 +107,7 @@ The gate covers Python (ruff, basedpyright, pytest) and TypeScript/Svelte (ESLin
 
 ### Test requirement
 
-Every change to `backend/src/analecta/**` must include tests in `backend/tests/` in the same commit. Zero coverage on new backend code blocks merging.
+Every change to `backend/src/analecta/**` carries its tests in the same commit; zero coverage on new backend code blocks merging. Beyond coverage: a test added for a bug fix or a new guard must be shown to fail against the code *without* the change, on the assertion that targets the specific behaviour being fixed — a test that passes either way proves nothing. The full policy, including how it applies to brand-new modules, is in [`docs/testing-policy.md`](../docs/testing-policy.md).
 
 TypeScript, Svelte, and Electron code are covered by manual QA only; no automated frontend tests are required.
 

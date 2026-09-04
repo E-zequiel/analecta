@@ -10,6 +10,22 @@ description: |
 
 # Analecta Backend Testing
 
+## Demonstrated-red (policy — read `docs/testing-policy.md`)
+
+A test covering a bug fix, a new guard, or a change to existing behaviour (**Arm A**)
+is not done until it has been **run against the code without the change and seen to
+fail** on the assertion targeting that specific mechanism — not a neighbouring path
+that was already safe. Reason it would fail is not enough; observe it. Put the
+pre-change code in front of the test by aiming at a still-reachable old path (for a
+purely additive change) or by a temporary in-place edit backed out afterward (`git
+stash` is unavailable — git-ownership policy). Hand the user the real pytest failure
+output **verbatim**, plus one line naming the mechanism. After `check.sh` is green,
+an `advisor()` pass is mandatory before calling an Arm A change done.
+
+For a genuinely new module or route (**Arm B**), where the only pre-change state is
+an import error: enumerate every branch, guard, and validation the new code
+introduces and cover each — not just the happy path.
+
 ## Working directory
 
 All test commands run from `backend/`. Never run pytest from the repo root.
