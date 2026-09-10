@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency updates: 7 packages (2026-08-27).
 - `jdx/mise-action` bumped from v4.2.5 to v4.3.0, across `ci.yml`, `deps-update.yml`, `release.yml`, and `socket-manual.yml` (#100).
 - Dependency updates: 7 packages (2026-09-03).
+- Dependency updates: 3 packages (2026-09-10).
 
 ### Security
 
