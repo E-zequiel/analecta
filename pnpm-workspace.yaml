@@ -42,7 +42,11 @@ overrides:
   # key-uniqueness scan (the CVE-2026-59870 fix from the 5.x line, never backported to 4.x). Also
   # reachable via electron-updater (real runtime dep, parses latest-linux.yml from our own
   # HTTPS+SHA-512-verified release feed — not attacker-controlled input despite the CVSS score).
-  js-yaml: '4.3.1'
+  # 2026-09-11: + CVE-2026-84375 / GHSA-2883-xcg3-v3hh (CVSS 7.5) — maxTotalMergeKeys doesn't count
+  # empty mappings, so a chain of merged empty-mapping references does O(N*K) work while the guard
+  # counter stays flat. Fixed at 4.3.2. No cooldown exception needed: released 2026-08-26, 16 days
+  # before this bump.
+  js-yaml: '4.3.2'
   # Security patch — transitive via electron-builder and friends.
   form-data: '4.0.6'
   # GHSA-r292-9mhp-454m (mapHas/filesFilter stack-overflow DoS) + 4 earlier CVEs it supersedes
