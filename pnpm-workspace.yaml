@@ -32,163 +32,57 @@ allowBuilds:
   # Control 11 in docs/github-actions-security.md before setting it `true`.
   electron-winstaller: false
 
+# Every entry below is an exact pin adopted for a specific advisory or Socket
+# alert. The full write-up for each — advisory IDs, CVSS, reachability analysis,
+# consumer smoke test, cooldown exception — lives in docs/socket-security.md
+# under the dated section each comment names. Those sections are append-only and
+# are the source of truth; don't restate or update them here.
+#
+# Comment convention: a pointer line per entry, plus — only where it applies —
+# the one invariant that editing this file without reading the docs could
+# silently undo (a split that must not be collapsed, or a unification that must
+# not be re-split).
 overrides:
-  # CVE-2026-44705 (path traversal) — tmp is dead code in Analecta (no Flatpak target), but pinned for hygiene.
+  # CVE pin — tmp is dead code here (no Flatpak target), kept for hygiene.
+  # See docs/socket-security.md (2026-05-30).
   tmp: '0.2.7'
-  # CVE-2024-47764 (accept-splitting) — transitive via @sveltejs/kit; 0.7.0 is the fix.
+  # CVE pin — see docs/socket-security.md (2026-06-08).
   cookie: '0.7.0'
-  # GHSA-52cp-r559-cp3m (CVSS 7.5, quadratic-time DoS via chained merge keys) — transitive via electron-builder.
-  # 2026-08-12: + GHSA-5p4m-2wfm-xmqj (no CVE assigned; CVSS 7.5) — resolveYamlOmap()'s O(n²)
-  # key-uniqueness scan (the CVE-2026-59870 fix from the 5.x line, never backported to 4.x). Also
-  # reachable via electron-updater (real runtime dep, parses latest-linux.yml from our own
-  # HTTPS+SHA-512-verified release feed — not attacker-controlled input despite the CVSS score).
-  # 2026-09-11: + CVE-2026-84375 / GHSA-2883-xcg3-v3hh (CVSS 7.5) — maxTotalMergeKeys doesn't count
-  # empty mappings, so a chain of merged empty-mapping references does O(N*K) work while the guard
-  # counter stays flat. Fixed at 4.3.2. No cooldown exception needed: released 2026-08-26, 16 days
-  # before this bump.
+  # CVE pin — see docs/socket-security.md (2026-09-11).
   js-yaml: '4.3.2'
-  # Security patch — transitive via electron-builder and friends.
+  # CVE pin — see docs/socket-security.md (2026-06-15).
   form-data: '4.0.6'
-  # GHSA-r292-9mhp-454m (mapHas/filesFilter stack-overflow DoS) + 4 earlier CVEs it supersedes
-  # (GHSA-23hp-3jrh-7fpw gzip-bomb DoS, GHSA-8x88-c5mf-7j5w replace() infinite loop,
-  # GHSA-gvwx-54wh-qm9j PAX NUL-byte uncaught exception, GHSA-w8wr-v893-vjvp PAX numeric-path
-  # type confusion). Transitive via node-gyp and electron-builder.
+  # CVE pin — see docs/socket-security.md (2026-07-27).
   tar: '7.5.21'
-  # GHSA-v2hh-gcrm-f6hx (backslash authority-delimiter host confusion) + GHSA-4c8g-83qw-93j6
-  # (failed IDN canonicalization host confusion). Transitive via ajv (single consumer, ajv@8.20.0).
-  # 2026-08-03: + GHSA-7p8r-x3mc-p8w7 (CVE-2026-18446, CVSS 7.5) — fast-uri parses a `\\`/`/\`/`\/`
-  # authority introducer as no-authority (folds into path), while Node's native WHATWG URL (used by
-  # fetch()/undici/http) treats `\` as interchangeable with `/` for special schemes, so the two
-  # parsers extract different hosts from the same input. Cooldown exception: 3.1.5 released
-  # 2026-07-31, 3 days before this bump — approved explicitly given the CVSS 7.5 host-confusion
-  # rating (relevant here since ajv's URI parsing feeds JSON Schema validation, not attacker-facing
-  # network requests directly, but the fix is a straight upstream patch with no compatibility risk).
-  # 2026-09-03: 3.1.5 → 3.1.7, closing 6 more GHSAs (all HIGH, all CVSS 7.5
-  # AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N). Four are fixed at 3.1.6 (published 2026-08-23) — two
-  # surfaced as Dependabot alerts #47/#48, two not yet alerted but already in GitHub's global DB:
-  #   GHSA-5jgf-p345-68v8 (CVE-2026-75931) skipped IDN canonicalization on scheme-relative refs
-  #   GHSA-fph4-wmhf-6fwf (CVE-2026-75899) SSRF via repeated hostname percent-decoding
-  #   GHSA-f65p-4m7j-42xc (CVE-2026-75975) SSRF via malformed IPv6 normalization
-  #   GHSA-jqff-g426-hqxp (CVE-2026-76172) host confusion via percent-encoded scheme normalization
-  # Two are fixed only at 3.1.7 (published 2026-09-02) — repo-level advisories on fastify/fast-uri,
-  # not yet propagated to the global DB, so no Dependabot alert yet:
-  #   GHSA-qw65-cvwx-89v3 authority injection via an unvalidated port in serialize()
-  #   GHSA-58mr-gqgx-xq4g host confusion via unbalanced or misplaced IP-literal brackets
-  # 3.1.6 clears the 10-day window on its own (11 days old) and would close the first four; 3.1.7 is
-  # the target to also close the 3.1.7-only pair and pre-empt their alerts. Cooldown exception:
-  # 3.1.7 released 2026-09-02, 1 day before this bump (9 short of the 10-day window — tied for the
-  # project's largest) — approved explicitly given the uniform CVSS 7.5 host-confusion/SSRF rating
-  # and that ajv's fast-uri use is build-time JSON Schema $id/$ref resolution (electron-builder is a
-  # devDependency), never attacker-facing input. A pin, not a force: ajv@8.20.0 declares
-  # `fast-uri: ^3.0.1`. Consumer smoke test (docs/dependency-verification.md step 5): ajv@8.20.0
-  # compiles and validates schemas carrying $id/$ref/$recursiveRef unchanged under 3.1.7, export
-  # shape (`parse`/`serialize`/`resolve`/`equal`/`normalize`/`serialize`) intact, and both
-  # 3.1.7-only PoCs (a bad-port `serialize()` input, an unbalanced `[` IP literal) now fail closed.
-  # See docs/socket-security.md.
+  # CVE pin — see docs/socket-security.md (2026-09-03).
   fast-uri: '3.1.7'
-  # GHSA-mh99-v99m-4gvg (unbounded expansion length OOM) + GHSA-3jxr-9vmj-r5cp (exponential-time
-  # DoS) + GHSA-rgw5-rvv9-x895 (CVSS 7.5, bypasses the maxLength mitigation 5.0.8 shipped for
-  # GHSA-mh99-v99m-4gvg via unbounded intermediate arrays). Three major lines are pulled in by
-  # different consumers and are NOT cross-compatible — verified empirically: forcing 5.x onto the
-  # 1.x/2.x consumers throws real TypeErrors (`expand is not a function`) because brace-expansion@5.x
-  # switched to a named-export-only CJS build (tshy), while minimatch@3.x/5.x/9.x call the old
-  # default-callable export directly. Scoped per line by requested range:
-  #   @1 (minimatch@3.1.5 → glob@7.2.3 → @electron/asar, dir-compare)
-  #   @2 (minimatch@5.1.9, minimatch@9.0.9 → filelist, @electron/universal)
-  #   @5 (minimatch@10.2.5 → eslint tooling)
-  # Bumped 2026-08-03 to 1.1.18/2.1.4/5.0.9, closing GHSA-rgw5-rvv9-x895 on all three lines and
-  # retiring the 2026-07-27 residual-risk carve-out below it: that decision assumed no 1.x/2.x
-  # backport existed for GHSA-mh99-v99m-4gvg, but 1.1.17/2.1.3 were published afterward and this
-  # bump supersedes them too. Cooldown exception: all three versions released 2026-07-30, 4 days
-  # before this bump — approved explicitly given the CVSS 7.5 rating; real-world exposure stays low
-  # (EPSS 0.003, build-time tooling operating on our own glob patterns, not attacker-controlled input).
+  # CVE pins, split per major line — do NOT collapse to one version: 5.x is a
+  # named-export-only CJS build, while minimatch@3/5/9 call the old
+  # default-callable export (verified empirically — real TypeErrors).
+  # See docs/socket-security.md (2026-08-03).
   'brace-expansion@1': '1.1.18'
   'brace-expansion@2': '2.1.4'
   'brace-expansion@5': '5.0.9'
-  # GHSA-r28c-9q8g-f849 (sourceMappingURL path traversal → arbitrary .map file disclosure) +
-  # GHSA-fxqj-rqcc-2cmp. Transitive via vite/svelte-eslint-parser. Cooldown exception: 8.5.23
-  # released 3 days before this patch, approved explicitly given the severity.
+  # CVE pin — see docs/socket-security.md (2026-07-27).
   postcss: '8.5.23'
-  # GHSA-w9m9-85wc-3x92 / CVE-2026-9358 (CVSS v4 Low — Availability-only; CWE-404). Uncontrolled
-  # recursion in container.js toString() (AST serialization) → stack-overflow DoS on a deeply
-  # nested selector. Affected >= 7.1.0, < 7.1.3 (also < 6.1.3, but no 6.x in the tree); fixed at
-  # 7.1.3, pinned to 7.1.5 (latest). Transitive via svelte-eslint-parser → eslint-plugin-svelte
-  # (root devDependency) — ESLint tooling, lint/build-time only, never in the packaged
-  # .deb/.rpm/.AppImage, and it only parses our own components' <style> blocks, not
-  # attacker-controlled input (upstream itself rates user-generated-CSS DoS as low risk). This is
-  # a pin, not a force: 7.1.5 is inside svelte-eslint-parser@1.8.0's declared ^7.0.0. No cooldown
-  # exception — 7.1.5 released 2026-08-07, 26 days before this bump.
+  # CVE pin — see docs/socket-security.md (2026-09-02).
   postcss-selector-parser: '7.1.5'
-  # CVE-2026-9678 (shared-cache info disclosure, CVSS 5.9) + CVE-2026-9697 (TLS bypass via SOCKS5, CVSS 7.4) —
-  # both superseded by this bump. 2026-08-03: patches 5 more CVEs at once (CVE-2026-13697/GHSA-4cwx-7wf7-3272
-  # cross-user cache disclosure + parse crash, CVE-2026-16728/GHSA-8xcm-r25x-g524 response desync via retry
-  # interceptor, CVE-2026-16729/GHSA-v3r7-h72x-cjcm cookie injection, CVE-2026-14643/GHSA-jr45-8vmc-qm54
-  # cache-control whitespace parse bypass, CVE-2026-15157/GHSA-m8rv-5g2x-5cg5 CRLF injection via duck-typed
-  # blob.type). All 5 patched at 7.29.0 — no per-CVE version split needed.
-  # UNIFIED single override (was split @electron/get 7.x / node-gyp 6.x): node-gyp's own package.json still
-  # declares "undici": "^6.25.0" (7.x is outside its stated semver contract), but verified empirically before
-  # unifying — installed 7.29.0, required it directly from node-gyp's own dependency path, and replayed
-  # lib/download.js's exact calls (`new RetryAgent(new Agent(), {maxRetries: 3})`,
-  # `new RetryAgent(new EnvHttpProxyAgent(opts), {maxRetries: 3})`, a real `fetch()` through that dispatcher
-  # against a live URL) — all succeeded, no API break. `pnpm why undici` confirms one resolved version only.
+  # CVE pin, deliberately unified into one entry — do NOT re-split per consumer.
+  # node-gyp declares undici ^6.25.0, but 7.29.0 was verified against its own
+  # lib/download.js call shapes. See docs/socket-security.md (2026-08-03).
   undici: '7.29.0'
-  # Opportunistic bump within ^12.2.0 (declared by @electron/rebuild@4.0.4). Released 2026-06-05.
+  # Opportunistic bump inside @electron/rebuild's declared ^12.2.0 — not a CVE
+  # pin. See docs/socket-security.md (2026-06-18).
   node-gyp: '12.4.0'
-  # Socket obfuscatedFile/supplyChainRisk flag on the 1.11.1 minified bundle (package/dist/emnapi.min.mjs),
-  # confidence 0.9 but Socket's own analyst note found no malicious behavior (dynamic Function used only for
-  # environment capability probing). 1.11.2 doesn't reproduce the flag. Transitive via
-  # @rolldown/binding-wasm32-wasi (optional WASM fallback binding for Vite's Rolldown bundler).
+  # Socket obfuscatedFile/supplyChainRisk pin, no CVE — 1.11.2 doesn't reproduce
+  # the flag. See docs/socket-security.md (2026-07-13).
   '@emnapi/runtime': '1.11.2'
-  # CVE-2026-67213 / GHSA-2v37-7h3g-55p8 (CVSS 8.2, infinite loop in customAlphabet/customRandom
-  # when called with size: 0) — transitive via postcss@8.5.23 (build-time CSS tooling; declares
-  # nanoid: ^3.3.16), which never calls either custom-generator function.
-  # 2026-08-13: corrects the 2026-08-12 pin below — 3.3.17 (adopted then) is still inside the
-  # advisory's own vulnerable range (< 3.3.18); 3.3.18 is the actual first patched version per
-  # GHSA-2v37-7h3g-55p8 and npm's registry timestamps (3.3.17 released 2026-08-03, 3.3.18 released
-  # 2026-08-07). See docs/socket-security.md for the full writeup. Cooldown exception, larger than
-  # the original: 3.3.18 released 2026-08-07, 6 days before this bump (4 short of the 10-day
-  # window) — approved explicitly given the unchanged CVSS 8.2 rating.
+  # CVE pin — see docs/socket-security.md (2026-08-13).
   nanoid: '3.3.18'
-  # 12 GHSAs published 2026-08-21 (no CVE IDs assigned yet, self-disclosed by the xmldom
-  # maintainers), superseding the 0.8.14/0.9.11 pair adopted below on 2026-08-13 — both are
-  # themselves in-range for most of this batch. 7 affect both lines (0.7.0-0.8.14 and
-  # 0.9.0-0.9.11): GHSA-c7q8-3ch8-vqpv (PI target injection bypasses requireWellFormed),
-  # GHSA-965w-775f-mr7g (quadratic-memory consumption), GHSA-6gmq-8vp8-gcm6 (XML fragment
-  # injection via EntityReference.nodeName), GHSA-8344-3jmq-59r6 (quadratic-time attribute
-  # dedup), GHSA-93r5-fhx6-vmg9 (quadratic-time malformed-input recovery),
-  # GHSA-27p8-2357-5qqv (DocType name injection bypasses requireWellFormed), GHSA-6h8r-xr42-gp59
-  # (end-tag name followed by line break + trailing content silently accepted). 1 affects only
-  # 0.8.x: GHSA-x4fp-j954-r2f4 (ReDoS in the 0.8.x end-tag whitespace-trim regex). 4 affect only
-  # 0.9.x: GHSA-6mj3-qw4j-hgrw (HTML raw-text closing-tag case mismatch, O(n²) output
-  # amplification), GHSA-3px3-54cx-rmw9 (Name/QName validation bypass via embedded line
-  # terminator), GHSA-vr34-hp96-76pp (DocType publicId/systemId bypass via line terminator,
-  # 0.9.10-0.9.11 only), GHSA-jxjr-3g7g-3944 (element/attribute name validation bypass via line
-  # terminator, 0.9.11 only). Fixed at 0.8.15 and 0.9.12 respectively (both non-deprecated;
-  # `pnpm view @xmldom/xmldom@0.9.11 deprecated` / `@0.8.14` both return "this version has
-  # critical issues, please update to the latest version" — the Socket alert that surfaced this
-  # was that deprecation notice, not a CVSS-scored finding).
-  # Two branches in the tree, still NOT unified to one version — the 2026-08-13 finding
-  # (plist@3.1.0 calls `new DOMParser().parseFromString(xml)` with no mimeType arg; xmldom 0.9.x's
-  # parseFromString throws TypeError when isValidMimeType(undefined) is false) still holds, so
-  # 0.9.12 cannot go under the 3.1.0 branch. Re-verified for this round, isolated install:
-  # plist@3.1.0 + xmldom@0.8.15 override, ran plist.parse()/plist.build() on a sample Info.plist —
-  # both succeed, no TypeError. The 0.8.x line's mimeType handling wasn't tightened by this
-  # batch's requireWellFormed fixes, so 0.8.15 stays compatible with plist@3.1.0 as-is. Considered
-  # and rejected: forcing a `plist: '3.1.1'` override to collapse both branches and drop the
-  # 0.8.x pin entirely — mechanically viable, but buys zero extra security (0.8.x already has a
-  # clean, non-deprecated patch) at the cost of overriding app-builder-lib's own exact `"3.1.0"`
-  # pin (unchanged from 26.15.1 through the 27.0.0 alphas as of 2026-08-28) on a code path already
-  # established as unreachable below.
-  # Reachability unchanged from 2026-08-13: both branches are transitive via app-builder-lib
-  # (electron-builder), whose own `plist` usage lives in electronMac.js, targets/pkg.js (macOS
-  # .pkg target), and LibUiFramework.js (an Electron-alternative framework Analecta doesn't use)
-  # — none of those run when packaging `.deb`/`.rpm`/`.AppImage`, Analecta's only targets. The
-  # mathml-to-latex branch (via defuddle) is a dev-only diagnostic tool, never a shipped runtime
-  # dep (see docs/defuddle-decision.md).
-  # Cooldown exception: both 0.8.15 and 0.9.12 released 2026-08-21, 7 days before this bump (3
-  # short of the 10-day window) — approved explicitly despite no CVE ID/CVSS score yet and the
-  # non-reachability above, given severity is GitHub-rated "high" on most of the 12 and the
-  # deprecation notice on the superseded versions. See docs/socket-security.md.
+  # Advisory pins, two branches held apart on purpose — do NOT collapse to one
+  # version: plist@3.1.0 calls parseFromString() with no mimeType argument, which
+  # xmldom 0.9.x rejects with a TypeError.
+  # See docs/socket-security.md (2026-08-28).
   'plist@3.1.0>@xmldom/xmldom': '0.8.15'
   'plist@3.1.1>@xmldom/xmldom': '0.9.12'
   'mathml-to-latex@1.8.0>@xmldom/xmldom': '0.9.12'
