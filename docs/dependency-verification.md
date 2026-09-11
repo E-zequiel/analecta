@@ -471,6 +471,42 @@ consumer to a major it never declared, risking a runtime breakage at build
 time. Document the two entries separately so a future reviewer doesn't
 "simplify" them into one.
 
+### Comment convention for `overrides:`
+
+`docs/socket-security.md` → *Resolved CVEs* is the source of truth for **why**
+an override exists: advisory IDs, CVSS, reachability analysis, the consumer
+smoke test from step 5, and any cooldown exception. Its sections are dated and
+append-only. **`pnpm-workspace.yaml` does not restate any of it.** The file had
+accumulated a second copy of that narrative, re-appended in place on every bump
+— `js-yaml` reached three stacked dated notes. That is a chronological log
+living in a config file: it drifts from the doc as soon as one side is
+corrected and the other isn't.
+
+Each entry carries one pointer line naming the dated section:
+
+```yaml
+# CVE pin — see docs/socket-security.md (2026-09-11).
+js-yaml: '4.3.2'
+```
+
+Add prose beyond that pointer only for **an invariant that editing this file
+alone, without reading the docs, could silently undo**. The previous section's
+"don't simplify them into one" is exactly such an invariant, and so is its
+inverse. Three apply today: the per-major `brace-expansion` split and the
+two-branch `@xmldom/xmldom` split, neither of which may be collapsed; and the
+unified `undici` entry, which may not be re-split, despite `node-gyp` declaring
+`^6.25.0`. Keep each to a line or two, stating the constraint and what breaks
+if it is violated — not the evidence, which belongs in the doc.
+
+When a pin is bumped, update the date in its pointer and record the new
+material in `docs/socket-security.md`. Don't append a second note here.
+
+This convention does not extend to `allowBuilds`, higher up in the same file.
+That block's comment documents a hazard you can only hit while editing it —
+pnpm auto-writes a `<pkg>: set this to true or false` placeholder that is not
+`false` (see step 3 above) — and `docs/github-actions-security.md` Control 11
+deliberately delegates to it for the re-adding procedure. It stays where it is.
+
 ## See also
 
 - `docs/syntax-highlighting.md` — documents the Shiki side of light-theme
