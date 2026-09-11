@@ -110,6 +110,12 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 
 ## Resolved CVEs
 
+### 2026-09-11
+
+| Package | CVE(s) | Fix |
+|---------|--------|-----|
+| `js-yaml@4.3.1` | CVE-2026-84375 / GHSA-2883-xcg3-v3hh (CVSS 7.5 HIGH, `AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H`) — `maxTotalMergeKeys` (default 10000) counted only the *keys* of each merge-source mapping, not the source mapping itself. A YAML document that merges a large sequence of *empty* mappings (`{}`, zero keys each) into K targets does `O(N*K)` work in `mergeMappings()` while `totalMergeKeys` never increments, so the guard never trips — the advisory's own PoC (N=20000 empty mappings, K=20000 targets) measured ~13s. | `overrides: {js-yaml: '4.3.2'}` in `pnpm-workspace.yaml`, bumped in place from `4.3.1` — supersedes the `js-yaml@4.3.0` row below. **Not a version bump alone — a real code fix:** `mergeMappings()` now calls `chargeMergeWork(state)` once for the source mapping itself, before iterating its keys (`lib/loader.js:388`, comment: "Count the source mapping itself to bound sequences of empty mappings"), plus an unconditional new cap — `storeMappingPair()` throws `'abnormal merge sequence size'` if a merge sequence (`<<: [...]`) exceeds 100 elements (`lib/loader.js:438`), independent of `maxTotalMergeKeys`. **Reachability:** transitive via `electron-builder`/`dmg-builder`/`app-builder-lib` (build-time packaging tooling, not exercised outside `pnpm dist`) **and** `electron-updater` (a real runtime dependency — confirmed by reading the installed package: `Provider.js:97` calls `js_yaml_1.load(rawData)` on the `latest-linux.yml` manifest fetched from this project's own GitHub Releases feed over HTTPS with SHA-512 verification, not attacker-controlled input despite the CVSS score). **Consumer smoke test** (per `docs/dependency-verification.md` step 5 — neither call site is exercised by `check.sh`) against the real `node_modules/.pnpm/js-yaml@4.3.2/` instance: replayed `Provider.js`'s exact `load()` call on a representative `latest-linux.yml`, output unchanged; replayed the advisory's own PoC verbatim (`YAML11_SCHEMA`, N=20000) — now rejected in ~18ms with `abnormal merge sequence size` instead of completing in ~13000ms, confirming the fix engages; a small, legitimate `<<: *defaults` merge (well under the new 100-element cap) still resolves correctly, ruling out a regression on ordinary merge-key usage. **No cooldown exception needed:** `4.3.2` released 2026-08-26, 16 days before this bump. |
+
 ### 2026-09-03
 
 | Package | CVE(s) | Fix |
