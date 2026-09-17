@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency updates: 7 packages (2026-09-03).
 - Dependency updates: 3 packages (2026-09-10).
 - `backend/pyproject.toml`: `build-system.requires` bumped from `uv_build>=0.11.8,<0.12.0` to `>=0.12.13,<0.13.0`, aligning the pinned build backend with the `uv 0.12.13` toolchain installed via `mise upgrade --bump` (2026-09-11) — the prior upper bound excluded the now-current uv, which `uv build` was silently tolerating via a compatibility fallback rather than failing.
+- Dependency updates: 2 packages (2026-09-17).
 
 ### Security
 
