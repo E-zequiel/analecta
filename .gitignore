@@ -15,7 +15,7 @@ wheels/
 env/
 
 # ========================
-# Claude Code / AI State
+# AI State
 # ========================
 .claude/settings.json
 .claude/settings.local.json
@@ -30,6 +30,11 @@ CLAUDE.md
 .claude/agent-memory-local
 .claude/first-run
 .claude/assistant-daemon-state.json
+# Local Pi runtime state
+.atl/
+AGENTS.md
+AGENTS.override.md
+.codegraph/
 
 
 # ========================

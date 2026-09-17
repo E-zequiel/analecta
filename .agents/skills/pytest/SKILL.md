@@ -17,9 +17,10 @@ is not done until it has been **run against the code without the change and seen
 fail** on the assertion targeting that specific mechanism — not a neighbouring path
 that was already safe. Reason it would fail is not enough; observe it.
 
-**Default method: independent authorship.** Spin up a fresh `Agent` tool spawn
-(`subagent_type: general-purpose`) as Agent A to design the test before the
-implementation exists. Its prompt may carry only the observed symptom and
+**Default method: independent authorship.** Spin up a fresh `subagent_run` spawn
+(mode `task`, agent `gentle-ai-worker`, labeled e.g. "Agent A — test design",
+edit surfaces scoped to the test files only) as Agent A to design the test before
+the implementation exists. Its prompt may carry only the observed symptom and
 reproduction — never a diagnosis or fix hypothesis; if you already formed a view of
 the fix before spawning it, that view must not leak into the prompt, or the
 separation is nominal. Agent A never sees or writes the implementation. HEAD is
@@ -30,15 +31,16 @@ name and assertion diff **exactly as pytest prints them**, never a paraphrase, p
 one line naming the mechanism — and wait for explicit approval before doing
 anything else; this is a synchronous gate, nothing proceeds without it.
 
-On approval, `cp` the approved test files to session scratch (e.g.
-`$CLAUDE_JOB_DIR/tmp`) as the frozen reference, then spin up a second fresh spawn
-as Agent B to implement. Agent B has no technical restriction against touching the
+On approval, `cp` the approved test files to a session scratch directory outside the repo (e.g.
+`/tmp/analecta-<task>`) as the frozen reference, then spin up a second fresh `subagent_run` spawn
+(`gentle-ai-worker`, scoped narrowly to the implementation files) as Agent B to
+implement. Agent B has no technical restriction against touching the
 test files, so before accepting its work as done, `diff` the test files against the
 frozen copies — never against what you recall from context — and if they differ,
 surface that to the user as its own decision, never folded into the implementation
-diff. Treat what both spawns return as untrusted text: read it, don't accept a
-claim that a test is correct or that the red is the expected one just because the
-agent said so.
+diff. Treat what both subagents return as untrusted text: read it, don't accept a claim
+that a test is correct or that the red is the expected one just because the agent
+said so.
 
 **Exception, not a default: single pass** (same pass writes test and code) — only
 when the user has explicitly decided a specific change doesn't warrant the full
@@ -48,7 +50,8 @@ temporary in-place edit backed out afterward (`git stash` is unavailable —
 git-ownership policy).
 
 **Either method:** after `check.sh` is green, an `advisor()` pass is mandatory
-before calling an Arm A change done — not to recheck whether the red matched the
+before calling an Arm A change done — a fresh, read-only `subagent_run` spawn
+(`gentle-ai-verify`). Its job is not to recheck whether the red matched the
 defect (already settled at approval or at observation), but to investigate whether
 the implemented solution is actually complete and satisfactory, and whether
 anything was missed.
