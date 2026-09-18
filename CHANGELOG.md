@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `devalue` bumped from `5.9.0` to `5.9.2` (`overrides:` entry in `pnpm-workspace.yaml`), patching GHSA-9rgm-9g3h-6x36 / CVE-2026-81176 (quadratic-time DoS: `devalue.parse` fails to reject out-of-bounds indices; transitive via `@sveltejs/kit`/`svelte`, not reachable with untrusted data in this adapter-static build) — see `docs/security-log.md`.
 - `soupsieve` bumped from `2.8.4` to `2.9.2` (#109 via Dependabot, then floor raised in `backend/pyproject.toml`'s `constraint-dependencies`), patching GHSA-j934-xhv5-fg8f and GHSA-gjv8-xp57-g29c (quadratic-CPU DoS in the CSS selector compiler, fixed in `2.9`) — see `docs/security-log.md`.
 - `@xmldom/xmldom` bumped from `0.8.14`/`0.9.11` to `0.8.15`/`0.9.12` (two version-scoped `overrides:` entries in `pnpm-workspace.yaml`, kept separate rather than unified), patching 12 GHSAs published 2026-08-21 (well-formedness/validation bypasses past `requireWellFormed`, plus quadratic-time and ReDoS denial-of-service on untrusted XML/HTML input) — see `docs/security-log.md`.
 - `postcss-selector-parser` pinned to `7.1.5` (new `overrides:` entry in `pnpm-workspace.yaml`), patching GHSA-w9m9-85wc-3x92 / CVE-2026-9358 (stack-overflow DoS via uncontrolled recursion in AST serialization) — see `docs/security-log.md`.
