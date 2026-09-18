@@ -1,6 +1,6 @@
-# Socket Security — Analecta
+# Security Log — Analecta
 
-Catalog of triaged Socket alerts, false-positive patterns, dismissed Dependabot alerts, and resolved CVEs for the Analecta project.
+Catalog of triaged dependency-security alerts — Socket alerts and false-positive patterns, dismissed Dependabot alerts, and resolved CVE/GHSA advisories across the npm and Python ecosystems — for the Analecta project.
 
 Referenced by `docs/github-actions-security.md` Controls 9 and 12.
 
@@ -110,6 +110,17 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 
 ## Resolved CVEs
 
+### 2026-09-18 — Python/uv `constraint-dependencies`
+
+Security floors in `[tool.uv] constraint-dependencies` (`backend/pyproject.toml`). Each is a **floor, not a pin** — `uv` resolves the newest version satisfying every declared range above it, so the floor only removes vulnerable resolutions. The one-line comments in `pyproject.toml` point here; this table carries the rationale so the file itself doesn't have to.
+
+| Package | Advisory(ies) | Floor & rationale |
+|---------|--------------|-------------------|
+| `starlette@1.0.1` | CVE-2026-54283 (HIGH 7.5, `request.form()` DoS), CVE-2026-48818 (HIGH 7.5, `StaticFiles` SSRF, Windows-only), CVE-2026-48817 (MODERATE 5.3, `HTTPEndpoint` getattr dispatch), CVE-2026-54282 (LOW 3.7, `request.url.hostname` poisoning) | `starlette>=1.3.1` — transitive dep (via `fastapi`, `sse-starlette`); `fastapi` only requires `>=0.46.0`, so a floor here is sufficient. |
+| `soupsieve@2.8.3` | GHSA-2wc2-fm75-p42x (HIGH 7.5, memory exhaustion via large comma-separated CSS selector lists), GHSA-836r-79rf-4m37 (HIGH 7.5, ReDoS in the attribute-value regex) — both fixed by 2.8.x; GHSA-j934-xhv5-fg8f + GHSA-gjv8-xp57-g29c (2026-09-18, availability-only quadratic-CPU DoS in the selector compiler — unanchored trailing-whitespace/comment trim and adjacent-quantifier identifier backtracking; ~10 s CPU per ~20 KB selector and ~17 s per ~12 KB selector, also triggerable through `BeautifulSoup.select()` — both fixed in 2.9) | `soupsieve>=2.9.2` — transitive dep of `beautifulsoup4`. Analecta's own code never calls `.select()`/`.select_one()`/`soupsieve.compile()` (extraction uses only `find_all()` with hardcoded inputs), so both ReDoS/DoS classes need attacker-controlled selector input — the floor is maintained as defense-in-depth for the transitive chain. |
+| `lxml-html-clean@0.4.4` | GHSA-4jhm-jv67-739f (CVSS 8.2 HIGH, `Cleaner` does not strip `javascript:` URLs from `xlink:href` with `safe_attrs_only=False`) | `lxml-html-clean>=0.4.5` — transitive dep of `readability-lxml` (via `lxml[html-clean]`), which uses exactly that `Cleaner` configuration in `readability/cleaners.py`, on HTML fetched from arbitrary user-supplied URLs — the vulnerable configuration is live. Frontend's `markdown-it` runs with `html: false`, an incidental downstream mitigation, not a substitute for the fix. |
+| `setuptools@82.0.1` | GHSA-h35f-9h28-mq5c (MODERATE 6.1, `MANIFEST.in` exclusion bypass in sdist builds via NFC/NFD Unicode normalization collision on macOS APFS/HFS+) | `setuptools>=83.0.0` — transitive dep of `pyinstaller` (unconstrained range). See also the 2026-07-27 entry below. |
+
 ### 2026-09-11
 
 | Package | CVE(s) | Fix |
@@ -140,6 +151,12 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 |---------|--------|-----|
 | `nanoid@3.3.17` | CVE-2026-67213 / GHSA-2v37-7h3g-55p8 (CVSS 8.2 HIGH) | **Corrects the 2026-08-12 entry below.** `3.3.17` (adopted then) is still inside the advisory's own vulnerable range (`< 3.3.18`) — confirmed via the GHSA page itself ("Patched versions: 3.3.18"), Socket's own CSV export (`firstPatchedVersionIdentifier: "3.3.18"`), and npm registry timestamps (`3.3.17` published 2026-08-03, `3.3.18` published 2026-08-07 — distinct, later release). The 2026-08-12 write-up's reachability analysis was correct (`postcss@8.5.23`, build-time only, never calls `customAlphabet`/`customRandom`); only the adopted version number was wrong. `overrides: {nanoid: '3.3.18'}` in `pnpm-workspace.yaml`. **Cooldown exception:** `3.3.18` released 2026-08-07, 6 days before this bump (4 short of the 10-day window, a larger exception than the original) — approved explicitly given the unchanged CVSS 8.2 rating. |
 | `@xmldom/xmldom@0.8.13` / `@xmldom/xmldom@0.9.10` | GHSA-w2rr-34g9-rvrj (CVSS 8.7, `createElement()` doesn't validate the element name — a crafted name survives serialization and injects extra attributes/event handlers), GHSA-4w3w-2rp5-g8jm (CVSS 8.7, same injection class via `setAttribute()` bypassing the name validation `createAttribute()` enforces) — both affect `0.7.0-0.8.13` and `0.9.0-0.9.10`, and neither is caught by `requireWellFormed: true`, previously the recommended mitigation. Plus GHSA-g53g-w8rj-fmg7 (CVSS 8.7, `0.9.0-beta.9-0.9.10` only — quadratic-time backtracking parsing an unterminated `<?` processing instruction, stalls the event loop on untrusted XML; the `0.8.x` line was never affected, different bounded parser). All three fixed at `0.8.14` and `0.9.11`. | Two version-scoped `overrides:` entries in `pnpm-workspace.yaml`, deliberately **not unified to one version**: `'plist@3.1.0>@xmldom/xmldom': '0.8.14'` and `'plist@3.1.1>@xmldom/xmldom': '0.9.11'` (plus `'mathml-to-latex@1.8.0>@xmldom/xmldom': '0.9.11'` for the unrelated `defuddle` branch, same target version). Verified empirically that unifying would break `plist@3.1.0`: downloaded and diffed both versions' tarballs — the only functional difference between `plist@3.1.0` and `3.1.1` is that `3.1.1`'s `lib/parse.js` added an explicit `"text/xml"` second argument to `DOMParser.parseFromString()`, while `3.1.0` still calls it with none. Reading `xmldom@0.9.11`'s own `dom-parser.js`/`conventions.js` confirms `isValidMimeType(undefined)` is `false`, so `parseFromString` throws a `TypeError` when called without a mimeType — forcing `0.9.11` onto the `3.1.0` branch would break `plist.parse()` outright, not just risk an incompatibility. **Reachability:** both `plist` branches are transitive via `app-builder-lib` (electron-builder); grepping its compiled output shows `plist` is only required from `electronMac.js`, `targets/pkg.js` (macOS `.pkg` target), and `LibUiFramework.js` (an Electron-alternative framework Analecta doesn't configure) — none of those run when packaging `.deb`/`.rpm`/`.AppImage`, Analecta's only build targets. The `mathml-to-latex` branch is a `defuddle` dependency (root `package.json` devDependency, dev-only diagnostic tool, never a shipped runtime dep — see `docs/defuddle-decision.md`). **Cooldown exception, the largest in this project's history:** both `0.8.14` and `0.9.11` released 2026-08-12, 1 day before this bump (9 short of the 10-day window) — approved explicitly given the CVSS 8.7 rating despite the non-reachability above. |
+
+### 2026-08-13
+
+| Package | CVE(s) | Fix |
+|---------|--------|-----|
+| `electron@42.1.0` (direct dependency, `electron/package.json`) | GHSA-r4w5-6pfg-jxp5 / CVE-2026-70606 — session-isolation flaw in protocol response handling: a `ProtocolResponse` omitting an explicit session could leak cached responses across isolated session partitions. | Bumped to `42.5.1`. **Not reachable in this app:** both custom protocol handlers (`app://`, `analecta-file://`) return `Response` objects via `protocol.handle()` rather than the legacy `ProtocolResponse` shape, and only `session.defaultSession` is used — no partitioned sessions exist to leak across. |
 
 ### 2026-08-12
 
@@ -231,3 +248,20 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 | `form-data@4.0.5` | CVE-2026-12143 (CVSS 8.7, CRLF injection via untrusted field names) | `overrides: {form-data: '4.0.6'}` |
 | `tar@7.5.15` | CVE-2026-53655 (CVSS 6.9, PAX header differential) | `overrides: {tar: '7.5.16'}` |
 | `vite@8.0.12` | CVE-2026-53571 (CVSS 8.2, Windows NTFS bypass), CVE-2026-53632 (CVSS 5.5, Windows NTLM) | `overrides: {vite: '8.0.16'}` (devDep; zero Linux runtime risk) |
+
+---
+
+## Application & script security hardening
+
+Security-relevant changes to Analecta's own code and build tooling — not dependency advisories — recorded here so the CHANGELOG's `### Security` one-liners carry a full-text backing. Newest first; each date is the release that carried the change.
+
+### 2026-08-13 — `scripts/deps_update.py` GitHub Actions log-injection hardening (release 0.5.2)
+
+- `scripts/deps_update.py`: two GitHub Actions `::error::` prints (`_record_error()`, and `_resync_node_modules()`'s own) carried raw, unsanitized subprocess-derived text, unlike the PR-body path which already ran the same text through `_sanitize_reason()`. An embedded newline in multi-line stderr (routine for pnpm's `ERR_PNPM_*` blocks) could put a later line at the start of its own log line, letting it be parsed as an unrelated Actions workflow command (e.g. `::stop-commands::`) instead of inert log text. Both now collapse newlines the same way before printing, with a much wider limit than the PR body's markdown-table-cell truncation — only the newline-collapsing was ever the point.
+
+### 2026-07-28 — extraction & reading-view privacy hardening (release 0.4.0)
+
+- Extraction requests no longer identify Analecta or its maintainer to the sites they fetch — the previous User-Agent embedded a personal GitHub URL on every request. Requests now present as a generic, current Chrome on Linux, with a coherent header set (client hints, fetch metadata) to match, single-sourced from Electron's own bundled Chromium version so it can't go stale or drift from the browser Analecta actually ships with. See `docs/privacy.md`.
+- Every URL the extraction pipeline fetches directly — the submitted URL, any redirect target encountered while fetching it, and remote image URLs discovered in already-fetched page content — is now resolved and validated before the request goes out: only `http(s)` schemes are allowed, the pipeline resolves the host itself, rejects the fetch if any resolved address isn't allocated for public use (loopback, link-local, private including RFC 1918 and CGNAT, reserved, unspecified, benchmarking/documentation ranges, or multicast — including an internal IPv4 address embedded in an IPv4-mapped, NAT64, or deprecated IPv4-compatible IPv6 address), and connects directly to one of the validated addresses it resolved rather than re-resolving the hostname for the connection — closing both a hostname string that encodes a blocked address in a form a naive check wouldn't parse (e.g. decimal/hex/octal IPv4) and a hostname whose DNS answer changes between the check and the connection. A resolved address that refuses or times out the connection falls back to the next validated address for that same hostname, so a dual-stack site isn't broken by one unreachable address family. TLS certificate verification still targets the original hostname. No such validation previously existed for this fetch. See `docs/electron-shell-security.md` § 7.
+- A remote image that fails to download (network error, or a non-image response) now gets one retry and, if that also fails, is replaced with a local placeholder instead of keeping the original remote URL — a preserved URL would re-fetch, and re-expose the reading IP, every time the entry was reopened. A new "Localize remote images" action in Settings → Maintenance backfills any entries already saved with a live remote image reference from before this fix.
+- The reading view's Content Security Policy no longer permits loading images from arbitrary remote (`https:`) hosts — only local vault assets and inline data. Since extraction already localizes every image, this closes off the one remaining path (a hand-edited or otherwise unusual entry) by which a remote image reference could silently re-fetch and expose the reading IP.

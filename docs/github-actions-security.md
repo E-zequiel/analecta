@@ -296,7 +296,7 @@ The script calls `pnpm exec socket` (lockfile-pinned, `socket@1.1.99`) — never
 ### Interpreting results
 
 - **No issues:** proceed.
-- **Known false positives:** check the false-positive catalog in `docs/socket-security.md` before acting.
+- **Known false positives:** check the false-positive catalog in `docs/security-log.md` before acting.
 - **New alert:** investigate before committing. If it is a confirmed false positive, add it to the catalog with a justification. If it is a real risk, do not merge.
 
 ### Quota
@@ -715,7 +715,7 @@ Under Actions → General → "Fork pull request workflows from outside collabor
 
 1. Install with `pnpm add` or `uv add` as usual. If `pnpm add` hits `ERR_PNPM_IGNORED_BUILDS`, see the warning under "Verifying allowlist entries" (Control 11) before touching `pnpm-workspace.yaml` — pnpm auto-writes an unresolved placeholder there that is easy to commit by mistake.
 2. **Immediately run** `./scripts/socket-audit.sh` — do not commit or push before the scan completes.
-3. Review any new alerts against the false-positive catalog in `docs/socket-security.md`.
+3. Review any new alerts against the false-positive catalog in `docs/security-log.md`.
 4. If the alert is a confirmed false positive, add it to the catalog before committing.
 5. If the alert indicates a real risk, do not install the package — find an alternative or escalate.
 6. For new npm packages: the `verify-provenance` CI job will automatically check whether the package has a SLSA provenance attestation. If it does, the attestation is verified against Sigstore on every PR. No manual action required unless the job fails (see Control 10).

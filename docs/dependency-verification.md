@@ -157,7 +157,7 @@ when the consumer's code path is itself covered by the frontend build,
 `overrides:`-forced transitive dependency whose real consumer only runs in a
 code path this project's own build never exercises (e.g. `plist`'s macOS
 `.pkg`/code-signing code, dead weight in a `.deb`/`.rpm`/`.AppImage`-only
-build — see `docs/socket-security.md`'s xmldom entries), and a devDependency
+build — see `docs/security-log.md`'s xmldom entries), and a devDependency
 invoked only by a manual/diagnostic script (`defuddle`, `socket` — the case
 the `deps_update.py` note above already names). "Resolved-and-ignored is not
 the same as taking effect."
@@ -220,7 +220,7 @@ directory) had already answered the planning question — whether `0.8.15`
 still tolerates `plist@3.1.0`'s missing `mimeType` argument — but got
 mistaken for having verified the real change too, and the `0.9.x` branches
 had no smoke test at all until a later audit caught the gap. See
-`docs/socket-security.md`'s 2026-08-28 entry for the full advisory list.
+`docs/security-log.md`'s 2026-08-28 entry for the full advisory list.
 
 ## Worked example (npm / pnpm)
 
@@ -473,7 +473,7 @@ time. Document the two entries separately so a future reviewer doesn't
 
 ### Comment convention for `overrides:`
 
-`docs/socket-security.md` → *Resolved CVEs* is the source of truth for **why**
+`docs/security-log.md` → *Resolved CVEs* is the source of truth for **why**
 an override exists: advisory IDs, CVSS, reachability analysis, the consumer
 smoke test from step 5, and any cooldown exception. Its sections are dated and
 append-only. **`pnpm-workspace.yaml` does not restate any of it.** The file had
@@ -485,7 +485,7 @@ corrected and the other isn't.
 Each entry carries one pointer line naming the dated section:
 
 ```yaml
-# CVE pin — see docs/socket-security.md (2026-09-11).
+# CVE pin — see docs/security-log.md (2026-09-11).
 js-yaml: '4.3.2'
 ```
 
@@ -499,7 +499,12 @@ unified `undici` entry, which may not be re-split, despite `node-gyp` declaring
 if it is violated — not the evidence, which belongs in the doc.
 
 When a pin is bumped, update the date in its pointer and record the new
-material in `docs/socket-security.md`. Don't append a second note here.
+material in `docs/security-log.md`. Don't append a second note here.
+
+The same pointer convention applies to `backend/pyproject.toml`'s
+`[tool.uv] constraint-dependencies` floors: each security comment is one line
+naming the advisory IDs and pointing at the dated entry in
+`docs/security-log.md`, carrying only the "floor, not a pin" invariant locally.
 
 This convention does not extend to `allowBuilds`, higher up in the same file.
 That block's comment documents a hazard you can only hit while editing it —

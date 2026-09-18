@@ -34,7 +34,7 @@ allowBuilds:
 
 # Every entry below is an exact pin adopted for a specific advisory or Socket
 # alert. The full write-up for each — advisory IDs, CVSS, reachability analysis,
-# consumer smoke test, cooldown exception — lives in docs/socket-security.md
+# consumer smoke test, cooldown exception — lives in docs/security-log.md
 # under the dated section each comment names. Those sections are append-only and
 # are the source of truth; don't restate or update them here.
 #
@@ -44,45 +44,45 @@ allowBuilds:
 # not be re-split).
 overrides:
   # CVE pin — tmp is dead code here (no Flatpak target), kept for hygiene.
-  # See docs/socket-security.md (2026-05-30).
+  # See docs/security-log.md (2026-05-30).
   tmp: '0.2.7'
-  # CVE pin — see docs/socket-security.md (2026-06-08).
+  # CVE pin — see docs/security-log.md (2026-06-08).
   cookie: '0.7.0'
-  # CVE pin — see docs/socket-security.md (2026-09-11).
+  # CVE pin — see docs/security-log.md (2026-09-11).
   js-yaml: '4.3.2'
-  # CVE pin — see docs/socket-security.md (2026-06-15).
+  # CVE pin — see docs/security-log.md (2026-06-15).
   form-data: '4.0.6'
-  # CVE pin — see docs/socket-security.md (2026-07-27).
+  # CVE pin — see docs/security-log.md (2026-07-27).
   tar: '7.5.21'
-  # CVE pin — see docs/socket-security.md (2026-09-03).
+  # CVE pin — see docs/security-log.md (2026-09-03).
   fast-uri: '3.1.7'
   # CVE pins, split per major line — do NOT collapse to one version: 5.x is a
   # named-export-only CJS build, while minimatch@3/5/9 call the old
   # default-callable export (verified empirically — real TypeErrors).
-  # See docs/socket-security.md (2026-08-03).
+  # See docs/security-log.md (2026-08-03).
   'brace-expansion@1': '1.1.18'
   'brace-expansion@2': '2.1.4'
   'brace-expansion@5': '5.0.9'
-  # CVE pin — see docs/socket-security.md (2026-07-27).
+  # CVE pin — see docs/security-log.md (2026-07-27).
   postcss: '8.5.23'
-  # CVE pin — see docs/socket-security.md (2026-09-02).
+  # CVE pin — see docs/security-log.md (2026-09-02).
   postcss-selector-parser: '7.1.5'
   # CVE pin, deliberately unified into one entry — do NOT re-split per consumer.
   # node-gyp declares undici ^6.25.0, but 7.29.0 was verified against its own
-  # lib/download.js call shapes. See docs/socket-security.md (2026-08-03).
+  # lib/download.js call shapes. See docs/security-log.md (2026-08-03).
   undici: '7.29.0'
   # Opportunistic bump inside @electron/rebuild's declared ^12.2.0 — not a CVE
-  # pin. See docs/socket-security.md (2026-06-18).
+  # pin. See docs/security-log.md (2026-06-18).
   node-gyp: '12.4.0'
   # Socket obfuscatedFile/supplyChainRisk pin, no CVE — 1.11.2 doesn't reproduce
-  # the flag. See docs/socket-security.md (2026-07-13).
+  # the flag. See docs/security-log.md (2026-07-13).
   '@emnapi/runtime': '1.11.2'
-  # CVE pin — see docs/socket-security.md (2026-08-13).
+  # CVE pin — see docs/security-log.md (2026-08-13).
   nanoid: '3.3.18'
   # Advisory pins, two branches held apart on purpose — do NOT collapse to one
   # version: plist@3.1.0 calls parseFromString() with no mimeType argument, which
   # xmldom 0.9.x rejects with a TypeError.
-  # See docs/socket-security.md (2026-08-28).
+  # See docs/security-log.md (2026-08-28).
   'plist@3.1.0>@xmldom/xmldom': '0.8.15'
   'plist@3.1.1>@xmldom/xmldom': '0.9.12'
   'mathml-to-latex@1.8.0>@xmldom/xmldom': '0.9.12'

@@ -27,30 +27,13 @@ Repository = "https://github.com/E-zequiel/analecta"
 
 [tool.uv]
 constraint-dependencies = [
-    # CVE-2026-54283 (HIGH, request.form() DoS), CVE-2026-48818 (StaticFiles
-    # SSRF, Windows-only), CVE-2026-48817 (HTTPEndpoint getattr dispatch),
-    # CVE-2026-54282 (request.url.hostname poisoning). starlette is a
-    # transitive dep (fastapi, sse-starlette); fastapi only requires
-    # >=0.46.0, so a floor here is sufficient.
+    # Floor, not a pin — CVE-2026-54283 / CVE-2026-48818 / CVE-2026-48817 / CVE-2026-54282: see docs/security-log.md (2026-09-18).
     "starlette>=1.3.1",
-    # GHSA-2wc2-fm75-p42x (HIGH 7.5, memory exhaustion via large
-    # comma-separated CSS selector lists), GHSA-836r-79rf-4m37 (HIGH 7.5,
-    # ReDoS in the attribute-value regex) — both fixed by 2.8.x; and
-    # GHSA-j934-xhv5-fg8f + GHSA-gjv8-xp57-g29c (DoS, quadratic CPU in
-    # selector compile via unanchored trailing-ws/comment trim and
-    # adjacent-quantifier identifier backtracking, fixed in 2.9). Both
-    # ReDoS classes require attacker-controlled selector input; Analecta
-    # itself never calls .select(). soupsieve is a transitive dep of
-    # beautifulsoup4.
+    # Floor, not a pin — GHSA-2wc2-fm75-p42x / GHSA-836r-79rf-4m37 / GHSA-j934-xhv5-fg8f / GHSA-gjv8-xp57-g29c: see docs/security-log.md (2026-09-18).
     "soupsieve>=2.9.2",
-    # GHSA-4jhm-jv67-739f (CVSS 8.2, Cleaner does not strip javascript: URLs
-    # from xlink:href with safe_attrs_only=False). lxml-html-clean is a
-    # transitive dep of readability-lxml (via lxml[html-clean]), which uses
-    # exactly that Cleaner configuration in readability/cleaners.py.
+    # Floor, not a pin — GHSA-4jhm-jv67-739f: see docs/security-log.md (2026-09-18).
     "lxml-html-clean>=0.4.5",
-    # GHSA-h35f-9h28-mq5c (CVSS 6.1, MANIFEST.in exclusion bypass in sdist
-    # builds via NFC/NFD Unicode normalization collision on macOS APFS/HFS+).
-    # setuptools is a transitive dep of pyinstaller (unconstrained range).
+    # Floor, not a pin — GHSA-h35f-9h28-mq5c: see docs/security-log.md (2026-07-27).
     "setuptools>=83.0.0",
 ]
 
