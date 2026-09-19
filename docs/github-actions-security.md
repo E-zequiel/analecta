@@ -203,8 +203,6 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 
 This ensures that if a package that cleared the 4-day cooldown contains a malicious install or runtime payload, it cannot read or use the repository write token.
 
-> **Transition note (2026-09-18):** The minimum release age was reduced from 10 days to 4 days on 2026-09-18. Every dated cooldown-exception entry in `docs/security-log.md` quantifies its exception against the window current on its date — figures such as "9 short of the 10-day window" are historical record, not stale text. This note and the clarifying entry in `docs/security-log.md` are the only places the transition is recorded.
-
 **Bypass via `workflow_dispatch`:** The `cooldown` input (default `4`) can be set to `0` to bypass the gate. `workflow_dispatch` requires repository write access, so this bypass is not available to external contributors.
 
 **Exception approval:** Any update that clears the cooldown gate early — whether by `cooldown=0` dispatch, by merging a Dependabot PR within its minimum-age window, or by any other means — requires explicit maintainer approval before merging. Do not self-certify an exception even when CVE urgency justifies a shorter window; surface it and get a confirmation first.
@@ -213,7 +211,9 @@ This ensures that if a package that cleared the 4-day cooldown contains a malici
 
 **Provenance note:** Lock file hashes provide **integrity** (package content matches the recorded hash). SLSA provenance attestation for npm packages is implemented in the `verify-provenance` CI job (see Control 10). Python provenance remains unimplemented — PyPI-side ecosystem support is still immature. This is a known gap, not an oversight.
 
-**Dependabot PR caveat:** This automated cooldown applies only to packages updated by `deps-update.yml`. Dependabot has its own native cooldown (`cooldown: default-days: 4` in `.github/dependabot.yml`, also applying since 2026-09-18): unconfigured, Dependabot applies a default 3-day cooldown to version updates, and it never applies any cooldown to security updates — so a security-update PR can still carry a version published hours earlier. The manual release-date check therefore remains required before merging any Dependabot package-version PR (see Maintenance Checklist).
+**Dependabot PR caveat:** This automated cooldown applies only to packages updated by `deps-update.yml`. Dependabot has its own native cooldown (`cooldown: default-days: 4` in `.github/dependabot.yml`): unconfigured, Dependabot applies a default 3-day cooldown to version updates, and it never applies any cooldown to security updates — so a security-update PR can still carry a version published hours earlier. The manual release-date check therefore remains required before merging any Dependabot package-version PR (see Maintenance Checklist).
+
+**Transition record:** The deliberate change to this window's value is recorded in `docs/security-log.md` (2026-09-18, release-age window).
 
 ---
 
