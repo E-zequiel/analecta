@@ -42,19 +42,44 @@ _PKG_RE = re.compile(
 # Any 2-space-indented mapping key, used to split the lockfile into entry blocks.
 # `[ \t]{2}` rather than `\s{2}`: `\s` matches newlines under MULTILINE, which
 # would let a match start a line early and swallow the next line's indentation
-# into the key. The key must begin with a non-space character for the same
-# reason, and so nested entries are skipped.
-_ANY_KEY_RE = re.compile(r"^[ \t]{2}'?([^'\n: \t][^'\n:]*?)'?:\s*$", re.MULTILINE)
+# into the key. The scalar must begin with a non-space character for the same
+# reason, and so nested (deeper-indented) entries are never keys: a line with
+# more indentation cannot match, because the scalar's first character may not
+# be a space. `\n` is excluded because `.` never matches a newline, so the
+# match cannot run past its own line. The scalar comes in two explicit
+# alternatives: a *quoted* scalar may contain any character except a single
+# quote or newline — colons included, so a quoted key containing `:` still
+# produces a block and ends up parsed or reported as a parser gap — while an
+# *unquoted* scalar excludes `:` exactly as it always has. Allowing `:` inside
+# an unquoted scalar made a non-key line like `  note: this is prose:` a block
+# start, cutting the preceding entry's block short so the entry landed in
+# neither the parsed nor the reported set. The surrounding quotes stay outside
+# the capture groups and are stripped from the scalar (group 1 = quoted
+# scalar, group 2 = unquoted scalar).
+_ANY_KEY_RE = re.compile(
+    r"^[ \t]{2}(?:'([^'\n]*)'|([^'\n: \t][^'\n:]*?)):\s*$", re.MULTILINE
+)
 # A key is package-shaped if it contains `@`. Structural keys (`packages:`,
 # `settings:`, `importers:` …) never do, and the keys that legitimately contain
 # one without being package entries (override targets, for instance) carry no
 # `integrity:` line in their own block, so they are never reported.
 _PACKAGE_KEY_RE = re.compile(r"@")
-_INTEGRITY_RE = re.compile(r"integrity: (sha512-[A-Za-z0-9+/=]+)")
+# Capture the integrity value whatever the algorithm prefix, so a legacy
+# `sha1-` (or any other) value is parsed rather than silently skipped; the
+# verification path rejects anything but sha512 with a diagnostic naming the
+# unsupported algorithm.
+_INTEGRITY_RE = re.compile(r"integrity: ([^,\s}]+)")
+# A resolution line inside an entry block — matched on the bare substring so
+# every shape (`resolution: {integrity: ...}`, `resolution: {}`, …) counts.
+_RESOLUTION_RE = re.compile(r"resolution:")
 
 
-def _entry_blocks(content: str) -> list[tuple[str, str]]:
-    """Split the lockfile into (key line, block body) pairs.
+def _entry_blocks(content: str) -> list[tuple[str, str, str]]:
+    """Split the lockfile into (key line, key text, block body) triples.
+
+    `key_line` is the raw matched line exactly as it appears in the lockfile
+    (indentation, quotes and trailing colon included); `key_text` is the scalar
+    it wraps, with the surrounding quotes stripped.
 
     A 2-space-indented key owns everything up to the next such key. Scoping each
     entry's body this way is what lets a key be matched with *its own*
@@ -64,65 +89,170 @@ def _entry_blocks(content: str) -> list[tuple[str, str]]:
     resolution block longer than the window.
     """
     matches = list(_ANY_KEY_RE.finditer(content))
-    blocks: list[tuple[str, str]] = []
+    blocks: list[tuple[str, str, str]] = []
     for index, m in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
-        blocks.append((m.group(0), content[m.end() : end]))
+        # `group(1) or group(2)` would pick the unquoted alternative for an
+        # empty quoted scalar (`'':`), yielding None and crashing the caller's
+        # regex search; test for None explicitly so an empty scalar stays an
+        # empty string.
+        key_text = m.group(1) if m.group(1) is not None else m.group(2)
+        blocks.append((m.group(0), key_text, content[m.end() : end]))
     return blocks
 
 
 def _scan_lockfile(content: str) -> tuple[dict[tuple[str, str], str], list[str]]:
-    """Return ({(name, version): integrity}, unmatched package-shaped keys).
+    """Return ({(name, version): integrity}, package-shaped parser gaps).
 
-    One pass over the entry blocks so the parsed set and the unmatched set can
-    never disagree: a block whose key is package-shaped and whose body carries an
-    integrity line is either parsed or reported as a parser gap.
+    One pass over the entry blocks so the parsed set and the gap set can
+    never disagree: a block whose key is package-shaped and whose body
+    carries a resolution line is either parsed or reported as a parser gap.
+    That includes a resolution without an integrity line — such a block can
+    never be verified, so it is reported too (`resolution: {}` counts). A
+    non-sha512 integrity value parses normally — the parser understands the
+    format — and fails later in the verification path with a diagnostic
+    naming the unsupported algorithm (`check_subject_hash`), never with a
+    misleading parser message.
 
-    Anything the pattern cannot match would otherwise be skipped silently — how
-    every scoped package once went unverified while the script reported success
-    over the unscoped subset. Package-shaped keys whose own block carries no
-    integrity (pnpm's `snapshots:` entries, which hold the dependency graph
-    rather than resolutions) are legitimately unparsed and are not reported.
+    Anything the entry-key pattern cannot tokenize would otherwise be skipped
+    silently — how every scoped package once went unverified while the script
+    reported success over the unscoped subset. `find_untokenized_package_keys`
+    guards that independently of this pass: it scans raw lines rather than the
+    blocks this function consumes, so a line the splitter never yields as a
+    key is still caught (and `parse_lockfile` refuses to proceed). Package-
+    shaped keys whose block carries no resolution (pnpm's `snapshots:`
+    entries, which hold the dependency graph rather than resolutions) are
+    legitimately unparsed and are not reported. pnpm's own @zkochan-scoped
+    vendored packages are excluded from parsing entirely (see the inline
+    comment below): they are neither parsed nor reported.
     """
     parsed: dict[tuple[str, str], str] = {}
     unmatched: list[str] = []
-    for key_line, block in _entry_blocks(content):
+    for key_line, key_text, block in _entry_blocks(content):
         integrity = _INTEGRITY_RE.search(block)
+        has_resolution = _RESOLUTION_RE.search(block) is not None
         m = _PKG_RE.match(key_line)
         if m:
             name = m.group(1) or m.group(3)
             ver = m.group(2) or m.group(4)
-            if name and ver and not name.startswith("@zkochan") and integrity:
-                parsed[(name, ver)] = integrity.group(1)
+            # pnpm's own vendored packages are published without provenance:
+            # the npm registry serves dist.attestations (with a provenance
+            # url) for e.g. devalue@5.9.2 and @sveltejs/kit@2.70.3, but not
+            # for @zkochan/js-yaml@0.0.11 — its metadata shows
+            # `_from: file:zkochan-js-yaml-0.0.11.tgz` — so they can never be
+            # verified by this gate. The real lockfile has zero @zkochan
+            # entries and never had any; the branch is purely defensive.
+            if name and ver and not name.startswith("@zkochan/"):
+                if integrity:
+                    parsed[(name, ver)] = integrity.group(1)
+                elif has_resolution:
+                    unmatched.append(key_text)
             continue
-        key = _ANY_KEY_RE.match(key_line)
-        if integrity and key and _PACKAGE_KEY_RE.search(key.group(1)):
-            unmatched.append(key.group(1))
+        if not _PACKAGE_KEY_RE.search(key_text):
+            continue
+        if integrity or has_resolution:
+            unmatched.append(key_text)
     return parsed, unmatched
 
 
 def find_unmatched_package_keys(content: str) -> list[str]:
-    """Return package-shaped keys that carry an integrity but were not parsed."""
+    """Return package-shaped keys that were not parsed into a verifiable entry.
+
+    A key lands here when its block carries a resolution but the entry could
+    not be parsed: either the key did not match the package pattern, or the
+    resolution carries no integrity line (it could never be verified).
+    """
     return _scan_lockfile(content)[1]
+
+
+def find_untokenized_package_keys(content: str) -> list[str]:
+    """Return package-shaped entry candidates the block splitter cannot tokenize.
+
+    Deliberately independent of `_entry_blocks`: this scans `content.splitlines()`
+    directly, so a line the entry-key pattern (`_ANY_KEY_RE`) silently skips is
+    still seen — a splitter regression cannot hide it. Two shapes are reported:
+
+    - a 2-space-indented candidate key (exactly two leading spaces, stripped
+      form ending in ``:``, not a comment, not blank) whose scalar contains
+      ``@`` and which `_ANY_KEY_RE` does not match; the scalar is reported;
+    - an inline entry: a line in that same 2-space shape that carries
+      ``integrity:`` on the key line itself and does not end with ``:``; the
+      whole stripped line is reported.
+
+    On a well-formed lockfile both sets are empty; a non-empty result means
+    the lockfile format drifted, and `parse_lockfile` refuses to proceed.
+    """
+    reported: list[str] = []
+    for line in content.splitlines():
+        if not line.startswith("  ") or (len(line) > 2 and line[2] in " \t"):
+            continue
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.endswith(":"):
+            scalar = stripped[:-1].strip()
+            if len(scalar) >= 2 and scalar.startswith("'") and scalar.endswith("'"):
+                scalar = scalar[1:-1]
+            if "@" in scalar and not _ANY_KEY_RE.match(line):
+                reported.append(scalar)
+        elif "integrity:" in line or "resolution:" in line:
+            reported.append(stripped)
+    return reported
 
 
 def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
     """Return {(name, version): integrity} for all packages with integrity.
 
-    Raises RuntimeError if a package-shaped key carrying an integrity line was
-    not matched — see `find_unmatched_package_keys`.
+    Raises RuntimeError if the block splitter cannot tokenize a package-shaped
+    entry candidate — see `find_untokenized_package_keys` — or if a
+    package-shaped block carrying a resolution was not parsed — see
+    `find_unmatched_package_keys`.
     """
     content = path.read_text()
+    untokenized = find_untokenized_package_keys(content)
+    if untokenized:
+        shown = ", ".join(untokenized[:5])
+        more = "" if len(untokenized) <= 5 else f" (+{len(untokenized) - 5} more)"
+        raise RuntimeError(
+            f"Untokenizable package entries ({len(untokenized)}): {shown}{more}"
+            " — these lines are package-shaped entry candidates the lockfile"
+            " parser cannot tokenize (an unmatchable entry key, or an entry"
+            " written inline on its key line). The lockfile format may have"
+            " changed: fix the pattern rather than letting these entries go"
+            " unverified."
+        )
     parsed, unmatched = _scan_lockfile(content)
     if unmatched:
         shown = ", ".join(unmatched[:5])
         more = "" if len(unmatched) <= 5 else f" (+{len(unmatched) - 5} more)"
         raise RuntimeError(
             f"Unmatched package entries ({len(unmatched)}): {shown}{more}"
-            " — each carries a resolution but did not match the lockfile parser."
-            " The lockfile format may have changed: fix the pattern rather than"
-            " letting these entries go unverified."
+            " — each carries a resolution but did not match the lockfile parser"
+            " into a verifiable entry (a resolution with no integrity line has"
+            " nothing to compare against). If the lockfile format changed, fix"
+            " the pattern rather than letting these entries go unverified; if"
+            " these are git/tarball resolutions without an integrity, they cannot"
+            " be verified by this gate and need a deliberate decision."
         )
+    if not parsed:
+        # A shape drift invisible to BOTH patterns (four-space indentation, a
+        # tab, a renamed top-level key) leaves the walk empty: `main()` would
+        # print "Parsed 0 packages" and exit 0, the gate verifying nothing while
+        # reporting success. A resolution the walk *reached* was either parsed or
+        # reported above, so zero parsed entries is expected in that case (every
+        # entry excluded as @zkochan-scoped, for instance); zero parsed entries
+        # with a resolution the walk never reached is not.
+        reached = any(
+            _RESOLUTION_RE.search(block) for _k, _t, block in _entry_blocks(content)
+        )
+        resolutions = content.count("resolution:")
+        if resolutions and not reached:
+            raise RuntimeError(
+                f"Parsed 0 packages from a lockfile carrying {resolutions}"
+                " resolution line(s) — the lockfile's shape has drifted past the"
+                " parser entirely (an indentation change is the usual cause), and"
+                " proceeding would verify nothing while reporting success."
+            )
     return parsed
 
 
@@ -186,6 +316,13 @@ def check_subject_hash(
             attested_hex = cast(str | None, digest.get("sha512"))
             if not attested_hex:
                 continue
+            algo = lockfile_integrity.partition("-")[0]
+            if algo != "sha512":
+                return False, (
+                    f"unsupported integrity algorithm '{algo}' — provenance"
+                    " attestation comparison supports sha512 only"
+                    f" (lockfile value: {lockfile_integrity})"
+                )
             lockfile_hex = _b64_to_hex(lockfile_integrity)
             if lockfile_hex is None:
                 return False, f"cannot parse lockfile integrity: {lockfile_integrity}"
