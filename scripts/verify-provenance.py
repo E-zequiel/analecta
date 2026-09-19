@@ -30,7 +30,7 @@ GITHUB_ACTIONS_ISSUER = "https://token.actions.githubusercontent.com"
 SLSA_PREDICATE_PREFIXES = ("https://slsa.dev/provenance/",)
 
 _PKG_RE = re.compile(
-    r"^\s{2}(?:'([^@']+)@([^']+)'|(\S[^@\s(][^@\s]*)@([0-9][^(\s]*)):\s*$",
+    r"^\s{2}(?:'(@?[^']+)@([^']+)'|(\S[^@\s(][^@\s]*)@([0-9][^(\s]*)):\s*$",
     re.MULTILINE,
 )
 _INTEGRITY_RE = re.compile(r"integrity: (sha512-[A-Za-z0-9+/=]+)")
