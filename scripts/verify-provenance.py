@@ -39,46 +39,71 @@ _PKG_RE = re.compile(
     r"^[ \t]{2}(?:'(@?[^'@(]+)@([^'()]+)'|([^'@\s(][^'@\s(]*)@([0-9][^(\s]*)):\s*$",
     re.MULTILINE,
 )
-# Any 2-space-indented mapping key, used only to find package-shaped keys the
-# strict pattern above did not match. `[ \t]{2}` rather than `\s{2}`: `\s`
-# matches newlines under MULTILINE, which would let a match start a line early
-# and swallow the next line's indentation into the key. The key must begin with a
-# non-space character for the same reason, and so nested entries are skipped.
-# Structural keys (`packages:`, `settings:`, `importers:` …) never contain `@`
-# followed by a digit, so `_PACKAGE_KEY_RE` excludes them.
+# Any 2-space-indented mapping key, used to split the lockfile into entry blocks.
+# `[ \t]{2}` rather than `\s{2}`: `\s` matches newlines under MULTILINE, which
+# would let a match start a line early and swallow the next line's indentation
+# into the key. The key must begin with a non-space character for the same
+# reason, and so nested entries are skipped.
 _ANY_KEY_RE = re.compile(r"^[ \t]{2}'?([^'\n: \t][^'\n:]*?)'?:\s*$", re.MULTILINE)
-_PACKAGE_KEY_RE = re.compile(r"@[0-9]")
+# A key is package-shaped if it contains `@`. Structural keys (`packages:`,
+# `settings:`, `importers:` …) never do, and the keys that legitimately contain
+# one without being package entries (override targets, for instance) carry no
+# `integrity:` line in their own block, so they are never reported.
+_PACKAGE_KEY_RE = re.compile(r"@")
 _INTEGRITY_RE = re.compile(r"integrity: (sha512-[A-Za-z0-9+/=]+)")
-# How far past a key to look for its `integrity:` line. Package entries carry
-# their resolution on the next line or two.
-_INTEGRITY_LOOKAHEAD = 300
+
+
+def _entry_blocks(content: str) -> list[tuple[str, str]]:
+    """Split the lockfile into (key line, block body) pairs.
+
+    A 2-space-indented key owns everything up to the next such key. Scoping each
+    entry's body this way is what lets a key be matched with *its own*
+    resolution: looking a fixed distance past a key instead would let the window
+    cross into the next entry (reporting a package-shaped key as unresolved when
+    the following entry is the one carrying an integrity line) and would miss a
+    resolution block longer than the window.
+    """
+    matches = list(_ANY_KEY_RE.finditer(content))
+    blocks: list[tuple[str, str]] = []
+    for index, m in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+        blocks.append((m.group(0), content[m.end() : end]))
+    return blocks
+
+
+def _scan_lockfile(content: str) -> tuple[dict[tuple[str, str], str], list[str]]:
+    """Return ({(name, version): integrity}, unmatched package-shaped keys).
+
+    One pass over the entry blocks so the parsed set and the unmatched set can
+    never disagree: a block whose key is package-shaped and whose body carries an
+    integrity line is either parsed or reported as a parser gap.
+
+    Anything the pattern cannot match would otherwise be skipped silently — how
+    every scoped package once went unverified while the script reported success
+    over the unscoped subset. Package-shaped keys whose own block carries no
+    integrity (pnpm's `snapshots:` entries, which hold the dependency graph
+    rather than resolutions) are legitimately unparsed and are not reported.
+    """
+    parsed: dict[tuple[str, str], str] = {}
+    unmatched: list[str] = []
+    for key_line, block in _entry_blocks(content):
+        integrity = _INTEGRITY_RE.search(block)
+        m = _PKG_RE.match(key_line)
+        if m:
+            name = m.group(1) or m.group(3)
+            ver = m.group(2) or m.group(4)
+            if name and ver and not name.startswith("@zkochan") and integrity:
+                parsed[(name, ver)] = integrity.group(1)
+            continue
+        key = _ANY_KEY_RE.match(key_line)
+        if integrity and key and _PACKAGE_KEY_RE.search(key.group(1)):
+            unmatched.append(key.group(1))
+    return parsed, unmatched
 
 
 def find_unmatched_package_keys(content: str) -> list[str]:
-    """Return package-shaped keys that carry an integrity but were not parsed.
-
-    The parser is a regex over the lockfile, so anything it fails to match is
-    skipped silently — how 277 scoped packages once went unnoticed while the
-    script reported success over the unscoped subset. This guard turns that
-    silent skip into a loud failure: a key that looks like `name@version` and
-    carries an `integrity:` line but did not match `_PKG_RE` is a parser gap, not
-    a key to ignore.
-
-    Keys without a nearby integrity (pnpm's `snapshots:` entries, which carry the
-    dependency graph rather than resolutions) are legitimately unparsed and are
-    not reported.
-    """
-    unmatched: list[str] = []
-    for m in _ANY_KEY_RE.finditer(content):
-        key = m.group(1)
-        if not _PACKAGE_KEY_RE.search(key):
-            continue
-        if _PKG_RE.match(m.group(0)):
-            continue
-        chunk = content[m.end() : m.end() + _INTEGRITY_LOOKAHEAD]
-        if _INTEGRITY_RE.search(chunk):
-            unmatched.append(key)
-    return unmatched
+    """Return package-shaped keys that carry an integrity but were not parsed."""
+    return _scan_lockfile(content)[1]
 
 
 def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
@@ -88,27 +113,17 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
     not matched — see `find_unmatched_package_keys`.
     """
     content = path.read_text()
-    unmatched = find_unmatched_package_keys(content)
+    parsed, unmatched = _scan_lockfile(content)
     if unmatched:
         shown = ", ".join(unmatched[:5])
         more = "" if len(unmatched) <= 5 else f" (+{len(unmatched) - 5} more)"
         raise RuntimeError(
-            f"{len(unmatched)} package entr{'y' if len(unmatched) == 1 else 'ies'}"
-            f" with an integrity line did not match the lockfile parser: {shown}{more}."
-            " The lockfile format may have changed — fix the pattern rather than"
+            f"Unmatched package entries ({len(unmatched)}): {shown}{more}"
+            " — each carries a resolution but did not match the lockfile parser."
+            " The lockfile format may have changed: fix the pattern rather than"
             " letting these entries go unverified."
         )
-    result: dict[tuple[str, str], str] = {}
-    for m in _PKG_RE.finditer(content):
-        name = m.group(1) or m.group(3)
-        ver = m.group(2) or m.group(4)
-        if not name or not ver or name.startswith("@zkochan"):
-            continue
-        chunk = content[m.end() : m.end() + _INTEGRITY_LOOKAHEAD]
-        im = _INTEGRITY_RE.search(chunk)
-        if im:
-            result[(name, ver)] = im.group(1)
-    return result
+    return parsed
 
 
 def _fetch_json(url: str, timeout: int = 10) -> dict[str, Any] | None:

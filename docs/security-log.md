@@ -344,6 +344,43 @@ Security floors in `[tool.uv] constraint-dependencies` (`backend/pyproject.toml`
 
 Security-relevant changes to Analecta's own code and build tooling — not dependency advisories — recorded here so the CHANGELOG's `### Security` one-liners carry a full-text backing. Newest first; each date is the release that carried the change.
 
+### 2026-09-19 — provenance verification gate: scoped packages went unverified (unreleased)
+
+- **What was wrong:** `scripts/verify-provenance.py` reads `pnpm-lock.yaml` with a
+  regex, and its quoted-name branch could not match scoped names (`'@sveltejs/kit@2.70.3':`) —
+  the name class excluded `@`. The gate therefore verified only the unscoped
+  subset: **0 of the 156 scoped entries carrying a resolution** were seen (the
+  lockfile holds 277 scoped keys; the rest are `snapshots:`-style entries with no
+  integrity line), and the CI job reported success over what it did read.
+- **Impact:** the SLSA-provenance check is a supply-chain control, not an attack
+  surface — nothing was exploitable. The failure mode is coverage: every scoped
+  package (most of the ecosystem, including the SvelteKit and CodeMirror trees)
+  was skipped silently, so a registry-level replacement of any of them would not
+  have been caught by this job. It never reached a release as a known-good
+  report; found 2026-09-19 while checking the repo's own lockfile readers after
+  pnpm 12 began writing the lockfile as two YAML documents.
+- **Fix:** the parser now sees 584 packages (was 428), 156 of them scoped. The
+  quoted branch stops its name and version classes at `(` as well, so a
+  peer-suffixed key (`'@keyv/bigmap@1.3.1(keyv@5.6.0)'`) can no longer have its
+  suffix swallowed into the name or version.
+- **The class, not just the instance:** a parser that skips what it cannot match
+  would have hidden the next gap the same way. `find_unmatched_package_keys` now
+  makes that a **loud failure**: any package-shaped key whose own entry block
+  carries a resolution and did not match the pattern raises and names the keys,
+  so a future lockfile-format drift fails the job instead of under-reporting.
+- **Entry blocks, not a character window:** a key is matched with the body of its
+  own entry (everything up to the next 2-space key). An earlier revision of the
+  guard looked a fixed 300 characters past each key, which both crossed into the
+  next entry (falsely reporting an unresolved key as a gap, failing CI on a valid
+  lockfile) and missed a resolution block longer than the window. The parser and
+  the guard now share one pass, so they cannot disagree about what was covered.
+- **First tests for the script:** it had none — its filename contains a hyphen,
+  so it cannot be imported by name. `backend/tests/test_verify_provenance.py`
+  loads it from its path and covers scoped and unscoped entries, both lockfile
+  documents, entries without a resolution, the `@zkochan` exclusion, both
+  false-positive/false-negative window regressions, and the structural invariant
+  that the real lockfile has no unparsed package entries.
+
 ### 2026-09-18 — release-age window (cooldown) reduced from 10 to 4 days (unreleased)
 
 - **What changed:** the minimum release age enforced by the age-gated dependency updater (`scripts/deps_update.py`'s `COOLDOWN_DAYS`, the `--help` default text, and `deps-update.yml`'s `workflow_dispatch` input default and `${COOLDOWN:-…}` shell fallback) was reduced from 10 days to 4 days, along with every live policy statement in `docs/github-actions-security.md` (Control 7, the Control 10 coverage table, the Maintenance Checklist), `docs/dependency-verification.md`, and `docs/syntax-highlighting.md`. A transition note in Control 7 records the change date itself.

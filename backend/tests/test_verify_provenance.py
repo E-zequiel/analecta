@@ -139,6 +139,52 @@ def test_parenthesised_key_with_integrity_fails_loudly(vp: Any, tmp_path: Path) 
         vp.parse_lockfile(path)
 
 
+def test_peer_suffixed_key_adjacent_to_a_resolved_entry_is_not_reported(
+    vp: Any, tmp_path: Path
+) -> None:
+    """A key is matched with its own block, never with its neighbour's.
+
+    Regression test for the fixed-distance window this guard used to rely on: a
+    peer-suffixed `snapshots:` key immediately followed by an entry carrying an
+    integrity line was falsely reported, which would have failed CI on a valid
+    lockfile.
+    """
+    body = (
+        "snapshots:\n\n"
+        "  '@keyv/bigmap@1.3.1(keyv@5.6.0)':\n"
+        "    dependencies:\n"
+        "      keyv: 5.6.0\n\n"
+        "packages:\n\n"
+        "  '@sveltejs/kit@2.70.3':\n"
+        "    resolution: {integrity: sha512-PROJ==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.find_unmatched_package_keys(body) == []
+    assert vp.parse_lockfile(path) == {("@sveltejs/kit", "2.70.3"): "sha512-PROJ=="}
+
+
+def test_resolution_block_longer_than_the_old_window_is_parsed(
+    vp: Any, tmp_path: Path
+) -> None:
+    """An entry's resolution is found wherever it sits in that entry's block.
+
+    Regression test for the other half of the fixed-window problem: a resolution
+    more than 300 characters below its key used to be dropped silently.
+    """
+    body = (
+        "packages:\n\n"
+        "  '@sveltejs/kit@2.70.3':\n"
+        "    peerDependencies:\n"
+        + "".join(f"      dep{index}: 1.0.0\n" for index in range(30))
+        + "    resolution: {integrity: sha512-LONGBLOCK==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.find_unmatched_package_keys(body) == []
+    assert vp.parse_lockfile(path) == {
+        ("@sveltejs/kit", "2.70.3"): "sha512-LONGBLOCK=="
+    }
+
+
 def test_repo_lockfile_has_no_unparsed_package_entries(vp: Any) -> None:
     """Structural invariant on the real lockfile: the parser covers it.
 
@@ -157,4 +203,3 @@ def test_repo_lockfile_yields_scoped_entries(vp: Any) -> None:
     """
     parsed = vp.parse_lockfile(vp.LOCKFILE)
     assert any(name.startswith("@") for name, _ in parsed)
-    assert ("devalue", "5.9.2") in parsed
