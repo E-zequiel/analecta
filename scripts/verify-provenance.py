@@ -29,23 +29,82 @@ LOCKFILE = Path(__file__).resolve().parent.parent / "pnpm-lock.yaml"
 GITHUB_ACTIONS_ISSUER = "https://token.actions.githubusercontent.com"
 SLSA_PREDICATE_PREFIXES = ("https://slsa.dev/provenance/",)
 
+# Package entry keys look like `name@version`, optionally quoted (pnpm quotes
+# scoped names) and optionally carrying a peer-dependency suffix, e.g.
+# `'@keyv/bigmap@1.3.1(keyv@5.6.0)'`. The leading `@` is optional because scoped
+# package names start with one, and the version class stops at `(` so a
+# peer-suffixed key cannot have its suffix swallowed into the version. Both
+# classes exclude `(` for the same reason.
 _PKG_RE = re.compile(
-    r"^\s{2}(?:'(@?[^']+)@([^']+)'|(\S[^@\s(][^@\s]*)@([0-9][^(\s]*)):\s*$",
+    r"^[ \t]{2}(?:'(@?[^'@(]+)@([^'()]+)'|([^'@\s(][^'@\s(]*)@([0-9][^(\s]*)):\s*$",
     re.MULTILINE,
 )
+# Any 2-space-indented mapping key, used only to find package-shaped keys the
+# strict pattern above did not match. `[ \t]{2}` rather than `\s{2}`: `\s`
+# matches newlines under MULTILINE, which would let a match start a line early
+# and swallow the next line's indentation into the key. The key must begin with a
+# non-space character for the same reason, and so nested entries are skipped.
+# Structural keys (`packages:`, `settings:`, `importers:` …) never contain `@`
+# followed by a digit, so `_PACKAGE_KEY_RE` excludes them.
+_ANY_KEY_RE = re.compile(r"^[ \t]{2}'?([^'\n: \t][^'\n:]*?)'?:\s*$", re.MULTILINE)
+_PACKAGE_KEY_RE = re.compile(r"@[0-9]")
 _INTEGRITY_RE = re.compile(r"integrity: (sha512-[A-Za-z0-9+/=]+)")
+# How far past a key to look for its `integrity:` line. Package entries carry
+# their resolution on the next line or two.
+_INTEGRITY_LOOKAHEAD = 300
+
+
+def find_unmatched_package_keys(content: str) -> list[str]:
+    """Return package-shaped keys that carry an integrity but were not parsed.
+
+    The parser is a regex over the lockfile, so anything it fails to match is
+    skipped silently — how 277 scoped packages once went unnoticed while the
+    script reported success over the unscoped subset. This guard turns that
+    silent skip into a loud failure: a key that looks like `name@version` and
+    carries an `integrity:` line but did not match `_PKG_RE` is a parser gap, not
+    a key to ignore.
+
+    Keys without a nearby integrity (pnpm's `snapshots:` entries, which carry the
+    dependency graph rather than resolutions) are legitimately unparsed and are
+    not reported.
+    """
+    unmatched: list[str] = []
+    for m in _ANY_KEY_RE.finditer(content):
+        key = m.group(1)
+        if not _PACKAGE_KEY_RE.search(key):
+            continue
+        if _PKG_RE.match(m.group(0)):
+            continue
+        chunk = content[m.end() : m.end() + _INTEGRITY_LOOKAHEAD]
+        if _INTEGRITY_RE.search(chunk):
+            unmatched.append(key)
+    return unmatched
 
 
 def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
-    """Return {(name, version): integrity} for all packages with integrity."""
+    """Return {(name, version): integrity} for all packages with integrity.
+
+    Raises RuntimeError if a package-shaped key carrying an integrity line was
+    not matched — see `find_unmatched_package_keys`.
+    """
     content = path.read_text()
+    unmatched = find_unmatched_package_keys(content)
+    if unmatched:
+        shown = ", ".join(unmatched[:5])
+        more = "" if len(unmatched) <= 5 else f" (+{len(unmatched) - 5} more)"
+        raise RuntimeError(
+            f"{len(unmatched)} package entr{'y' if len(unmatched) == 1 else 'ies'}"
+            f" with an integrity line did not match the lockfile parser: {shown}{more}."
+            " The lockfile format may have changed — fix the pattern rather than"
+            " letting these entries go unverified."
+        )
     result: dict[tuple[str, str], str] = {}
     for m in _PKG_RE.finditer(content):
         name = m.group(1) or m.group(3)
         ver = m.group(2) or m.group(4)
         if not name or not ver or name.startswith("@zkochan"):
             continue
-        chunk = content[m.end() : m.end() + 300]
+        chunk = content[m.end() : m.end() + _INTEGRITY_LOOKAHEAD]
         im = _INTEGRITY_RE.search(chunk)
         if im:
             result[(name, ver)] = im.group(1)
