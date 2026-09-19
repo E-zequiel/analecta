@@ -1172,7 +1172,7 @@ def main() -> None:
         type=int,
         default=COOLDOWN_DAYS,
         metavar="DAYS",
-        help="minimum age in days (default: 4)",
+        help=f"minimum age in days (default: {COOLDOWN_DAYS})",
     )
     _ = parser.add_argument(
         "--pr-body-file",
