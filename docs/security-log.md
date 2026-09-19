@@ -380,6 +380,65 @@ Security-relevant changes to Analecta's own code and build tooling — not depen
   documents, entries without a resolution, the `@zkochan` exclusion, both
   false-positive/false-negative window regressions, and the structural invariant
   that the real lockfile has no unparsed package entries.
+- **Hardening after review (same day):** the gaps the round-1 fix left, plus the
+  one the first hardening pass then introduced.
+    - **A key line the splitter could not tokenize was invisible, not merely
+      unreported:** `_ANY_KEY_RE`'s scalar class excluded `:`, so a quoted key
+      containing one never became an entry block and vanished from the parsed set
+      *and* the reported set at the same time. `:` is now allowed **only inside a
+      quoted scalar**; an unquoted scalar still excludes it, because allowing it
+      there made a non-key line (`  note: this is prose:`) a block start that cut
+      the preceding entry's block short and hid its resolution — reintroducing the
+      very class this change exists to close (reproduced during review:
+      `_scan_lockfile` returned `({}, [])` for that shape). The terminator colon
+      stays anchored to the line end, and the pattern still matches **941 blocks**
+      on the real lockfile.
+    - **The class, not only the instance:** `find_untokenized_package_keys` scans
+      `content.splitlines()` **independently of the block splitter** and reports
+      every package-shaped entry candidate the splitter cannot tokenize — a
+      two-space key line ending in `:` that `_ANY_KEY_RE` rejects, or an entry
+      written inline on its key line with its resolution. `parse_lockfile` refuses
+      to proceed while that set is non-empty, so a splitter regression can no
+      longer hide behind the splitter.
+    - **A shape drift the walk never reached was silent success:** if the
+      lockfile's indentation changed wholesale, every pattern read zero blocks
+      and `main()` would print "Parsed 0 packages" and exit 0 — the gate verifying
+      nothing while reporting success. `parse_lockfile` now fails when it parses
+      zero packages and the walk never reached a `resolution:` line, while still
+      accepting a file whose only entries were legitimately excluded (all
+      `@zkochan`, as a test pins).
+    - **A resolution without an `integrity:` line was skipped in silence too:**
+      such a block can never be verified (pnpm writes them for tarball/commit
+      resolutions), yet it was neither parsed nor reported. It is now reported as
+      a parser gap — which is what the guard's own message always said it meant
+      ("each carries a resolution"). `resolution:` and `integrity:` each appear
+      584 times in the current lockfile, so nothing fires today.
+    - **A non-`sha512-` integrity was skipped silently:** `_INTEGRITY_RE` only
+      recognised the `sha512-` prefix, so an entry carrying any other algorithm
+      was neither parsed nor reported. The value is now captured whatever its
+      prefix, and `check_subject_hash` rejects anything but sha512 with a
+      diagnostic naming the unsupported algorithm (`unsupported integrity
+      algorithm 'sha1' …`) instead of a misleading lockfile-format message. All
+      584 integrity lines in the current lockfile are sha512, so this is latent —
+      it exists so that drift cannot hide, not because anything is broken today.
+    - **The real-lockfile test asserted existence only**
+      (`any(name.startswith("@"))`), so a partial regression passed and the one
+      concrete anchor that test had was gone. It now holds the guard to its own
+      documented contract on the real lockfile — every package-shaped entry block
+      carrying a resolution is parsed or reported (`len(parsed) + len(unmatched) ==
+      expected`) — **and** compares `len(parsed)` against a raw count of
+      resolution-integrity lines taken straight from the file text. The raw anchor
+      is the half that a *splitter* regression cannot satisfy, since the block-based
+      bookkeeping derives `expected` from the same splitter. It fails loudly if
+      `@zkochan`-scoped entries ever appear, rather than comparing wrong numbers.
+- **`@zkochan`, documented instead of mysterious:** pnpm's own vendored
+  `@zkochan/*` packages are published without provenance — the npm registry
+  serves `dist.attestations` (with a provenance url) for e.g. `devalue@5.9.2` and
+  `@sveltejs/kit@2.70.3`, but not for `@zkochan/js-yaml@0.0.11`, whose metadata
+  shows `_from: file:zkochan-js-yaml-0.0.11.tgz`. The real lockfile has zero
+  `@zkochan` entries and never had any (`git log -S "@zkochan" -- pnpm-lock.yaml`
+  is empty), so the exclusion is defensive, and it is now a comment rather than a
+  puzzle.
 
 ### 2026-09-18 — release-age window (cooldown) reduced from 10 to 4 days (unreleased)
 
