@@ -148,7 +148,7 @@ To regenerate manually without a full build:
 mise exec -- pnpm --filter frontend run gen-shiki-css
 ```
 
-> **Package version policy:** observe the 10-day minimum cooldown from the
+> **Package version policy:** observe the 4-day minimum cooldown from the
 > release date before adopting a new Shiki version.
 
 After upgrading `shiki` or `@shikijs/themes`, diff the dark section of the

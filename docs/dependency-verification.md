@@ -59,7 +59,7 @@ reviewer sees is just the lockfile, with no explicit "X → Y" version bump to
 catch in review. An exact pin forces that bump to show up as a one-line
 `package.json` diff, which is the more auditable failure mode.
 
-Before pinning a version that just published, check the **10-day minimum
+Before pinning a version that just published, check the **4-day minimum
 window** policy:
 
 ```bash
@@ -67,7 +67,7 @@ mise exec -- pnpm view <pkg> time --json
 ```
 
 The publish timestamp for `<version>` appears under the version key as an
-ISO 8601 date string. The version must have been published at least 10 days
+ISO 8601 date string. The version must have been published at least 4 days
 before the install date.
 
 If the package is one of a matched pair/family (e.g. a theme's light/dark

@@ -191,7 +191,7 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 
 1. Detect outdated packages via `uv` and `pnpm outdated`.
 2. Query the upstream registry for the new version's release date (PyPI JSON API, npm registry `time` map).
-3. **Skip** any package released fewer than 10 days ago — this prevents "day-zero supply chain" attacks where a malicious release is injected before the community has time to detect and report it.
+3. **Skip** any package released fewer than 4 days ago — this prevents "day-zero supply chain" attacks where a malicious release is injected before the community has time to detect and report it.
 4. Apply updates selectively: Python packages via `uv lock --upgrade-package <pkg>`; Node packages via `pnpm add <pkg>@<latest> --save-exact --filter <workspace>`, followed by a direct re-check that strips any range operator `--save-exact` failed to remove, re-syncing the lockfile if it had to correct one (see `docs/dependency-verification.md`). (`pnpm update` is a no-op for exact-pinned packages — it only moves within the declared range, but exact pins have no range to move within.)
 5. Run `check.sh` to confirm all tests and static checks still pass; revert lockfiles if they fail.
 6. Open a pull request summarising what was updated and what was held back (with eligibility dates).
@@ -201,9 +201,11 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 - `update` job: `permissions: { contents: read }` + `persist-credentials: false`. `contents: read` is required for `actions/checkout` on a private repo; `persist-credentials: false` removes the token from `.git/config` immediately after clone, before any package code runs. Even if a package reads `$GITHUB_TOKEN` from the environment, it only has read-only access.
 - `commit-and-pr` job: `permissions: { contents: write, pull-requests: write }`. Downloads the verified lockfiles as a GitHub Actions artifact and commits them. Never executes package code.
 
-This ensures that if a package that cleared the 10-day cooldown contains a malicious install or runtime payload, it cannot read or use the repository write token.
+This ensures that if a package that cleared the 4-day cooldown contains a malicious install or runtime payload, it cannot read or use the repository write token.
 
-**Bypass via `workflow_dispatch`:** The `cooldown` input (default `10`) can be set to `0` to bypass the gate. `workflow_dispatch` requires repository write access, so this bypass is not available to external contributors.
+> **Transition note (2026-09-18):** The minimum release age was reduced from 10 days to 4 days on 2026-09-18. Every dated cooldown-exception entry in `docs/security-log.md` quantifies its exception against the window current on its date — figures such as "9 short of the 10-day window" are historical record, not stale text. This note and the clarifying entry in `docs/security-log.md` are the only places the transition is recorded.
+
+**Bypass via `workflow_dispatch`:** The `cooldown` input (default `4`) can be set to `0` to bypass the gate. `workflow_dispatch` requires repository write access, so this bypass is not available to external contributors.
 
 **Exception approval:** Any update that clears the cooldown gate early — whether by `cooldown=0` dispatch, by merging a Dependabot PR within its minimum-age window, or by any other means — requires explicit maintainer approval before merging. Do not self-certify an exception even when CVE urgency justifies a shorter window; surface it and get a confirmation first.
 
@@ -211,7 +213,7 @@ This ensures that if a package that cleared the 10-day cooldown contains a malic
 
 **Provenance note:** Lock file hashes provide **integrity** (package content matches the recorded hash). SLSA provenance attestation for npm packages is implemented in the `verify-provenance` CI job (see Control 10). Python provenance remains unimplemented — PyPI-side ecosystem support is still immature. This is a known gap, not an oversight.
 
-**Dependabot PR caveat:** This automated cooldown applies only to packages updated by `deps-update.yml`. Dependabot has no native minimum-age setting and can open a PR for a version published hours earlier — the `schedule.interval: weekly` raises the average buffer but does not guarantee a 10-day minimum. The cooldown must be verified manually before merging any Dependabot package-version PR (see Maintenance Checklist).
+**Dependabot PR caveat:** This automated cooldown applies only to packages updated by `deps-update.yml`. Dependabot has its own native cooldown (`cooldown: default-days: 4` in `.github/dependabot.yml`, also applying since 2026-09-18): unconfigured, Dependabot applies a default 3-day cooldown to version updates, and it never applies any cooldown to security updates — so a security-update PR can still carry a version published hours earlier. The manual release-date check therefore remains required before merging any Dependabot package-version PR (see Maintenance Checklist).
 
 ---
 
@@ -335,7 +337,7 @@ Steps 2 and 3 together provide an independent verification anchor: a registry-le
 | Package has no attestation (the majority of the tree) | ❌ — covered only by Socket scan + lockfile integrity |
 | Rekor + Fulcio infrastructure compromise (state-level attack) | ❌ — no practical mitigation exists |
 | Write-time registry compromise for packages WITH attestation | ✅ (subject hash check catches it) |
-| Write-time registry compromise for packages WITHOUT attestation | ❌ — mitigated only by Socket scan + minimum-age cooldown (10 days for routine updates; shorter minimum for active-CVE exceptions — see Maintenance Checklist) |
+| Write-time registry compromise for packages WITHOUT attestation | ❌ — mitigated only by Socket scan + minimum-age cooldown (4 days for routine updates; shorter minimum for active-CVE exceptions — see Maintenance Checklist) |
 
 ### Coverage
 
@@ -506,7 +508,7 @@ The `needs:` coupling above prevents wasting runner minutes, but the actual merg
 - The `update` job runs with `permissions: { contents: read }` and `persist-credentials: false`. `contents: read` is the minimum for `actions/checkout` on a private repo. `persist-credentials: false` removes the token from `.git/config` immediately after clone, before new package code executes (via `check.sh`). Even if a package reads `$GITHUB_TOKEN` from the environment, it has read-only access — it cannot push or create PRs.
 - The `commit-and-pr` job holds `contents: write` + `pull-requests: write` but only downloads the pre-verified lockfile artifact and commits it — it never installs or executes package code.
 
-This split means that even if a package that cleared the 10-day cooldown contains a malicious payload, it cannot access or exfiltrate the repository write token. The blast radius of a compromise in the `update` job is limited to the runner instance itself.
+This split means that even if a package that cleared the 4-day cooldown contains a malicious payload, it cannot access or exfiltrate the repository write token. The blast radius of a compromise in the `update` job is limited to the runner instance itself.
 
 ### Local: advisory workflow (`deps_update.py` is `--ignore-scripts`-only; a manual `pnpm add` is not)
 
@@ -695,7 +697,7 @@ Under Actions → General → "Fork pull request workflows from outside collabor
 2. **Socket GitHub App provides scan coverage.** The native App integration runs independently of `BWS_ACCESS_TOKEN` and posts its findings as a separate check on the PR. Review those results before merging.
 3. **For CLI-level enforcement:** trigger `socket-manual.yml` via GitHub → Actions → "Socket Manual Scan" → "Run workflow". Leave the branch as `main` and enter the Dependabot PR's branch name (e.g., `dependabot/npm_and_yarn/...`) in the `ref` input. See Control 13 for rationale.
 4. **Note on scan scope:** `socket ci` scans the pnpm tree. A Dependabot PR that bumps only Python packages (via `uv`) or workflow action SHAs produces no npm-tree diff — the scan would report "no dependency changes." CLI enforcement is only meaningful for PRs that modify `pnpm-lock.yaml`.
-5. **Check the release date (10-day cooldown).** The automated cooldown in `deps-update.yml` does not cover Dependabot PRs. Before merging, verify when the updated version was published: for npm packages, check `https://registry.npmjs.org/<pkg>` → `.time.<version>`; for PyPI packages, check `https://pypi.org/pypi/<pkg>/<version>/json` → `.urls[].upload_time`. If the version was published fewer than 10 days ago, hold the merge. Exception: if the PR patches an active CVE, evaluate the CVSS score and architecture-mismatch triage (step 4 above) — it is a deliberate tradeoff between known CVE exposure and supply-chain risk during the early-adoption window.
+5. **Check the release date (4-day cooldown).** Dependabot's native cooldown (see Control 7) covers its version-update PRs, but Dependabot never applies a cooldown to security updates — such a PR can still carry a version published hours earlier. Before merging, verify when the updated version was published: for npm packages, check `https://registry.npmjs.org/<pkg>` → `.time.<version>`; for PyPI packages, check `https://pypi.org/pypi/<pkg>/<version>/json` → `.urls[].upload_time`. If the version was published fewer than 4 days ago, hold the merge. Exception: if the PR patches an active CVE, evaluate the CVSS score and architecture-mismatch triage (step 4 above) — it is a deliberate tradeoff between known CVE exposure and supply-chain risk during the early-adoption window.
 
 ### When Dependabot opens a SHA-update PR (GitHub Actions)
 
