@@ -72,6 +72,17 @@ _INTEGRITY_RE = re.compile(r"integrity: ([^,\s}]+)")
 # A resolution line inside an entry block — matched on the bare substring so
 # every shape (`resolution: {integrity: ...}`, `resolution: {}`, …) counts.
 _RESOLUTION_RE = re.compile(r"resolution:")
+# A *raw* resolution line: anchored at line start after optional whitespace,
+# so a comment line mentioning `resolution:` (`    # note: resolution: ...`)
+# and prose that carries the word later in the line are never counted — only
+# a genuine resolution mapping key at the start of a line is. Allowing a
+# column-0 match is deliberate: a resolution key at column 0 exists in no
+# legitimate lockfile shape, and counting it is what makes column-0 drift
+# loud instead of invisible. Counting the lockfile's raw resolution
+# population against the lines the entry-block walk owns (see
+# `_unowned_resolution_lines`) is what turns shape drift into a loud
+# failure instead of a silently shrunken verified set.
+_RESOLUTION_LINE_RE = re.compile(r"^[ \t]*resolution:[^\n]*", re.MULTILINE)
 
 
 def _entry_blocks(content: str) -> list[tuple[str, str, str]]:
@@ -125,6 +136,11 @@ def _scan_lockfile(content: str) -> tuple[dict[tuple[str, str], str], list[str]]
     legitimately unparsed and are not reported. pnpm's own @zkochan-scoped
     vendored packages are excluded from parsing entirely (see the inline
     comment below): they are neither parsed nor reported.
+
+    This pass is silent on shape drift that hides whole entries from the
+    splitter (a 4-space-indented entry lands inside the previous block and
+    its resolution is never read). `parse_lockfile` guards that case
+    independently — see `_unowned_resolution_lines`.
     """
     parsed: dict[tuple[str, str], str] = {}
     unmatched: list[str] = []
@@ -155,6 +171,55 @@ def _scan_lockfile(content: str) -> tuple[dict[tuple[str, str], str], list[str]]
     return parsed, unmatched
 
 
+def _unowned_resolution_lines(content: str) -> list[str]:
+    """Return the raw resolution lines no packages-section entry block owns.
+
+    Ownership needs all three of: the line sits under a ``packages:``
+    section (the only section whose entries carry resolutions), inside an
+    entry block, and as that block's first resolution line. A resolution
+    line above the first key line belongs to no block; a second resolution
+    inside one block belongs to an entry the splitter never yielded as a
+    key; and a resolution line under any other section (`snapshots:` is the
+    realistic one — a peerless snapshots key is byte-identical to a
+    `packages:` key, so an absorbed drifted entry's integrity would
+    otherwise silently overwrite the legitimate entry's hash in the parsed
+    map) is owned by nobody. Line-anchored matching keeps prose mentioning
+    `resolution:` out of the count, and a column-0 resolution line — owned
+    by nothing, since no legitimate shape writes one — is caught by the
+    section rule rather than escaping the counter.
+    """
+    unowned: list[str] = []
+    section: str | None = None
+    in_block = False
+    block_resolution_seen = False
+    for line in content.splitlines():
+        # A resolution line is only ever owned inside a `packages:` section's
+        # entry block, and only as that block's first one. Check it first: a
+        # column-0 `resolution:` would otherwise read as a section key.
+        if _RESOLUTION_LINE_RE.match(line):
+            owned = section == "packages" and in_block and not block_resolution_seen
+            if owned:
+                block_resolution_seen = True
+            else:
+                unowned.append(line.strip())
+            continue
+        if not line or line[0] not in " \t":
+            # Column-0 content: a document separator resets the section, any
+            # other non-comment column-0 line is a top-level key.
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            section = None if stripped == "---" else stripped.split(":", 1)[0]
+            in_block = False
+            block_resolution_seen = False
+            continue
+        if _ANY_KEY_RE.match(line):
+            # A new entry block starts with its 2-space key line.
+            in_block = True
+            block_resolution_seen = False
+    return unowned
+
+
 def find_unmatched_package_keys(content: str) -> list[str]:
     """Return package-shaped keys that were not parsed into a verifiable entry.
 
@@ -163,6 +228,20 @@ def find_unmatched_package_keys(content: str) -> list[str]:
     resolution carries no integrity line (it could never be verified).
     """
     return _scan_lockfile(content)[1]
+
+
+def _inline_entry_scalar(line: str) -> str:
+    """Return the scalar part of a stripped inline mapping line.
+
+    A quoted scalar runs to its closing quote — colons inside belong to the
+    scalar; an unquoted scalar ends at the first colon. On a prose line this
+    yields the leading word (``note``), which is how prose is told apart
+    from an inline package entry without parsing YAML.
+    """
+    if line.startswith("'"):
+        end = line.find("'", 1)
+        return line[1:end] if end != -1 else line[1:]
+    return line.split(":", 1)[0]
 
 
 def find_untokenized_package_keys(content: str) -> list[str]:
@@ -176,8 +255,13 @@ def find_untokenized_package_keys(content: str) -> list[str]:
       form ending in ``:``, not a comment, not blank) whose scalar contains
       ``@`` and which `_ANY_KEY_RE` does not match; the scalar is reported;
     - an inline entry: a line in that same 2-space shape that carries
-      ``integrity:`` on the key line itself and does not end with ``:``; the
-      whole stripped line is reported.
+      ``integrity:`` on the key line itself, does not end with ``:`` and
+      whose scalar part (the text before the first unquoted colon, or the
+      quoted scalar) is package-shaped — it carries ``@``, the genuine
+      inline shape being ``foo@1.0.0: {resolution: {integrity: …}}``. A
+      line whose scalar carries no ``@`` is prose (``note: resolution:
+      appears here as prose``), not an entry candidate; the whole stripped
+      line is reported.
 
     On a well-formed lockfile both sets are empty; a non-empty result means
     the lockfile format drifted, and `parse_lockfile` refuses to proceed.
@@ -196,7 +280,12 @@ def find_untokenized_package_keys(content: str) -> list[str]:
             if "@" in scalar and not _ANY_KEY_RE.match(line):
                 reported.append(scalar)
         elif "integrity:" in line or "resolution:" in line:
-            reported.append(stripped)
+            # The genuine inline-entry shape is `foo@1.0.0: {resolution: …}`:
+            # its scalar names a package and carries `@`. A line whose scalar
+            # carries no `@` is prose, not an entry candidate — reporting it
+            # would fail parse_lockfile on a well-formed lockfile.
+            if "@" in _inline_entry_scalar(stripped):
+                reported.append(stripped)
     return reported
 
 
@@ -204,9 +293,17 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
     """Return {(name, version): integrity} for all packages with integrity.
 
     Raises RuntimeError if the block splitter cannot tokenize a package-shaped
-    entry candidate — see `find_untokenized_package_keys` — or if a
-    package-shaped block carrying a resolution was not parsed — see
-    `find_unmatched_package_keys`.
+    entry candidate — see `find_untokenized_package_keys` — if a package-shaped
+    block carrying a resolution was not parsed — see
+    `find_unmatched_package_keys` — or if a resolution line in the raw file
+    text is never reached by the entry-block walk — see
+    `_unowned_resolution_lines`. The guards run most-diagnostic-first: a
+    lockfile the walk cannot see at all (four-space indentation throughout)
+    is caught by the zero-parse check ("Parsed 0 packages"), a partially
+    drifted one by the unreached-resolutions invariant, and a lockfile whose
+    every entry is legitimately excluded (@zkochan-scoped, for instance)
+    still parses to an empty map because those resolutions ARE reached by
+    the walk.
     """
     content = path.read_text()
     untokenized = find_untokenized_package_keys(content)
@@ -253,10 +350,38 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
                 " parser entirely (an indentation change is the usual cause), and"
                 " proceeding would verify nothing while reporting success."
             )
+    unowned = _unowned_resolution_lines(content)
+    if unowned:
+        # The partial-drift counterpart of the zero-parse guard above: some
+        # entries parse, so nothing looks wrong, but a resolution line the
+        # walk never read means an entry (its key indented differently, its
+        # block absorbed into a neighbour) is verified by nobody while the
+        # run still exits 0.
+        shown = " | ".join(unowned[:5])
+        more = "" if len(unowned) <= 5 else f" (+{len(unowned) - 5} more)"
+        raise RuntimeError(
+            f"Unreached resolution lines ({len(unowned)} of"
+            f" {len(_RESOLUTION_LINE_RE.findall(content))}): {shown}{more}"
+            " — the entry-block walk never saw these resolution lines, so the"
+            " entries behind them are verified by nobody while the script"
+            " still reports success. The lockfile's shape has drifted past"
+            " the parser (an entry indented differently from its neighbours"
+            " is the usual cause): fix the pattern rather than verifying a"
+            " partial set."
+        )
     return parsed
 
 
 def _fetch_json(url: str, timeout: int = 10) -> dict[str, Any] | None:
+    """Fetch JSON from ``url``; None means the request never got an answer.
+
+    A transport failure — an exception from ``urlopen`` (timeout, DNS
+    failure, connection refused, a 404, any error short of a well-formed
+    HTTP response with a JSON body) — returns None so the caller can treat
+    'no answer' uniformly. ``get_provenance_bundle`` is the only caller and
+    raises on every None: at this gate a failed request must never be
+    conflated with a well-formed 'no attestations' answer.
+    """
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=timeout) as r:  # pyright: ignore[reportAny]
@@ -268,12 +393,21 @@ def _fetch_json(url: str, timeout: int = 10) -> dict[str, Any] | None:
 def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, Any]] | None:
     """Return (predicate_type, bundle) for the first SLSA provenance attestation.
 
-    Returns None if the package has no provenance attestation on npm.
+    Returns None only when the registry answered with well-formed metadata
+    that carries no ``dist.attestations.url`` — the expected 'no provenance
+    yet' gap (~60% of the npm ecosystem). A transport failure — the request
+    never got a well-formed answer, or the attestation-bundle download
+    failed — raises RuntimeError naming the package and the unreachable
+    source: a failed request must never read as the legitimate skip.
     """
     encoded = name.replace("/", "%2F")
     meta = _fetch_json(f"https://registry.npmjs.org/{encoded}/{ver}")
     if not meta:
-        return None
+        raise RuntimeError(
+            f"provenance check for {name}@{ver} could not reach the registry"
+            " (registry.npmjs.org) — the package metadata request never got a"
+            " well-formed answer (timeout, connection failure, or HTTP error)"
+        )
     dist = cast(dict[str, Any], meta.get("dist", {}))
     attestations_meta = cast(dict[str, Any], dist.get("attestations", {}))
     att_url = cast(str | None, attestations_meta.get("url"))
@@ -281,7 +415,11 @@ def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, Any]] | N
         return None
     data = _fetch_json(att_url)
     if not data:
-        return None
+        raise RuntimeError(
+            f"provenance check for {name}@{ver} could not download the"
+            f" attestation bundle from {att_url} — the request never got a"
+            " well-formed answer (timeout, connection failure, or HTTP error)"
+        )
     for att in cast(list[dict[str, Any]], data.get("attestations", [])):
         pred = cast(str, att.get("predicateType", ""))
         if any(pred.startswith(p) for p in SLSA_PREDICATE_PREFIXES):
@@ -348,6 +486,10 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
     Network errors (TUF download, Rekor unreachable) are treated as warnings,
     not failures — they indicate infrastructure issues, not supply-chain attacks.
     Only VerificationError (bad signature / cert chain) is treated as fatal.
+    Bundle-format and Rekor timestamp incompatibilities with the pinned
+    sigstore library are likewise skippable. Any other exception is
+    unclassifiable and fails closed: it is reported as a failed check, never
+    as a verified package.
     """
     try:
         from sigstore.errors import (  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
@@ -395,7 +537,10 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
             return True, (
                 f"Bundle format not supported by sigstore 4.x — skipped ({msg[:80]})"
             )
-        return True, f"Sigstore check skipped (unexpected error: {e})"
+        # Anything else is an exception class this gate cannot classify. The
+        # safe direction is failure, not a skip: an unrecognized Bundle load
+        # or verification error must never read as a verified package.
+        return False, f"Sigstore check failed with an unclassified error: {e}"
 
 
 def main() -> int:
