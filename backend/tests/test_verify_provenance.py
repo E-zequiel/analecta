@@ -2,8 +2,9 @@
 
 The script's filename contains a hyphen, so it cannot be imported by name; the
 `vp` fixture loads it from its path. The parser and the pure comparison helpers
-are exercised here — the script's network sweep (registry + Sigstore round trips
-per package) is out of scope.
+are exercised here, along with the sweep loop's failure classification and
+transport handling — all with mocked network responses; the script's real
+registry round trips (one per package) remain out of scope.
 """
 
 from __future__ import annotations
@@ -530,17 +531,107 @@ def test_unclassifiable_sigstore_exception_fails_closed(vp: Any, mocker) -> None
 def test_registry_transport_failure_is_loud_not_none(vp: Any, mocker) -> None:
     """A metadata transport failure must be loud, never read as no-attestation.
 
-    A failed registry request (timeout, connection refused, malformed
-    response) and a well-formed registry answer of 'this package has no
-    attestations' currently produce the identical None return, so a sweep
-    whose every request failed would report the expected-gap count and exit 0
-    having verified nothing. A transport failure must surface as an error
-    naming the unreachable source instead of collapsing into the legitimate
+    A request that never got a well-formed answer (timeout, connection
+    refused, an HTTP error) is a transport failure, not a package verdict:
+    treating it as the ~60% no-attestation gap lets a sweep whose every
+    request failed exit 0 having verified nothing. The transport sentinel
+    must surface as an error naming the package and the unreachable source,
+    while a well-formed answer without attestations stays the legitimate
     skip.
     """
     mocker.patch.object(vp, "_fetch_json", return_value=None)
-    with pytest.raises(RuntimeError, match=r"suspicious-package|registry"):
+    with pytest.raises(
+        RuntimeError,
+        match=r"provenance check for suspicious-package@1\.0\.0"
+        r" could not reach the registry",
+    ):
         vp.get_provenance_bundle("suspicious-package", "1.0.0")
+
+
+def test_malformed_empty_metadata_is_loud_with_an_accurate_label(
+    vp: Any, mocker
+) -> None:
+    """A well-formed but unusable registry answer is malformed, not unreachable.
+
+    The transport sentinel is ``None`` (the request never got a well-formed
+    answer). A well-formed HTTP response whose JSON body is not a package
+    metadata object — an empty document, a list, a string, a number — is a
+    different failure: the registry answered, so reporting it as "could not
+    reach the registry" mislabels it, and a truthy non-object body must not
+    crash the sweep with an unclassified exception.
+    """
+    for body_value in ({}, [1, 2], "abc", 42):
+        mocker.patch.object(vp, "_fetch_json", return_value=body_value)
+        with pytest.raises(RuntimeError, match=r"malformed package metadata"):
+            vp.get_provenance_bundle("suspicious-package", "1.0.0")
+
+
+def test_col0_resolution_inside_a_packages_block_fails_loudly(
+    vp: Any, tmp_path: Path
+) -> None:
+    """A resolution line at column 0 can never belong to an entry block.
+
+    Ownership tracks the block through the splitter's 2-space keys, but a
+    column-0 resolution line is no legitimate entry's resolution: as the
+    block's only resolution it is silently parsed with the drifted hash
+    (the legitimate integrity vanishes from the map entirely), and with a
+    legitimate line also present the col-0 line is owned while the real one
+    is flagged unowned — loud, but naming the wrong line. Ownership must
+    require block indentation: a column-0 resolution is unowned drift
+    wherever it sits.
+    """
+    col0_only = (
+        "packages:\n\n  'good@1.0.0':\nresolution: {integrity: sha512-COLZERO==}\n"
+    )
+    col0_first = (
+        "packages:\n\n"
+        "  'good@1.0.0':\n"
+        "resolution: {integrity: sha512-COLZERO==}\n"
+        "    resolution: {integrity: sha512-GOOD==}\n"
+    )
+    for body, expected_total in ((col0_only, 1), (col0_first, 2)):
+        path = _write_lockfile(tmp_path, body)
+        with pytest.raises(
+            RuntimeError, match=rf"Unreached resolution lines \(1 of {expected_total}\)"
+        ):
+            vp.parse_lockfile(path)
+
+
+def test_transport_failures_are_collected_and_the_sweep_fails_at_the_end(
+    vp: Any, tmp_path: Path, mocker, capsys
+) -> None:
+    """A mid-sweep transport failure must not cut the remaining packages off.
+
+    Failing loudly is the transport contract, but aborting the sweep at the
+    first failure leaves every later package unchecked and gives a single
+    blip an outsize report: the run cannot say which other packages would
+    have been fine. Collect the transport failures, keep sweeping, and fail
+    at the end with the complete list — mirroring how verification failures
+    are already reported.
+    """
+    body = (
+        "packages:\n\n"
+        "  'a@1.0.0':\n    resolution: {integrity: sha512-A==}\n\n"
+        "  'b@1.0.0':\n    resolution: {integrity: sha512-B==}\n\n"
+        "  'c@1.0.0':\n    resolution: {integrity: sha512-C==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    mocker.patch.object(vp, "LOCKFILE", path)
+    results = [RuntimeError("transport down a"), RuntimeError("transport down"), None]
+
+    def sweep(name: str, ver: str) -> tuple[str, dict[str, Any]] | None:
+        item = results.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    mocker.patch.object(vp, "get_provenance_bundle", side_effect=sweep)
+    assert vp.main() == 1
+    output = capsys.readouterr().out
+    assert "a@1.0.0" in output
+    assert "b@1.0.0" in output
+    assert "Failed: 2" in output
+    assert "No attestation (expected gap): 1" in output
 
 
 def test_drift_absorbed_into_snapshot_blocks_fails_loudly(

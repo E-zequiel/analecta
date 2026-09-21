@@ -83,6 +83,12 @@ _RESOLUTION_RE = re.compile(r"resolution:")
 # `_unowned_resolution_lines`) is what turns shape drift into a loud
 # failure instead of a silently shrunken verified set.
 _RESOLUTION_LINE_RE = re.compile(r"^[ \t]*resolution:[^\n]*", re.MULTILINE)
+# The *ownership* counterpart: a resolution line a real entry block can own
+# must be block-indented. A column-0 resolution line exists in no legitimate
+# shape — as a block's only resolution it would otherwise be owned silently
+# (the legitimate integrity vanishing from the parsed map), and beside a
+# legitimate one it would steal ownership and flag the real line as unowned.
+_OWNED_RESOLUTION_LINE_RE = re.compile(r"^[ \t]+resolution:[^\n]*", re.MULTILINE)
 
 
 def _entry_blocks(content: str) -> list[tuple[str, str, str]]:
@@ -194,10 +200,17 @@ def _unowned_resolution_lines(content: str) -> list[str]:
     block_resolution_seen = False
     for line in content.splitlines():
         # A resolution line is only ever owned inside a `packages:` section's
-        # entry block, and only as that block's first one. Check it first: a
+        # entry block, and only as that block's first one — and only when it
+        # is block-indented: a column-0 `resolution:` exists in no legitimate
+        # shape, so it is unowned drift wherever it sits. Check first: a
         # column-0 `resolution:` would otherwise read as a section key.
         if _RESOLUTION_LINE_RE.match(line):
-            owned = section == "packages" and in_block and not block_resolution_seen
+            owned = (
+                _OWNED_RESOLUTION_LINE_RE.match(line) is not None
+                and section == "packages"
+                and in_block
+                and not block_resolution_seen
+            )
             if owned:
                 block_resolution_seen = True
             else:
@@ -372,7 +385,7 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
     return parsed
 
 
-def _fetch_json(url: str, timeout: int = 10) -> dict[str, Any] | None:
+def _fetch_json(url: str, timeout: int = 10) -> Any:
     """Fetch JSON from ``url``; None means the request never got an answer.
 
     A transport failure — an exception from ``urlopen`` (timeout, DNS
@@ -380,12 +393,14 @@ def _fetch_json(url: str, timeout: int = 10) -> dict[str, Any] | None:
     HTTP response with a JSON body) — returns None so the caller can treat
     'no answer' uniformly. ``get_provenance_bundle`` is the only caller and
     raises on every None: at this gate a failed request must never be
-    conflated with a well-formed 'no attestations' answer.
+    conflated with a well-formed 'no attestations' answer. The JSON body's
+    shape is whatever ``json.loads`` produced — the caller validates the
+    shape (a truthy non-object body is malformed, not transport).
     """
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=timeout) as r:  # pyright: ignore[reportAny]
-            return cast(dict[str, Any], json.loads(r.read()))  # pyright: ignore[reportAny]
+            return json.loads(r.read())  # pyright: ignore[reportAny]
     except Exception:
         return None
 
@@ -402,11 +417,23 @@ def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, Any]] | N
     """
     encoded = name.replace("/", "%2F")
     meta = _fetch_json(f"https://registry.npmjs.org/{encoded}/{ver}")
-    if not meta:
+    if meta is None:
         raise RuntimeError(
             f"provenance check for {name}@{ver} could not reach the registry"
             " (registry.npmjs.org) — the package metadata request never got a"
             " well-formed answer (timeout, connection failure, or HTTP error)"
+        )
+    if not meta:
+        raise RuntimeError(
+            f"provenance check for {name}@{ver} got malformed package metadata"
+            " from registry.npmjs.org — the registry answered, but the metadata"
+            " document is empty or unusable"
+        )
+    if not isinstance(meta, dict):
+        raise RuntimeError(
+            f"provenance check for {name}@{ver} got malformed package metadata"
+            f" from registry.npmjs.org — expected a JSON object, got"
+            f" {type(meta).__name__}"
         )
     dist = cast(dict[str, Any], meta.get("dist", {}))
     attestations_meta = cast(dict[str, Any], dist.get("attestations", {}))
@@ -414,11 +441,17 @@ def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, Any]] | N
     if not att_url:
         return None
     data = _fetch_json(att_url)
-    if not data:
+    if data is None:
         raise RuntimeError(
             f"provenance check for {name}@{ver} could not download the"
             f" attestation bundle from {att_url} — the request never got a"
             " well-formed answer (timeout, connection failure, or HTTP error)"
+        )
+    if not data:
+        raise RuntimeError(
+            f"provenance check for {name}@{ver} got a malformed attestation"
+            f" bundle response from {att_url} — the registry answered, but the"
+            " bundle document is empty or unusable"
         )
     for att in cast(list[dict[str, Any]], data.get("attestations", [])):
         pred = cast(str, att.get("predicateType", ""))
@@ -483,13 +516,13 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
     Returns (ok, message). Accepts any GitHub Actions OIDC identity so that
     third-party packages (sigma, svelte, etc.) are not gated on a known repo URL.
 
-    Network errors (TUF download, Rekor unreachable) are treated as warnings,
-    not failures — they indicate infrastructure issues, not supply-chain attacks.
-    Only VerificationError (bad signature / cert chain) is treated as fatal.
-    Bundle-format and Rekor timestamp incompatibilities with the pinned
-    sigstore library are likewise skippable. Any other exception is
-    unclassifiable and fails closed: it is reported as a failed check, never
-    as a verified package.
+    Classification of the Sigstore check's outcomes: a network error (TUF
+    download, Rekor unreachable) is treated as a warning, not a failure — it
+    indicates infrastructure issues, not supply-chain attacks. A
+    VerificationError (bad signature / cert chain) is fatal. Bundle-format
+    and Rekor timestamp incompatibilities with the pinned sigstore library
+    are likewise skippable. Any other exception is unclassifiable and fails
+    closed: it is reported as a failed check, never as a verified package.
     """
     try:
         from sigstore.errors import (  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
@@ -554,14 +587,22 @@ def main() -> int:
     failed: list[tuple[str, str]] = []
 
     for (name, ver), integrity in sorted(packages.items()):
-        result = get_provenance_bundle(name, ver)
+        pkg = f"{name}@{ver}"
+        try:
+            result = get_provenance_bundle(name, ver)
+        except RuntimeError as e:
+            # A transport failure is loud, but not sweep-ending: one blip
+            # must not cut every later package off — collect it like a
+            # verification failure and let the run end with the full picture.
+            failed.append((pkg, str(e)))
+            time.sleep(0.02)
+            continue
         if result is None:
             skipped += 1
             time.sleep(0.02)
             continue
 
         _pred_type, bundle = result
-        pkg = f"{name}@{ver}"
         print(f"  {pkg}")
 
         bundle_json = json.dumps(bundle)
