@@ -116,6 +116,19 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 
 ## Resolved CVEs
 
+### 2026-09-20 — Python/uv `constraint-dependencies` (`anyio`)
+
+| Package | Advisory(ies) | Floor & rationale |
+|---------|--------------|-------------------|
+| `anyio@4.13.0` | GHSA-82r6-8w77-94w6 / CVE-2026-63374 (CVSS 4.0 `AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N`, CWE-297) — `TLSStream` encodes server hostnames with IDNA 2003 while certificates are matched against the IDNA 2003 form, diverging from the UTS-46 handling modern clients use; an internationalized-domain certificate lookup can then validate a mismatched certificate, enabling TLS server spoofing. Fixed in `4.14.2`. GHSA-5p39-cfhj-2xmp / CVE-2026-64847 (CVSS 4.0 `AV:L/AC:L/AT:N/PR:L/UI:N/VC:N/VI:N/VA:H`) — `anyio.to_process`/process-pool workers can block indefinitely when a worker subprocess writes to stderr before the parent drains it, an availability DoS; fixed in `4.14.2`. GHSA-3w57-8xmc-8v26 / CVE-2026-63349 — the `extra_groups` API added in `4.14.0` forwards the wrong variable in `open_process`, so a caller clearing supplementary groups silently retains the parent's; affects `4.14.0` **only**. | `anyio>=4.15.1` |
+
+- **`anyio@4.13.0`:** transitive dep of `httpx2` (via `httpcore2`), `starlette`/`sse-starlette` and `watchfiles`; the backend imports it only through those consumers, never directly. Verified on the bumped environment: `httpcore2` ships `_backends/anyio.py` and selects anyio as the default async backend, so every HTTPS fetch runs through anyio's TLS streams.
+- **Reachability (GHSA-82r6, HIGH):** live. The extraction pipeline fetches arbitrary user-supplied URLs (`backend/src/analecta/extraction/`), and internationalized hostnames are a realistic input class there; the advisory's IDNA 2003 vs UTS-46 mismatch is exercised whenever a connection target is encoded by anyio instead of the caller.
+- **Reachability (GHSA-5p39):** defense-in-depth. The sidecar spawns no anyio process pools (no `to_process`/`open_process`/`run_process` call sites in `backend/src/analecta`), so the affected code path is not exercised; the floor covers it for the transitive chain.
+- **Reachability (GHSA-3w57):** not exposed. The installed `4.13.0` predates the `extra_groups` API the advisory names; the floor excludes the vulnerable `4.14.0` resolution class anyway.
+- **Transitive resolution:** the floor moved `typing-extensions` from `4.15.0` to `4.16.0` (anyio `4.15.1` declares it for `python_full_version < '3.15'`); no advisory against either endpoint.
+- **No cooldown exception needed:** `4.15.1` released 2026-09-05, 15 days before this bump (2026-09-20).
+
 ### 2026-09-19 — npm `pnpm` package-manager pin
 
 | Package | CVE(s) | Fix |

@@ -33,6 +33,8 @@ constraint-dependencies = [
     "soupsieve>=2.9.2",
     # Floor, not a pin — GHSA-4jhm-jv67-739f: see docs/security-log.md (2026-09-18).
     "lxml-html-clean>=0.4.5",
+    # Floor, not a pin — GHSA-82r6-8w77-94w6 / GHSA-5p39-cfhj-2xmp / GHSA-3w57-8xmc-8v26: see docs/security-log.md (2026-09-20).
+    "anyio>=4.15.1",
     # Floor, not a pin — GHSA-h35f-9h28-mq5c: see docs/security-log.md (2026-07-27).
     "setuptools>=83.0.0",
 ]
