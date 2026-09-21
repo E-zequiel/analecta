@@ -12,6 +12,8 @@ import base64
 import importlib.util
 import json
 import re
+import sys
+import types
 from pathlib import Path
 from typing import Any
 
@@ -412,3 +414,207 @@ def test_repo_lockfile_yields_scoped_entries(vp: Any) -> None:
         if "@" in key_text and not key_text.startswith("@zkochan/"):
             expected += 1
     assert len(parsed) + len(unmatched) == expected
+
+
+def test_partially_drifted_lockfile_fails_loudly(vp: Any, tmp_path: Path) -> None:
+    """A partially drifted lockfile must never shrink the verified set silently.
+
+    An entry indented at 4/8 spaces is invisible to the block splitter and to
+    the package pattern at once: both guard sets come back empty, the two
+    well-indented neighbours parse, and the drifted entry — resolution line
+    and all — is verified by nobody while the run still exits 0. A lockfile
+    whose text carries a resolution line no parsed entry accounts for must
+    fail loudly rather than verify a partial set.
+    """
+    body = (
+        "packages:\n\n"
+        "  'good@1.0.0':\n"
+        "    resolution: {integrity: sha512-GOODGOOD==}\n\n"
+        "    'drifted@1.0.0':\n"
+        "        resolution: {integrity: sha512-DRIFTED==}\n\n"
+        "  'good2@1.0.0':\n"
+        "    resolution: {integrity: sha512-GOOD2==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    with pytest.raises(RuntimeError):
+        vp.parse_lockfile(path)
+
+
+def test_fully_indented_lockfile_with_prose_notes_still_parses(
+    vp: Any, tmp_path: Path
+) -> None:
+    """A well-formed lockfile with prose notes inside entry blocks parses fine.
+
+    Companion to the loud-failure guard for drifted lockfiles: a prose comment
+    inside a well-indented entry block — even one mentioning `resolution:` —
+    is not an entry, every resolution in the file is reached by the block
+    walk, and parsing must succeed with both entries present.
+    """
+    body = (
+        "packages:\n\n"
+        "  'good@1.0.0':\n"
+        "    # note: resolution: appears here as prose\n"
+        "    resolution: {integrity: sha512-GOOD==}\n\n"
+        "  'good2@1.0.0':\n"
+        "    resolution: {integrity: sha512-GOOD2==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.parse_lockfile(path) == {
+        ("good", "1.0.0"): "sha512-GOOD==",
+        ("good2", "1.0.0"): "sha512-GOOD2==",
+    }
+
+
+def test_all_zkochan_lockfile_with_resolutions_still_parses(
+    vp: Any, tmp_path: Path
+) -> None:
+    """A lockfile whose every entry is @zkochan-scoped parses to an empty map.
+
+    parse_lockfile legitimately returns {} when every entry is excluded as
+    @zkochan-scoped. Those entries' resolutions are reached by the block
+    walk, so the loud-failure path for unreached resolutions must not fire on
+    this shape.
+    """
+    body = (
+        "packages:\n\n"
+        "  '@zkochan/internal@1.0.0':\n"
+        "    resolution: {integrity: sha512-ZKOCHAN==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.parse_lockfile(path) == {}
+
+
+def test_unclassifiable_sigstore_exception_fails_closed(vp: Any, mocker) -> None:
+    """An exception class the script cannot classify must not verify as ok.
+
+    The blanket exception handler in the Sigstore verification path reports
+    every unrecognized exception as a skippable hiccup and returns ok=True —
+    a Bundle load failure of unknown origin becomes indistinguishable from a
+    network blip. An unclassifiable exception must produce a fail-closed
+    verdict, never a verified/skipped-ok one.
+    """
+    errors_mod = types.ModuleType("sigstore.errors")
+    errors_mod.NetworkError = type("NetworkError", (Exception,), {})  # pyright: ignore[reportAttributeAccessIssue]
+    errors_mod.VerificationError = type(  # pyright: ignore[reportAttributeAccessIssue]
+        "VerificationError", (Exception,), {}
+    )
+
+    class _StubBundle:
+        @classmethod
+        def from_json(cls, raw: str) -> None:
+            raise RuntimeError("unexpected internal")
+
+    models_mod = types.ModuleType("sigstore.models")
+    models_mod.Bundle = _StubBundle  # pyright: ignore[reportAttributeAccessIssue]
+    verify_mod = types.ModuleType("sigstore.verify")
+    verify_mod.Verifier = type(  # pyright: ignore[reportAttributeAccessIssue]
+        "Verifier", (), {"production": staticmethod(lambda: object())}
+    )
+    policy_mod = types.ModuleType("sigstore.verify.policy")
+    policy_mod.OIDCIssuer = type("OIDCIssuer", (), {})  # pyright: ignore[reportAttributeAccessIssue]
+    sigstore_mod = types.ModuleType("sigstore")
+    mocker.patch.dict(
+        sys.modules,
+        {
+            "sigstore": sigstore_mod,
+            "sigstore.errors": errors_mod,
+            "sigstore.models": models_mod,
+            "sigstore.verify": verify_mod,
+            "sigstore.verify.policy": policy_mod,
+        },
+    )
+    ok, _message = vp.verify_sigstore("{}")
+    assert ok is False
+
+
+def test_registry_transport_failure_is_loud_not_none(vp: Any, mocker) -> None:
+    """A metadata transport failure must be loud, never read as no-attestation.
+
+    A failed registry request (timeout, connection refused, malformed
+    response) and a well-formed registry answer of 'this package has no
+    attestations' currently produce the identical None return, so a sweep
+    whose every request failed would report the expected-gap count and exit 0
+    having verified nothing. A transport failure must surface as an error
+    naming the unreachable source instead of collapsing into the legitimate
+    skip.
+    """
+    mocker.patch.object(vp, "_fetch_json", return_value=None)
+    with pytest.raises(RuntimeError, match=r"suspicious-package|registry"):
+        vp.get_provenance_bundle("suspicious-package", "1.0.0")
+
+
+def test_drift_absorbed_into_snapshot_blocks_fails_loudly(
+    vp: Any, tmp_path: Path
+) -> None:
+    """A resolution line outside a `packages:` section can never verify silently.
+
+    pnpm's peerless `snapshots:` keys are byte-identical to `packages:` keys,
+    so a resolution line drifting into a snapshots block — with its key or
+    without — is matched by the package pattern and its integrity silently
+    overwrites the legitimate packages-section entry's hash in the parsed
+    map: the gate would then compare the wrong package's attested hash, or
+    exit 0 having never verified the drifted entry at all. Only a
+    `packages:` section's entry blocks own resolution lines; anywhere else
+    a resolution line is unowned and the parse must fail loudly.
+    """
+    drifted_entry = (
+        "packages:\n\n"
+        "  'good@1.0.0':\n"
+        "    resolution: {integrity: sha512-GOOD==}\n\n"
+        "snapshots:\n\n"
+        "  'good@1.0.0':\n"
+        "    dependencies:\n"
+        "      snap: 2.0.0\n\n"
+        "    'drifted@1.0.0':\n"
+        "        resolution: {integrity: sha512-DRIFT==}\n"
+    )
+    bare_resolution = (
+        "packages:\n\n"
+        "  'good@1.0.0':\n"
+        "    resolution: {integrity: sha512-GOOD==}\n\n"
+        "snapshots:\n\n"
+        "  'good@1.0.0':\n"
+        "    dependencies:\n"
+        "      snap: 2.0.0\n"
+        "        resolution: {integrity: sha512-DRIFT==}\n"
+    )
+    for body in (drifted_entry, bare_resolution):
+        path = _write_lockfile(tmp_path, body)
+        with pytest.raises(RuntimeError, match=r"Unreached resolution lines"):
+            vp.parse_lockfile(path)
+
+
+def test_metadata_without_attestations_still_returns_none(vp: Any, mocker) -> None:
+    """A well-formed registry answer without attestations is an expected skip.
+
+    Metadata that parses cleanly but carries no `dist.attestations.url` is a
+    legitimate 'no provenance yet' answer: get_provenance_bundle must keep
+    returning None for it without raising. This is the case a transport
+    failure must never be allowed to masquerade as.
+    """
+    metadata = {"dist": {"tarball": "https://registry.npmjs.org/x/-/x-1.0.0.tgz"}}
+    mocker.patch.object(vp, "_fetch_json", return_value=metadata)
+    assert vp.get_provenance_bundle("suspicious-package", "1.0.0") is None
+
+
+def test_prose_line_is_not_reported_as_untokenizable(vp: Any, tmp_path: Path) -> None:
+    """A prose line mentioning `resolution:` is not an untokenizable entry.
+
+    The raw-line scan reports any exactly-two-space-indented line carrying
+    `resolution:` or `integrity:` that does not end in `:` — a prose note
+    under `settings:` matches that shape and is falsely reported as a
+    package-shaped entry candidate, failing parse_lockfile on a well-formed
+    lockfile. Prose must not be reported; only genuine inline entries (key
+    line carrying integrity) may be, and those stay covered by the existing
+    inline-entry test.
+    """
+    body = (
+        "packages:\n\n"
+        "  'good@1.0.0':\n"
+        "    resolution: {integrity: sha512-GOOD==}\n\n"
+        "settings:\n"
+        "  note: resolution: appears here as prose\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.find_untokenized_package_keys(body) == []
+    assert vp.parse_lockfile(path) == {("good", "1.0.0"): "sha512-GOOD=="}
