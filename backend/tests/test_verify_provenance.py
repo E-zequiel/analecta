@@ -688,6 +688,143 @@ def test_metadata_without_attestations_still_returns_none(vp: Any, mocker) -> No
     assert vp.get_provenance_bundle("suspicious-package", "1.0.0") is None
 
 
+def test_nested_metadata_shape_errors_are_classified_failures(vp: Any, mocker) -> None:
+    """A well-formed answer with a wrong nested metadata shape fails classified.
+
+    The outer layers are validated (`test_malformed_empty_metadata_is_loud_with_
+    an_accurate_label`), but every nested layer of the metadata document must be
+    too: a truthy object whose ``dist`` is not an object, or whose
+    ``dist.attestations`` is not an object, crashes the sweep with an
+    unclassified AttributeError that escapes ``main()``'s ``except RuntimeError``
+    collection. A wrong nested shape is a classified failure — a RuntimeError
+    whose message says the metadata is malformed and names the package and the
+    source — never a crash and never the legitimate skip.
+    """
+    for metadata in (
+        {"dist": None},
+        {"dist": "abc"},
+        {"dist": {"attestations": None}},
+        {"dist": {"attestations": "no"}},
+    ):
+        mocker.patch.object(vp, "_fetch_json", return_value=metadata)
+        with pytest.raises(RuntimeError, match=r"malformed") as excinfo:
+            vp.get_provenance_bundle("suspicious-package", "1.0.0")
+        message = str(excinfo.value)
+        assert "suspicious-package@1.0.0" in message
+        assert "registry.npmjs.org" in message
+
+
+def test_advertised_url_with_unusable_bundle_document_fails_loudly(
+    vp: Any, mocker
+) -> None:
+    """Once the metadata advertises an attestation URL, never read as a skip.
+
+    The legitimate no-attestation skip (None) means 'well-formed metadata
+    without ``dist.attestations.url``'. Once that URL is advertised, a bundle
+    answer that carries no SLSA-provenance attestation is malformed or unusable
+    — a truthy non-object document, an object with no attestations list, a
+    non-list attestations value, a non-object entry, an entry without a string
+    predicateType, or a list whose every entry is a non-SLSA predicate — and
+    must fail loudly as a classified RuntimeError naming the package and the
+    bundle source, never resolve silently to None (main() would count the
+    package under 'No attestation (expected gap)' and exit 0).
+    """
+    metadata = {"dist": {"attestations": {"url": "https://bundler.example/att"}}}
+    for bundle_document in (
+        [1, 2],
+        {"unexpected": "shape"},
+        {"attestations": []},
+        {"attestations": "no"},
+        {"attestations": [1, 2]},
+        {"attestations": [{"bundle": {}}]},
+        {
+            "attestations": [
+                {"predicateType": "https://example.com/other", "bundle": {}}
+            ]
+        },
+    ):
+
+        def _fetch(url: str, timeout: int = 10, _doc: Any = bundle_document) -> Any:
+            return metadata if url.endswith("/1.0.0") else _doc
+
+        mocker.patch.object(vp, "_fetch_json", side_effect=_fetch)
+        with pytest.raises(RuntimeError, match=r"malformed") as excinfo:
+            vp.get_provenance_bundle("suspicious-package", "1.0.0")
+        message = str(excinfo.value)
+        assert "suspicious-package@1.0.0" in message
+        assert "https://bundler.example/att" in message
+
+
+def test_non_string_predicate_type_is_a_classified_failure(vp: Any, mocker) -> None:
+    """A non-string predicateType is a malformed attestation, not a crash.
+
+    The predicateType comparison calls ``startswith`` on each attestation's
+    ``predicateType``; a non-string value (``42``) raises an unclassified
+    TypeError that escapes ``main()``'s ``except RuntimeError`` collection. A
+    well-formed answer with a wrong nested shape must be a classified
+    RuntimeError saying the bundle is malformed, naming the package and source.
+    """
+    metadata = {"dist": {"attestations": {"url": "https://bundler.example/att"}}}
+
+    def _fetch(url: str, timeout: int = 10) -> Any:
+        if url.endswith("/1.0.0"):
+            return metadata
+        return {"attestations": [{"predicateType": 42, "bundle": {}}]}
+
+    mocker.patch.object(vp, "_fetch_json", side_effect=_fetch)
+    with pytest.raises(RuntimeError, match=r"malformed") as excinfo:
+        vp.get_provenance_bundle("suspicious-package", "1.0.0")
+    message = str(excinfo.value)
+    assert "suspicious-package@1.0.0" in message
+    assert "https://bundler.example/att" in message
+
+
+def test_matching_attestation_with_null_bundle_is_a_classified_failure(
+    vp: Any, mocker
+) -> None:
+    """An SLSA attestation whose bundle is None is malformed, not a None skip.
+
+    The matching attestation's ``bundle`` is returned unvalidated; a ``None``
+    bundle flows into ``check_subject_hash(None, ...)`` and crashes with an
+    unclassified AttributeError downstream. The bundle object is a nested layer
+    of the registry answer: a well-formed answer carrying ``bundle: None`` must
+    be a classified RuntimeError saying the bundle is malformed, naming the
+    package and source — never the (predicateType, None) tuple, which also
+    masquerades as a falsy no-attestation result at the call site.
+    """
+    metadata = {"dist": {"attestations": {"url": "https://bundler.example/att"}}}
+
+    def _fetch(url: str, timeout: int = 10) -> Any:
+        if url.endswith("/1.0.0"):
+            return metadata
+        return {
+            "attestations": [
+                {"predicateType": "https://slsa.dev/provenance/v1", "bundle": None}
+            ]
+        }
+
+    mocker.patch.object(vp, "_fetch_json", side_effect=_fetch)
+    with pytest.raises(RuntimeError, match=r"malformed") as excinfo:
+        vp.get_provenance_bundle("suspicious-package", "1.0.0")
+    message = str(excinfo.value)
+    assert "suspicious-package@1.0.0" in message
+    assert "https://bundler.example/att" in message
+
+
+def test_attestations_object_without_url_still_returns_none(vp: Any, mocker) -> None:
+    """An attestations object lacking ``url`` is still the legitimate skip.
+
+    Companion guard for the nested-validation contract: only a *string*
+    ``dist.attestations.url`` turns the bundle path on. A well-formed metadata
+    document whose ``dist.attestations`` object carries no ``url`` keeps
+    returning None without raising — the no-provenance-yet gap this gate must
+    never be silenced by, but also never falsely raised on.
+    """
+    metadata = {"dist": {"attestations": {"unexpected": "shape"}}}
+    mocker.patch.object(vp, "_fetch_json", return_value=metadata)
+    assert vp.get_provenance_bundle("suspicious-package", "1.0.0") is None
+
+
 def test_prose_line_is_not_reported_as_untokenizable(vp: Any, tmp_path: Path) -> None:
     """A prose line mentioning `resolution:` is not an untokenizable entry.
 
