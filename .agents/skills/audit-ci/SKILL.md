@@ -208,7 +208,7 @@ grep "^sigstore==" scripts/requirements-provenance.lock
 | `.venv-provenance/` not in `.gitignore` | LOW | Add `.venv-provenance/` to `.gitignore` |
 | `sigstore` not pinned (version range instead of `==`) | LOW | Pin to exact version in lock file |
 
-**Context:** `scripts/verify-provenance.py` verifies Sigstore provenance attestations for the minority of installed npm packages that publish them. It cross-checks the attested subject SHA-512 against `pnpm-lock.yaml` (independent of registry) and verifies the Sigstore bundle against Rekor + Fulcio. See `docs/github-actions-security.md` Control 10 for the full threat model and residual gap table.
+**Context:** `scripts/verify_provenance.py` verifies Sigstore provenance attestations for the minority of installed npm packages that publish them. It cross-checks the attested subject SHA-512 against `pnpm-lock.yaml` (independent of registry) and verifies the Sigstore bundle against Rekor + Fulcio. See `docs/github-actions-security.md` Control 10 for the full threat model and residual gap table.
 
 #### Build provenance attestation (producer-side)
 

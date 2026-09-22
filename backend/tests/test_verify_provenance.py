@@ -1,4 +1,4 @@
-"""Tests for scripts/verify-provenance.py's lockfile parser.
+"""Tests for scripts/verify_provenance.py's lockfile parser.
 
 The script's filename contains a hyphen, so it cannot be imported by name; the
 `vp` fixture loads it from its path. The parser and the pure comparison helpers
@@ -20,12 +20,12 @@ from typing import Any
 
 import pytest
 
-_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "verify-provenance.py"
+_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "verify_provenance.py"
 
 
 @pytest.fixture(scope="module")
 def vp() -> Any:
-    """Load scripts/verify-provenance.py without touching global import state."""
+    """Load scripts/verify_provenance.py without touching global import state."""
     spec = importlib.util.spec_from_file_location("verify_provenance", _SCRIPT)
     assert spec is not None
     assert spec.loader is not None
