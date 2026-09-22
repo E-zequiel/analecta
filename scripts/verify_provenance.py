@@ -199,11 +199,9 @@ def _unowned_resolution_lines(content: str) -> list[str]:
     in_block = False
     block_resolution_seen = False
     for line in content.splitlines():
-        # A resolution line is only ever owned inside a `packages:` section's
-        # entry block, and only as that block's first one — and only when it
-        # is block-indented: a column-0 `resolution:` exists in no legitimate
-        # shape, so it is unowned drift wherever it sits. Check first: a
-        # column-0 `resolution:` would otherwise read as a section key.
+        # The resolution-line check comes first on purpose: a column-0
+        # `resolution:` would otherwise read as a section key below. The
+        # ownership conditions themselves are stated in the docstring.
         if _RESOLUTION_LINE_RE.match(line):
             owned = (
                 _OWNED_RESOLUTION_LINE_RE.match(line) is not None
@@ -386,16 +384,22 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
 
 
 def _fetch_json(url: str, timeout: int = 10) -> Any:
-    """Fetch JSON from ``url``; None means the request never got an answer.
+    """Fetch JSON from ``url``; None means no well-formed JSON answer.
 
-    A transport failure — an exception from ``urlopen`` (timeout, DNS
-    failure, connection refused, a 404, any error short of a well-formed
-    HTTP response with a JSON body) — returns None so the caller can treat
-    'no answer' uniformly. ``get_provenance_bundle`` is the only caller and
-    raises on every None: at this gate a failed request must never be
-    conflated with a well-formed 'no attestations' answer. The JSON body's
-    shape is whatever ``json.loads`` produced — the caller validates the
-    shape (a truthy non-object body is malformed, not transport).
+    None is the sentinel for every failure short of a parsed JSON body —
+    not only transport: an exception from ``urlopen`` (timeout, DNS
+    failure, connection refused, a 404) and an HTTP 200 whose body
+    ``json.loads`` rejects (a non-JSON document served with a success
+    status) both return None, so the caller can treat 'no usable answer'
+    uniformly. The two origins are deliberately not distinguished here:
+    the sentinel's contract is only 'the caller cannot trust any payload
+    from this request'; ``get_provenance_bundle`` is the only caller and
+    raises on every None, labeling the whole class as unreachable/failed
+    transport — at this gate a failed request must never be conflated
+    with a well-formed 'no attestations' answer. The JSON body's shape,
+    once ``json.loads`` succeeds, is whatever it produced — the caller
+    validates the shape (a truthy non-object body is malformed, not
+    transport).
     """
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
