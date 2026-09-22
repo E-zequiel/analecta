@@ -405,16 +405,44 @@ def _fetch_json(url: str, timeout: int = 10) -> Any:
         return None
 
 
+def _classified_shape_error(
+    pkg: str, source: str, artifact: str, detail: str
+) -> RuntimeError:
+    """Build the classified failure for a malformed layer of the answer.
+
+    Every nested-shape violation must surface as this RuntimeError — never an
+    AttributeError or TypeError — so ``main()``'s per-package collection sees
+    a classified failure instead of a crashed sweep. The message says the
+    layer is malformed and names the package and the source it came from.
+    """
+    return RuntimeError(
+        f"provenance check for {pkg} got malformed {artifact} from {source} — {detail}"
+    )
+
+
 def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, Any]] | None:
     """Return (predicate_type, bundle) for the first SLSA provenance attestation.
 
     Returns None only when the registry answered with well-formed metadata
-    that carries no ``dist.attestations.url`` — the expected 'no provenance
-    yet' gap (~60% of the npm ecosystem). A transport failure — the request
-    never got a well-formed answer, or the attestation-bundle download
-    failed — raises RuntimeError naming the package and the unreachable
-    source: a failed request must never read as the legitimate skip.
+    that carries no usable ``dist.attestations.url`` — the expected 'no
+    provenance yet' gap (~60% of the npm ecosystem). A transport failure —
+    the request never got a well-formed answer, or the attestation-bundle
+    download failed — raises RuntimeError naming the package and the
+    unreachable source: a failed request must never read as the legitimate
+    skip.
+
+    Every nested layer of the registry answer is validated at runtime: a
+    well-formed outer document whose ``dist``, ``dist.attestations``, the
+    fetched bundle document, its ``attestations`` list, or any entry's
+    ``predicateType``/``bundle`` has the wrong shape raises a classified
+    RuntimeError instead of crashing the sweep with an unclassified
+    exception. Once the metadata advertises an attestation URL, a bundle
+    document carrying no SLSA provenance attestation is likewise a classified
+    failure, not the skip: a registry-level MITM must never be able to turn a
+    declared attestation into a silent 'no provenance yet' pass by serving a
+    stripped or reshaped document.
     """
+    pkg = f"{name}@{ver}"
     encoded = name.replace("/", "%2F")
     meta = _fetch_json(f"https://registry.npmjs.org/{encoded}/{ver}")
     if meta is None:
@@ -435,10 +463,31 @@ def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, Any]] | N
             f" from registry.npmjs.org — expected a JSON object, got"
             f" {type(meta).__name__}"
         )
-    dist = cast(dict[str, Any], meta.get("dist", {}))
-    attestations_meta = cast(dict[str, Any], dist.get("attestations", {}))
-    att_url = cast(str | None, attestations_meta.get("url"))
-    if not att_url:
+    dist_meta = meta.get("dist")
+    if "dist" in meta and not isinstance(dist_meta, dict):
+        raise _classified_shape_error(
+            pkg,
+            "registry.npmjs.org",
+            "package metadata",
+            f"'dist' is not an object (got {type(dist_meta).__name__})",
+        )
+    dist = dist_meta if isinstance(dist_meta, dict) else {}
+    attestations_meta = dist.get("attestations")
+    if "attestations" in dist and not isinstance(attestations_meta, dict):
+        raise _classified_shape_error(
+            pkg,
+            "registry.npmjs.org",
+            "package metadata",
+            f"'dist.attestations' is not an object"
+            f" (got {type(attestations_meta).__name__})",
+        )
+    attestations = attestations_meta if isinstance(attestations_meta, dict) else {}
+    att_url = attestations.get("url")
+    if not isinstance(att_url, str) or not att_url:
+        # The legitimate skip: well-formed metadata with no usable
+        # ``dist.attestations.url``. An attestations object lacking ``url``
+        # — or carrying a non-string one — stays this gap, not a failure:
+        # only a *string* url turns the bundle path on.
         return None
     data = _fetch_json(att_url)
     if data is None:
@@ -453,11 +502,64 @@ def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, Any]] | N
             f" bundle response from {att_url} — the registry answered, but the"
             " bundle document is empty or unusable"
         )
-    for att in cast(list[dict[str, Any]], data.get("attestations", [])):
-        pred = cast(str, att.get("predicateType", ""))
-        if any(pred.startswith(p) for p in SLSA_PREDICATE_PREFIXES):
-            return pred, cast(dict[str, Any], att.get("bundle", {}))
-    return None
+    if not isinstance(data, dict):
+        raise _classified_shape_error(
+            pkg,
+            att_url,
+            "attestation bundle response",
+            f"expected a JSON object, got {type(data).__name__}",
+        )
+    raw_attestations = data.get("attestations")
+    if not isinstance(raw_attestations, list):
+        raise _classified_shape_error(
+            pkg,
+            att_url,
+            "attestation bundle response",
+            f"'attestations' is not a list (got {type(raw_attestations).__name__})",
+        )
+    for att in raw_attestations:
+        if not isinstance(att, dict):
+            raise _classified_shape_error(
+                pkg,
+                att_url,
+                "attestation bundle response",
+                f"attestation entry is not an object (got {type(att).__name__})",
+            )
+        pred = att.get("predicateType")
+        if not isinstance(pred, str):
+            raise _classified_shape_error(
+                pkg,
+                att_url,
+                "attestation bundle response",
+                f"attestation 'predicateType' is not a string"
+                f" (got {type(pred).__name__})",
+            )
+        if not any(pred.startswith(p) for p in SLSA_PREDICATE_PREFIXES):
+            continue
+        bundle = att.get("bundle")
+        if not isinstance(bundle, dict):
+            raise _classified_shape_error(
+                pkg,
+                att_url,
+                "attestation bundle response",
+                "matched attestation's 'bundle' is not an object"
+                f" (got {type(bundle).__name__})",
+            )
+        return pred, bundle
+    # The metadata advertised an attestation URL, so a document without an
+    # SLSA provenance attestation is not the expected gap — it is malformed
+    # (or an actively stripped answer): failing closed here is what keeps a
+    # registry-level MITM from turning a declared attestation into a silent
+    # skip that main() counts under 'No attestation (expected gap)'.
+    raise _classified_shape_error(
+        pkg,
+        att_url,
+        "attestation bundle response",
+        "no attestation whose predicateType starts with an SLSA provenance"
+        f" prefix ({', '.join(SLSA_PREDICATE_PREFIXES)}) — the metadata"
+        " advertised an attestation, so this is malformed, not the"
+        " no-provenance-yet gap",
+    )
 
 
 def _b64_to_hex(integrity: str) -> str | None:
