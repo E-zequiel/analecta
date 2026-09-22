@@ -4,8 +4,8 @@ This document describes how dependency integrity is verified before and
 after adding or upgrading a direct dependency, for both ecosystems in this
 repo (npm/pnpm in `frontend/` and `electron/`, Python/uv in `backend/`) —
 distinct from the automated, lockfile-wide attestation sweep in
-`scripts/verify-provenance.py` (npm/pnpm only; see
-[Relationship to `verify-provenance.py`](#relationship-to-verify-provenancepy)).
+`scripts/verify_provenance.py` (npm/pnpm only; see
+[Relationship to `verify_provenance.py`](#relationship-to-verify_provenancepy)).
 
 ---
 
@@ -414,12 +414,12 @@ runtime helper directly, but its own `package.json` never lists
 `@babel/runtime` as a dependency. Restored the entry; verified the build
 passes again.
 
-## Relationship to `verify-provenance.py`
+## Relationship to `verify_provenance.py`
 
-`verify-provenance.py` only parses `pnpm-lock.yaml` — it has no Python/uv
+`verify_provenance.py` only parses `pnpm-lock.yaml` — it has no Python/uv
 counterpart in this repo. The table below is npm/pnpm-specific.
 
-| | This procedure | `scripts/verify-provenance.py` |
+| | This procedure | `scripts/verify_provenance.py` |
 |---|---|---|
 | Scope | One package, at the moment it's added/upgraded | Every package in `pnpm-lock.yaml`, on demand |
 | What it checks | `dist.integrity` hash, fetched and cross-checked manually | Sigstore/SLSA provenance attestation (Fulcio cert chain + Rekor inclusion proof), where one exists |

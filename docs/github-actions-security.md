@@ -309,7 +309,7 @@ The script calls `pnpm exec socket` (lockfile-pinned, `socket@1.1.99`) — never
 
 ## Control 10: Provenance Attestation Verification
 
-The `verify-provenance` CI job (`scripts/verify-provenance.py`) verifies npm SLSA provenance attestations for every package in `pnpm-lock.yaml` that has one.
+The `verify-provenance` CI job (`scripts/verify_provenance.py`) verifies npm SLSA provenance attestations for every package in `pnpm-lock.yaml` that has one.
 
 ### Why lockfile integrity alone is insufficient at write time
 
@@ -363,7 +363,7 @@ verify-provenance:
           -r scripts/requirements-provenance.lock \
           --python .venv-provenance
     - name: Verify npm provenance attestations
-      run: .venv-provenance/bin/python scripts/verify-provenance.py
+      run: .venv-provenance/bin/python scripts/verify_provenance.py
       env:
         PYTHONUNBUFFERED: "1"
 ```

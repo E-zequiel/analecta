@@ -77,7 +77,7 @@ jobs:
             --python .venv-provenance
 
       - name: Verify npm provenance attestations
-        run: .venv-provenance/bin/python scripts/verify-provenance.py
+        run: .venv-provenance/bin/python scripts/verify_provenance.py
         env:
           PYTHONUNBUFFERED: "1"
 
