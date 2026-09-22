@@ -147,6 +147,15 @@ def _scan_lockfile(content: str) -> tuple[dict[tuple[str, str], str], list[str]]
     splitter (a 4-space-indented entry lands inside the previous block and
     its resolution is never read). `parse_lockfile` guards that case
     independently — see `_unowned_resolution_lines`.
+
+    It is also silent on duplicate identities: two entry blocks resolving to
+    the same ``(name, version)`` (quoting variants collapse to one identity)
+    overwrite each other in the parsed map, last one wins. Identical values
+    are a legitimate dedup; conflicting values are guarded by
+    `parse_lockfile` via `_conflicting_duplicates` — never here, because
+    this pass must keep returning the gap list without raising (the guard
+    composition in `parse_lockfile` and `find_unmatched_package_keys`
+    depend on that).
     """
     parsed: dict[tuple[str, str], str] = {}
     unmatched: list[str] = []
@@ -175,6 +184,42 @@ def _scan_lockfile(content: str) -> tuple[dict[tuple[str, str], str], list[str]]
         if integrity or has_resolution:
             unmatched.append(key_text)
     return parsed, unmatched
+
+
+def _conflicting_duplicates(content: str) -> list[tuple[str, str, str]]:
+    """Return (identity, first value, later value) for colliding entries.
+
+    A second pass over the entry blocks, tracking each parsed identity's
+    first integrity value: two lockfile entries resolving to the same
+    ``(name, version)`` — byte-identical duplicate key lines or across
+    quoting variants, both of which collapse to one identity — with
+    *different* integrity values mean one of the two attested hashes would
+    be silently overwritten in the parsed map and dropped from verification
+    while the script still reported success. That ambiguity is the failure
+    mode this guard closes; the same identity with an identical value is a
+    legitimate dedup and produces no conflict. Keys that never parse into a
+    verifiable entry (peer-suffixed and other unmatched package-shaped keys,
+    which the unmatched guard owns) and deliberately excluded @zkochan
+    entries take no part in the collision set.
+    """
+    seen: dict[tuple[str, str], str] = {}
+    conflicts: list[tuple[str, str, str]] = []
+    for key_line, _key_text, block in _entry_blocks(content):
+        integrity = _INTEGRITY_RE.search(block)
+        if not integrity:
+            continue
+        m = _PKG_RE.match(key_line)
+        if not m:
+            continue
+        name = m.group(1) or m.group(3)
+        ver = m.group(2) or m.group(4)
+        if not name or not ver or name.startswith("@zkochan/"):
+            continue
+        value = integrity.group(1)
+        first = seen.setdefault((name, ver), value)
+        if first != value:
+            conflicts.append((f"{name}@{ver}", first, value))
+    return conflicts
 
 
 def _unowned_resolution_lines(content: str) -> list[str]:
@@ -306,15 +351,20 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
     Raises RuntimeError if the block splitter cannot tokenize a package-shaped
     entry candidate — see `find_untokenized_package_keys` — if a package-shaped
     block carrying a resolution was not parsed — see
-    `find_unmatched_package_keys` — or if a resolution line in the raw file
+    `find_unmatched_package_keys` — if a resolution line in the raw file
     text is never reached by the entry-block walk — see
-    `_unowned_resolution_lines`. The guards run most-diagnostic-first: a
+    `_unowned_resolution_lines` — or if two entries resolve to the same
+    ``(name, version)`` identity with different integrity values — see
+    `_conflicting_duplicates`. The guards run most-diagnostic-first: a
     lockfile the walk cannot see at all (four-space indentation throughout)
     is caught by the zero-parse check ("Parsed 0 packages"), a partially
-    drifted one by the unreached-resolutions invariant, and a lockfile whose
-    every entry is legitimately excluded (@zkochan-scoped, for instance)
-    still parses to an empty map because those resolutions ARE reached by
-    the walk.
+    drifted one by the unreached-resolutions invariant (a conflicting
+    duplicate behind a drifted entry is a shape problem before it is a
+    value problem), and a lockfile whose every entry is legitimately
+    excluded (@zkochan-scoped, for instance) still parses to an empty map
+    because those resolutions ARE reached by the walk. The duplicate-
+    identity conflict check composes last, on a lockfile the walk fully
+    accounted for.
     """
     content = path.read_text()
     untokenized = find_untokenized_package_keys(content)
@@ -379,6 +429,29 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
             " the parser (an entry indented differently from its neighbours"
             " is the usual cause): fix the pattern rather than verifying a"
             " partial set."
+        )
+    duplicates = _conflicting_duplicates(content)
+    if duplicates:
+        # Last in the guard ordering: a conflicting identity behind an entry
+        # the walk never reached is a shape problem first, and the unreached
+        # guard above names that drift more precisely than a value conflict
+        # could. Reaching this point means the walk accounted for every
+        # resolution, so the conflict is the only remaining ambiguity: two
+        # entries resolve to the same (name, version) and the parsed map
+        # would silently keep one attested hash while dropping the other.
+        shown = "; ".join(
+            f"{identity} ({first} vs {later})"
+            for identity, first, later in duplicates[:5]
+        )
+        more = "" if len(duplicates) <= 5 else f" (+{len(duplicates) - 5} more)"
+        raise RuntimeError(
+            f"Conflicting duplicate entries ({len(duplicates)}): {shown}{more}"
+            " — two lockfile entries resolve to the same package identity with"
+            " different integrity values, and the parser keys its map by"
+            " (name, version), so one of the two attested hashes would be"
+            " silently overwritten and dropped from verification while the"
+            " gate still reported success. Resolve the duplicate in the"
+            " lockfile rather than letting the gate verify an ambiguous set."
         )
     return parsed
 

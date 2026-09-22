@@ -846,3 +846,94 @@ def test_prose_line_is_not_reported_as_untokenizable(vp: Any, tmp_path: Path) ->
     path = _write_lockfile(tmp_path, body)
     assert vp.find_untokenized_package_keys(body) == []
     assert vp.parse_lockfile(path) == {("good", "1.0.0"): "sha512-GOOD=="}
+
+
+def test_duplicate_key_with_different_integrity_fails_loudly(
+    vp: Any, tmp_path: Path
+) -> None:
+    """Two entries resolving to the same identity with different hashes fail.
+
+    The parser keys its map by ``(name, version)`` and discards the key line's
+    quoting style and peer suffix, so two lockfile entries resolving to the
+    same identity collide in that map. With different attested integrity
+    values a collision is a real ambiguity — one of the two attested hashes
+    would be verified and the other silently dropped — so the parse must fail
+    loudly, naming the colliding identity and surfacing both conflicting
+    values, never overwrite silently and never verify a partial set.
+    """
+    body = (
+        "packages:\n\n"
+        "  'dup@1.0.0':\n"
+        "    resolution: {integrity: sha512-FIRST==}\n\n"
+        "  'dup@1.0.0':\n"
+        "    resolution: {integrity: sha512-SECOND==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.find_unmatched_package_keys(body) == []
+    with pytest.raises(RuntimeError) as excinfo:
+        vp.parse_lockfile(path)
+    message = str(excinfo.value)
+    assert "dup@1.0.0" in message
+    assert "sha512-FIRST==" in message
+    assert "sha512-SECOND==" in message
+
+
+def test_mixed_quoting_duplicate_with_different_integrity_fails_loudly(
+    vp: Any, tmp_path: Path
+) -> None:
+    """Quoting style must not launder a conflicting duplicate into a parse.
+
+    A quoted and an unquoted spelling of the same identity (`'mix@1.0.0':`
+    and `mix@1.0.0:`) resolve to the same ``(name, version)`` key. If the
+    parser treats the two spellings as different key lines but the same
+    identity — which it must — then different integrity values behind them
+    are the same conflicting-duplicate case as the exact-duplicate one, and
+    must fail loudly with the identity and both values, not silently let
+    whichever spelling comes last win.
+    """
+    body = (
+        "packages:\n\n"
+        "  'mix@1.0.0':\n"
+        "    resolution: {integrity: sha512-QUOTED==}\n\n"
+        "  mix@1.0.0:\n"
+        "    resolution: {integrity: sha512-UNQUOTED==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.find_unmatched_package_keys(body) == []
+    with pytest.raises(RuntimeError) as excinfo:
+        vp.parse_lockfile(path)
+    message = str(excinfo.value)
+    assert "mix@1.0.0" in message
+    assert "sha512-QUOTED==" in message
+    assert "sha512-UNQUOTED==" in message
+
+
+def test_duplicate_key_with_identical_integrity_dedupes_quietly(
+    vp: Any, tmp_path: Path
+) -> None:
+    """The same identity attested twice with the same hash is a quiet dedup.
+
+    The loud failure is reserved for *conflicting* duplicates. The same
+    integrity written for the same identity — whether as byte-identical
+    duplicate key lines or across quoting variants — carries no ambiguity:
+    it parses quietly to that single entry. Guards the fix against
+    over-correction: refusing every duplicate, identical or not, would fail
+    a legitimate lockfile.
+    """
+    body = (
+        "packages:\n\n"
+        "  'dup@1.0.0':\n"
+        "    resolution: {integrity: sha512-SAME==}\n\n"
+        "  'dup@1.0.0':\n"
+        "    resolution: {integrity: sha512-SAME==}\n\n"
+        "  'mix2@2.0.0':\n"
+        "    resolution: {integrity: sha512-ALSO-SAME==}\n\n"
+        "  mix2@2.0.0:\n"
+        "    resolution: {integrity: sha512-ALSO-SAME==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.find_unmatched_package_keys(body) == []
+    assert vp.parse_lockfile(path) == {
+        ("dup", "1.0.0"): "sha512-SAME==",
+        ("mix2", "2.0.0"): "sha512-ALSO-SAME==",
+    }
