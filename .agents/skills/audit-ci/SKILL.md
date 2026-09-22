@@ -1,6 +1,6 @@
 ---
 name: audit-ci
-description: Audit GitHub Actions workflow files (.github/workflows/) for supply-chain security vulnerabilities. Use this skill whenever the user asks to review CI/CD security, harden a pipeline, check workflows for issues, verify dependency pinning in CI, or wants to know if their GitHub Actions setup is protected against supply-chain attacks. Also trigger when reviewing PRs that touch workflow files, when a user mentions pnpm dlx / npx / yarn dlx in CI, when adding a new CLI tool to a workflow, or when the user asks about any of: unpinned actions, secrets exposure in CI, OIDC tokens, GitHub Actions permissions, fork PR security, or supply-chain attacks targeting CI runners.
+description: 'Audit GitHub Actions workflow files (.github/workflows/) for supply-chain security vulnerabilities. Use this skill whenever the user asks to review CI/CD security, harden a pipeline, check workflows for issues, verify dependency pinning in CI, or wants to know if their GitHub Actions setup is protected against supply-chain attacks. Also trigger when reviewing PRs that touch workflow files, when a user mentions pnpm dlx / npx / yarn dlx in CI, when adding a new CLI tool to a workflow, or when the user asks about any of: unpinned actions, secrets exposure in CI, OIDC tokens, GitHub Actions permissions, fork PR security, or supply-chain attacks targeting CI runners.'
 ---
 
 # CI Supply-Chain Security Audit
