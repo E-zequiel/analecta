@@ -937,3 +937,88 @@ def test_duplicate_key_with_identical_integrity_dedupes_quietly(
         ("dup", "1.0.0"): "sha512-SAME==",
         ("mix2", "2.0.0"): "sha512-ALSO-SAME==",
     }
+
+
+def test_duplicate_identity_across_documents_fails_loudly(
+    vp: Any, tmp_path: Path
+) -> None:
+    """The env and project documents are one text — duplicates span both.
+
+    The parser reads the whole lockfile text, so an identity written in the
+    env document's packages section and again in the project document's is
+    the same collapsing pair as an in-document duplicate: with different
+    integrity values one of the two attested hashes would be silently
+    overwritten. The conflicting-duplicate guard must catch it across the
+    document boundary, naming the identity and both values.
+    """
+    body = (
+        "---\n"
+        "lockfileVersion: '9.0'\n\n"
+        "packages:\n\n"
+        "  'dup@1.0.0':\n"
+        "    resolution: {integrity: sha512-ENVDOC==}\n\n"
+        "---\n"
+        "lockfileVersion: '9.0'\n\n"
+        "packages:\n\n"
+        "  'dup@1.0.0':\n"
+        "    resolution: {integrity: sha512-PROJECT==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    with pytest.raises(RuntimeError) as excinfo:
+        vp.parse_lockfile(path)
+    message = str(excinfo.value)
+    assert "dup@1.0.0" in message
+    assert "sha512-ENVDOC==" in message
+    assert "sha512-PROJECT==" in message
+
+
+def test_three_way_identity_conflict_reports_the_pairs(vp: Any, tmp_path: Path) -> None:
+    """Three entries on one identity report the conflicts that exist.
+
+    The conflict tracker keeps each identity's first value, so a third entry
+    with a further-different value is another conflict against the same
+    first, not a replacement: the message must surface the identity and the
+    disagreeing values so the operator can see the set is ambiguous, and the
+    parse must fail rather than let the last entry win.
+    """
+    body = (
+        "packages:\n\n"
+        "  'tri@1.0.0':\n"
+        "    resolution: {integrity: sha512-FIRST==}\n\n"
+        "  'tri@1.0.0':\n"
+        "    resolution: {integrity: sha512-SECOND==}\n\n"
+        "  tri@1.0.0:\n"
+        "    resolution: {integrity: sha512-THIRD==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    with pytest.raises(RuntimeError) as excinfo:
+        vp.parse_lockfile(path)
+    message = str(excinfo.value)
+    assert "tri@1.0.0" in message
+    assert "sha512-FIRST==" in message
+    assert "sha512-THIRD==" in message
+
+
+def test_peer_suffixed_twin_with_integrity_fails_as_a_parser_gap_first(
+    vp: Any, tmp_path: Path
+) -> None:
+    """A peer-suffixed twin stays the unmatched guard's case, not the conflict's.
+
+    The identity deliberately excludes peer suffixes, and a suffixed packages:
+    key carrying integrity never parses at all — the unmatched-keys guard owns
+    it before the conflict guard composes (and the conflict pass takes no part
+    in unmatchable keys). This pins the guard composition: a suffixed twin of
+    a parsed identity with a different integrity fails as a parser gap naming
+    the suffixed key, not as a value conflict between the two.
+    """
+    body = (
+        "packages:\n\n"
+        "  'plain@1.0.0':\n"
+        "    resolution: {integrity: sha512-PLAIN==}\n\n"
+        "  'plain@1.0.0(peer@2.0.0)':\n"
+        "    resolution: {integrity: sha512-SUFFIXED==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.find_unmatched_package_keys(body) == ["plain@1.0.0(peer@2.0.0)"]
+    with pytest.raises(RuntimeError, match="did not match the lockfile parser"):
+        vp.parse_lockfile(path)
