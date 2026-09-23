@@ -649,6 +649,48 @@ def _b64_to_hex(integrity: str) -> str | None:
         return None
 
 
+# The one VerificationError message that is a legitimate skip: sigstore 4.x's
+# fixed Rekor-timestamp compatibility message, raised verbatim at
+# sigstore/verify/verifier.py:235 for entry types newer than dsse/hashedrekord
+# 0.0.1. Matched as this exact sentence after casefolding and whitespace
+# collapsing — never as a loose "supported" substring, which would turn any
+# fatal verification error mentioning "not supported" into a skip.
+_FIXED_TIMESTAMP_COMPAT_MESSAGE = (
+    "integrated time only supported for dsse/hashedrekord 0.0.1 types"
+)
+# sigstore 4.x raises sigstore.models.InvalidBundle (an errors.Error subclass)
+# when a bundle document cannot be loaded — e.g. Bundle.from_json('[]'). The
+# bundle-format compatibility skip is decided by that class, never by message
+# text; see _is_bundle_format_error for how the class is matched.
+_BUNDLE_FORMAT_ERROR_NAME = "InvalidBundle"
+
+
+def _is_bundle_format_error(
+    error: BaseException, library_class: type[BaseException] | None
+) -> bool:
+    """Whether ``error`` is sigstore's own bundle-format error class.
+
+    The genuine class is ``sigstore.models.InvalidBundle`` (sigstore 4.2.0, an
+    ``errors.Error`` subclass raised when a bundle document cannot be loaded).
+    It is caught by class: an ``isinstance`` test against the imported class
+    when that import succeeded — the only path to the skip in that case —
+    while the match of the class NAME across the exception's MRO is strictly
+    a fallback for environments where the genuine class is unimportable:
+    the stubbed ``sigstore.*`` modules this gate's suite typically installs
+    (the default stub publishes no such attribute) and any library layout
+    that does not export it. When the genuine class exists, an unrelated
+    exception class whose NAME merely contains ``InvalidBundle`` fails
+    closed. Either way the
+    decision is made on the exception's class, never on its message text,
+    which any unclassifiable exception can imitate.
+    """
+    if isinstance(library_class, type) and isinstance(error, library_class):
+        return True
+    if library_class is not None:
+        return False
+    return any(_BUNDLE_FORMAT_ERROR_NAME in cls.__name__ for cls in type(error).__mro__)
+
+
 def check_subject_hash(
     bundle: dict[str, Any], lockfile_integrity: str
 ) -> tuple[bool, str]:
@@ -695,13 +737,20 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
     Returns (ok, message). Accepts any GitHub Actions OIDC identity so that
     third-party packages (sigma, svelte, etc.) are not gated on a known repo URL.
 
-    Classification of the Sigstore check's outcomes: a network error (TUF
-    download, Rekor unreachable) is treated as a warning, not a failure — it
-    indicates infrastructure issues, not supply-chain attacks. A
-    VerificationError (bad signature / cert chain) is fatal. Bundle-format
-    and Rekor timestamp incompatibilities with the pinned sigstore library
-    are likewise skippable. Any other exception is unclassifiable and fails
-    closed: it is reported as a failed check, never as a verified package.
+    Classification of the Sigstore check's outcomes, decided by exception
+    class — message text is never matched: a network error (TUF download,
+    Rekor unreachable) is treated as a warning, not a failure — it indicates
+    infrastructure issues, not supply-chain attacks. A VerificationError (bad
+    signature / cert chain) is fatal, with exactly one exception: the
+    library's fixed Rekor-timestamp compatibility message ("Integrated time
+    only supported for dsse/hashedrekord 0.0.1 types"), a sigstore 4.x
+    library gap, is a skip. A bundle-format failure —
+    sigstore.models.InvalidBundle in sigstore 4.2.0, e.g. from
+    Bundle.from_json('[]') — is likewise a library compatibility gap and is
+    skipped. Any other exception is unclassifiable and fails closed: it is
+    reported as a failed check, never as a verified package — including a
+    generic exception whose message merely resembles one of the
+    compatibility messages.
     """
     try:
         from sigstore.errors import (  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
@@ -720,6 +769,20 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
     except ImportError as e:
         return False, f"sigstore not importable: {e}"
 
+    # The genuine bundle-format error class is bound separately from the
+    # block above so a layout that does not export it cannot take the whole
+    # import gate down (the stubbed sigstore.* environments this suite runs
+    # under publish only Bundle); _is_bundle_format_error handles the miss.
+    bundle_format_error: type[BaseException] | None
+    try:
+        from sigstore.models import (  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
+            InvalidBundle,
+        )
+
+        bundle_format_error = InvalidBundle  # pyright: ignore[reportUnknownVariableType]
+    except ImportError:
+        bundle_format_error = None
+
     try:
         verifier = Verifier.production()  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
         bundle = Bundle.from_json(bundle_json)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
@@ -729,23 +792,29 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
         )
         return True, "Sigstore signature verified (Rekor + Fulcio)"
     except VerificationError as e:  # pyright: ignore[reportUnknownVariableType]
-        msg = str(e)  # pyright: ignore[reportUnknownArgumentType]
         # sigstore 4.x cannot verify the Rekor integrated timestamp for entry
-        # types newer than dsse/hashedrekord 0.0.1. This is a library
-        # compatibility gap, not a signature failure. Subject hash check
-        # (already done) still provides the key supply-chain guarantee.
-        if "only supported" in msg or "not supported" in msg:
+        # types newer than dsse/hashedrekord 0.0.1 and raises one exact fixed
+        # message for it. That message is a library compatibility gap, not a
+        # signature failure; every other VerificationError is a real
+        # verification failure. Subject hash check (already done) still
+        # provides the key supply-chain guarantee.
+        msg = str(e)  # pyright: ignore[reportUnknownArgumentType]
+        normalized = " ".join(msg.split()).casefold()
+        if _FIXED_TIMESTAMP_COMPAT_MESSAGE in normalized:
             return True, (
                 f"Rekor entry type not supported by sigstore 4.x"
                 f" — timestamp skipped ({msg})"
             )
-        return False, f"Sigstore verification failed: {msg}"
+        return False, f"Sigstore verification failed: {msg}"  # pyright: ignore[reportUnknownArgumentType]
     except NetworkError as e:  # pyright: ignore[reportUnknownVariableType]
         return True, f"Sigstore network unavailable — signature check skipped ({e})"
     except Exception as e:
-        msg = str(e)
-        # Bundle format validation errors are also a compatibility issue.
-        if "validation error" in msg or "failed to load bundle" in msg:
+        # sigstore's own bundle-format error class decides the compatibility
+        # skip — never message text: a generic exception whose wording merely
+        # resembles the compatibility message is unclassifiable and fails
+        # closed (see _is_bundle_format_error).
+        if _is_bundle_format_error(e, bundle_format_error):
+            msg = str(e)
             return True, (
                 f"Bundle format not supported by sigstore 4.x — skipped ({msg[:80]})"
             )
@@ -756,7 +825,15 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
 
 
 def main() -> int:
-    """Verify provenance for all attested packages in pnpm-lock.yaml."""
+    """Verify provenance for all attested packages in pnpm-lock.yaml.
+
+    Returns 1 when any package failed a check (the per-package failure path)
+    or when packages were parsed but nothing was verified — the aggregate
+    guard, whose likely cause is a metadata source stripped or censored so
+    that every answer read as the no-attestation gap. Returns 0 only when at
+    least one package was verified, or when nothing was parsed at all (a
+    lockfile whose every entry is legitimately excluded, e.g. @zkochan).
+    """
     packages = parse_lockfile(LOCKFILE)
     print(f"Parsed {len(packages)} packages from pnpm-lock.yaml")
     print()
@@ -820,6 +897,29 @@ Provenance verification failed. Possible causes:
   • Supply-chain attack: installed hash differs from attested hash
   • Registry served a tampered attestation (Sigstore check failed)
   • Legitimate package re-publish without re-attestation (investigate)""")
+        return 1
+
+    if packages and not verified:
+        # The aggregate counterpart of the per-package failure path above: a
+        # sweep that parsed packages but verified none. With every failure
+        # path already handled, this means every parsed package read as the
+        # no-attestation gap — for this lockfile's known attested population
+        # that is not the expected ~60% ecosystem gap but a stripped or
+        # censored metadata source. Fail instead of reporting success over a
+        # run that verified nothing (partial censorship below 100% stays a
+        # recorded limit of this guard).
+        print()
+        print(
+            "PROVENANCE VERIFICATION FAILED: nothing was verified — every"
+            " parsed package read as the no-attestation gap."
+        )
+        print()
+        print("""\
+The sweep verified zero packages. Likely cause: the metadata source was
+stripped or censored — every answer read as the no-attestation gap, which
+for this lockfile's known attested population is not the expected ~60%
+ecosystem gap. Investigate the registry (and any proxy or mirror in front
+of it) before trusting this environment.""")
         return 1
 
     print()
