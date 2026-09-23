@@ -6,24 +6,6 @@ Referenced by `docs/github-actions-security.md` Controls 9 and 12.
 
 ---
 
-## Setup
-
-- **Organization:** E-zequiel
-- **Plan:** Free tier
-- **CLI version:** `socket@1.1.99` — locked as a devDependency in `pnpm-lock.yaml` (SHA-512 verified)
-- **BSM secret:** `SOCKET_SECURITY_API_TOKEN`
-- **Org slug:** `Ezequiel` — must be passed explicitly as `--org Ezequiel` in all CLI calls. Without it the CLI enters an interactive org-discovery prompt, auto-selects the org in non-TTY, then exits with code 0 without running any scan (silent failure)
-- **`--no-interactive`:** required in all non-TTY contexts (CI, workflow_dispatch) for the same reason
-- **Recently Published threshold:** 7 days — covers the highest-risk supply-chain window without excessive noise on dep-update PRs
-- **Quota:** 500 API calls/hour (free tier). Do not add Socket to `check.sh` — it runs too frequently
-
-**Local manual scan (no key on disk):**
-```bash
-bws run -- pnpm exec socket scan create . --json
-```
-
----
-
 ## CI Integration
 
 Defined in `.github/workflows/ci.yml` (`socket` job) and `.github/workflows/release.yml`.
