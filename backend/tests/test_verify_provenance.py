@@ -1022,3 +1022,414 @@ def test_peer_suffixed_twin_with_integrity_fails_as_a_parser_gap_first(
     assert vp.find_unmatched_package_keys(body) == ["plain@1.0.0(peer@2.0.0)"]
     with pytest.raises(RuntimeError, match="did not match the lockfile parser"):
         vp.parse_lockfile(path)
+
+
+# ---------------------------------------------------------------------------
+# Sigstore classification (verify_sigstore): substring-based skip misfires.
+# ---------------------------------------------------------------------------
+#
+# verify_sigstore classifies NetworkError and VerificationError by class; every
+# other exception falls into the blanket handler, which decides by substring.
+# The stubs below install fake sigstore.* modules (same pattern as
+# test_unclassifiable_sigstore_exception_fails_closed) and raise from inside
+# the verification path, so the only variable under test is that substring
+# logic. The genuine sigstore 4.x compatibility skip this gate must keep
+# treating as such: a VerificationError carrying the library's exact fixed
+# message "Integrated time only supported for dsse/hashedrekord 0.0.1 types",
+# and the genuine bundle-format error type (sigstore.models.InvalidBundle,
+# e.g. from Bundle.from_json('[]')). Every other failure must fail closed.
+
+_FIXED_COMPAT_MESSAGE = (
+    "Integrated time only supported for dsse/hashedrekord 0.0.1 types"
+)
+
+
+class _StubInvalidBundle(Exception):
+    """Stand-in for sigstore.models.InvalidBundle (a sigstore.errors.Error subclass)."""
+
+
+def _sigstore_stub_modules(
+    *,
+    verification_error_message: str | None = None,
+    network_error_message: str | None = None,
+    bundle_error: tuple[type[Exception], str] | None = None,
+    publish_invalid_bundle: type[Exception] | None = None,
+) -> dict[str, types.ModuleType]:
+    """Build sigstore.* module stubs for verify_sigstore tests.
+
+    ``verification_error_message`` and ``network_error_message`` make
+    verify_dsse raise that message as the stub's own VerificationError /
+    NetworkError class (so the raised instance matches the class the stub
+    publishes). ``bundle_error`` is a (class, message) pair raised by
+    Bundle.from_json. With nothing set, verification succeeds (the success
+    path).
+
+    ``publish_invalid_bundle`` opt-in publishes the given class as
+    ``sigstore.models.InvalidBundle`` on the stub module, flipping the
+    implementation's guarded import onto its isinstance path; when omitted
+    (the default, used by every pre-existing test) the attribute stays
+    absent and the environment is byte-identical to before.
+    """
+    errors_mod = types.ModuleType("sigstore.errors")
+    errors_mod.NetworkError = type("NetworkError", (Exception,), {})  # pyright: ignore[reportAttributeAccessIssue]
+    errors_mod.VerificationError = type(  # pyright: ignore[reportAttributeAccessIssue]
+        "VerificationError", (Exception,), {}
+    )
+
+    class _StubVerifier:
+        @staticmethod
+        def production() -> _StubVerifier:
+            return _StubVerifier()
+
+        def verify_dsse(self, bundle: Any, policy: Any) -> None:
+            if verification_error_message is not None:
+                raise errors_mod.VerificationError(verification_error_message)  # pyright: ignore[reportAttributeAccessIssue]
+            if network_error_message is not None:
+                raise errors_mod.NetworkError(network_error_message)  # pyright: ignore[reportAttributeAccessIssue]
+
+    class _StubBundle:
+        @classmethod
+        def from_json(cls, raw: str) -> Any:
+            if bundle_error is not None:
+                raise bundle_error[0](bundle_error[1])
+            return object()
+
+    models_mod = types.ModuleType("sigstore.models")
+    models_mod.Bundle = _StubBundle  # pyright: ignore[reportAttributeAccessIssue]
+    if publish_invalid_bundle is not None:
+        models_mod.InvalidBundle = publish_invalid_bundle  # pyright: ignore[reportAttributeAccessIssue]
+    verify_mod = types.ModuleType("sigstore.verify")
+    verify_mod.Verifier = _StubVerifier  # pyright: ignore[reportAttributeAccessIssue]
+
+    def _stub_issuer_init(self: Any, issuer: str) -> None:
+        del issuer  # the stub records nothing; the real class validates the issuer
+
+    policy_mod = types.ModuleType("sigstore.verify.policy")
+    policy_mod.OIDCIssuer = type(  # pyright: ignore[reportAttributeAccessIssue]
+        "OIDCIssuer", (), {"__init__": _stub_issuer_init}
+    )
+    sigstore_mod = types.ModuleType("sigstore")
+    return {
+        "sigstore": sigstore_mod,
+        "sigstore.errors": errors_mod,
+        "sigstore.models": models_mod,
+        "sigstore.verify": verify_mod,
+        "sigstore.verify.policy": policy_mod,
+    }
+
+
+def test_generic_validation_error_message_fails_closed(vp: Any, mocker) -> None:
+    """A generic exception mentioning 'validation error' must fail closed.
+
+    RED: the blanket exception handler returns ok=True (a skip) whenever the
+    exception's str() merely CONTAINS "validation error" or "failed to load
+    bundle", so an unrecognized exception whose message happens to carry that
+    substring is reported as a verified/skipped-ok package instead of a failed
+    check. The function's own docstring promises the opposite: any non-
+    NetworkError, non-VerificationError exception is unclassifiable and fails
+    closed. A bundle load failure of unknown origin must never read as a
+    verified package merely because its wording resembles a known
+    compatibility gap.
+    """
+    stub = _sigstore_stub_modules(
+        bundle_error=(RuntimeError, "cryptography validation error: unknown origin")
+    )
+    mocker.patch.dict(sys.modules, stub)
+    ok, _message = vp.verify_sigstore("{}")
+    assert ok is False
+
+
+def test_generic_failed_to_load_bundle_message_fails_closed(vp: Any, mocker) -> None:
+    """A generic exception mentioning 'failed to load bundle' must fail closed.
+
+    RED: same mechanism as the 'validation error' case — the substring match
+    in the blanket exception handler turns an unclassifiable exception (not a
+    NetworkError, not a VerificationError) into a skip (ok=True). The
+    fail-closed contract requires ok=False.
+    """
+    stub = _sigstore_stub_modules(
+        bundle_error=(RuntimeError, "failed to load bundle: unknown origin")
+    )
+    mocker.patch.dict(sys.modules, stub)
+    ok, _message = vp.verify_sigstore("{}")
+    assert ok is False
+
+
+def test_verification_error_with_similar_not_supported_message_fails_closed(
+    vp: Any, mocker
+) -> None:
+    """A VerificationError that is not the fixed compat message fails closed.
+
+    RED: the VerificationError handler returns ok=True (a skip) whenever its
+    str() merely CONTAINS "only supported" or "not supported", so any other
+    verification failure whose message happens to carry those substrings — an
+    unsupported key format, an unsupported certificate policy — is reported as
+    a verified package instead of a failed check. Only the library's exact
+    fixed compatibility message is the legitimate skip; every other
+    VerificationError is a real verification failure and must produce
+    ok=False.
+    """
+    stub = _sigstore_stub_modules(
+        verification_error_message="key format not supported by this verifier build"
+    )
+    mocker.patch.dict(sys.modules, stub)
+    ok, _message = vp.verify_sigstore("{}")
+    assert ok is False
+
+
+def test_verification_error_with_only_supported_similar_message_fails_closed(
+    vp: Any, mocker
+) -> None:
+    """A 'only supported' VerificationError that is not the fixed one fails.
+
+    RED: same substring mechanism as the 'not supported' case, exercising the
+    other substring ("only supported") with a message that is NOT the fixed
+    compatibility text: the skip must not fire on substring resemblance.
+    """
+    stub = _sigstore_stub_modules(
+        verification_error_message="threshold only supported for trusted root sets"
+    )
+    mocker.patch.dict(sys.modules, stub)
+    ok, _message = vp.verify_sigstore("{}")
+    assert ok is False
+
+
+# -- GREEN companions: the classification's legitimate outcomes, pinned so a
+# -- fix cannot over-correct into failing every skip. -------------------------
+
+
+def test_sigstore_success_path_verifies(vp: Any, mocker) -> None:
+    """The success path verifies: ok=True on a clean verification.
+
+    GREEN companion: with every stub in place and no exception raised, the
+    success path returns ok=True with the verification-success message.
+    """
+    stub = _sigstore_stub_modules()
+    mocker.patch.dict(sys.modules, stub)
+    ok, message = vp.verify_sigstore("{}")
+    assert ok is True
+    assert message == "Sigstore signature verified (Rekor + Fulcio)"
+
+
+def test_other_verification_error_fails_closed(vp: Any, mocker) -> None:
+    """A VerificationError carrying no compat substring still fails closed.
+
+    GREEN companion: a VerificationError whose message contains neither skip
+    substring is a fatal verification failure (ok=False) — the class-based
+    branch itself is correct and must survive the fix.
+    """
+    stub = _sigstore_stub_modules(verification_error_message="signature mismatch")
+    mocker.patch.dict(sys.modules, stub)
+    ok, _message = vp.verify_sigstore("{}")
+    assert ok is False
+
+
+def test_network_error_is_a_skip(vp: Any, mocker) -> None:
+    """A NetworkError is an infrastructure warning, not a failure.
+
+    GREEN companion: the NetworkError branch returns ok=True (skip) — the
+    documented treatment for TUF/Rekor transport trouble.
+    """
+    stub = _sigstore_stub_modules(network_error_message="rekor unreachable")
+    mocker.patch.dict(sys.modules, stub)
+    ok, message = vp.verify_sigstore("{}")
+    assert ok is True
+    assert "network unavailable" in message
+
+
+def test_fixed_integrated_time_message_is_a_skip(vp: Any, mocker) -> None:
+    """The exact integrated-time compatibility message is a skip.
+
+    GREEN companion: a VerificationError carrying the library's exact fixed
+    compatibility message ("Integrated time only supported for dsse/
+    hashedrekord 0.0.1 types") is the one VerificationError that legitimately
+    skips (ok=True) — pinning the exact message prevents the fix from
+    over-correcting into failing every Rekor-timestamp incompatibility.
+    """
+    stub = _sigstore_stub_modules(verification_error_message=_FIXED_COMPAT_MESSAGE)
+    mocker.patch.dict(sys.modules, stub)
+    ok, message = vp.verify_sigstore("{}")
+    assert ok is True
+    assert "timestamp skipped" in message
+
+
+def test_genuine_bundle_format_error_is_a_skip(vp: Any, mocker) -> None:
+    """A genuine sigstore bundle-format error type is a skip.
+
+    GREEN companion: sigstore 4.x raises sigstore.models.InvalidBundle (an
+    errors.Error subclass) — not VerificationError — when a bundle document
+    cannot be loaded, e.g. Bundle.from_json('[]'). Stub Bundle.from_json to
+    raise that genuine error class carrying the library's "validation error"
+    wording: the generic-exception branch must keep treating the *class* as
+    the known compatibility gap and return ok=True even though a same-worded
+    generic exception must now fail closed (see the RED tests above).
+    """
+    stub = _sigstore_stub_modules(
+        bundle_error=(_StubInvalidBundle, "validation error: bundle is not valid")
+    )
+    mocker.patch.dict(sys.modules, stub)
+    ok, message = vp.verify_sigstore("{}")
+    assert ok is True
+    assert "Bundle format not supported" in message
+
+
+def test_name_resembling_invalid_bundle_fails_closed_when_genuine_class_importable(
+    vp: Any, mocker
+) -> None:
+    """An unrelated '*InvalidBundle' class fails closed when the real one exists.
+
+    RED: the class-name fallback in _is_bundle_format_error is an OR, not a
+    fallback — it runs unconditionally even when the genuine
+    sigstore.models.InvalidBundle IS importable in the process and the
+    isinstance test already failed. With the stub environment publishing a
+    genuine InvalidBundle class, an exception from an UNRELATED class whose
+    name merely contains "InvalidBundle" (types.new_class(
+    "WeirdInvalidBundle", (Exception,))) raised through the bundle-load path
+    currently matches the name fallback and returns ok=True (a skip) —
+    reporting an unclassifiable exception as a verified/skipped-ok package.
+    The fail-closed contract requires ok=False: when the genuine class is
+    importable, only instances of that exact class may take the
+    compatibility skip; a name-collision class must never read as one.
+    """
+    genuine = type("InvalidBundle", (Exception,), {})
+    unrelated = types.new_class("WeirdInvalidBundle", (Exception,))
+    stub = _sigstore_stub_modules(
+        bundle_error=(unrelated, "unrelated failure of unknown origin"),
+        publish_invalid_bundle=genuine,
+    )
+    mocker.patch.dict(sys.modules, stub)
+    ok, _message = vp.verify_sigstore("{}")
+    assert ok is False
+
+
+def test_published_genuine_invalid_bundle_is_a_skip_via_isinstance(
+    vp: Any, mocker
+) -> None:
+    """The genuine published InvalidBundle class skips via the isinstance path.
+
+    GREEN companion: with the stub environment PUBLISHING
+    sigstore.models.InvalidBundle, the implementation's guarded import
+    succeeds and _is_bundle_format_error takes its isinstance primary branch
+    (no existing test exercises this path — the pre-existing companion only
+    covers the name fallback, since its stub publishes no such attribute).
+    An instance of exactly that published class raised through the
+    bundle-load path must keep skipping (ok=True) so a fix cannot
+    over-correct into failing every genuine bundle-format incompatibility.
+    """
+    published = type("InvalidBundle", (Exception,), {})
+    stub = _sigstore_stub_modules(
+        bundle_error=(published, "validation error: bundle is not valid"),
+        publish_invalid_bundle=published,
+    )
+    mocker.patch.dict(sys.modules, stub)
+    ok, message = vp.verify_sigstore("{}")
+    assert ok is True
+    assert "Bundle format not supported" in message
+
+
+def test_sigstore_unimportable_fails_closed(vp: Any, mocker) -> None:
+    """A sigstore package that cannot be imported at all fails closed.
+
+    GREEN companion: ImportError from the import block is a classified
+    failure (ok=False), not a crash and not a skip. The stub module raises
+    ImportError from its module-level __getattr__, so every
+    `from sigstore.errors import ...` fails regardless of what the developer
+    machine's site-packages carry (sigstore is not installed in the backend
+    venv, and this must not depend on that either way).
+    """
+    errors_mod = types.ModuleType("sigstore.errors")
+
+    def _unimportable(name: str) -> Any:
+        raise ImportError("sigstore not installed")
+
+    errors_mod.__getattr__ = _unimportable  # pyright: ignore[reportAttributeAccessIssue]
+    sigstore_mod = types.ModuleType("sigstore")
+    mocker.patch.dict(
+        sys.modules, {"sigstore": sigstore_mod, "sigstore.errors": errors_mod}
+    )
+    ok, message = vp.verify_sigstore("{}")
+    assert ok is False
+    assert "sigstore not importable" in message
+
+
+# ---------------------------------------------------------------------------
+# Aggregate sweep: an all-skip sweep must not report success.
+# ---------------------------------------------------------------------------
+
+
+def test_sweep_with_no_verifications_fails_loudly(
+    vp: Any, tmp_path: Path, mocker, capsys
+) -> None:
+    """A sweep that parsed packages but verified none must exit 1.
+
+    RED: with every parsed package hitting the well-formed no-attestation gap
+    (get_provenance_bundle returning None for each), main() prints "Verified
+    via provenance: 0" and returns 0 — reporting success over a run that
+    verified nothing. Per the maintainer decision (2026-09-23), when at least
+    one package was parsed and zero packages verified, main() must return 1
+    and print an explicit aggregate failure saying nothing was verified. The
+    aggregate message's stable marker substring is 'nothing was verified'
+    (asserted case-insensitively); the per-package no-attestation counting
+    itself stays unchanged.
+    """
+    body = (
+        "packages:\n\n"
+        "  'a@1.0.0':\n    resolution: {integrity: sha512-A==}\n\n"
+        "  'b@1.0.0':\n    resolution: {integrity: sha512-B==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    mocker.patch.object(vp, "LOCKFILE", path)
+    mocker.patch.object(vp, "get_provenance_bundle", return_value=None)
+    exit_code = vp.main()
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "Verified via provenance: 0" in output
+    assert "No attestation (expected gap): 2" in output
+    assert "nothing was verified" in output.lower()
+
+
+def test_sweep_with_at_least_one_verified_package_still_succeeds(
+    vp: Any, tmp_path: Path, mocker, capsys
+) -> None:
+    """A sweep with at least one verified package still exits 0.
+
+    GREEN companion: the aggregate-failure contract fires only when nothing
+    was verified. With one parsed package attested and verified (hash matches,
+    Sigstore verifies) and one hitting the no-attestation gap, main() still
+    returns 0.
+    """
+    integrity = "sha512-" + base64.b64encode(bytes.fromhex("cd" * 32)).decode()
+    payload = base64.b64encode(
+        json.dumps({"subject": [{"digest": {"sha512": "cd" * 32}}]}).encode()
+    ).decode()
+    bundle = {"dsseEnvelope": {"payload": payload}}
+
+    def sweep(name: str, ver: str) -> tuple[str, dict[str, Any]] | None:
+        if name == "attested":
+            return ("https://slsa.dev/provenance/v1", bundle)
+        return None
+
+    path = _write_lockfile(
+        tmp_path,
+        "packages:\n\n"
+        "  'attested@1.0.0':\n"
+        f"    resolution: {{integrity: {integrity}}}\n\n"
+        "  'gap@1.0.0':\n    resolution: {integrity: sha512-GAPGAP==}\n",
+    )
+    mocker.patch.object(vp, "LOCKFILE", path)
+    mocker.patch.object(vp, "get_provenance_bundle", side_effect=sweep)
+    mocker.patch.object(
+        vp,
+        "check_subject_hash",
+        return_value=(True, "subject hash matches lockfile integrity"),
+    )
+    mocker.patch.object(
+        vp,
+        "verify_sigstore",
+        return_value=(True, "Sigstore signature verified (Rekor + Fulcio)"),
+    )
+    exit_code = vp.main()
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Verified via provenance: 1" in output
+    assert "No attestation (expected gap): 1" in output

@@ -341,6 +341,85 @@ Security floors in `[tool.uv] constraint-dependencies` (`backend/pyproject.toml`
 
 Security-relevant changes to Analecta's own code and build tooling — not dependency advisories — recorded here so the CHANGELOG's `### Security` one-liners carry a full-text backing. Newest first; each date is the release that carried the change.
 
+### 2026-09-23 — provenance verification gate: class-based Sigstore classification + aggregate sweep guard (unreleased)
+
+Closing the re-derived B2 and B3 from the pending registry (obs #112) as the
+`fix/provenance-verification-guards` branch. Demonstrated-red in two rounds:
+Agent A designed the tests without the fix design, maintainer-approved at each
+red gate, Agent B implemented against the frozen test files, and a read-only
+advisor audit checked completeness after each round.
+
+- **The registry's B2/B3 text was stale against the hardened tree.** The
+  fail-open `except Exception → ok=True` and the per-package transport silence
+  were already closed 2026-09-21; what remained were the carve-outs by message
+  substring and the absent aggregate countermeasure.
+- **Sigstore classification by class, never by message text.** After the
+  2026-09-21 fix, `verify_sigstore`'s blanket handler still returned ok=True
+  (a skip) for any unclassifiable exception whose message merely contained
+  "validation error" or "failed to load bundle", and its `VerificationError`
+  handler skipped on any message containing "only supported"/"not supported"
+  instead of the library's one fixed compatibility sentence. Both carve-outs
+  are now class/exact-message based: the bundle-format skip fires on
+  `sigstore.models.InvalidBundle` — verified live against the pinned sigstore
+  4.2.0 (`scripts/requirements-provenance.lock`), which raises exactly that
+  class (an `errors.Error` subclass) for bundle load failures, e.g.
+  `Bundle.from_json('[]')` — and the timestamp-compat skip fires only on the
+  library's exact fixed sentence ("Integrated time only supported for
+  dsse/hashedrekord 0.0.1 types", raised verbatim at
+  `sigstore/verify/verifier.py:235`), matched after casefolding and whitespace
+  collapsing. The `InvalidBundle` class-name fallback across the exception's
+  MRO exists only for environments where the genuine class is unimportable
+  (the suite's stubbed `sigstore.*` modules, and any library layout that does
+  not export it); when the genuine class IS importable, an unrelated class
+  whose NAME merely contains `InvalidBundle` fails closed — the fallback is a
+  fallback, not an OR. Every unclassifiable exception still fails closed,
+  with no message matching anywhere.
+- **The Sigstore check gained its first full classification matrix.** It had
+  exactly one test (the unclassifiable fail-closed pin). The suite now pins:
+  success ok=True; other `VerificationError` fatal; `NetworkError` skip;
+  unimportable fail-closed; the genuine `InvalidBundle` skip through BOTH the
+  isinstance primary path (stub publishes the class — first coverage of that
+  branch) and the name-fallback path; the exact fixed timestamp message skip
+  and a lookalike message failing closed for both supported substrings;
+  unclassifiable messages resembling the compatibility substrings failing
+  closed.
+- **The sweep is now guarded at the aggregate level.** Per-package transport
+  failures are loud since 2026-09-21, but the remaining metadata-source
+  censorship bypass stood: well-formed metadata with `dist.attestations`
+  stripped for every package reads as the legitimate ~60% no-attestation gap
+  per-package, so a sweep could verify 0 of N and exit 0. `main()` now fails
+  (exit 1) when at least one package was parsed and zero verified, printing
+  'PROVENANCE VERIFICATION FAILED: nothing was verified' plus triage guidance
+  (investigate the registry and any proxy/mirror in front of it). The
+  maintainer-approved semantics: fail only at exactly zero verified — partial
+  censorship below 100% remains a recorded, deliberate limit of the guard
+  (fully discriminating requires an out-of-band anchor, not taken). A lockfile
+  whose every entry is legitimately excluded (e.g. all-`@zkochan`, parsed 0)
+  still exits 0; the failed-list path takes precedence when both would fire.
+- **Demonstrated-red rounds.** Round 1: 5 red tests (four substring fail-open
+  windows + the aggregate zero-verified exit-0) plus 7 green companions
+  pinning the standing classification; maintainer-approved at the red gate;
+  frozen to /tmp; Agent B implemented; one post-freeze drift (a stub lambda
+  replaced by a typed `def`, same signature) to satisfy basedpyright —
+  maintainer-approved. Round 2 (advisor-recommended tightenings I1+I2):
+  1 red test (a name-resembling unrelated class must fail closed when the
+  genuine class is importable) + 1 green companion (isinstance primary path);
+  Agent B implemented the one-line fallback tightening. Round-1 test-only
+  mutation generation was reviewed natively (review-reliability lens,
+  `review-24fc2a4e33275aaa`, approved, authority burned); the round-2
+  test-only generation was left unreviewed by maintainer decision — the final
+  full-candidate review covers it.
+- **Advisor audits:** round 1 — complete and satisfactory, no blocking
+  findings (informational: the fallback OR, the uncovered isinstance branch,
+  an attacker-parametric timestamp residual in the library's own cert-validity
+  error construction — not new to this change — and the partial-censorship
+  limit). Round 2 — satisfactory, no blocking findings; the two doc-wording
+  remarks applied or noted as non-defects.
+- **Tests:** the script's suite grew 42 → 56 (round 1: 5 demonstrated-red + 7
+  green companions; round 2: 1 demonstrated-red + 1 green companion); the
+  backend suite 947 → 961. Gate: all checks passed (ruff
+  format/check, basedpyright, 961 backend tests, svelte-check, vite build).
+
 ### 2026-09-22 — provenance verification gate: conflicting-duplicate-identity guard (unreleased)
 
 Closing the pending peer-suffix/identity-collapse finding (round-3 review WARNING `R3-peer-suffix-resolution-gap` + the latent `R3-duplicate-key-overwrite`) as its own candidate. Demonstrated-red: Agent A designed the three tests without the fix design, maintainer-approved at the red gate, Agent B implemented against the frozen test file, advisor audit afterwards.
