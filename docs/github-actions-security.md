@@ -203,7 +203,7 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 
 This ensures that if a package that cleared the 4-day cooldown contains a malicious install or runtime payload, it cannot read or use the repository write token.
 
-**Bypass via `workflow_dispatch`:** The `cooldown` input (default `4`) can be set to `0` to bypass the gate. `workflow_dispatch` requires repository write access, so this bypass is not available to external contributors.
+**Bypass via `workflow_dispatch`:** The `cooldown` input (default `4`) can be set to `0` to bypass the updater's direct-dependency gate. `workflow_dispatch` requires repository write access, so this bypass is not available to external contributors. Since 2026-09-24 the bypass no longer lifts pnpm's own resolution-level gate (see below): a transitive resolution or exact-version install of a package younger than the cooldown still fails loudly with `ERR_PNPM_NO_MATURE_MATCHING_VERSION`. A genuine early exception therefore means explicit maintainer approval plus a dated `docs/security-log.md` entry, as the Exception approval paragraph already requires — not a dispatch knob.
 
 **Exception approval:** Any update that clears the cooldown gate early — whether by `cooldown=0` dispatch, by merging a Dependabot PR within its minimum-age window, or by any other means — requires explicit maintainer approval before merging. Do not self-certify an exception even when CVE urgency justifies a shorter window; surface it and get a confirmation first.
 
@@ -213,7 +213,9 @@ This ensures that if a package that cleared the 4-day cooldown contains a malici
 
 **Dependabot PR caveat:** This automated cooldown applies only to packages updated by `deps-update.yml`. Dependabot has its own native cooldown (`cooldown: default-days: 4` in `.github/dependabot.yml`): unconfigured, Dependabot applies a default 3-day cooldown to version updates, and it never applies any cooldown to security updates — so a security-update PR can still carry a version published hours earlier. The manual release-date check therefore remains required before merging any Dependabot package-version PR (see Maintenance Checklist).
 
-**Transition record:** The deliberate change to this window's value is recorded in `docs/security-log.md` (2026-09-18, release-age window).
+**Resolution-level enforcement (2026-09-24):** The cooldown is no longer only an updater-side filter. `pnpm-workspace.yaml` carries `minimumReleaseAge: 5760`, so pnpm itself refuses to resolve or install any dependency — direct or transitive — published less than 4 days ago, in CI and in every clone. This closes the gap demonstrated by PR #115 (2026-09-24): the updater's direct-deps-only filter committed a lockfile whose transitive tree (`rolldown@1.2.10` + 17 sibling resolutions, published 1–3 days before the merge) violated the maintainer's local-only policy — CI stayed green because the local policy never runs there, while local `pnpm install --frozen-lockfile` failed. pnpm enforces the policy both when resolving fresh versions and when verifying an existing lockfile on frozen installs, so CI's frozen installs now fail closed on non-compliant lockfiles. If the cooldown value ever changes, change `minimumReleaseAge` and the updater's default together — they are the same 4 days.
+
+**Transition records:** The deliberate change to this window's value is recorded in `docs/security-log.md` (2026-09-18, release-age window); the move of enforcement into pnpm's resolution layer and the `pnpm@12.5.1` toolchain bump (2026-09-24) are recorded there too.
 
 ---
 
