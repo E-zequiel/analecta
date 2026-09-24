@@ -9,9 +9,9 @@
     "dist": "pnpm --filter frontend build && python scripts/build_sidecar.py && pnpm --filter analecta-electron run dist"
   },
   "devDependencies": {
-    "@types/node": "26.2.0",
-    "defuddle": "0.19.3",
-    "eslint": "10.10.0",
+    "@types/node": "26.6.2",
+    "defuddle": "0.19.4",
+    "eslint": "10.11.0",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-svelte": "3.23.0",
     "prettier": "3.8.3",
