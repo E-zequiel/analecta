@@ -1,3 +1,11 @@
+# Enforces the same 4-day release cooldown locally and in CI, at pnpm's
+# resolution layer, for ALL dependencies including transitive ones — closing
+# the gap where the release updater's cooldown filter (direct deps only)
+# committed lockfile entries pnpm's local policy rejected. Value matches
+# deps-update.yml's 4-day cooldown. See docs/github-actions-security.md
+# (Control 7) for the enforcement and bypass semantics.
+minimumReleaseAge: 5760
+
 packages:
   - 'frontend'
   - 'electron'

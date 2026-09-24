@@ -98,6 +98,19 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 
 ## Resolved CVEs
 
+### 2026-09-24 — release-age enforcement moved to pnpm resolution level + toolchain bump to `pnpm@12.5.1` (unreleased)
+
+| Item | Why | Change |
+|------|-----|--------|
+| `pnpm-workspace.yaml`: `minimumReleaseAge: 5760` | Not an advisory response — a policy-gap closure. The 4-day release cooldown existed in two disconnected layers: the maintainer's global pnpm config (`minimumReleaseAge: 5760`, local-only, invisible to CI) and `deps_update.yml`'s updater filter (direct dependencies only). PR #115 demonstrated the gap: its lockfile carried `rolldown@1.2.10` plus all 16 `@rolldown/binding-*@1.2.10` platform binaries (published 2026-09-23), `@oxc-project/types@0.151.0` (09-21) and `esrap@2.3.9` (09-22) — transitives 1–3 days old at merge time. All six CI checks stayed green because the local policy never runs in CI, while the maintainer's `pnpm install --frozen-lockfile` failed with `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` and `node_modules` stayed on the pre-merge tree. | pnpm now enforces the 4-day minimum age itself, at resolution time and at frozen-install verification, for all dependencies including transitive ones, in CI and in every clone. Verified behavior (2026-09-24, scratch workspace): a fresh resolution under the policy picks the newest version older than the cutoff (`rolldown@^1.2.0` → 1.2.9, not 1.2.10), and the workspace-yaml value is honored independently of the global config. |
+| `pnpm` toolchain | Routine bump, bundled into the same branch because the lockfile's env document records the resolved pnpm version and had to be regenerated anyway. | `packageManager` pin `12.4.2` → `12.5.1`, `.mise.toml` `pnpm = "12.5.1"`, `pnpm-lock.yaml` env document regenerated under 12.5.1. |
+
+- **Registry integrity verified before adoption:** `pnpm view pnpm@12.5.1 dist.integrity` → `sha512-4/MFvHhKK8ifWtO2E4iJRw+ujSr182thIW7JHCw9ZAiXdfneOKrDMQROpA8kXLDVZmOS399lgk4ZB+9qLGLeXw==` (hex `e3f305bc784a2bc89f5ad3b6138889470fae8d2af5f36b61216ec91c2c3d64089775f9de38aac331044ea40f245cb0d5666392dfdf65824e1907ef6a2c62de5f`, base64→hex conversion re-derived independently), cross-checked against the registry manifest fetched directly. The regenerated `packageManager` suffix carries that hex.
+- **No cooldown exception needed:** `12.5.1` released 2026-09-18T21:39:59Z, ~5.9 days before this bump (2026-09-24).
+- **Transitive downgrades in the same commit (newest compliant versions, publish dates verified against the registry):** `rolldown` 1.2.10 → 1.2.9 (09-16; satisfies `vite@8.3.0`'s declared `~1.2.6`), the 16 `@rolldown/binding-*` 1.2.10 → 1.2.9 (09-16), `@oxc-project/types` 0.151.0 → 0.150.0 (09-14; exact-pinned by `rolldown@1.2.9`), `esrap` 2.3.9 → 2.3.7 (09-04), `svelte` 5.57.1 → 5.57.0 (08-28 — direct pin reverted: 5.57.1 requires `esrap ^2.3.6`, and the only releases in that range, 2.3.8/2.3.9 of 09-22, violate the cooldown; the next updater run re-bumps both once they mature).
+- **Bypass semantics change (maintainer decision, 2026-09-24):** `workflow_dispatch cooldown=0` now lifts only the updater's direct-dependency gate; pnpm's resolution gate stays active and a too-fresh exact install fails loudly (`ERR_PNPM_NO_MATURE_MATCHING_VERSION`). Genuine early adoption remains maintainer approval plus a dated entry here, never silent.
+- **Local config stays:** the maintainer's global `minimumReleaseAge: 5760` (`~/.config/pnpm/config.yaml`) remains as defense-in-depth for pnpm use outside this repo; inside it, the committed `pnpm-workspace.yaml` value is the single source of truth.
+
 ### 2026-09-20 — Python/uv `constraint-dependencies` (`anyio`)
 
 | Package | Advisory(ies) | Floor & rationale |
