@@ -18,6 +18,131 @@ Defined in `.github/workflows/ci.yml` (`socket` job) and `.github/workflows/rele
 
 ---
 
+---
+
+## Provenance verification gate
+
+Authoritative description of the npm SLSA provenance gate
+(`scripts/verify_provenance.py`, CI job `verify-provenance` in `ci.yml`).
+Maintained in place: this section always describes the gate as it exists
+now. Dated change records live under `### Change history` below; the
+release-facing summary lives in `CHANGELOG.md`; the implementation is the
+source of truth for behavior.
+
+**What it guarantees.** For every entry in `pnpm-lock.yaml` whose package
+publishes an SLSA provenance attestation on npm, the gate (1) fetches the
+Sigstore bundle through a path independent of the registry's serving layer,
+(2) verifies the Fulcio certificate chain and the Rekor transparency-log
+inclusion proof, (3) ties the attested subject SHA-512 to the lockfile's
+integrity value, and (4) refuses to succeed unless every parsed package is
+accounted for as verified, failed, or legitimately skipped. Exit 1 on any
+failure; the sweep never reports success over an unaccounted set.
+
+**The lockfile scan is single-pass.** One walk over the entry blocks
+produces everything the guards see (`LockfileScan`: parsed, unmatched,
+conflicting, unaccounted, resolution_blocks). The parser and every guard
+therefore cannot disagree about what was covered. The scan never raises;
+classification — never arithmetic on free text — decides.
+
+**Guards, most-diagnostic-first.** `parse_lockfile` refuses, in order:
+
+1. untokenizable package entries — package-shaped lines the splitter
+   cannot tokenize (detected by an independent raw-line scan);
+2. unmatched package entries — package-shaped keys carrying a resolution
+   that did not parse (peer-suffixed keys with integrity; git/tarball
+   resolutions without one);
+3. unaccounted material — resolution/integrity material behind a key that
+   is no package entry (empty scalars and `@zkochan/` entries stay
+   deliberate skips), or orphan inline material beyond a block's own
+   resolution (classified by line SHAPE: a hash-shaped `integrity:` value
+   on a line that does not start with `resolution:` or `integrity:`);
+4. zero parsed entries from a lockfile whose text declares resolutions
+   the walk never reached (total shape drift);
+5. unreached resolution lines — the partial-drift counterpart (raw
+   resolution lines vs lines the walk owns);
+6. conflicting duplicate identities — two entries collapsing to one
+   `(name, version)` identity with different integrity values; identical
+   values are a quiet dedup.
+
+**Registry metadata layer.** `_fetch_json` returns `None` only when the
+request never got a well-formed answer; a well-formed answer is validated
+down to every advertised layer. `get_provenance_bundle` raises
+`RegistryTransportError` (no well-formed answer) or `RegistryShapeError`
+(well-formed but contract-violating) — both `RuntimeError` subclasses.
+The sweep classifies collected failures by the exception's class, never by
+message wording: the shape messages embed the package name, which the
+publisher controls, so wording-based classification would be spoofable.
+Bare `RuntimeError`s fail toward the transport reading. The legitimate
+skip is reserved for well-formed metadata without a usable
+`dist.attestations.url`; once a URL is advertised, every layer must be the
+right shape and the document must carry an SLSA-provenance attestation, or
+the run fails.
+
+**Sigstore verification.** Classification is decided by exception class.
+A `VerificationError` is fatal except for the library's one fixed
+compatibility sentence (matched exactly, never by loose resemblance); a
+`NetworkError` is a warning; the bundle-format skip is decided by the
+genuine `sigstore.models.InvalidBundle` class (isinstance), with the MRO
+name match strictly a fallback for environments where the class is
+unimportable — and the skip message names which path decided, so
+library-upgrade drift is visible in CI logs. Anything unclassifiable
+fails closed.
+
+**The sweep report.** Failures are collected per package (one blip never
+cuts the sweep short) as `(package, bucket, reason)`. The final report
+groups failures by class (transport → registry-shape → subject-hash →
+sigstore, fixed order, per-class counts), states the affected scope
+("N of M parsed packages affected"), and the registry-shape class carries
+its explicit disposition: shape violations suggest a registry-level actor
+reshaping the served document — a supply-chain signal, not a mere
+availability incident. Fail-closed-per-package is the deliberate
+disposition: the hostile class is never silenced by an availability
+threshold.
+
+**Deliberate limits.**
+
+- Partial censorship below 100% is invisible to the aggregate guard
+  (fully discriminating requires an out-of-band anchor, not taken).
+- A non-comment prose line inside an entry body carrying an algo-shaped
+  dash-base64 token is indistinguishable from material and fails closed.
+- The material value class requires 4+ base64ish chars, so a shorter fake
+  hash stays quiet.
+- Empty-scalar keys and `@zkochan/` entries (pnpm's own, published
+  without attestations) are deliberate silent skips.
+- The duplicate-conflict report counts pairs, not distinct identities.
+- The zero-parse guard's reach signal is substring-sensitive to a
+  mid-line `resolution:` mention inside some block; the ownership guard
+  catches every realistic drift behind that.
+- Git/tarball dependencies are unsupported: if one ever appears, the gate
+  fails loudly and the decision is taken at that moment.
+- A non-`RuntimeError` from the metadata layer would crash the sweep
+  (unreachable today: every raise site raises the hierarchy).
+
+### Change history
+
+- 2026-09-25 — classified sweep failure report: exception hierarchy at
+  the raise sites, bucketed grouping with scope and the hostile-shape
+  disposition line; CI-alternates dispositions recorded (df1037d).
+- 2026-09-25 — advisory sweep: algorithm check hoisted before payload
+  decode (named on every non-sha512 path); orphan inline-material guard
+  (shape-anchored); sigstore skip messages name the deciding classifier;
+  conditional-assertion tests replaced with deterministic pins (df1037d).
+- 2026-09-25 — single-pass scan (`LockfileScan`); unaccounted-resolution-
+  block guard; duplicate-identity guard folded into the scan;
+  `_conflicting_duplicates` deleted (dc8e046).
+- 2026-09-23 — class-based Sigstore classification (genuine
+  `InvalidBundle` isinstance; fail-closed name-fallback boundary);
+  aggregate zero-verified guard (7e1d0fe).
+- 2026-09-22 — conflicting-duplicate-identity guard (5b3256b); nested
+  shape validation of the registry answer (4bc9b0b).
+- 2026-09-21 — fail-open paths closed: partial drift, unclassified
+  errors, transport-vs-gap, prose false positives (c9e08a4, 82c2904).
+- 2026-09-19 — scoped packages parse; coverage guards; per-entry block
+  matching replaces the fixed window (59288d1, 47281f1, b8ff85e,
+  f013c3a).
+- 2026-08 — gate introduced as a CI job (da93feb); quality gate extended
+  to cover `scripts/*.py` (140654f).
+
 ## Known false positives (set to "Ignore" in dashboard)
 
 ### npm — Obfuscated code (false-positive pattern)
@@ -100,140 +225,6 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 ---
 
 ## Resolved CVEs
-
-### 2026-09-25 — provenance verification gate: advisory sweep — algorithm
-diagnostics, orphan inline material, classifier-naming skips (unreleased)
-
-Closing the actionable remainder of the review-703da76423637ec0 advisory round
-(re-derived against the post-single-pass tree) plus the maintainer-approved F2
-guard and the T4 hardening. Demonstrated-red: Agent A designed 7 mechanism
-tests from bare symptoms, maintainer-approved at the red gate; Agent B
-implemented against the frozen test file; advisor audit afterwards (16-shape
-guard-order matrix); one green-companion round followed an advisor-flagged
-composition the first implementation missed (a snapshots-block orphan was
-quietly misattributed as the entry's integrity until the material rule was
-re-anchored from line position to line shape).
-
-- **Algorithm diagnostics on every path.** check_subject_hash decoded the
-  DSSE payload before checking the lockfile integrity's algorithm, and the
-  no-sha512-subject path exited without naming the algorithm at all — a
-  lockfile value like `sha1-...` read as "payload parse error" or "no sha512
-  subject found", blaming the attestation instead of the unusable lockfile
-  value. The algorithm check now gates the decode: every failure path with a
-  non-sha512 lockfile value names the algorithm; the sha512 paths keep their
-  diagnostics unchanged (both pinned by new control tests).
-- **Orphan inline material (F2, maintainer-approved).** An inline non-package
-  mapping — `extra: {resolution: {integrity: sha512-ORPHAN==}}` directly
-  following an entry — was invisible to every guard: mid-line, so the
-  ownership walk cannot see it; scalar without `@`, so the inline-entry
-  detector skips it; inside a real block's body, so the unaccounted
-  key-classification never fires. It was verified by nobody, or worse —
-  absorbed into the preceding entry as its parsed integrity when that entry
-  had no resolution of its own (a snapshots entry). The single-pass scan now
-  classifies material by line SHAPE: a non-comment line carrying a
-  hash-shaped `integrity:` value (`_INTEGRITY_VALUE_RE`) is the block's own
-  iff it starts with `resolution:`/`integrity:`; every other such line — any
-  position, any section, including before the first key — is orphan material
-  and `parse_lockfile` refuses naming it. Comment lines are exempt; the
-  value-shape anchor keeps the 2026-09-21 prose false-positive class closed.
-  Recorded residuals: a non-comment prose line inside an entry body carrying
-  an algo-shaped dash-base64 token is indistinguishable from material and
-  fails closed (unrealistic, loud direction is the convention); the value
-  class requires 4+ base64ish chars, so a sub-4-char fake hash stays quiet —
-  both boundaries pinned by companion tests.
-- **Classifier-naming skips (T4, option a+hardened).** The bundle-format
-  compatibility skip's message was identical whether the genuine
-  `sigstore.models.InvalidBundle` class decided (isinstance) or the
-  MRO-name fallback decided (genuine class unimportable — the typical case
-  after a library upgrade renames the class). The skip message now names the
-  deciding path, so a CI log shows when the gate is running on the fallback;
-  the classification logic is unchanged.
-- **Doc dispositions.** verify_sigstore's "message text is never matched"
-  lead-in contradiction retired (the fixed-timestamp sentence IS matched, as
-  the exact fixed sentence); the `_PACKAGE_KEY_RE` comment's blanket "never
-  reported" claim refreshed for the unaccounted reality. Advisory residuals
-  recorded without code: pair-vs-identity conflict counting (cosmetic, open
-  since 2026-09-22); R3-2 (reliability, ownership-walker area) unrecoverable
-  — the review's prose was never persisted locally, only its index.
-- **Tests.** Suite grew 61 → 77 (7 mechanism red→green, 7 anti-overfire and
-  control companions, 3 classifier-naming tests, 2 deterministic replacements
-  for the two conditional `if unmatched: ... else: ...` tests that could
-  never meaningfully fail — the originals remain in the file for the
-  maintainer to retire, plus 2 residual-boundary companions from the advisor
-  round). Gate: all checks passed (980 backend tests).
-
-### 2026-09-25 — provenance verification gate: single-pass scan + unaccounted-resolution-block guard (unreleased)
-
-Closing the H2+B1 follow-up pair the 2026-09-22 section deliberately left open
-(the duplicate guard's hand-mirrored parse predicate; the ==0-only zero-parse
-check), plus a new hole the advisory reviews surfaced while re-deriving the
-backlog. Demonstrated-red: Agent A designed the tests from the bare symptom
-(orphan integrity silently unverified), maintainer-approved at the red gate;
-Agent B implemented against the frozen test file; advisor audit afterwards
-(3000-case fuzz against the pre-change pair, 0 mismatches).
-
-- **The hole: verification material behind no package entry.** A block whose
-  key is not package-shaped — a 2-space `ledger:` key under `packages:`, say
-  — but whose body carries `resolution: {integrity: ...}` was read and skipped
-  silently: the scan's package branch never sees it, and the
-  unreached-resolutions guard counts its resolution line as *owned* (any key
-  line starts a block, and it was the block's first). The integrity behind it
-  is matched against no attestation, reported as no gap, and the run exits 0.
-  The gate's own invariant everywhere else is that verification material it
-  cannot attribute fails loudly.
-- **The guard:** the scan now classifies such blocks as *unaccounted* —
-  non-package key, nonempty key text, body carrying a *line-anchored*
-  resolution line (prose mentioning `resolution:` mid-line never counts, same
-  philosophy as the ownership walk) — and `parse_lockfile` refuses, naming
-  the keys, placed between the ownership and conflict guards (shape problems
-  before value problems). Maintainer-approved exemptions: an empty scalar key
-  (`''` quoted-empty — degenerate malformed input, pinned contract) stays a
-  silent skip, and the `@zkochan/` exclusions are unchanged. Package-shaped
-  keys keep the substring-based resolution sensitivity they always had; the
-  line-anchored check applies only to the non-package classification.
-- **The fold (H2):** `_conflicting_duplicates` was a second pass over the
-  entry blocks whose parse predicate hand-mirrored `_scan_lockfile`'s —
-  identical by construction, but any future edit to one could silently
-  diverge from the other. The collision tracking now lives in the very loop
-  that fills the parsed map: `_scan_lockfile` returns one `LockfileScan`
-  record (`parsed`, `unmatched`, `conflicting`, `unaccounted`,
-  `resolution_blocks`) and the parser and the guard can no longer disagree
-  about what was covered — the 2026-09-19 single-pass invariant, restored.
-  The scan still never raises (the `find_unmatched_package_keys` /
-  `parse_lockfile` guard composition depends on that); conflict semantics
-  are byte-identical (`setdefault` keeps first, pairs reported per later
-  differing occurrence, block order preserved).
-- **Count-based accounting (B1):** the zero-parse guard's `reached` now
-  comes from the same single pass (`resolution_blocks > 0`) instead of a
-  second `_entry_blocks` walk; its condition, ordering and message are
-  unchanged. The ==0 special case remains as the most-diagnostic early exit
-  for total drift (its "Parsed 0 packages" message is test-pinned and more
-  precise than the ownership guard's for a fully invisible lockfile); the
-  general declared-vs-accounted invariant is the new unaccounted guard,
-  which also closes the owned-but-unattributed case the ==0 check could
-  never see. The original partial-drift hole behind B1 was already closed
-  by the 2026-09-23 ownership guard; this pass closes what that one
-  structurally cannot see.
-- **Advisor audit:** satisfactory — randomized fuzz (3000 adversarial
-  lockfile compositions) comparing the pre-change pair (scan + duplicate
-  helper) against the single pass found 0 mismatches across `(parsed,
-  unmatched, conflicting, reached)`; real `pnpm-lock.yaml` parity (611
-  entries — the count drifted from the recorded 584 via dependency update
-  #115, not via this change); guard-interaction probes found no fall-through
-  and no double-fire. Recorded limits (pre-existing, not regressions): an
-  inline non-package entry line (`extra: {resolution: {integrity: ...}}`
-  directly following an entry) is invisible to every guard — mid-line, so
-  neither the ownership walk nor the inline-entry detector sees it; and the
-  zero-parse `reached` stays prose-sensitive (a mid-line `resolution:`
-  mention inside some block suppresses it — the ownership guard still
-  catches every realistic drift behind that). Both are deliberate follow-up
-  material, not taken here.
-- **Tests:** suite grew 56 → 60 (2 mechanism tests — the hole with and
-  without a legitimate entry alongside; 2 re-checks pinning the exemptions
-  — all-`@zkochan` and empty-quoted-key, the latter docstring-flagging the
-  carve-out tension rather than resolving it silently); one mechanical
-  unpack update in the real-lockfile anchor test (positional 2-tuple →
-  named access, assertions unchanged). Gate: all checks passed.
 
 ### 2026-09-24 — release-age enforcement moved to pnpm resolution level + toolchain bump to `pnpm@12.5.1` (unreleased)
 
@@ -490,222 +481,6 @@ Security floors in `[tool.uv] constraint-dependencies` (`backend/pyproject.toml`
 ## Application & script security hardening
 
 Security-relevant changes to Analecta's own code and build tooling — not dependency advisories — recorded here so the CHANGELOG's `### Security` one-liners carry a full-text backing. Newest first; each date is the release that carried the change.
-
-### 2026-09-23 — provenance verification gate: class-based Sigstore classification + aggregate sweep guard (unreleased)
-
-Closing the re-derived B2 and B3 from the pending registry (obs #112) as the
-`fix/provenance-verification-guards` branch. Demonstrated-red in two rounds:
-Agent A designed the tests without the fix design, maintainer-approved at each
-red gate, Agent B implemented against the frozen test files, and a read-only
-advisor audit checked completeness after each round.
-
-- **The registry's B2/B3 text was stale against the hardened tree.** The
-  fail-open `except Exception → ok=True` and the per-package transport silence
-  were already closed 2026-09-21; what remained were the carve-outs by message
-  substring and the absent aggregate countermeasure.
-- **Sigstore classification by class, never by message text.** After the
-  2026-09-21 fix, `verify_sigstore`'s blanket handler still returned ok=True
-  (a skip) for any unclassifiable exception whose message merely contained
-  "validation error" or "failed to load bundle", and its `VerificationError`
-  handler skipped on any message containing "only supported"/"not supported"
-  instead of the library's one fixed compatibility sentence. Both carve-outs
-  are now class/exact-message based: the bundle-format skip fires on
-  `sigstore.models.InvalidBundle` — verified live against the pinned sigstore
-  4.2.0 (`scripts/requirements-provenance.lock`), which raises exactly that
-  class (an `errors.Error` subclass) for bundle load failures, e.g.
-  `Bundle.from_json('[]')` — and the timestamp-compat skip fires only on the
-  library's exact fixed sentence ("Integrated time only supported for
-  dsse/hashedrekord 0.0.1 types", raised verbatim at
-  `sigstore/verify/verifier.py:235`), matched after casefolding and whitespace
-  collapsing. The `InvalidBundle` class-name fallback across the exception's
-  MRO exists only for environments where the genuine class is unimportable
-  (the suite's stubbed `sigstore.*` modules, and any library layout that does
-  not export it); when the genuine class IS importable, an unrelated class
-  whose NAME merely contains `InvalidBundle` fails closed — the fallback is a
-  fallback, not an OR. Every unclassifiable exception still fails closed,
-  with no message matching anywhere.
-- **The Sigstore check gained its first full classification matrix.** It had
-  exactly one test (the unclassifiable fail-closed pin). The suite now pins:
-  success ok=True; other `VerificationError` fatal; `NetworkError` skip;
-  unimportable fail-closed; the genuine `InvalidBundle` skip through BOTH the
-  isinstance primary path (stub publishes the class — first coverage of that
-  branch) and the name-fallback path; the exact fixed timestamp message skip
-  and a lookalike message failing closed for both supported substrings;
-  unclassifiable messages resembling the compatibility substrings failing
-  closed.
-- **The sweep is now guarded at the aggregate level.** Per-package transport
-  failures are loud since 2026-09-21, but the remaining metadata-source
-  censorship bypass stood: well-formed metadata with `dist.attestations`
-  stripped for every package reads as the legitimate ~60% no-attestation gap
-  per-package, so a sweep could verify 0 of N and exit 0. `main()` now fails
-  (exit 1) when at least one package was parsed and zero verified, printing
-  'PROVENANCE VERIFICATION FAILED: nothing was verified' plus triage guidance
-  (investigate the registry and any proxy/mirror in front of it). The
-  maintainer-approved semantics: fail only at exactly zero verified — partial
-  censorship below 100% remains a recorded, deliberate limit of the guard
-  (fully discriminating requires an out-of-band anchor, not taken). A lockfile
-  whose every entry is legitimately excluded (e.g. all-`@zkochan`, parsed 0)
-  still exits 0; the failed-list path takes precedence when both would fire.
-- **Demonstrated-red rounds.** Round 1: 5 red tests (four substring fail-open
-  windows + the aggregate zero-verified exit-0) plus 7 green companions
-  pinning the standing classification; maintainer-approved at the red gate;
-  frozen to /tmp; Agent B implemented; one post-freeze drift (a stub lambda
-  replaced by a typed `def`, same signature) to satisfy basedpyright —
-  maintainer-approved. Round 2 (advisor-recommended tightenings I1+I2):
-  1 red test (a name-resembling unrelated class must fail closed when the
-  genuine class is importable) + 1 green companion (isinstance primary path);
-  Agent B implemented the one-line fallback tightening. Round-1 test-only
-  mutation generation was reviewed natively (review-reliability lens,
-  `review-24fc2a4e33275aaa`, approved, authority burned); the round-2
-  test-only generation was left unreviewed by maintainer decision — the final
-  full-candidate review covers it.
-- **Advisor audits:** round 1 — complete and satisfactory, no blocking
-  findings (informational: the fallback OR, the uncovered isinstance branch,
-  an attacker-parametric timestamp residual in the library's own cert-validity
-  error construction — not new to this change — and the partial-censorship
-  limit). Round 2 — satisfactory, no blocking findings; the two doc-wording
-  remarks applied or noted as non-defects.
-- **Tests:** the script's suite grew 42 → 56 (round 1: 5 demonstrated-red + 7
-  green companions; round 2: 1 demonstrated-red + 1 green companion); the
-  backend suite 947 → 961. Gate: all checks passed (ruff
-  format/check, basedpyright, 961 backend tests, svelte-check, vite build).
-
-### 2026-09-22 — provenance verification gate: conflicting-duplicate-identity guard (unreleased)
-
-Closing the pending peer-suffix/identity-collapse finding (round-3 review WARNING `R3-peer-suffix-resolution-gap` + the latent `R3-duplicate-key-overwrite`) as its own candidate. Demonstrated-red: Agent A designed the three tests without the fix design, maintainer-approved at the red gate, Agent B implemented against the frozen test file, advisor audit afterwards.
-
-- **The identity collapse was a silent hash drop.** The parser keys its verified map by `(name, version)` and discards the key line's quoting style (and would discard a peer suffix): two entries resolving to the same identity — byte-identical duplicate key lines, or a quoted and an unquoted spelling of the same identity — overwrote each other in the parsed map, last one wins. With different attested integrity values, one of the two hashes was verified and the other silently dropped from verification while `parse_lockfile` returned success.
-- **The guard:** new `_conflicting_duplicates` helper (a second pass over the entry blocks tracking identity → first integrity) and a `parse_lockfile` guard placed last in the most-diagnostic-first ordering — a conflicting identity behind an entry the walk never reached is a shape problem first, and the unreached-resolutions guard names that drift more precisely. The failure names the colliding identity and surfaces both values (`first vs later`). Identical values remain a quiet dedup (across quoting variants too). The identity itself is deliberately unchanged: peer-suffixed keys carrying integrity already fail loudly in the unmatched-keys guard (verified by probe — they never reach the conflict helper), and making the suffix part of the identity is a separate design decision not taken here.
-- **Deliberate structural note:** the collision detection lives in `parse_lockfile`'s composition, not in `_scan_lockfile`'s raising path — `find_unmatched_package_keys` must keep returning the gap list without raising (the approved tests pin that). `_scan_lockfile`'s docstring now documents its last-wins silence on duplicate identities and why the guard lives next door.
-- **Advisor audit:** every reachable collapse path caught (byte-identical, cross-quoting, scoped variants, cross-document duplicates between the env and project lockfile documents, 3-entry collisions — `setdefault` keeps first so any later differing occurrence trips it); the repo's own two-document lockfile has zero cross-document identity overlap (584 parsed, 0 conflicts, 0 unmatched) and the guard adds ~3 ms per parse. Open follow-ups, deliberately not taken this round: the helper's parse predicate is a hand-mirrored copy of `_scan_lockfile`'s — identical by construction today, but folding the scan into `_scan_lockfile` itself (returning a third value without raising) would restore the 2026-09-19 single-pass invariant ('the parser and the guard cannot disagree about what was covered'); the conflict count reports pairs, not distinct identities (cosmetic). (An earlier revision of this bullet said no cross-document-duplicate or 3-entry-collision test fixture yet — stale as of 27295ee, which added exactly those fixtures plus a peer-suffixed-twin one.)
-- **Tests:** suite grew 37 → 40 (2 demonstrated-red + 1 green companion pinning the quiet-dedup contract in 54305a8; 3 composition/edge fixtures — cross-document duplicate, three-way collision, peer-suffixed twin — added by the follow-up commit 27295ee). Gate: "all checks passed" (944 backend tests).
-
-### 2026-09-22 — provenance verification gate: nested shape validation of the registry answer (unreleased)
-
-Closing the review round of the 2026-09-21 work (review `review-67b70efaaab68546`, 9 advisories, all informational — 3 WARNINGs clustered on the attestation fetch path). Demonstrated-red throughout: Agent A designed the tests without seeing the fix design, the four red tests were approved at a maintainer gate, Agent B implemented against the frozen test file, and a read-only advisor audit checked completeness afterwards.
-
-- **The nested layers of the registry answer were unvalidated.** `get_provenance_bundle` walked `meta["dist"]`, `dist["attestations"]`, the fetched bundle document, and its `attestations` entries behind `cast()` calls — runtime no-ops. A well-formed answer with a wrong nested shape (`dist: null`, `dist.attestations: "no"`, a truthy non-object bundle document like `[1,2]`, a non-list `attestations`, a non-object entry, a non-string `predicateType`) crashed the sweep with an unclassified `AttributeError`/`TypeError` that escaped `main()`'s `except RuntimeError` per-package collection, aborting the run mid-sweep without the complete picture.
-- **A declared attestation could be silenced into the legitimate skip.** Once the metadata advertises `dist.attestations.url`, the bundle path had three silent-degradation exits: an attestations value that was falsy, an attestations list with no SLSA-provenance `predicateType`, or a matched attestation whose `bundle` was `None` (which also masqueraded as a falsy result at the call site). All resolved to the expected no-attestation gap: a registry-level MITM could strip or reshape the served document and the job would count the package under 'No attestation (expected gap)' and exit 0. The path is now fail-closed: after an advertised URL, every layer must be the right shape and the document must carry an SLSA-provenance attestation, or the run raises a classified `RuntimeError` (new `_classified_shape_error` helper) naming the package and the source. The legitimate skip is reserved for well-formed metadata without a usable `dist.attestations.url` — an absent/non-string/empty url keeps the skip, which is where the pre-existing no-out-of-band-anchor tradeoff (a MITM can always strip the declaration itself, recorded 2026-09-21) still applies, unchanged.
-- **Presence checks, not truthiness checks:** explicit `null` layers raise (absent-with-None was initially conflated with absent-key and slipped through a first `is not None` guard — caught mid-implementation by the red tests and re-derived to presence checks) — `"dist" in meta` / `"attestations" in dist` distinguish absent (skip) from present-but-wrong (classified failure).
-- **Advisor audit results:** no fail-open path remains on the advertised-URL path; the only tuple return validates both members; all new raise sites are `RuntimeError` reachable from the collection; realistic npm shapes (extra metadata fields, v0.2/v1 prefixes, no-`dist` metadata) pass untouched. Follow-ups deliberately left open: bundle-fetch URL scheme not pinned to https (pre-existing, adjacent), `check_subject_hash`'s inner-envelope failures keep the 'payload parse error' label (fail-closed already, label could be more accurate).
-- **Tests:** suite grew 32 → 36 (4 demonstrated-red + 1 green companion pinning that an attestations object without `url` still skips). Gate: "all checks passed" (ruff format/check, basedpyright, 941 backend tests, svelte-check, vite build).
-
-### 2026-09-21 — provenance verification gate: fail-open paths in its own logic (unreleased)
-
-Follow-up round on the gate itself, closing three fail-open holes and one false-positive class the first two rounds left in the gate's *verification* logic (the earlier rounds closed the parser's coverage holes). Demonstrated-red throughout: every fix was a failing test first, reviewed by the maintainer at the red gate before implementation.
-
-- **Partial shape drift silently shrank the verified set.** The zero-parse guard fired only when `parsed` was empty, so a lockfile with some entries indented differently from their neighbours parsed the visible subset and lost the drifted entries with no signal — exit 0 over a partial set. New guard: `_unowned_resolution_lines` counts the file's raw resolution lines (line-anchored, so prose and comments never count) against the lines the entry-block walk *owns*, and `parse_lockfile` raises naming the counts and the unowned lines.
-- **The invariant's first version had its own hole, reproduced before the fix shipped:** a drifted entry absorbed into a `snapshots:` block was invisible, because a peerless snapshots key is byte-identical to a `packages:` key — the package pattern matched it and the drifted integrity **silently overwrote** the legitimate entry's hash in the parsed map (both the drifted-key and the bare-resolution shapes reproduced: `parsed[('good','1.0.0')] = <drifted hash>` with every guard empty). Ownership is now section-aware: a resolution line is owned only under a `packages:` section, inside an entry block, as that block's first one; a resolution line under `snapshots:`/`importers:`/the document head, a second one inside a block, or a column-0 resolution line is unowned and fails the parse. The second lockfile document is entirely `snapshots:` (line 2646+), so the realistic drift shape is the one this covers.
-- **The Sigstore check was fail-open on unknown exceptions.** `verify_sigstore`'s final `except Exception` returned `ok=True` ("check skipped") for any exception class the script could not classify — a crafted bundle hitting an odd error path in the library would bypass the signature check. Unclassifiable exceptions now fail **closed** (`ok=False`); the network-as-warning and Rekor-timestamp/bundle-format compatibility skips keep their pre-existing verdicts, verified unchanged at byte level.
-- **A failed registry request was indistinguishable from "package has no provenance".** `_fetch_json` returned `None` on every failure and the sweep counted those as the expected ~60% no-attestation gap — a registry-level MITM suppressing `dist.attestations` could make the job verify 0 of 584 packages and exit 0. Transport failures (timeout, connection refused, any request that never got a well-formed HTTP answer, including a 404 on the metadata or bundle request) now raise loudly naming the package and the unreachable source; a well-formed response without `dist.attestations.url` still returns `None` — the expected skip. Deliberate tradeoff, maintainer-approved: a package that npm no longer serves fails the job rather than counting as a gap, and the error message cannot yet distinguish "package gone" from "network down" (triage note for when it first fires).
-- **A prose line mentioning `resolution:` failed the parse on a valid lockfile.** The inline-entry branch of `find_untokenized_package_keys` matched any two-space line containing the bare substrings `integrity:`/`resolution:`; it now reports only lines whose scalar part is package-shaped (carries `@`, the genuine inline shape `foo@1.0.0: {resolution: …}`), byte-identical for the genuine case.
-- **Tests:** the script's suite grew from 20 to 28 tests. The four defect tests plus one section-ownership test were each demonstrated red against the pre-change code and approved at a maintainer gate before implementation (Agent-A/Agent-B cycle with a frozen test file, deltas reviewed); the three green companions pin that well-formed shapes (prose notes inside blocks, all-`@zkochan` lockfiles, packages-absent metadata) still parse quietly. Gate: 933 passed, "all checks passed".
-
-#### Same-day advisory round (10 findings, 9 resolved)
-
-The round's own review closed approved with 10 advisory findings; 9 were resolved in a follow-up pass (single-pass mode, behavior fixes demonstrated red inline first), one deliberately not:
-
-- **Transport failures are loud by design — no retry.** The one WARNING deliberately not attacked (maintainer decision): a retry after an unclassified failure reintroduces the ambiguity the loud-transport fix closed (a retried request could land on a MITM's answer), is unbounded in latency, and makes the result non-deterministic. The correct layer for retries is the CI workflow, not the gate. Recorded here as a deliberate tradeoff.
-- **The sweep no longer aborts at the first transport failure** (collect-then-fail): transport errors are collected like verification failures and the run ends with the complete picture — every package after a blip is still swept. Rate-limit pacing is kept between the collected failures.
-- **Column-0 resolution ownership:** a column-0 resolution line inside a `packages:` entry block was owned silently — as a block's only resolution it parsed with the drifted hash while the legitimate integrity vanished from the map; beside a legitimate one it stole ownership and the guard named the wrong line. Ownership now requires block indentation (the raw count keeps counting column-0 so the drift is loud either way).
-- **Transport vs malformed vs non-object answers:** `meta is None` is the transport sentinel ("could not reach"); a falsy-but-answered body or a truthy non-object body (`[1,2]`, `"abc"`, `42` — servable by a tampered or proxied registry, which would previously crash the sweep with an uncaught `AttributeError` and abort it) is "malformed package metadata". The helper's return type now reflects reality (`json.loads`'s shape, validated by the caller) instead of asserting a dict that bodies like these contradict.
-- **Doc accuracy:** `verify_sigstore`'s docstring now states the real classification (network warning / `VerificationError` fatal / compat skippable / unclassified fatal) instead of promising "only VerificationError is fatal"; the sweep-coverage tests' docstrings describe current behavior, and the transport test asserts the exact message shape.
-
-### 2026-09-19 — provenance verification gate: scoped packages went unverified (unreleased)
-
-- **What was wrong:** `scripts/verify-provenance.py` reads `pnpm-lock.yaml` with a
-  regex, and its quoted-name branch could not match scoped names (`'@sveltejs/kit@2.70.3':`) —
-  the name class excluded `@`. The gate therefore verified only the unscoped
-  subset: **0 of the 156 scoped entries carrying a resolution** were seen (the
-  lockfile holds 277 scoped keys; the rest are `snapshots:`-style entries with no
-  integrity line), and the CI job reported success over what it did read.
-- **Impact:** the SLSA-provenance check is a supply-chain control, not an attack
-  surface — nothing was exploitable. The failure mode is coverage: every scoped
-  package (most of the ecosystem, including the SvelteKit and CodeMirror trees)
-  was skipped silently, so a registry-level replacement of any of them would not
-  have been caught by this job. It never reached a release as a known-good
-  report; found 2026-09-19 while checking the repo's own lockfile readers after
-  pnpm 12 began writing the lockfile as two YAML documents.
-- **Fix:** the parser now sees 584 packages (was 428), 156 of them scoped. The
-  quoted branch stops its name and version classes at `(` as well, so a
-  peer-suffixed key (`'@keyv/bigmap@1.3.1(keyv@5.6.0)'`) can no longer have its
-  suffix swallowed into the name or version.
-- **The class, not just the instance:** a parser that skips what it cannot match
-  would have hidden the next gap the same way. `find_unmatched_package_keys` now
-  makes that a **loud failure**: any package-shaped key whose own entry block
-  carries a resolution and did not match the pattern raises and names the keys,
-  so a future lockfile-format drift fails the job instead of under-reporting.
-- **Entry blocks, not a character window:** a key is matched with the body of its
-  own entry (everything up to the next 2-space key). An earlier revision of the
-  guard looked a fixed 300 characters past each key, which both crossed into the
-  next entry (falsely reporting an unresolved key as a gap, failing CI on a valid
-  lockfile) and missed a resolution block longer than the window. The parser and
-  the guard now share one pass, so they cannot disagree about what was covered.
-- **First tests for the script:** it had none — its filename contains a hyphen,
-  so it cannot be imported by name. `backend/tests/test_verify_provenance.py`
-  loads it from its path and covers scoped and unscoped entries, both lockfile
-  documents, entries without a resolution, the `@zkochan` exclusion, both
-  false-positive/false-negative window regressions, and the structural invariant
-  that the real lockfile has no unparsed package entries.
-- **Hardening after review (same day):** the gaps the round-1 fix left, plus the
-  one the first hardening pass then introduced.
-    - **A key line the splitter could not tokenize was invisible, not merely
-      unreported:** `_ANY_KEY_RE`'s scalar class excluded `:`, so a quoted key
-      containing one never became an entry block and vanished from the parsed set
-      *and* the reported set at the same time. `:` is now allowed **only inside a
-      quoted scalar**; an unquoted scalar still excludes it, because allowing it
-      there made a non-key line (`  note: this is prose:`) a block start that cut
-      the preceding entry's block short and hid its resolution — reintroducing the
-      very class this change exists to close (reproduced during review:
-      `_scan_lockfile` returned `({}, [])` for that shape). The terminator colon
-      stays anchored to the line end, and the pattern still matches **941 blocks**
-      on the real lockfile.
-    - **The class, not only the instance:** `find_untokenized_package_keys` scans
-      `content.splitlines()` **independently of the block splitter** and reports
-      every package-shaped entry candidate the splitter cannot tokenize — a
-      two-space key line ending in `:` that `_ANY_KEY_RE` rejects, or an entry
-      written inline on its key line with its resolution. `parse_lockfile` refuses
-      to proceed while that set is non-empty, so a splitter regression can no
-      longer hide behind the splitter.
-    - **A shape drift the walk never reached was silent success:** if the
-      lockfile's indentation changed wholesale, every pattern read zero blocks
-      and `main()` would print "Parsed 0 packages" and exit 0 — the gate verifying
-      nothing while reporting success. `parse_lockfile` now fails when it parses
-      zero packages and the walk never reached a `resolution:` line, while still
-      accepting a file whose only entries were legitimately excluded (all
-      `@zkochan`, as a test pins).
-    - **A resolution without an `integrity:` line was skipped in silence too:**
-      such a block can never be verified (pnpm writes them for tarball/commit
-      resolutions), yet it was neither parsed nor reported. It is now reported as
-      a parser gap — which is what the guard's own message always said it meant
-      ("each carries a resolution"). `resolution:` and `integrity:` each appear
-      584 times in the current lockfile, so nothing fires today.
-    - **A non-`sha512-` integrity was skipped silently:** `_INTEGRITY_RE` only
-      recognised the `sha512-` prefix, so an entry carrying any other algorithm
-      was neither parsed nor reported. The value is now captured whatever its
-      prefix, and `check_subject_hash` rejects anything but sha512 with a
-      diagnostic naming the unsupported algorithm (`unsupported integrity
-      algorithm 'sha1' …`) instead of a misleading lockfile-format message. All
-      584 integrity lines in the current lockfile are sha512, so this is latent —
-      it exists so that drift cannot hide, not because anything is broken today.
-    - **The real-lockfile test asserted existence only**
-      (`any(name.startswith("@"))`), so a partial regression passed and the one
-      concrete anchor that test had was gone. It now holds the guard to its own
-      documented contract on the real lockfile — every package-shaped entry block
-      carrying a resolution is parsed or reported (`len(parsed) + len(unmatched) ==
-      expected`) — **and** compares `len(parsed)` against a raw count of
-      resolution-integrity lines taken straight from the file text. The raw anchor
-      is the half that a *splitter* regression cannot satisfy, since the block-based
-      bookkeeping derives `expected` from the same splitter. It fails loudly if
-      `@zkochan`-scoped entries ever appear, rather than comparing wrong numbers.
-- **`@zkochan`, documented instead of mysterious:** pnpm's own vendored
-  `@zkochan/*` packages are published without provenance — the npm registry
-  serves `dist.attestations` (with a provenance url) for e.g. `devalue@5.9.2` and
-  `@sveltejs/kit@2.70.3`, but not for `@zkochan/js-yaml@0.0.11`, whose metadata
-  shows `_from: file:zkochan-js-yaml-0.0.11.tgz`. The real lockfile has zero
-  `@zkochan` entries and never had any (`git log -S "@zkochan" -- pnpm-lock.yaml`
-  is empty), so the exclusion is defensive, and it is now a comment rather than a
-  puzzle.
 
 ### 2026-09-18 — release-age window (cooldown) reduced from 10 to 4 days (unreleased)
 
