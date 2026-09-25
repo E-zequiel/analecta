@@ -101,6 +101,67 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 
 ## Resolved CVEs
 
+### 2026-09-25 — provenance verification gate: advisory sweep — algorithm
+diagnostics, orphan inline material, classifier-naming skips (unreleased)
+
+Closing the actionable remainder of the review-703da76423637ec0 advisory round
+(re-derived against the post-single-pass tree) plus the maintainer-approved F2
+guard and the T4 hardening. Demonstrated-red: Agent A designed 7 mechanism
+tests from bare symptoms, maintainer-approved at the red gate; Agent B
+implemented against the frozen test file; advisor audit afterwards (16-shape
+guard-order matrix); one green-companion round followed an advisor-flagged
+composition the first implementation missed (a snapshots-block orphan was
+quietly misattributed as the entry's integrity until the material rule was
+re-anchored from line position to line shape).
+
+- **Algorithm diagnostics on every path.** check_subject_hash decoded the
+  DSSE payload before checking the lockfile integrity's algorithm, and the
+  no-sha512-subject path exited without naming the algorithm at all — a
+  lockfile value like `sha1-...` read as "payload parse error" or "no sha512
+  subject found", blaming the attestation instead of the unusable lockfile
+  value. The algorithm check now gates the decode: every failure path with a
+  non-sha512 lockfile value names the algorithm; the sha512 paths keep their
+  diagnostics unchanged (both pinned by new control tests).
+- **Orphan inline material (F2, maintainer-approved).** An inline non-package
+  mapping — `extra: {resolution: {integrity: sha512-ORPHAN==}}` directly
+  following an entry — was invisible to every guard: mid-line, so the
+  ownership walk cannot see it; scalar without `@`, so the inline-entry
+  detector skips it; inside a real block's body, so the unaccounted
+  key-classification never fires. It was verified by nobody, or worse —
+  absorbed into the preceding entry as its parsed integrity when that entry
+  had no resolution of its own (a snapshots entry). The single-pass scan now
+  classifies material by line SHAPE: a non-comment line carrying a
+  hash-shaped `integrity:` value (`_INTEGRITY_VALUE_RE`) is the block's own
+  iff it starts with `resolution:`/`integrity:`; every other such line — any
+  position, any section, including before the first key — is orphan material
+  and `parse_lockfile` refuses naming it. Comment lines are exempt; the
+  value-shape anchor keeps the 2026-09-21 prose false-positive class closed.
+  Recorded residuals: a non-comment prose line inside an entry body carrying
+  an algo-shaped dash-base64 token is indistinguishable from material and
+  fails closed (unrealistic, loud direction is the convention); the value
+  class requires 4+ base64ish chars, so a sub-4-char fake hash stays quiet —
+  both boundaries pinned by companion tests.
+- **Classifier-naming skips (T4, option a+hardened).** The bundle-format
+  compatibility skip's message was identical whether the genuine
+  `sigstore.models.InvalidBundle` class decided (isinstance) or the
+  MRO-name fallback decided (genuine class unimportable — the typical case
+  after a library upgrade renames the class). The skip message now names the
+  deciding path, so a CI log shows when the gate is running on the fallback;
+  the classification logic is unchanged.
+- **Doc dispositions.** verify_sigstore's "message text is never matched"
+  lead-in contradiction retired (the fixed-timestamp sentence IS matched, as
+  the exact fixed sentence); the `_PACKAGE_KEY_RE` comment's blanket "never
+  reported" claim refreshed for the unaccounted reality. Advisory residuals
+  recorded without code: pair-vs-identity conflict counting (cosmetic, open
+  since 2026-09-22); R3-2 (reliability, ownership-walker area) unrecoverable
+  — the review's prose was never persisted locally, only its index.
+- **Tests.** Suite grew 61 → 77 (7 mechanism red→green, 7 anti-overfire and
+  control companions, 3 classifier-naming tests, 2 deterministic replacements
+  for the two conditional `if unmatched: ... else: ...` tests that could
+  never meaningfully fail — the originals remain in the file for the
+  maintainer to retire, plus 2 residual-boundary companions from the advisor
+  round). Gate: all checks passed (980 backend tests).
+
 ### 2026-09-25 — provenance verification gate: single-pass scan + unaccounted-resolution-block guard (unreleased)
 
 Closing the H2+B1 follow-up pair the 2026-09-22 section deliberately left open
