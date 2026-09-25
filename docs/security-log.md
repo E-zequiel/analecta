@@ -38,6 +38,8 @@ Socket's "Obfuscated code" detector flags packages that use split operations on 
 | 2026-06-07 scan | `htmlparser2@10.1.0` | Standard HTML/XML tokenizer. 100M+ weekly downloads. Socket analyst: "non-malicious, standard tokenizer." |
 | 2026-06-07 scan | `@typescript-eslint/eslint-plugin@8.60.0` | Dev dep, linting only. Official typescript-eslint org. |
 | 2026-06-15 scan (16 alerts) | `nodejs-wheel-binaries@24.15.0` (PyPI) | Transitive of `basedpyright` (dev-only). |
+| 2026-09-24 scan (IDs 1221247, 1221250) | `@noble/hashes@1.8.0` (`esm/blake3.js`, `src/sha3.ts`) | Transitive of `pkijs@3.4.1` ← `app-builder-lib` (electron-builder, dev-only build tooling). Native BLAKE3/SHA3 implementations — real cryptographic code, minified/bundled appearance. Socket analyst: "legitimate and standard part of a BLAKE3 implementation... no malicious activity or data leakage is evident" / "conventional, self-contained SHA3/Keccak hashing... implementation appears sound." Upgrade to `@noble/hashes@2.4.0` rejected (2026-09-24): `pkijs@3.4.1` exact-pins `1.8.0` (no range), so removal requires an `overrides:` entry against a deliberate exact pin of a 4-day-old release; `@noble/hashes` 2.x carries API changes pkijs was never tested against; and `2.4.0` ships the same `esm/blake3.js`/`src/sha3.ts` files, so the heuristic would re-flag the newer version. Revisit if a future `pkijs` release declares a 2.x range. |
+| 2026-09-24 scan (ID 3563051) | `yargs@17.7.3` (`build/index.cjs`) | Transitive of `electron-builder@26.15.6` (declares `yargs` exactly; dev-only build tooling). Minified CLI bundle. Socket analyst: "no clear indicators of supply-chain sabotage, credential theft, network exfiltration, persistence, or command execution." Upgrade to `18.2.0` rejected (2026-09-24): exact pin + major bump (17→18) of a build tool's argument parser for a heuristic flag on a minified bundle — `build/index.cjs` exists in yargs 18.x too, so the flag would likely persist. Revisit if `electron-builder` naturally updates its `yargs` dependency. |
 
 - **`linkedom@0.18.12` (`package/worker.js`):** Optional dep of `defuddle@0.19.1` (root `package.json` devDependency — a diagnostic-only tool, never a shipped runtime dep, see `docs/defuddle-decision.md`); Web Worker path is unused in the offline diagnostic script that consumes it.
 - **`nodejs-wheel-binaries@24.15.0` (PyPI):** Ships the compiled `node` binary across ~8 platform wheels; each binary flagged independently — same false-positive class as `electron-winstaller@wix.dll`. Confirmed absent from the shipped PyInstaller `--onedir` artifact (`backend.spec` has no `basedpyright`/`nodejs` references).
@@ -93,6 +95,7 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 | `lodash.isequal@4.5.0` | Use `node:util` instead |
 | `boolean@3.2.0` | Package no longer supported |
 | `@humanfs/types@0.15.0` | `unpopularPackage` quality alert (Nicholas Zakas's package — legitimate) |
+| `@socketsecurity/socket-patch-darwin-arm64@2.0.0` | `unpopularPackage` quality alert (Socket's own platform-binary patch package, transitive of the `socket` CLI itself) |
 
 ---
 
