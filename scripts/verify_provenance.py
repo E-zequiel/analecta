@@ -23,7 +23,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 LOCKFILE = Path(__file__).resolve().parent.parent / "pnpm-lock.yaml"
 GITHUB_ACTIONS_ISSUER = "https://token.actions.githubusercontent.com"
@@ -118,18 +118,40 @@ def _entry_blocks(content: str) -> list[tuple[str, str, str]]:
     return blocks
 
 
-def _scan_lockfile(content: str) -> tuple[dict[tuple[str, str], str], list[str]]:
-    """Return ({(name, version): integrity}, package-shaped parser gaps).
+class LockfileScan(NamedTuple):
+    """Everything one pass over the entry blocks establishes.
 
-    One pass over the entry blocks so the parsed set and the gap set can
-    never disagree: a block whose key is package-shaped and whose body
-    carries a resolution line is either parsed or reported as a parser gap.
-    That includes a resolution without an integrity line — such a block can
-    never be verified, so it is reported too (`resolution: {}` counts). A
-    non-sha512 integrity value parses normally — the parser understands the
-    format — and fails later in the verification path with a diagnostic
-    naming the unsupported algorithm (`check_subject_hash`), never with a
-    misleading parser message.
+    `parsed` is {(name, version): integrity} (last write wins); `unmatched`
+    is the package-shaped parser gaps; `conflicting` is the duplicate-
+    identity conflicts — see `_scan_lockfile` — tracked in the same pass;
+    `unaccounted` is the resolution-carrying keys that are no package entry
+    at all; `resolution_blocks` counts the blocks whose body carries a
+    resolution line, the single source of truth for the zero-parse guard.
+    """
+
+    parsed: dict[tuple[str, str], str]
+    unmatched: list[str]
+    conflicting: list[tuple[str, str, str]]
+    unaccounted: list[str]
+    resolution_blocks: int
+
+
+def _scan_lockfile(content: str) -> LockfileScan:
+    """Scan the entry blocks once, returning a `LockfileScan`.
+
+    One pass over the entry blocks so the parsed set, the gap set, the
+    conflict set and the unaccounted set can never disagree: a block whose
+    key is package-shaped and whose body carries a resolution line is
+    either parsed, reported as a parser gap, or — when two in-scope blocks
+    collapse to one ``(name, version)`` identity — tracked as a conflicting
+    duplicate, never silently miscounted by a second pass
+    reading the file a different way. That includes a resolution without
+    an integrity line — such a block can never be verified, so it is
+    reported too (`resolution: {}` counts). A non-sha512 integrity value
+    parses normally — the parser understands the format — and fails later
+    in the verification path with a diagnostic naming the unsupported
+    algorithm (`check_subject_hash`), never with a misleading parser
+    message.
 
     Anything the entry-key pattern cannot tokenize would otherwise be skipped
     silently — how every scoped package once went unverified while the script
@@ -148,20 +170,47 @@ def _scan_lockfile(content: str) -> tuple[dict[tuple[str, str], str], list[str]]
     its resolution is never read). `parse_lockfile` guards that case
     independently — see `_unowned_resolution_lines`.
 
-    It is also silent on duplicate identities: two entry blocks resolving to
-    the same ``(name, version)`` (quoting variants collapse to one identity)
-    overwrite each other in the parsed map, last one wins. Identical values
-    are a legitimate dedup; conflicting values are guarded by
-    `parse_lockfile` via `_conflicting_duplicates` — never here, because
-    this pass must keep returning the gap list without raising (the guard
+    Conflicting duplicate identities are tracked here too, in the very loop
+    that fills the parsed map — never as a separate second pass, which could
+    disagree with the parser about what was covered: two entry blocks
+    resolving to the same ``(name, version)`` (quoting variants collapse to
+    one identity) overwrite each other in the parsed map, last one wins.
+    Identical values are a legitimate dedup; conflicting values mean one of
+    the two attested hashes would be silently overwritten in the parsed map
+    and dropped from verification while the script still reported success;
+    every such (identity, first value, later value) pair is collected in
+    `conflicting` for `parse_lockfile` to refuse. Keys that never parse
+    into a verifiable entry (peer-suffixed and other unmatched package-
+    shaped keys, which the unmatched guard owns) and deliberately excluded
+    @zkochan entries take no part in the collision set. The tracking itself
+    never raises — this pass must stay exception-free, because the guard
     composition in `parse_lockfile` and `find_unmatched_package_keys`
-    depend on that).
+    depends on a scan that always completes.
+
+    A block whose key text carries no ``@`` at all — no package entry, no
+    override, nothing the parser could attribute material to — is skipped,
+    unless its body carries a *line-anchored*
+    resolution line (`_RESOLUTION_LINE_RE`, prose mentioning `resolution:`
+    mid-line never counts) and its key text is nonempty: then the
+    resolution/integrity material behind that key is verification material
+    attributed to no package entry, and the key is returned as unaccounted
+    for `parse_lockfile` to refuse. An empty scalar key (`''` quoted-empty)
+    stays a deliberate silent skip — degenerate malformed input, not a
+    hidden entry — and package-shaped keys keep the substring-based
+    resolution sensitivity they always had, so the unmatched guard's
+    sensitivity is unchanged.
     """
     parsed: dict[tuple[str, str], str] = {}
     unmatched: list[str] = []
+    conflicting: list[tuple[str, str, str]] = []
+    unaccounted: list[str] = []
+    first_seen: dict[tuple[str, str], str] = {}
+    resolution_blocks = 0
     for key_line, key_text, block in _entry_blocks(content):
         integrity = _INTEGRITY_RE.search(block)
         has_resolution = _RESOLUTION_RE.search(block) is not None
+        if has_resolution:
+            resolution_blocks += 1
         m = _PKG_RE.match(key_line)
         if m:
             name = m.group(1) or m.group(3)
@@ -174,52 +223,32 @@ def _scan_lockfile(content: str) -> tuple[dict[tuple[str, str], str], list[str]]
             # verified by this gate. The real lockfile has zero @zkochan
             # entries and never had any; the branch is purely defensive.
             if name and ver and not name.startswith("@zkochan/"):
-                if integrity:
-                    parsed[(name, ver)] = integrity.group(1)
+                value = integrity.group(1) if integrity else None
+                if value is not None:
+                    parsed[(name, ver)] = value
+                    first = first_seen.setdefault((name, ver), value)
+                    if first != value:
+                        conflicting.append((f"{name}@{ver}", first, value))
                 elif has_resolution:
                     unmatched.append(key_text)
             continue
         if not _PACKAGE_KEY_RE.search(key_text):
+            # Not package-shaped: the integrity behind this key — if any —
+            # belongs to no package entry. A line-anchored resolution line
+            # here is unaccounted verification material; an empty scalar
+            # key ('' quoted-empty) is a deliberate silent skip.
+            if key_text.strip() and _RESOLUTION_LINE_RE.search(block):
+                unaccounted.append(key_text)
             continue
         if integrity or has_resolution:
             unmatched.append(key_text)
-    return parsed, unmatched
-
-
-def _conflicting_duplicates(content: str) -> list[tuple[str, str, str]]:
-    """Return (identity, first value, later value) for colliding entries.
-
-    A second pass over the entry blocks, tracking each parsed identity's
-    first integrity value: two lockfile entries resolving to the same
-    ``(name, version)`` — byte-identical duplicate key lines or across
-    quoting variants, both of which collapse to one identity — with
-    *different* integrity values mean one of the two attested hashes would
-    be silently overwritten in the parsed map and dropped from verification
-    while the script still reported success. That ambiguity is the failure
-    mode this guard closes; the same identity with an identical value is a
-    legitimate dedup and produces no conflict. Keys that never parse into a
-    verifiable entry (peer-suffixed and other unmatched package-shaped keys,
-    which the unmatched guard owns) and deliberately excluded @zkochan
-    entries take no part in the collision set.
-    """
-    seen: dict[tuple[str, str], str] = {}
-    conflicts: list[tuple[str, str, str]] = []
-    for key_line, _key_text, block in _entry_blocks(content):
-        integrity = _INTEGRITY_RE.search(block)
-        if not integrity:
-            continue
-        m = _PKG_RE.match(key_line)
-        if not m:
-            continue
-        name = m.group(1) or m.group(3)
-        ver = m.group(2) or m.group(4)
-        if not name or not ver or name.startswith("@zkochan/"):
-            continue
-        value = integrity.group(1)
-        first = seen.setdefault((name, ver), value)
-        if first != value:
-            conflicts.append((f"{name}@{ver}", first, value))
-    return conflicts
+    return LockfileScan(
+        parsed=parsed,
+        unmatched=unmatched,
+        conflicting=conflicting,
+        unaccounted=unaccounted,
+        resolution_blocks=resolution_blocks,
+    )
 
 
 def _unowned_resolution_lines(content: str) -> list[str]:
@@ -282,8 +311,12 @@ def find_unmatched_package_keys(content: str) -> list[str]:
     A key lands here when its block carries a resolution but the entry could
     not be parsed: either the key did not match the package pattern, or the
     resolution carries no integrity line (it could never be verified).
+
+    The underlying scan is shared with `parse_lockfile`'s other guards and
+    never raises — a lockfile this cannot read at all still yields an empty
+    list, leaving the loud failure to `parse_lockfile`'s guards.
     """
-    return _scan_lockfile(content)[1]
+    return _scan_lockfile(content).unmatched
 
 
 def _inline_entry_scalar(line: str) -> str:
@@ -353,16 +386,21 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
     block carrying a resolution was not parsed — see
     `find_unmatched_package_keys` — if a resolution line in the raw file
     text is never reached by the entry-block walk — see
-    `_unowned_resolution_lines` — or if two entries resolve to the same
+    `_unowned_resolution_lines` — if a resolution-carrying block sits
+    behind a key that is no package entry at all — the scan's unaccounted
+    set, the hole the ownership walk cannot see because any key line starts
+    a block — or if two entries resolve to the same
     ``(name, version)`` identity with different integrity values — see
-    `_conflicting_duplicates`. The guards run most-diagnostic-first: a
+    `_scan_lockfile`'s `conflicting` set. The guards run
+    most-diagnostic-first: a
     lockfile the walk cannot see at all (four-space indentation throughout)
     is caught by the zero-parse check ("Parsed 0 packages"), a partially
     drifted one by the unreached-resolutions invariant (a conflicting
     duplicate behind a drifted entry is a shape problem before it is a
     value problem), and a lockfile whose every entry is legitimately
     excluded (@zkochan-scoped, for instance) still parses to an empty map
-    because those resolutions ARE reached by the walk. The duplicate-
+    because those resolutions ARE reached by the walk and attributed to a
+    (named, excluded) package entry. The duplicate-
     identity conflict check composes last, on a lockfile the walk fully
     accounted for.
     """
@@ -379,7 +417,8 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
             " changed: fix the pattern rather than letting these entries go"
             " unverified."
         )
-    parsed, unmatched = _scan_lockfile(content)
+    scan = _scan_lockfile(content)
+    unmatched = scan.unmatched
     if unmatched:
         shown = ", ".join(unmatched[:5])
         more = "" if len(unmatched) <= 5 else f" (+{len(unmatched) - 5} more)"
@@ -392,17 +431,17 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
             " these are git/tarball resolutions without an integrity, they cannot"
             " be verified by this gate and need a deliberate decision."
         )
-    if not parsed:
+    if not scan.parsed:
         # A shape drift invisible to BOTH patterns (four-space indentation, a
         # tab, a renamed top-level key) leaves the walk empty: `main()` would
         # print "Parsed 0 packages" and exit 0, the gate verifying nothing while
         # reporting success. A resolution the walk *reached* was either parsed or
         # reported above, so zero parsed entries is expected in that case (every
         # entry excluded as @zkochan-scoped, for instance); zero parsed entries
-        # with a resolution the walk never reached is not.
-        reached = any(
-            _RESOLUTION_RE.search(block) for _k, _t, block in _entry_blocks(content)
-        )
+        # with a resolution the walk never reached is not. `resolution_blocks`
+        # comes from the same single pass the parsed map was built in — one
+        # source of truth, no second walk.
+        reached = scan.resolution_blocks > 0
         resolutions = content.count("resolution:")
         if resolutions and not reached:
             raise RuntimeError(
@@ -430,7 +469,27 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
             " is the usual cause): fix the pattern rather than verifying a"
             " partial set."
         )
-    duplicates = _conflicting_duplicates(content)
+    unaccounted = scan.unaccounted
+    if unaccounted:
+        # Between the ownership and conflict guards: the ownership walk above
+        # counts a resolution line as owned once any key line starts a block,
+        # so a resolution behind a non-package key (`ledger:`, say) looks
+        # owned to it and would verify nothing. The scan's unaccounted set
+        # names the key the walk attributed the material to, and the parse
+        # refuses: verification material behind no package entry must never
+        # silently leave the verified set's accounting.
+        shown = ", ".join(unaccounted[:5])
+        more = "" if len(unaccounted) <= 5 else f" (+{len(unaccounted) - 5} more)"
+        raise RuntimeError(
+            f"Unaccounted resolution blocks ({len(unaccounted)}): {shown}{more}"
+            " — resolution/integrity material behind a key that is no package"
+            " entry, which the parser cannot attribute to any verified or"
+            " reported entry. It carries verification material matched against"
+            " no attestation; attribute it to a real package entry in the"
+            " lockfile rather than letting the gate account for a set it"
+            " cannot see whole."
+        )
+    duplicates = scan.conflicting
     if duplicates:
         # Last in the guard ordering: a conflicting identity behind an entry
         # the walk never reached is a shape problem first, and the unreached
@@ -453,7 +512,7 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
             " gate still reported success. Resolve the duplicate in the"
             " lockfile rather than letting the gate verify an ambiguous set."
         )
-    return parsed
+    return scan.parsed
 
 
 def _fetch_json(url: str, timeout: int = 10) -> Any:
