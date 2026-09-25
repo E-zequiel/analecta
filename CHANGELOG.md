@@ -9,43 +9,264 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `pnpm` toolchain bumped from `12.4.2` to `12.5.1` (`packageManager` pin, `.mise.toml`, and the lockfile's env document regenerated under the new version). Registry integrity verified per `docs/dependency-verification.md`; no cooldown exception needed (`12.5.1` released 2026-09-18, ~5.9 days before this bump). Part of the same branch as the release-age enforcement change below.
-- Dependency update #115's non-cooldown-compliant transitive resolutions downgraded to the newest versions satisfying the new `minimumReleaseAge: 5760` policy: `rolldown` 1.2.9 (and its 16 `@rolldown/binding-*` platform binaries), `@oxc-project/types` 0.150.0, `esrap` 2.3.7, and `svelte` back to 5.57.0 (5.57.1's `esrap ^2.3.6` requirement is unavailable under the cooldown until 2026-09-26; the next updater run re-bumps). Local `pnpm install --frozen-lockfile` now passes.
-- `socket` (Socket.dev CLI, the local dependency-scan tooling behind `scripts/socket-audit.sh`) bumped from `1.1.99` to `1.1.176`, staying current with the audit tool; no advisories against either version (verified per-version against OSV). The CLI's own declared `@socketsecurity/socket-patch` stays at `2.0.0` (the 4.0.0 patch line is a feature release, not a fix — forcing it would require an `overrides:` entry against the CLI's declared dependency, rejected); the lockfile's peer-suffix key reshuffle is mechanical, with socket's integrity matching the registry-recorded digest. No cooldown exception needed: `1.1.176` released 2026-09-17, 4.02 days before this bump (2026-09-21).
+- `pnpm` toolchain bumped from `12.4.2` to `12.5.1` (`packageManager` pin,
+  `.mise.toml`, and the lockfile's env document regenerated under the new
+  version). Registry integrity verified per `docs/dependency-verification.md`;
+  no cooldown exception needed (`12.5.1` released 2026-09-18, ~5.9 days before
+  this bump). Part of the same branch as the release-age enforcement change
+  below.
+- Dependency update #115's non-cooldown-compliant transitive resolutions
+  downgraded to the newest versions satisfying the new `minimumReleaseAge:
+  5760` policy: `rolldown` 1.2.9 (and its 16 `@rolldown/binding-*` platform
+  binaries), `@oxc-project/types` 0.150.0, `esrap` 2.3.7, and `svelte` back to
+  5.57.0 (5.57.1's `esrap ^2.3.6` requirement is unavailable under the
+  cooldown until 2026-09-26; the next updater run re-bumps). Local `pnpm
+  install --frozen-lockfile` now passes.
+- `socket` (Socket.dev CLI, the local dependency-scan tooling behind
+  `scripts/socket-audit.sh`) bumped from `1.1.99` to `1.1.176`, staying
+  current with the audit tool; no advisories against either version (verified
+  per-version against OSV). The CLI's own declared
+  `@socketsecurity/socket-patch` stays at `2.0.0` (the 4.0.0 patch line is a
+  feature release, not a fix — forcing it would require an `overrides:` entry
+  against the CLI's declared dependency, rejected); the lockfile's
+  peer-suffix key reshuffle is mechanical, with socket's integrity matching
+  the registry-recorded digest. No cooldown exception needed: `1.1.176`
+  released 2026-09-17, 4.02 days before this bump (2026-09-21).
 - Dependency updates: 10 packages (2026-08-20).
-- `shiki` and `@shikijs/markdown-it` bumped from 4.2.0 to 4.4.3 (2026-08-21), unblocking the pair excluded from the 2026-08-20 automated update (#92) after `@shikijs/themes`/`@shikijs/langs` moved to 4.4.3 while these two stayed pinned. `markdown-it` stays at 14.3.0: the published `@shikijs/markdown-it@4.4.3` hard-pins `markdown-it: ^14.3.0` as a direct (non-peer) dependency, incompatible with `markdown-it@15.0.0` — not fixable locally, needs an upstream `@shikijs/markdown-it` release.
-- `jdx/mise-action` bumped from v4.2.4 to v4.2.5, across `ci.yml`, `deps-update.yml`, `release.yml`, and `socket-manual.yml` (#93).
+- `shiki` and `@shikijs/markdown-it` bumped from 4.2.0 to 4.4.3 (2026-08-21),
+  unblocking the pair excluded from the 2026-08-20 automated update (#92)
+  after `@shikijs/themes`/`@shikijs/langs` moved to 4.4.3 while these two
+  stayed pinned. `markdown-it` stays at 14.3.0: the published
+  `@shikijs/markdown-it@4.4.3` hard-pins `markdown-it: ^14.3.0` as a direct
+  (non-peer) dependency, incompatible with `markdown-it@15.0.0` — not
+  fixable locally, needs an upstream `@shikijs/markdown-it` release.
+- `jdx/mise-action` bumped from v4.2.4 to v4.2.5, across `ci.yml`,
+  `deps-update.yml`, `release.yml`, and `socket-manual.yml` (#93).
 - Dependency updates: 7 packages (2026-08-27).
-- `jdx/mise-action` bumped from v4.2.5 to v4.3.0, across `ci.yml`, `deps-update.yml`, `release.yml`, and `socket-manual.yml` (#100).
+- `jdx/mise-action` bumped from v4.2.5 to v4.3.0, across `ci.yml`,
+  `deps-update.yml`, `release.yml`, and `socket-manual.yml` (#100).
 - Dependency updates: 7 packages (2026-09-03).
 - Dependency updates: 3 packages (2026-09-10).
-- `backend/pyproject.toml`: `build-system.requires` bumped from `uv_build>=0.11.8,<0.12.0` to `>=0.12.13,<0.13.0`, aligning the pinned build backend with the `uv 0.12.13` toolchain installed via `mise upgrade --bump` (2026-09-11) — the prior upper bound excluded the now-current uv, which `uv build` was silently tolerating via a compatibility fallback rather than failing.
+- `backend/pyproject.toml`: `build-system.requires` bumped from
+  `uv_build>=0.11.8,<0.12.0` to `>=0.12.13,<0.13.0`, aligning the pinned
+  build backend with the `uv 0.12.13` toolchain installed via
+  `mise upgrade --bump` (2026-09-11) — the prior upper bound excluded the
+  now-current uv, which `uv build` was silently tolerating via a
+  compatibility fallback rather than failing.
 - Dependency updates: 2 packages (2026-09-17).
 - Dependency updates: 15 packages (2026-09-24).
 
 ### Security
-
-- `scripts/verify_provenance.py`: advisory-sweep hardening of the gate's own verification logic — an inline non-package mapping carrying `integrity:` material (`extra: {resolution: {integrity: …}}` after an entry) was invisible to every guard and either verified by nobody or silently absorbed as the preceding entry's parsed integrity when that entry had no resolution of its own; the single-pass scan now classifies material by line shape and `parse_lockfile` refuses naming the orphan (comment lines and prose without hash-shaped values stay quiet). The unsupported-integrity-algorithm diagnostic now names the algorithm on every failure path (previously "payload parse error" and "no sha512 subject found" masked it behind the attestation). The bundle-format compatibility skip's message names the deciding classifier (genuine class match vs exception-class-name fallback), making library-upgrade drift visible in CI logs. Demonstrated red before implementation (Agent-A/Agent-B cycle, maintainer-approved); see `docs/security-log.md` (2026-09-25).
-- `scripts/verify_provenance.py`: a resolution-carrying block behind a key that is no package entry at all (e.g. a 2-space `ledger:` key under `packages:`) was read and skipped silently — the integrity behind it is verification material matched against no attestation, reported as no gap, with the run exiting 0 (the ownership walk counted the line as owned, since any key line starts a block, and every other guard saw nothing). A new unaccounted-resolution-block guard in `parse_lockfile` now fails the parse naming the offending keys; empty-scalar keys (`''`, degenerate malformed input) and the `@zkochan/` exclusions stay deliberate silent skips. In the same pass, the conflicting-duplicate guard was folded into the single lockfile scan (it hand-mirrored the parser's predicate in a second pass — identical by construction, but two passes could disagree about coverage after any future edit): the scan now returns one `LockfileScan` record and the zero-parse guard derives `reached` from that same pass. Demonstrated red before implementation (Agent-A/Agent-B cycle, maintainer-approved); see `docs/security-log.md` (2026-09-25).
-- `pnpm-workspace.yaml`: new `minimumReleaseAge: 5760` setting — the 4-day release cooldown is now enforced by pnpm itself at resolution and frozen-install verification, for all dependencies including transitive ones, in CI and in every clone. Closes the gap where `deps-update.yml`'s direct-deps-only filter could commit a lockfile whose transitive tree violated the maintainer's local-only policy — PR #115 did exactly that (transitives 1–3 days old at merge; CI green, local install failing). Bypass semantics: `workflow_dispatch cooldown=0` now lifts only the updater's gate; pnpm's gate stays, and a too-fresh package fails loudly (`ERR_PNPM_NO_MATURE_MATCHING_VERSION`) — genuine early exceptions remain maintainer-approved and logged. See `docs/github-actions-security.md` (Control 7) and `docs/security-log.md` (2026-09-24).
-- `scripts/verify_provenance.py`: the Sigstore check's compatibility carve-outs are now class-based, closing the residual fail-open windows left after the 2026-09-21 fail-closed fix — the blanket exception handler still returned ok (a skip) for any unclassifiable exception whose message merely contained "validation error" or "failed to load bundle", and the `VerificationError` handler skipped on any message containing "only supported"/"not supported" instead of the library's one fixed compatibility sentence. The bundle-format skip is now decided by the exception class (`sigstore.models.InvalidBundle`, the genuine 4.2.0 load-failure class; a class-NAME fallback exists only for environments where the genuine class is unimportable, and it cannot fire when the real class is present — an unrelated class whose name merely resembles `InvalidBundle` fails closed), and the timestamp-compat skip fires only on the library's exact fixed message ("Integrated time only supported for dsse/hashedrekord 0.0.1 types"), never on loose substring resemblance. Message text is never matched for classification; the Sigstore check also gained its first full classification matrix (success, `VerificationError` fatal, `NetworkError` skip, unimportable, both compatibility skips, unclassifiable fail-closed) — it previously had one test. Demonstrated red before implementation (Agent-A/Agent-B cycle, maintainer-approved); see `docs/security-log.md`.
-- `scripts/verify_provenance.py`: the sweep's summary is now guarded at the aggregate level — a run that parsed packages but verified zero of them exits 1 with an explicit 'nothing was verified' failure naming the likely cause (every answer read as the no-attestation gap because the metadata source was stripped or censored), instead of reporting success over a run that verified nothing. This closes the remaining metadata-source censorship bypass left after the 2026-09-21 per-package transport fix: well-formed metadata with `dist.attestations` stripped for every package still reads as the legitimate ~60% gap per-package, so only the aggregate can catch a full strip. Maintainer-approved semantics: fail only at exactly zero verified — partial censorship below 100% remains a recorded, deliberate limit (fully discriminating requires an out-of-band anchor, not taken). A lockfile whose every entry is legitimately excluded (e.g. all-`@zkochan`) still exits 0. Demonstrated red before implementation (Agent-A/Agent-B cycle, maintainer-approved); see `docs/security-log.md`.
-- `scripts/verify_provenance.py`: two lockfile entries resolving to the same `(name, version)` identity — byte-identical duplicate keys or across quoting variants (`'pkg@1.0.0':` / `pkg@1.0.0:`) — silently overwrote each other in the parser's verified map (last one wins), dropping one attested hash from verification while the gate reported success. A new conflicting-duplicate guard in `parse_lockfile` now fails the parse naming the colliding identity and both integrity values; identical values remain a quiet dedup. The identity itself is unchanged (peer suffixes stay excluded by design — suffixed keys carrying integrity already fail loudly as parser gaps). Demonstrated red before implementation (Agent-A/Agent-B cycle, maintainer-approved); see `docs/security-log.md`.
-- `scripts/verify_provenance.py`: every nested layer of the registry answer is now validated at runtime — the previous `cast()` calls validated nothing, so a well-formed answer with a wrong nested shape (`dist: null`, `dist.attestations: "no"`, a truthy non-object bundle document, a non-list `attestations`, a non-object entry, a non-string `predicateType`, a matched attestation whose `bundle` is `None`) crashed the sweep with an unclassified `AttributeError`/`TypeError` that escaped the sweep's per-package collection. All of these are now classified failures naming the package and the source. Once the metadata advertises `dist.attestations.url`, a bundle document carrying no SLSA-provenance attestation also fails loudly instead of resolving to the legitimate no-attestation skip — a registry-level MITM can no longer turn a declared attestation into a silent 'no provenance yet' pass by serving a stripped or reshaped document (the legitimate skip is reserved for well-formed metadata without a usable url). Demonstrated red before implementation (Agent-A/Agent-B cycle, maintainer-approved); see `docs/security-log.md`.
-- `scripts/verify_provenance.py`: advisory round on the gate's new logic — the sweep no longer aborts at the first registry transport failure (collected and reported at the end, complete picture), a column-0 resolution line can no longer be owned silently (it stole a block's ownership and mis-named the drifted line, or parsed with the drifted hash when it was the block's only resolution), a well-formed-but-unusable registry answer is "malformed package metadata" instead of "could not reach" (truthy non-object bodies previously crashed the sweep), and the `verify_sigstore` docstring describes the real classification. Transport retries remain deliberately absent (CI layer's job) — see `docs/security-log.md`.
-- `scripts/verify_provenance.py`: four fail-open/false-positive holes in the gate's own verification logic closed — a partially drifted lockfile could shrink the verified set silently (a drifted entry absorbed into a `snapshots:` block — peerless snapshots keys are byte-identical to `packages:` keys — could even overwrite the legitimate entry's integrity and misattribute the hash comparison); an unclassifiable Sigstore-library exception was reported as verified/skipped-ok (now fail-closed); a failed registry request was indistinguishable from "package has no provenance" (a sweep whose every request failed could exit 0 having verified nothing — now loud, naming the package and source); and a prose line mentioning `resolution:` failed the parse on a valid lockfile (now only package-shaped inline entries are reported). Demonstrated red before implementation; see `docs/security-log.md`.
-- `anyio` bumped from `4.13.0` to `4.15.1` (floor `anyio>=4.15.1` in `backend/pyproject.toml`'s `constraint-dependencies`), patching GHSA-82r6-8w77-94w6 / CVE-2026-63374 (HIGH: `TLSStream.wrap()` resolves internationalized hostnames with IDNA 2003 instead of IDNA 2008, so a certificate issued for one mapping can validate on a connection to the other — live on the extraction path, which fetches arbitrary user URLs over `httpx2`/`httpcore2` on top of anyio) and GHSA-5p39-cfhj-2xmp / CVE-2026-64847 (process-pool workers block indefinitely on undrained stderr; not exercised by the sidecar). GHSA-3w57-8xmc-8v26 / CVE-2026-63349 affects `4.14.0` only and is excluded defensively. See `docs/security-log.md`.
-- `scripts/verify_provenance.py`: the lockfile parser could not match quoted scoped package names, so the SLSA-provenance gate silently verified only the unscoped subset — 0 of the lockfile's 156 scoped entries carrying a resolution were seen (the file holds 277 scoped keys; the rest are `snapshots:`-style entries without one), while the job reported success. Scoped entries now parse (584 packages seen, was 428), and a new coverage guard fails the job loudly on any package-shaped key carrying a resolution that the parser did not match, so a future lockfile-format drift cannot hide again.
-- `scripts/verify_provenance.py`: a follow-up hardening pass replaced the guard's fixed 300-character lookahead with a per-entry block scope — matching each key against the body of its own entry rather than a fixed distance past it — because the window both crossed into the following entry (reporting an unresolved package-shaped key as a parser gap, failing CI on a valid lockfile) and missed a resolution block longer than the window; the parser and the guard now share one pass, so they cannot disagree about what was covered. The script also gained its first tests (`backend/tests/test_verify_provenance.py`, loaded by path since the hyphenated filename cannot be imported by name), covering scoped and unscoped entries, both lockfile documents, entries without a resolution, the `@zkochan` exclusion, and both window regressions. `docs/security-log.md` records the change.
-- `scripts/verify_provenance.py`: the coverage guard no longer has a silent hole. A key line it cannot tokenize cannot vanish from the parsed and the reported set at once any more — colons are now allowed inside a quoted key scalar, and only there (an unquoted scalar still excludes them, or a prose line ending in `:` would split an entry's block and hide its resolution) — a package-shaped block whose resolution carries no `integrity:` line is reported instead of skipped, and both of those are backed by a scan that is independent of the block splitter, so a splitter regression cannot hide behind the primitive whose completeness is in question. A lockfile whose shape drifts past the parser entirely (four-space indentation, a tab, a renamed top-level key) now fails loudly instead of reporting success over zero packages. A non-`sha512-` integrity no longer skips the entry silently either: it parses and is then rejected downstream with a diagnostic naming the unsupported algorithm. The real-lockfile test no longer asserts existence only, and the `@zkochan` exclusion is documented rather than mysterious — pnpm's own vendored packages are published without provenance attestations, verified against the registry. `docs/security-log.md` records the change.
-- `pnpm` package-manager pin bumped from `11.0.6` to `12.4.2` (`packageManager` field in `package.json`), patching 18 advisories in the outgoing pin — 11 high, 7 medium, 14 distinct CVEs; cooldown exception (published 3.64 days before the bump, 9 hours short of the 4-day minimum release age) maintainer-approved — see `docs/security-log.md`.
-- Release-cooldown policy (minimum release age for dependency updates) relaxed from 10 days to 4 days across the age-gated updater (`scripts/deps_update.py`, `deps-update.yml`), the normative docs, and a newly configured native Dependabot `cooldown: default-days: 4` — a deliberate control relaxation; historical cooldown-exception records keep their original numbers, see `docs/security-log.md`.
-- `devalue` bumped from `5.9.0` to `5.9.2` (`overrides:` entry in `pnpm-workspace.yaml`), patching GHSA-9rgm-9g3h-6x36 / CVE-2026-81176 (quadratic-time DoS: `devalue.parse` fails to reject out-of-bounds indices; transitive via `@sveltejs/kit`/`svelte`, not reachable with untrusted data in this adapter-static build) — see `docs/security-log.md`.
-- `soupsieve` bumped from `2.8.4` to `2.9.2` (#109 via Dependabot, then floor raised in `backend/pyproject.toml`'s `constraint-dependencies`), patching GHSA-j934-xhv5-fg8f and GHSA-gjv8-xp57-g29c (quadratic-CPU DoS in the CSS selector compiler, fixed in `2.9`) — see `docs/security-log.md`.
-- `@xmldom/xmldom` bumped from `0.8.14`/`0.9.11` to `0.8.15`/`0.9.12` (two version-scoped `overrides:` entries in `pnpm-workspace.yaml`, kept separate rather than unified), patching 12 GHSAs published 2026-08-21 (well-formedness/validation bypasses past `requireWellFormed`, plus quadratic-time and ReDoS denial-of-service on untrusted XML/HTML input) — see `docs/security-log.md`.
-- `postcss-selector-parser` pinned to `7.1.5` (new `overrides:` entry in `pnpm-workspace.yaml`), patching GHSA-w9m9-85wc-3x92 / CVE-2026-9358 (stack-overflow DoS via uncontrolled recursion in AST serialization) — see `docs/security-log.md`.
-- `fast-uri` bumped from `3.1.5` to `3.1.7` (`overrides:` entry in `pnpm-workspace.yaml`, updated in place), patching six HIGH CVSS 7.5 advisories — GHSA-5jgf-p345-68v8 / CVE-2026-75931, GHSA-fph4-wmhf-6fwf / CVE-2026-75899, GHSA-f65p-4m7j-42xc / CVE-2026-75975, GHSA-jqff-g426-hqxp / CVE-2026-76172 (host confusion / SSRF, fixed at `3.1.6`) and GHSA-qw65-cvwx-89v3, GHSA-58mr-gqgx-xq4g (authority injection / host confusion, fixed only at `3.1.7`) — see `docs/security-log.md`.
-- `js-yaml` bumped from `4.3.1` to `4.3.2` (`overrides:` entry in `pnpm-workspace.yaml`, updated in place), patching CVE-2026-84375 / GHSA-2883-xcg3-v3hh (quadratic-time DoS via empty-mapping merge keys in `!!omap` resolution) — see `docs/security-log.md`.
+- `scripts/verify_provenance.py`: the sweep's failure report now groups collected
+  failures by class (registry transport / registry metadata shape / subject-hash /
+  sigstore verification), states the affected scope ("N of M parsed packages"), and
+  labels the registry-shape class with its hostile interpretation (a registry-level
+  actor reshaping the served document — a supply-chain signal, not an
+  availability incident); classification is decided by the exception's class at the
+  raise site (new RegistryTransportError/RegistryShapeError RuntimeError
+  subclasses), never by message wording. Exit codes and the aggregate zero-verified
+  guard are unchanged. see `docs/security-log.md` (2026-09-25).
+- `scripts/verify_provenance.py`: advisory-sweep hardening of the gate's own
+  verification logic — an inline non-package mapping carrying `integrity:`
+  material (`extra: {resolution: {integrity: …}}` after an entry) was invisible
+  to every guard and either verified by nobody or silently absorbed as the
+  preceding entry's parsed integrity when that entry had no resolution of its own;
+  the single-pass scan now classifies material by line shape and `parse_lockfile`
+  refuses naming the orphan (comment lines and prose without hash-shaped values
+  stay quiet). The unsupported-integrity-algorithm diagnostic now names the
+  algorithm on every failure path (previously "payload parse error" and "no sha512
+  subject found" masked it behind the attestation). The bundle-format compatibility
+  skip's message names the deciding classifier (genuine class match vs
+  exception-class-name fallback), making library-upgrade drift visible in CI logs.
+  see `docs/security-log.md` (2026-09-25).
+- `scripts/verify_provenance.py`: a resolution-carrying block behind a key that is
+  no package entry at all (e.g. a 2-space `ledger:` key under `packages:`) was read
+  and skipped silently — the integrity behind it is verification material matched
+  against no attestation, reported as no gap, with the run exiting 0 (the ownership
+  walk counted the line as owned, since any key line starts a block, and every
+  other guard saw nothing). A new unaccounted-resolution-block guard in
+  `parse_lockfile` now fails the parse naming the offending keys; empty-scalar keys
+  (`''`, degenerate malformed input) and the `@zkochan/` exclusions stay deliberate
+  silent skips. In the same pass, the conflicting-duplicate guard was folded into
+  the single lockfile scan (it hand-mirrored the parser's predicate in a second
+  pass — identical by construction, but two passes could disagree about coverage
+  after any future edit): the scan now returns one `LockfileScan` record and the
+  zero-parse guard derives `reached` from that same pass. see
+  `docs/security-log.md` (2026-09-25).
+- `pnpm-workspace.yaml`: new `minimumReleaseAge: 5760` setting — the 4-day
+  release cooldown is now enforced by pnpm itself at resolution and frozen-install
+  verification, for all dependencies including transitive ones, in CI and in every
+  clone. Closes the gap where `deps-update.yml`'s direct-deps-only filter could
+  commit a lockfile whose transitive tree violated the maintainer's local-only
+  policy — PR #115 did exactly that (transitives 1–3 days old at merge; CI
+  green, local install failing). Bypass semantics: `workflow_dispatch cooldown=0`
+  now lifts only the updater's gate; pnpm's gate stays, and a too-fresh package
+  fails loudly (`ERR_PNPM_NO_MATURE_MATCHING_VERSION`) — genuine early exceptions
+  remain maintainer-approved and logged. See `docs/github-actions-security.md`
+  (Control 7) and `docs/security-log.md` (2026-09-24).
+- `scripts/verify_provenance.py`: the Sigstore check's compatibility carve-outs are
+  now class-based, closing the residual fail-open windows left after the 2026-09-21
+  fail-closed fix — the blanket exception handler still returned ok (a skip) for
+  any unclassifiable exception whose message merely contained "validation error" or
+  "failed to load bundle", and the `VerificationError` handler skipped on any
+  message containing "only supported"/"not supported" instead of the library's one
+  fixed compatibility sentence. The bundle-format skip is now decided by the
+  exception class (`sigstore.models.InvalidBundle`, the genuine 4.2.0 load-failure
+  class; a class-NAME fallback exists only for environments where the genuine class
+  is unimportable, and it cannot fire when the real class is present — an
+  unrelated class whose name merely resembles `InvalidBundle` fails closed), and
+  the timestamp-compat skip fires only on the library's exact fixed message
+  ("Integrated time only supported for dsse/hashedrekord 0.0.1 types"), never on
+  loose substring resemblance. Message text is never matched for classification;
+  the Sigstore check also gained its first full classification matrix (success,
+  `VerificationError` fatal, `NetworkError` skip, unimportable, both compatibility
+  skips, unclassifiable fail-closed) — it previously had one test. see
+  `docs/security-log.md`.
+- `scripts/verify_provenance.py`: the sweep's summary is now guarded at the
+  aggregate level — a run that parsed packages but verified zero of them exits 1
+  with an explicit 'nothing was verified' failure naming the likely cause (every
+  answer read as the no-attestation gap because the metadata source was stripped or
+  censored), instead of reporting success over a run that verified nothing. This
+  closes the remaining metadata-source censorship bypass left after the 2026-09-21
+  per-package transport fix: well-formed metadata with `dist.attestations` stripped
+  for every package still reads as the legitimate ~60% gap per-package, so only the
+  aggregate can catch a full strip. Maintainer-approved semantics: fail only at
+  exactly zero verified — partial censorship below 100% remains a recorded,
+  deliberate limit (fully discriminating requires an out-of-band anchor, not
+  taken). A lockfile whose every entry is legitimately excluded (e.g.
+  all-`@zkochan`) still exits 0. see `docs/security-log.md`.
+- `scripts/verify_provenance.py`: two lockfile entries resolving to the same
+  `(name, version)` identity — byte-identical duplicate keys or across quoting
+  variants (`'pkg@1.0.0':` / `pkg@1.0.0:`) — silently overwrote each other in the
+  parser's verified map (last one wins), dropping one attested hash from
+  verification while the gate reported success. A new conflicting-duplicate guard
+  in `parse_lockfile` now fails the parse naming the colliding identity and both
+  integrity values; identical values remain a quiet dedup. The identity itself is
+  unchanged (peer suffixes stay excluded by design — suffixed keys carrying
+  integrity already fail loudly as parser gaps). see `docs/security-log.md`.
+- `scripts/verify_provenance.py`: every nested layer of the registry answer is now
+  validated at runtime — the previous `cast()` calls validated nothing, so a
+  well-formed answer with a wrong nested shape (`dist: null`, `dist.attestations:
+  "no"`, a truthy non-object bundle document, a non-list `attestations`, a
+  non-object entry, a non-string `predicateType`, a matched attestation whose
+  `bundle` is `None`) crashed the sweep with an unclassified
+  `AttributeError`/`TypeError` that escaped the sweep's per-package collection. All
+  of these are now classified failures naming the package and the source. Once the
+  metadata advertises `dist.attestations.url`, a bundle document carrying no
+  SLSA-provenance attestation also fails loudly instead of resolving to the
+  legitimate no-attestation skip — a registry-level MITM can no longer turn a
+  declared attestation into a silent 'no provenance yet' pass by serving a stripped
+  or reshaped document (the legitimate skip is reserved for well-formed metadata
+  without a usable url). see `docs/security-log.md`.
+- `scripts/verify_provenance.py`: advisory round on the gate's new logic — the
+  sweep no longer aborts at the first registry transport failure (collected and
+  reported at the end, complete picture), a column-0 resolution line can no longer
+  be owned silently (it stole a block's ownership and mis-named the drifted line,
+  or parsed with the drifted hash when it was the block's only resolution), a
+  well-formed-but-unusable registry answer is "malformed package metadata" instead
+  of "could not reach" (truthy non-object bodies previously crashed the sweep), and
+  the `verify_sigstore` docstring describes the real classification. Transport
+  retries remain deliberately absent (CI layer's job) — see
+  `docs/security-log.md`.
+- `scripts/verify_provenance.py`: four fail-open/false-positive holes in the gate's
+  own verification logic closed — a partially drifted lockfile could shrink the
+  verified set silently (a drifted entry absorbed into a `snapshots:` block —
+  peerless snapshots keys are byte-identical to `packages:` keys — could even
+  overwrite the legitimate entry's integrity and misattribute the hash comparison);
+  an unclassifiable Sigstore-library exception was reported as verified/skipped-ok
+  (now fail-closed); a failed registry request was indistinguishable from "package
+  has no provenance" (a sweep whose every request failed could exit 0 having
+  verified nothing — now loud, naming the package and source); and a prose line
+  mentioning `resolution:` failed the parse on a valid lockfile (now only
+  package-shaped inline entries are reported). see `docs/security-log.md`.
+- `anyio` bumped from `4.13.0` to `4.15.1` (floor `anyio>=4.15.1` in
+  `backend/pyproject.toml`'s `constraint-dependencies`), patching
+  GHSA-82r6-8w77-94w6 / CVE-2026-63374 (HIGH: `TLSStream.wrap()` resolves
+  internationalized hostnames with IDNA 2003 instead of IDNA 2008, so a certificate
+  issued for one mapping can validate on a connection to the other — live on the
+  extraction path, which fetches arbitrary user URLs over `httpx2`/`httpcore2` on
+  top of anyio) and GHSA-5p39-cfhj-2xmp / CVE-2026-64847 (process-pool workers
+  block indefinitely on undrained stderr; not exercised by the sidecar).
+  GHSA-3w57-8xmc-8v26 / CVE-2026-63349 affects `4.14.0` only and is excluded
+  defensively. See `docs/security-log.md`.
+- `scripts/verify_provenance.py`: the lockfile parser could not match quoted scoped
+  package names, so the SLSA-provenance gate silently verified only the unscoped
+  subset — 0 of the lockfile's 156 scoped entries carrying a resolution were seen
+  (the file holds 277 scoped keys; the rest are `snapshots:`-style entries without
+  one), while the job reported success. Scoped entries now parse (584 packages
+  seen, was 428), and a new coverage guard fails the job loudly on any
+  package-shaped key carrying a resolution that the parser did not match, so a
+  future lockfile-format drift cannot hide again.
+- `scripts/verify_provenance.py`: a follow-up hardening pass replaced the guard's
+  fixed 300-character lookahead with a per-entry block scope — matching each key
+  against the body of its own entry rather than a fixed distance past it —
+  because the window both crossed into the following entry (reporting an unresolved
+  package-shaped key as a parser gap, failing CI on a valid lockfile) and missed a
+  resolution block longer than the window; the parser and the guard now share one
+  pass, so they cannot disagree about what was covered. The script also gained its
+  first tests (`backend/tests/test_verify_provenance.py`, loaded by path since the
+  hyphenated filename cannot be imported by name), covering scoped and unscoped
+  entries, both lockfile documents, entries without a resolution, the `@zkochan`
+  exclusion, and both window regressions. `docs/security-log.md` records the
+  change.
+- `scripts/verify_provenance.py`: the coverage guard no longer has a silent hole. A
+  key line it cannot tokenize cannot vanish from the parsed and the reported set at
+  once any more — colons are now allowed inside a quoted key scalar, and only
+  there (an unquoted scalar still excludes them, or a prose line ending in `:`
+  would split an entry's block and hide its resolution) — a package-shaped block
+  whose resolution carries no `integrity:` line is reported instead of skipped, and
+  both of those are backed by a scan that is independent of the block splitter, so
+  a splitter regression cannot hide behind the primitive whose completeness is in
+  question. A lockfile whose shape drifts past the parser entirely (four-space
+  indentation, a tab, a renamed top-level key) now fails loudly instead of
+  reporting success over zero packages. A non-`sha512-` integrity no longer skips
+  the entry silently either: it parses and is then rejected downstream with a
+  diagnostic naming the unsupported algorithm. The real-lockfile test no longer
+  asserts existence only, and the `@zkochan` exclusion is documented rather than
+  mysterious — pnpm's own vendored packages are published without provenance
+  attestations, verified against the registry. `docs/security-log.md` records the
+  change.
+- `pnpm` package-manager pin bumped from `11.0.6` to `12.4.2` (`packageManager`
+  field in `package.json`), patching 18 advisories in the outgoing pin — 11 high,
+  7 medium, 14 distinct CVEs; cooldown exception (published 3.64 days before the
+  bump, 9 hours short of the 4-day minimum release age) maintainer-approved — see
+  `docs/security-log.md`.
+- Release-cooldown policy (minimum release age for dependency updates) relaxed from
+  10 days to 4 days across the age-gated updater (`scripts/deps_update.py`,
+  `deps-update.yml`), the normative docs, and a newly configured native Dependabot
+  `cooldown: default-days: 4` — a deliberate control relaxation; historical
+  cooldown-exception records keep their original numbers, see
+  `docs/security-log.md`.
+- `devalue` bumped from `5.9.0` to `5.9.2` (`overrides:` entry in
+  `pnpm-workspace.yaml`), patching GHSA-9rgm-9g3h-6x36 / CVE-2026-81176
+  (quadratic-time DoS: `devalue.parse` fails to reject out-of-bounds indices;
+  transitive via `@sveltejs/kit`/`svelte`, not reachable with untrusted data in
+  this adapter-static build) — see `docs/security-log.md`.
+- `soupsieve` bumped from `2.8.4` to `2.9.2` (#109 via Dependabot, then floor
+  raised in `backend/pyproject.toml`'s `constraint-dependencies`), patching
+  GHSA-j934-xhv5-fg8f and GHSA-gjv8-xp57-g29c (quadratic-CPU DoS in the CSS
+  selector compiler, fixed in `2.9`) — see `docs/security-log.md`.
+- `@xmldom/xmldom` bumped from `0.8.14`/`0.9.11` to `0.8.15`/`0.9.12` (two
+  version-scoped `overrides:` entries in `pnpm-workspace.yaml`, kept separate
+  rather than unified), patching 12 GHSAs published 2026-08-21
+  (well-formedness/validation bypasses past `requireWellFormed`, plus
+  quadratic-time and ReDoS denial-of-service on untrusted XML/HTML input) — see
+  `docs/security-log.md`.
+- `postcss-selector-parser` pinned to `7.1.5` (new `overrides:` entry in
+  `pnpm-workspace.yaml`), patching GHSA-w9m9-85wc-3x92 / CVE-2026-9358
+  (stack-overflow DoS via uncontrolled recursion in AST serialization) — see
+  `docs/security-log.md`.
+- `fast-uri` bumped from `3.1.5` to `3.1.7` (`overrides:` entry in
+  `pnpm-workspace.yaml`, updated in place), patching six HIGH CVSS 7.5 advisories
+  — GHSA-5jgf-p345-68v8 / CVE-2026-75931, GHSA-fph4-wmhf-6fwf / CVE-2026-75899,
+  GHSA-f65p-4m7j-42xc / CVE-2026-75975, GHSA-jqff-g426-hqxp / CVE-2026-76172 (host
+  confusion / SSRF, fixed at `3.1.6`) and GHSA-qw65-cvwx-89v3, GHSA-58mr-gqgx-xq4g
+  (authority injection / host confusion, fixed only at `3.1.7`) — see
+  `docs/security-log.md`.
+- `js-yaml` bumped from `4.3.1` to `4.3.2` (`overrides:` entry in
+  `pnpm-workspace.yaml`, updated in place), patching CVE-2026-84375 /
+  GHSA-2883-xcg3-v3hh (quadratic-time DoS via empty-mapping merge keys in `!!omap`
+  resolution) — see `docs/security-log.md`.
 
 ## [0.5.3] - 2026-08-19
 

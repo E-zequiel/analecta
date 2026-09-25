@@ -643,17 +643,44 @@ def _fetch_json(url: str, timeout: int = 10) -> Any:
         return None
 
 
+class ProvenanceMetadataError(RuntimeError):
+    """Base for registry metadata failures the sweep collects per package.
+
+    The sweep's final report must group failures by CLASS, and the class is
+    known at the raise site — a well-formed answer whose shape violates the
+    documented contract is a different failure from a request that never got
+    a well-formed answer at all, and the report has to be able to tell them
+    apart without re-reading the message. Free-text matching on message
+    wording is the classification anti-pattern this gate rejects everywhere
+    else (see ``_FIXED_TIMESTAMP_COMPAT_MESSAGE`` and
+    ``_is_bundle_format_error``): message text is anything an unclassifiable
+    exception can imitate, while an exception class is raised exactly where
+    the classification is decided. Both subclasses are RuntimeError, so the
+    transport sentinel's original "raises RuntimeError" contract and every
+    existing caller keep behaving identically.
+    """
+
+
+class RegistryTransportError(ProvenanceMetadataError):
+    """The request never got a well-formed answer (timeout, DNS, refused, 404)."""
+
+
+class RegistryShapeError(ProvenanceMetadataError):
+    """A well-formed answer whose shape violates the documented contract."""
+
+
 def _classified_shape_error(
     pkg: str, source: str, artifact: str, detail: str
-) -> RuntimeError:
+) -> RegistryShapeError:
     """Build the classified failure for a malformed layer of the answer.
 
-    Every nested-shape violation must surface as this RuntimeError — never an
-    AttributeError or TypeError — so ``main()``'s per-package collection sees
-    a classified failure instead of a crashed sweep. The message says the
-    layer is malformed and names the package and the source it came from.
+    Every nested-shape violation must surface as a ``RegistryShapeError`` —
+    never an AttributeError or TypeError — so ``main()``'s per-package
+    collection sees a classified failure instead of a crashed sweep. The
+    message says the layer is malformed and names the package and the source
+    it came from.
     """
-    return RuntimeError(
+    return RegistryShapeError(
         f"provenance check for {pkg} got malformed {artifact} from {source} — {detail}"
     )
 
@@ -665,15 +692,15 @@ def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, Any]] | N
     that carries no usable ``dist.attestations.url`` — the expected 'no
     provenance yet' gap (~60% of the npm ecosystem). A transport failure —
     the request never got a well-formed answer, or the attestation-bundle
-    download failed — raises RuntimeError naming the package and the
-    unreachable source: a failed request must never read as the legitimate
-    skip.
+    download failed — raises ``RegistryTransportError`` naming the package
+    and the unreachable source: a failed request must never read as the
+    legitimate skip.
 
     Every nested layer of the registry answer is validated at runtime: a
     well-formed outer document whose ``dist``, ``dist.attestations``, the
     fetched bundle document, its ``attestations`` list, or any entry's
     ``predicateType``/``bundle`` has the wrong shape raises a classified
-    RuntimeError instead of crashing the sweep with an unclassified
+    ``RegistryShapeError`` instead of crashing the sweep with an unclassified
     exception. Once the metadata advertises an attestation URL, a bundle
     document carrying no SLSA provenance attestation is likewise a classified
     failure, not the skip: a registry-level MITM must never be able to turn a
@@ -684,19 +711,19 @@ def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, Any]] | N
     encoded = name.replace("/", "%2F")
     meta = _fetch_json(f"https://registry.npmjs.org/{encoded}/{ver}")
     if meta is None:
-        raise RuntimeError(
+        raise RegistryTransportError(
             f"provenance check for {name}@{ver} could not reach the registry"
             " (registry.npmjs.org) — the package metadata request never got a"
             " well-formed answer (timeout, connection failure, or HTTP error)"
         )
     if not meta:
-        raise RuntimeError(
+        raise RegistryShapeError(
             f"provenance check for {name}@{ver} got malformed package metadata"
             " from registry.npmjs.org — the registry answered, but the metadata"
             " document is empty or unusable"
         )
     if not isinstance(meta, dict):
-        raise RuntimeError(
+        raise RegistryShapeError(
             f"provenance check for {name}@{ver} got malformed package metadata"
             f" from registry.npmjs.org — expected a JSON object, got"
             f" {type(meta).__name__}"
@@ -729,13 +756,13 @@ def get_provenance_bundle(name: str, ver: str) -> tuple[str, dict[str, Any]] | N
         return None
     data = _fetch_json(att_url)
     if data is None:
-        raise RuntimeError(
+        raise RegistryTransportError(
             f"provenance check for {name}@{ver} could not download the"
             f" attestation bundle from {att_url} — the request never got a"
             " well-formed answer (timeout, connection failure, or HTTP error)"
         )
     if not data:
-        raise RuntimeError(
+        raise RegistryShapeError(
             f"provenance check for {name}@{ver} got a malformed attestation"
             f" bundle response from {att_url} — the registry answered, but the"
             " bundle document is empty or unusable"
@@ -1020,6 +1047,19 @@ def main() -> int:
     that every answer read as the no-attestation gap. Returns 0 only when at
     least one package was verified, or when nothing was parsed at all (a
     lockfile whose every entry is legitimately excluded, e.g. @zkochan).
+
+    The per-package failure path is fail-closed per package: a failed check
+    fails that package and the run, while the sweep keeps going so the
+    report can carry the full picture. The failure report groups failures by
+    CLASS (transport, registry-shape, subject-hash, sigstore) with a count
+    per class, states how many of the parsed packages were affected, and
+    carries an explicit maintainer-approved disposition on the
+    registry-shape class: that class is the hostile reading — a
+    registry-level actor reshaping the served document — so a reader can
+    tell it apart from an availability incident from the report alone
+    (partial censorship below 100% remains the recorded limit of the
+    aggregate guard). Classification rides the exception class (see
+    ``ProvenanceMetadataError``), never message wording.
     """
     packages = parse_lockfile(LOCKFILE)
     print(f"Parsed {len(packages)} packages from pnpm-lock.yaml")
@@ -1027,17 +1067,33 @@ def main() -> int:
 
     verified: list[str] = []
     skipped = 0
-    failed: list[tuple[str, str]] = []
+    failed: list[tuple[str, str, str]] = []
 
     for (name, ver), integrity in sorted(packages.items()):
         pkg = f"{name}@{ver}"
         try:
             result = get_provenance_bundle(name, ver)
         except RuntimeError as e:
-            # A transport failure is loud, but not sweep-ending: one blip
+            # A metadata failure is loud, but not sweep-ending: one blip
             # must not cut every later package off — collect it like a
-            # verification failure and let the run end with the full picture.
-            failed.append((pkg, str(e)))
+            # verification failure and let the run end with the full
+            # picture. The bucket is decided by the exception's class, not
+            # its wording (see ProvenanceMetadataError): a
+            # RegistryShapeError is the hostile registry-level class;
+            # everything else — a RegistryTransportError that never got a
+            # well-formed answer, or a bare RuntimeError (which should not
+            # exist today: every metadata raise site raises a subclass,
+            # but a test double or an older plugin could still produce
+            # one) — fails toward the transport reading. An unclassified
+            # answer is never reclassified as a shape violation, and
+            # message text is never matched: the shape messages embed the
+            # package name, which a publisher controls, so wording-based
+            # classification would be spoofable.
+            if isinstance(e, RegistryShapeError):
+                bucket = "registry-shape"
+            else:
+                bucket = "transport"
+            failed.append((pkg, bucket, str(e)))
             time.sleep(0.02)
             continue
         if result is None:
@@ -1049,18 +1105,17 @@ def main() -> int:
         print(f"  {pkg}")
 
         bundle_json = json.dumps(bundle)
-
         ok, msg = check_subject_hash(bundle, integrity)
         if not ok:
             print(f"    ✗ {msg}")
-            failed.append((pkg, msg))
+            failed.append((pkg, "subject-hash", msg))
             continue
         print(f"    ✓ {msg}")
 
         ok, msg = verify_sigstore(bundle_json)
         if not ok:
             print(f"    ✗ {msg}")
-            failed.append((pkg, msg))
+            failed.append((pkg, "sigstore", msg))
             continue
         print(f"    ✓ {msg}")
 
@@ -1075,15 +1130,63 @@ def main() -> int:
 
     if failed:
         print()
+        # The report opens with the class grouping — a reader must be able
+        # to tell the hostile class from an availability incident before
+        # reading any package detail. Buckets render in the fixed order
+        # they are defined in; the per-package detail lines below (which
+        # carry the original exception text verbatim) survive unchanged.
+        affected = len(failed)
+        parsed_count = len(packages)
+        buckets: dict[str, list[tuple[str, str]]] = {}
+        for pkg, bucket, reason in failed:
+            buckets.setdefault(bucket, []).append((pkg, reason))
+        for bucket, header in (
+            (
+                "transport",
+                "Transport failures (the request never got a well-formed"
+                f" answer): {len(buckets.get('transport', []))}",
+            ),
+            (
+                "registry-shape",
+                "Registry-shape metadata violations: "
+                f"{len(buckets.get('registry-shape', []))}",
+            ),
+            (
+                "subject-hash",
+                f"Subject-hash failures: {len(buckets.get('subject-hash', []))}",
+            ),
+            (
+                "sigstore",
+                f"Sigstore failures: {len(buckets.get('sigstore', []))}",
+            ),
+        ):
+            members = buckets.get(bucket)
+            if not members:
+                continue
+            print(header)
+            for pkg, reason in members:
+                print(f"  ✗ {pkg}: {reason}")
+        print(f"{affected} of {parsed_count} parsed packages affected")
+        if buckets.get("registry-shape"):
+            print()
+            print(
+                "Shape violations suggest a registry-level actor reshaping"
+                " the served document — treat as a supply-chain signal, not"
+                " a mere availability incident (isolated vs systemic: see"
+                " the counts)."
+            )
+        print()
         print("FAILED packages:")
-        for pkg, reason in failed:
+        for pkg, _bucket, reason in failed:
             print(f"  ✗ {pkg}: {reason}")
         print()
-        print("""\
+        print(
+            """\
 Provenance verification failed. Possible causes:
   • Supply-chain attack: installed hash differs from attested hash
   • Registry served a tampered attestation (Sigstore check failed)
-  • Legitimate package re-publish without re-attestation (investigate)""")
+  • Legitimate package re-publish without re-attestation (investigate)"""
+        )
         return 1
 
     if packages and not verified:

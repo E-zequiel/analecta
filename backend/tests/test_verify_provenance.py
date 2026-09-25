@@ -2018,3 +2018,259 @@ def test_orphan_inside_a_snapshots_block_is_refused(vp: Any, tmp_path: Path) -> 
     with pytest.raises(RuntimeError) as excinfo:
         vp.parse_lockfile(path)
     assert "extra" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# Sweep failure report: classification, scope, and hostile-shape disposition.
+# ---------------------------------------------------------------------------
+
+
+def test_sweep_failure_report_groups_failures_by_class(
+    vp: Any, tmp_path: Path, mocker, capsys
+) -> None:
+    """The final report classifies failures, counts per class, and states scope.
+
+    RED (observed HEAD behavior): when the sweep fails, main() prints a flat
+    "FAILED packages:" list — one `  ✗ pkg: reason` line per package — with
+    no classification. From that output alone the maintainer cannot tell a
+    hostile registry reshaping served documents from a transport outage,
+    a subject-hash mismatch, or a sigstore verification failure, and cannot
+    see the affected scope (isolated vs systemic). The report must group
+    failures into at least these classes, give each a count, state how many
+    of the parsed packages were affected, and give the shape class a
+    disposition naming the hostile interpretation.
+    """
+    body = (
+        "packages:\n\n"
+        "  'alpaca@1.0.0':\n"
+        "    resolution: {integrity: sha512-TTTT==}\n\n"
+        "  'basilisk@1.0.0':\n"
+        "    resolution: {integrity: sha512-SSSS==}\n\n"
+        "  'capybara@1.0.0':\n"
+        "    resolution: {integrity: sha512-HHHH==}\n\n"
+        "  'dingo@1.0.0':\n"
+        "    resolution: {integrity: sha512-GGGG==}\n"
+    )
+
+    def sweep(name: str, ver: str) -> tuple[str, dict[str, Any]] | None:
+        if name == "alpaca":
+            raise RuntimeError(
+                f"provenance check for {name}@{ver} could not reach the registry"
+                " (registry.npmjs.org) — the package metadata request never got a"
+                " well-formed answer (timeout, connection failure, or HTTP error)"
+            )
+        if name == "basilisk":
+            # Stage the production contract: the metadata layer raises the
+            # RegistryShapeError subclass for shape violations (a plain
+            # RuntimeError deliberately fails toward the transport reading).
+            raise vp.RegistryShapeError(
+                f"provenance check for {name}@{ver} got malformed package metadata"
+                " from registry.npmjs.org — 'dist.attestations' is not an object"
+                " (got list)"
+            )
+        return ("https://slsa.dev/provenance/v1", {"dsseEnvelope": {"payload": "x"}})
+
+    path = _write_lockfile(tmp_path, body)
+    mocker.patch.object(vp, "LOCKFILE", path)
+    mocker.patch.object(vp, "get_provenance_bundle", side_effect=sweep)
+
+    def fake_hash(bundle: dict[str, Any], integrity: str) -> tuple[bool, str]:
+        return (
+            (False, "hash MISMATCH")
+            if integrity == "sha512-HHHH=="
+            else (True, "subject hash matches lockfile integrity")
+        )
+
+    mocker.patch.object(vp, "check_subject_hash", side_effect=fake_hash)
+    # Only dingo reaches sigstore: capybara already failed the hash check
+    # and the two RuntimeError packages never got a bundle.
+    mocker.patch.object(
+        vp,
+        "verify_sigstore",
+        return_value=(False, "Sigstore verification failed: bad"),
+    )
+
+    exit_code = vp.main()
+    output = capsys.readouterr().out
+
+    # Exit code contract unchanged: 1 when any package failed.
+    assert exit_code == 1
+
+    # Per-package detail lines must survive verbatim in shape.
+    assert "✗ alpaca@1.0.0: provenance check for alpaca@1.0.0" in output
+    assert "✗ basilisk@1.0.0: provenance check for basilisk@1.0.0" in output
+    assert "✗ capybara@1.0.0: hash MISMATCH" in output
+    assert "✗ dingo@1.0.0: Sigstore verification failed: bad" in output
+
+    # Grouping: each failure class must be reported under its own named
+    # class label, on a line that carries the class's count — the count
+    # matched as a standalone number (excluding version digits inside
+    # pkg@1.0.0 strings, which the detail lines already contain).
+    for label, count in [
+        ("transport", 1),
+        ("shape", 1),
+        ("hash", 1),
+        ("sigstore", 1),
+    ]:
+        class_lines = [
+            line
+            for line in output.splitlines()
+            if label in line.lower() and re.search(rf"(?<![\w.]){count}(?![\w.])", line)
+        ]
+        assert class_lines, (
+            f"failure report has no line naming the {label!r} class with its"
+            f" count {count}; flat output was:\n{output}"
+        )
+
+    # Scope statement: how many of the parsed packages were affected — an
+    # "N of M" line where N is the total failure count (4) and M is the
+    # parsed count (4). Only sigfail and hashdiff differ in kind; both
+    # still count as failures.
+    scope_lines = [
+        line
+        for line in output.splitlines()
+        if re.search(r"(?<![\w.])4 of 4(?![\w.])", line)
+    ]
+    assert scope_lines, (
+        "failure report states no overall scope as an 'N of M parsed packages'"
+        f" statement; output was:\n{output}"
+    )
+
+    # Hostile disposition for the registry-metadata-shape class: the reader
+    # must be able to tell that class apart from a mere availability
+    # incident, so the report must name the hostile interpretation — a
+    # registry-level actor reshaping the served document.
+    disposition_lines = [
+        line
+        for line in output.splitlines()
+        if re.search(
+            r"(reshap|tamper|registry-level|registry actor|hostile)",
+            line,
+            re.IGNORECASE,
+        )
+    ]
+    assert disposition_lines, (
+        "failure report gives the registry-metadata-shape class no disposition"
+        " naming the hostile interpretation — a registry-level actor reshaping"
+        f" the served document; output was:\n{output}"
+    )
+
+
+def test_sweep_failure_report_partial_scope_counts_affected_of_parsed(
+    vp: Any, tmp_path: Path, mocker, capsys
+) -> None:
+    """The scope statement distinguishes affected packages from parsed ones.
+
+    RED companion: with failures hitting only a minority of the parsed
+    packages, the report's scope statement must still express the affected
+    count against the parsed total (2 of 5 here) — 'isolated vs systemic'
+    is exactly this ratio, so the report must render it from the report
+    alone.
+    """
+    body = (
+        "packages:\n\n"
+        "  'alpaca@1.0.0':\n"
+        "    resolution: {integrity: sha512-TTTT==}\n\n"
+        "  'basilisk@1.0.0':\n"
+        "    resolution: {integrity: sha512-GGGG==}\n\n"
+        "  'capybara@1.0.0':\n"
+        "    resolution: {integrity: sha512-AAAA==}\n\n"
+        "  'dingo@1.0.0':\n"
+        "    resolution: {integrity: sha512-BBBB==}\n\n"
+        "  'emu@1.0.0':\n"
+        "    resolution: {integrity: sha512-CCCC==}\n"
+    )
+
+    def sweep(name: str, ver: str) -> tuple[str, dict[str, Any]] | None:
+        if name == "alpaca":
+            raise RuntimeError(
+                f"provenance check for {name}@{ver} could not reach the registry"
+                " (registry.npmjs.org) — the package metadata request never got a"
+                " well-formed answer (timeout, connection failure, or HTTP error)"
+            )
+        if name == "basilisk":
+            # A real bundle document carrying a marker unique to this
+            # package, so the verify_sigstore double can fail exactly this
+            # bundle — the served JSON, not an envelope — must discriminate.
+            return (
+                "https://slsa.dev/provenance/v1",
+                {"dsseEnvelope": {"payload": "basilisk-marker"}},
+            )
+        if name.startswith(("capybara", "dingo")):
+            return (
+                "https://slsa.dev/provenance/v1",
+                {"dsseEnvelope": {"payload": "x"}},
+            )
+        return None
+
+    path = _write_lockfile(tmp_path, body)
+    mocker.patch.object(vp, "LOCKFILE", path)
+    mocker.patch.object(vp, "get_provenance_bundle", side_effect=sweep)
+    mocker.patch.object(
+        vp,
+        "check_subject_hash",
+        return_value=(True, "subject hash matches lockfile integrity"),
+    )
+
+    def fake_sigstore(bundle_json: str) -> tuple[bool, str]:
+        return (
+            (False, "Sigstore verification failed: bad")
+            if "basilisk-marker" in bundle_json
+            else (True, "Sigstore signature verified (Rekor + Fulcio)")
+        )
+
+    mocker.patch.object(vp, "verify_sigstore", side_effect=fake_sigstore)
+
+    exit_code = vp.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    scope_lines = [
+        line
+        for line in output.splitlines()
+        if re.search(r"(?<![\w.])2 of 5(?![\w.])", line)
+    ]
+    assert scope_lines, (
+        "with 2 failing packages out of 5 parsed, the report states no '2 of 5'"
+        f" scope; output was:\n{output}"
+    )
+
+
+def test_sweep_failure_report_single_class_still_labeled_and_counted(
+    vp: Any, tmp_path: Path, mocker, capsys
+) -> None:
+    """A single-class failure report still names its class and count.
+
+    RED companion: with the only failure being a transport outage, the
+    report must not degrade back to an unclassified list — the failure
+    class must be named and counted, so a lone blip is legible as an
+    availability incident (and only that) from the report alone.
+    """
+    body = (
+        "packages:\n\n  'alpaca@1.0.0':\n    resolution: {integrity: sha512-TTTT==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    mocker.patch.object(vp, "LOCKFILE", path)
+
+    def sweep(name: str, ver: str) -> tuple[str, dict[str, Any]] | None:
+        raise RuntimeError(
+            f"provenance check for {name}@{ver} could not reach the registry"
+            " (registry.npmjs.org) — the package metadata request never got a"
+            " well-formed answer (timeout, connection failure, or HTTP error)"
+        )
+
+    mocker.patch.object(vp, "get_provenance_bundle", side_effect=sweep)
+
+    exit_code = vp.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    class_lines = [
+        line
+        for line in output.splitlines()
+        if "transport" in line.lower() and re.search(r"(?<![\w.])1(?![\w.])", line)
+    ]
+    assert class_lines, (
+        "a single-transport-failure sweep's report names no transport class"
+        f" with its count; output was:\n{output}"
+    )
