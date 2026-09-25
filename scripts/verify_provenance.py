@@ -62,13 +62,32 @@ _ANY_KEY_RE = re.compile(
 # A key is package-shaped if it contains `@`. Structural keys (`packages:`,
 # `settings:`, `importers:` …) never do, and the keys that legitimately contain
 # one without being package entries (override targets, for instance) carry no
-# `integrity:` line in their own block, so they are never reported.
+# `integrity:` line in their own block, so they were historically never
+# reported; since the unaccounted classification (see `_scan_lockfile`), a
+# block whose key is package-shaped but unparseable is still reported as a
+# parser gap, and a key with no `@` at all carrying resolution or hash-shaped
+# integrity material is refused by the unaccounted guard — the quiet skip is
+# reserved for keys whose blocks carry no such material at all.
 _PACKAGE_KEY_RE = re.compile(r"@")
 # Capture the integrity value whatever the algorithm prefix, so a legacy
 # `sha1-` (or any other) value is parsed rather than silently skipped; the
 # verification path rejects anything but sha512 with a diagnostic naming the
 # unsupported algorithm.
 _INTEGRITY_RE = re.compile(r"integrity: ([^,\s}]+)")
+# The value-shape counterpart: an `integrity:` token whose value is the
+# `<algo>-<base64ish hash>` shape pnpm writes (`sha512-AAAABBBB==`). Anchored
+# on the value deliberately, not the bare token: prose that merely mentions
+# `resolution:` or `integrity:` without a hash-shaped value stays quiet —
+# the same philosophy that keeps the prose false-positive class closed
+# (see the `note: resolution: appears here as prose` guards). Only a line
+# carrying a value of this shape is verification material in the sense the
+# orphan classification cares about; see `_scan_lockfile`.
+# Residual floor: the value class requires 4+ base64ish chars after the
+# algorithm dash, so an orphan carrying a SHORTER fake value (`sha512-O==`)
+# is not counted as material and stays quiet — a same-shape attrition hole,
+# unrealistic for an attacker mimic (real pnpm hashes are 40+ chars) but a
+# boundary to keep conscious if this quantifier is ever retuned.
+_INTEGRITY_VALUE_RE = re.compile(r"integrity:\s*[A-Za-z0-9_-]+-[A-Za-z0-9+/=]{4,}")
 # A resolution line inside an entry block — matched on the bare substring so
 # every shape (`resolution: {integrity: ...}`, `resolution: {}`, …) counts.
 _RESOLUTION_RE = re.compile(r"resolution:")
@@ -125,7 +144,9 @@ class LockfileScan(NamedTuple):
     is the package-shaped parser gaps; `conflicting` is the duplicate-
     identity conflicts — see `_scan_lockfile` — tracked in the same pass;
     `unaccounted` is the resolution-carrying keys that are no package entry
-    at all; `resolution_blocks` counts the blocks whose body carries a
+    at all, plus the orphan inline material lines classified in blocks'
+    bodies — see `_scan_lockfile`. `resolution_blocks`
+    counts the blocks whose body carries a
     resolution line, the single source of truth for the zero-parse guard.
     """
 
@@ -199,6 +220,34 @@ def _scan_lockfile(content: str) -> LockfileScan:
     hidden entry — and package-shaped keys keep the substring-based
     resolution sensitivity they always had, so the unmatched guard's
     sensitivity is unchanged.
+
+    Orphan *inline* material is classified in the same pass: each block's
+    body is searched for integrity-bearing non-comment lines — lines
+    matching `_INTEGRITY_VALUE_RE` (value-anchored: an `integrity:` token
+    with an `<algo>-<base64ish hash>` value). The classification is
+    anchored on the line's SHAPE, not its position: a material line is the
+    block's own material iff its stripped form starts with
+    ``resolution:`` or ``integrity:`` (the block's own resolution
+    mapping, or its multi-line `integrity:` continuation); every other
+    material line — whatever its position, and whatever section the block
+    sits in — is an inline mapping attributed to no package entry (e.g.
+    ``extra: {resolution: {integrity: sha512-ORPHAN==}}`` directly
+    following an entry, or an orphan inside a resolution-less snapshots
+    body) and is appended to the same `unaccounted` list that carries the
+    unattributed key blocks — one list, one guard in `parse_lockfile`,
+    two origins: a non-package *key* whose block carries a resolution,
+    and material *lines* carrying no resolution/integrity anchor of their
+    own. Position-based counting (first material line = the block's own)
+    would misattribute in blocks with no legitimate resolution of their
+    own: the orphan IS the first material line there, and crediting it
+    quietly attributes a foreign hash to a real ``(name, version)``
+    identity. Comment lines mentioning `integrity:` are exempt (a
+    comment is never material), and prose without a hash-shaped value
+    stays quiet by the value anchor. The deliberate residual: a
+    non-comment line inside an entry body whose text contains
+    `integrity:` followed by an algo-shaped dash-base64 token is
+    indistinguishable from material and fails closed — unrealistic for a
+    pnpm lockfile, and the loud direction is this gate's convention.
     """
     parsed: dict[tuple[str, str], str] = {}
     unmatched: list[str] = []
@@ -206,10 +255,53 @@ def _scan_lockfile(content: str) -> LockfileScan:
     unaccounted: list[str] = []
     first_seen: dict[tuple[str, str], str] = {}
     resolution_blocks = 0
+    # The segment before the first entry key is no block's body — material
+    # there belongs to no package entry. The same value-shape material
+    # accounting used per block classifies it here, within this one pass;
+    # the first key of a real lockfile sits in the `importers:`/`packages:`
+    # header, whose body carries no integrity material, so a real lockfile
+    # contributes nothing.
+    first_key = _ANY_KEY_RE.search(content)
+    head = content[: first_key.start()] if first_key else content
+    head_material = [
+        line.strip()
+        for line in head.splitlines()
+        if not line.lstrip().startswith("#") and _INTEGRITY_VALUE_RE.search(line)
+    ]
+    if head_material:
+        # Unattributed material ahead of every block: carried by no key.
+        unaccounted.extend(head_material)
     for key_line, key_text, block in _entry_blocks(content):
+        # Material accounting happens in this same pass, anchored on line
+        # SHAPE rather than position: a non-comment material line is the
+        # block's OWN material iff its stripped form starts with
+        # `resolution:` or `integrity:` (the block's own resolution
+        # mapping, or its multi-line `integrity:` continuation); every
+        # other material line — regardless of position or section — is an
+        # inline mapping attributed to no package entry and goes to
+        # `unaccounted` for `parse_lockfile` to refuse. Position cannot
+        # decide: in a block with no legitimate resolution of its own
+        # (a snapshots entry, say) the orphan IS the first material line,
+        # and crediting it as the block's own lets it masquerade as the
+        # entry's attested integrity. No second text walk.
+        material_lines = [
+            line.strip()
+            for line in block.splitlines()
+            if not line.lstrip().startswith("#") and _INTEGRITY_VALUE_RE.search(line)
+        ]
+        unaccounted.extend(
+            line
+            for line in material_lines
+            if not (line.startswith("resolution:") or line.startswith("integrity:"))
+        )
         integrity = _INTEGRITY_RE.search(block)
         has_resolution = _RESOLUTION_RE.search(block) is not None
-        if has_resolution:
+        # The zero-parse guard's `reached` tracks whether the walk reached
+        # verification-relevant material: a block counts when it carries a
+        # line-anchored resolution line OR integrity-bearing material lines
+        # (a material-only block has no resolution text at all), and counts
+        # once per block either way.
+        if has_resolution or material_lines:
             resolution_blocks += 1
         m = _PKG_RE.match(key_line)
         if m:
@@ -386,21 +478,26 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
     block carrying a resolution was not parsed — see
     `find_unmatched_package_keys` — if a resolution line in the raw file
     text is never reached by the entry-block walk — see
-    `_unowned_resolution_lines` — if a resolution-carrying block sits
-    behind a key that is no package entry at all — the scan's unaccounted
-    set, the hole the ownership walk cannot see because any key line starts
-    a block — or if two entries resolve to the same
+    `_unowned_resolution_lines` — if resolution/integrity material sits
+    behind a key that is no package entry at all, or beyond an attributed
+    block's own resolution as an orphan inline mapping — the scan's
+    unaccounted set, the hole the ownership walk cannot see because any key
+    line starts a block (see `_scan_lockfile` for the two origins that feed
+    that one set) — or if two entries resolve to the same
     ``(name, version)`` identity with different integrity values — see
     `_scan_lockfile`'s `conflicting` set. The guards run
-    most-diagnostic-first: a
-    lockfile the walk cannot see at all (four-space indentation throughout)
-    is caught by the zero-parse check ("Parsed 0 packages"), a partially
-    drifted one by the unreached-resolutions invariant (a conflicting
-    duplicate behind a drifted entry is a shape problem before it is a
-    value problem), and a lockfile whose every entry is legitimately
-    excluded (@zkochan-scoped, for instance) still parses to an empty map
-    because those resolutions ARE reached by the walk and attributed to a
-    (named, excluded) package entry. The duplicate-
+    most-diagnostic-first: a lockfile whose material sits behind no package
+    entry or beyond a block's own resolution is named precisely by the
+    unaccounted refusal (it yields only when the unreached-resolutions
+    invariant already sees line-anchored resolution lines the walk cannot
+    read at all), a lockfile the walk cannot see at all (four-space
+    indentation throughout) is caught by the zero-parse check ("Parsed 0
+    packages"), a partially drifted one by the unreached-resolutions
+    invariant (a conflicting duplicate behind a drifted entry is a shape
+    problem before it is a value problem), and a lockfile whose every entry
+    is legitimately excluded (@zkochan-scoped, for instance) still parses to
+    an empty map because those resolutions ARE reached by the walk and
+    attributed to a (named, excluded) package entry. The duplicate-
     identity conflict check composes last, on a lockfile the walk fully
     accounted for.
     """
@@ -431,16 +528,42 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
             " these are git/tarball resolutions without an integrity, they cannot"
             " be verified by this gate and need a deliberate decision."
         )
+    unowned = _unowned_resolution_lines(content)
+    unaccounted = scan.unaccounted
+    if unaccounted and not unowned:
+        # Before the zero-parse check: material the scan classified as
+        # unaccounted — behind a non-package key (`ledger:`, say) or beyond
+        # a block's own resolution as an orphan inline mapping — is named
+        # precisely by this guard, and a lockfile consisting only of such
+        # material must not fall through to the blunter "Parsed 0
+        # packages" diagnostic. When the unreached-resolutions invariant
+        # (below) already sees line-anchored resolution lines the walk
+        # cannot read at all (four-space indentation throughout), it stays
+        # the more accurate diagnostic and this guard yields.
+        shown = ", ".join(unaccounted[:5])
+        more = "" if len(unaccounted) <= 5 else f" (+{len(unaccounted) - 5} more)"
+        raise RuntimeError(
+            f"Unaccounted resolution blocks ({len(unaccounted)}): {shown}{more}"
+            " — resolution/integrity material behind a key that is no package"
+            " entry, or beyond the block's own resolution (an inline mapping"
+            " attributed to no package entry), which the parser cannot"
+            " attribute to any verified or reported entry. It carries"
+            " verification material matched against no attestation; attribute"
+            " it to a real package entry in the lockfile rather than letting"
+            " the gate account for a set it cannot see whole."
+        )
     if not scan.parsed:
         # A shape drift invisible to BOTH patterns (four-space indentation, a
         # tab, a renamed top-level key) leaves the walk empty: `main()` would
         # print "Parsed 0 packages" and exit 0, the gate verifying nothing while
-        # reporting success. A resolution the walk *reached* was either parsed or
-        # reported above, so zero parsed entries is expected in that case (every
-        # entry excluded as @zkochan-scoped, for instance); zero parsed entries
-        # with a resolution the walk never reached is not. `resolution_blocks`
+        # reporting success. A resolution the walk *reached* was either parsed
+        # or reported above (or refused by the unaccounted guard, which ran
+        # first), so zero parsed entries is expected in that case (every entry
+        # excluded as @zkochan-scoped, for instance); zero parsed entries with
+        # a resolution the walk never reached is not. `resolution_blocks`
         # comes from the same single pass the parsed map was built in — one
-        # source of truth, no second walk.
+        # source of truth, no second walk; the head-material classification is
+        # deliberately not a reach and never feeds it.
         reached = scan.resolution_blocks > 0
         resolutions = content.count("resolution:")
         if resolutions and not reached:
@@ -450,7 +573,6 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
                 " parser entirely (an indentation change is the usual cause), and"
                 " proceeding would verify nothing while reporting success."
             )
-    unowned = _unowned_resolution_lines(content)
     if unowned:
         # The partial-drift counterpart of the zero-parse guard above: some
         # entries parse, so nothing looks wrong, but a resolution line the
@@ -468,26 +590,6 @@ def parse_lockfile(path: Path) -> dict[tuple[str, str], str]:
             " the parser (an entry indented differently from its neighbours"
             " is the usual cause): fix the pattern rather than verifying a"
             " partial set."
-        )
-    unaccounted = scan.unaccounted
-    if unaccounted:
-        # Between the ownership and conflict guards: the ownership walk above
-        # counts a resolution line as owned once any key line starts a block,
-        # so a resolution behind a non-package key (`ledger:`, say) looks
-        # owned to it and would verify nothing. The scan's unaccounted set
-        # names the key the walk attributed the material to, and the parse
-        # refuses: verification material behind no package entry must never
-        # silently leave the verified set's accounting.
-        shown = ", ".join(unaccounted[:5])
-        more = "" if len(unaccounted) <= 5 else f" (+{len(unaccounted) - 5} more)"
-        raise RuntimeError(
-            f"Unaccounted resolution blocks ({len(unaccounted)}): {shown}{more}"
-            " — resolution/integrity material behind a key that is no package"
-            " entry, which the parser cannot attribute to any verified or"
-            " reported entry. It carries verification material matched against"
-            " no attestation; attribute it to a real package entry in the"
-            " lockfile rather than letting the gate account for a set it"
-            " cannot see whole."
         )
     duplicates = scan.conflicting
     if duplicates:
@@ -755,8 +857,23 @@ def check_subject_hash(
 ) -> tuple[bool, str]:
     """Verify attested subject SHA-512 matches the lockfile integrity.
 
-    Returns (ok, message).
+    Returns (ok, message). The unsupported-algorithm check gates the payload
+    decode: a lockfile integrity whose algorithm prefix is not ``sha512`` is
+    reported — naming the algorithm — before the attestation is even parsed,
+    so every failure path with an unusable lockfile value names it. Only a
+    ``sha512`` value reaches the DSSE decode and the subject loop: a sha512
+    value with no sha512 subject keeps the loop's fall-through diagnostic
+    ("no sha512 subject found in attestation payload"), and a decode or JSON
+    failure of a sha512 value's payload keeps the parse-error diagnostic —
+    on those paths the attestation is genuinely the artifact to blame.
     """
+    algo = lockfile_integrity.partition("-")[0]
+    if algo != "sha512":
+        return False, (
+            f"unsupported integrity algorithm '{algo}' — provenance"
+            " attestation comparison supports sha512 only"
+            f" (lockfile value: {lockfile_integrity})"
+        )
     try:
         dsse = cast(dict[str, Any], bundle.get("dsseEnvelope", {}))
         payload_b64 = cast(str, dsse.get("payload", ""))
@@ -767,13 +884,6 @@ def check_subject_hash(
             attested_hex = cast(str | None, digest.get("sha512"))
             if not attested_hex:
                 continue
-            algo = lockfile_integrity.partition("-")[0]
-            if algo != "sha512":
-                return False, (
-                    f"unsupported integrity algorithm '{algo}' — provenance"
-                    " attestation comparison supports sha512 only"
-                    f" (lockfile value: {lockfile_integrity})"
-                )
             lockfile_hex = _b64_to_hex(lockfile_integrity)
             if lockfile_hex is None:
                 return False, f"cannot parse lockfile integrity: {lockfile_integrity}"
@@ -797,7 +907,9 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
     third-party packages (sigma, svelte, etc.) are not gated on a known repo URL.
 
     Classification of the Sigstore check's outcomes, decided by exception
-    class — message text is never matched: a network error (TUF download,
+    class, with exactly one carve-out matched as the library's exact fixed
+    sentence (never loose substring resemblance): a network error (TUF
+    download,
     Rekor unreachable) is treated as a warning, not a failure — it indicates
     infrastructure issues, not supply-chain attacks. A VerificationError (bad
     signature / cert chain) is fatal, with exactly one exception: the
@@ -806,7 +918,11 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
     library gap, is a skip. A bundle-format failure —
     sigstore.models.InvalidBundle in sigstore 4.2.0, e.g. from
     Bundle.from_json('[]') — is likewise a library compatibility gap and is
-    skipped. Any other exception is unclassifiable and fails closed: it is
+    skipped, its message naming the deciding path (the genuine
+    ``InvalidBundle`` class match, or the exception-class-name fallback
+    when that import is unavailable) so a CI log can see when the gate is
+    running on the fallback — e.g. after a library upgrade renames the
+    class. Any other exception is unclassifiable and fails closed: it is
     reported as a failed check, never as a verified package — including a
     generic exception whose message merely resembles one of the
     compatibility messages.
@@ -874,8 +990,20 @@ def verify_sigstore(bundle_json: str) -> tuple[bool, str]:
         # closed (see _is_bundle_format_error).
         if _is_bundle_format_error(e, bundle_format_error):
             msg = str(e)
+            # Which classifier decided is part of the diagnostic: the genuine
+            # class (isinstance against the imported InvalidBundle) or the
+            # MRO-name fallback (only reachable when the import failed, since
+            # a present class that does not match fails closed above). A CI
+            # log can see when the gate is running on the fallback — e.g.
+            # after a library upgrade renames the class.
+            decided = (
+                "genuine InvalidBundle class matched"
+                if bundle_format_error is not None
+                else "exception-class-name fallback matched"
+            )
             return True, (
-                f"Bundle format not supported by sigstore 4.x — skipped ({msg[:80]})"
+                f"Bundle format not supported by sigstore 4.x — skipped,"
+                f" {decided} ({msg[:80]})"
             )
         # Anything else is an exception class this gate cannot classify. The
         # safe direction is failure, not a skip: an unrecognized Bundle load

@@ -1355,6 +1355,363 @@ def test_sigstore_unimportable_fails_closed(vp: Any, mocker) -> None:
     assert "sigstore not importable" in message
 
 
+# Marker constants shared by the Observation-3 tests: each names the deciding
+# classifier so a CI log can tell which path chose the skip. These are NOT
+# what the implementation returns today — the tests assert against them and
+# (for the composition test) against each environment's message, all of
+# which is currently one identical string.
+_CLASS_MATCH_MARKER = "genuine InvalidBundle class matched"
+_FALLBACK_MARKER = "exception-class-name fallback matched"
+
+
+# ---------------------------------------------------------------------------
+# Observation 1 — the unsupported-algorithm diagnostic vanishes on two failure
+# paths of check_subject_hash.
+# ---------------------------------------------------------------------------
+#
+# check_subject_hash's algorithm check lives INSIDE the subject loop, after a
+# sha512 digest is matched. Two lifecycle paths then reach the loop's exit or
+# except without ever evaluating it, and the returned diagnostic names no
+# algorithm at all:
+#
+#   - an attestation payload with no sha512 subject (e.g. only a sha256 digest)
+#     exits the loop and reads "no sha512 subject found in attestation payload"
+#   - a malformed payload (base64 that does not decode to JSON) hits the
+#     blanket except and reads "payload parse error: ..."
+#
+# The documented contract (check_subject_hash's docstring and the pre-existing
+# pinned test with a sha512 subject) is that a non-sha512 lockfile integrity
+# fails with a message NAMING the unsupported algorithm. On both paths above
+# the message instead blames the attestation ("no sha512 subject found") or
+# just says parse error — the operator is pointed at the wrong artifact.
+# Requirement: on EVERY failure path where the lockfile integrity's algorithm
+# prefix is not sha512, the returned (ok=False) message names the prefix.
+
+
+def test_unsupported_algo_named_when_no_sha512_subject(vp: Any) -> None:
+    """No-sha512-subject path: a non-sha512 integrity names the algorithm.
+
+    The bundle payload carries only a sha256 digest, so the subject loop finds
+    no sha512 subject and exits via the loop's fall-through. The lockfile value
+    is sha1 — the diagnostic must name that unsupported algorithm, not blame
+    the attestation with "no sha512 subject found in attestation payload".
+    The payload content is irrelevant here: the lockfile value alone decides
+    the verdict, and the message must say which algorithm it refused.
+    """
+    payload = base64.b64encode(
+        json.dumps({"subject": [{"digest": {"sha256": "cd" * 32}}]}).encode()
+    ).decode()
+    bundle = {"dsseEnvelope": {"payload": payload}}
+
+    ok, message = vp.check_subject_hash(bundle, "sha1-AAAABBBB==")
+    assert ok is False
+    # The mechanism assertion: the diagnostic names the unsupported algorithm.
+    assert "sha1" in message
+    # Not the misattributed skip-shaped message this failure path returns today.
+    assert "no sha512 subject found in attestation payload" != message
+
+
+def test_unsupported_algo_named_on_payload_parse_error(vp: Any) -> None:
+    """Payload-parse-error path: a non-sha512 integrity names the algorithm.
+
+    The payload base64 does not decode to JSON, so the blanket except fires
+    before the subject loop runs at all. The lockfile value is sha256 — the
+    diagnostic must still name that unsupported algorithm, not a bare
+    "payload parse error: ..." that names only the payload problem.
+    """
+    malformed_bundle = {"dsseEnvelope": {"payload": "not-base64!"}}
+
+    ok, message = vp.check_subject_hash(malformed_bundle, "sha256-BBBBBBBB==")
+    assert ok is False
+    assert "sha256" in message
+    # The message must not be the bare parse message alone: the unsupported
+    # algorithm is failure-causing material and must be identified.
+    assert "payload parse error" not in message
+
+
+def test_sha512_lockfile_with_no_sha512_subject_keeps_its_message(vp: Any) -> None:
+    """Control: a sha512 lockfile value with no sha512 subject keeps its text.
+
+    GREEN companion pinning the non-target path: when the lockfile integrity
+    IS sha512 and the attestation payload carries no sha512 subject, the
+    loop's fall-through is exactly the right diagnostic — the attestation
+    genuinely lacks the compared digest. The anti-overfire check for the
+    requirement above: a fix must not bolt the algorithm diagnostic onto this
+    legitimate path (the prefix IS sha512, there is no unsupported algorithm
+    to name).
+    """
+    payload = base64.b64encode(
+        json.dumps({"subject": [{"digest": {"sha256": "cd" * 32}}]}).encode()
+    ).decode()
+    bundle = {"dsseEnvelope": {"payload": payload}}
+
+    ok, message = vp.check_subject_hash(
+        bundle, "sha512-" + base64.b64encode(bytes(range(32))).decode()
+    )
+    assert ok is False
+    assert message == "no sha512 subject found in attestation payload"
+
+
+# ---------------------------------------------------------------------------
+# Observation 2 — verification material invisible to the whole gate.
+# ---------------------------------------------------------------------------
+#
+# The gate's invariant: verification material it cannot attribute fails
+# loudly. The `extra:` line in the reproduction below is an inline mapping
+# carrying `resolution: {integrity: …}` for no package entry at all:
+#
+#   - it is not a key line, so the block splitter yields no block for it and
+#     neither _scan_lockfile's package/unaccounted handling nor the
+#     unmatched guard ever considers it;
+#   - its `resolution:` sits mid-line, so the unreached-resolutions guard
+#     (_RESOLUTION_LINE_RE, line-anchored) cannot see it;
+#   - the inline-entry detector (find_untokenized_package_keys) requires the
+#     scalar to carry `@`, and `extra` carries none.
+#
+# Every guard is silent at once, so `sha512-ORPHAN==` is verification
+# material compared against no attestation while the run exits 0. The
+# requirement: parse_lockfile must refuse to proceed (RuntimeError) when an
+# inline non-package mapping carries integrity material, naming the
+# offending line/key.
+
+
+def test_inline_non_package_entry_with_integrity_fails_loudly(
+    vp: Any, tmp_path: Path
+) -> None:
+    """An inline non-package mapping carrying integrity must fail the parse.
+
+    The `extra:` line is an inline mapping carrying `resolution:
+    {integrity: …}` for no package entry at all: it is not a key line (the
+    splitter yields no block for it), its `resolution:` sits mid-line so the
+    unreached-resolutions guard cannot see it, and the inline-entry detector
+    requires the scalar to carry `@` — so `sha512-ORPHAN==` is verification
+    material compared against no attestation while the run exits 0. The
+    gate's invariant — verification material it cannot attribute fails
+    loudly — requires the parse to refuse, naming the offending key.
+    """
+    body = (
+        "packages:\n\n"
+        "  'good@1.0.0':\n"
+        "    resolution: {integrity: sha512-GOOD==}\n"
+        "  extra: {resolution: {integrity: sha512-ORPHAN==}}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    # The parse must refuse to proceed... (RED: today it happily returns).
+    with pytest.raises(RuntimeError) as excinfo:
+        vp.parse_lockfile(path)
+    # ...naming the offending line/key so the operator can locate the drift.
+    assert "extra" in str(excinfo.value)
+
+
+def test_inline_non_package_entry_alone_with_integrity_fails_loudly(
+    vp: Any, tmp_path: Path
+) -> None:
+    """The inline non-package shape fails loudly with no genuine entry beside it.
+
+    Companion re-check that the refusal stands on its own, not only when a
+    well-formed neighbour parses: with no other entry in the lockfile, the
+    inline block's integrity is STILL verification material attributed to no
+    package entry, and parse_lockfile must refuse (not return a map, not
+    lean on the zero-parse/unreached guards) naming the offending key.
+    """
+    body = "packages:\n\n  extra: {resolution: {integrity: sha512-ORPHAN==}}\n"
+    path = _write_lockfile(tmp_path, body)
+    with pytest.raises(RuntimeError) as excinfo:
+        vp.parse_lockfile(path)
+    assert "extra" in str(excinfo.value)
+
+
+def test_comment_mentioning_resolution_in_an_entry_block_stays_a_quiet_parse(
+    vp: Any, tmp_path: Path
+) -> None:
+    """Pinned GREEN re-check (:445): a comment mentioning `resolution:` parses.
+
+    A comment line inside a well-indented entry block carrying the text
+    `resolution:` (an integrity in prose) must stay a quiet parse — the inline
+    refusal must not over-fire onto a comment. The original shape from the
+    pinned test at :445 is replayed here with the same assertion target:
+    parse_lockfile returns both entries.
+    """
+    body = (
+        "packages:\n\n"
+        "  'good@1.0.0':\n"
+        "    # note: resolution: appears here as prose\n"
+        "    resolution: {integrity: sha512-GOOD==}\n\n"
+        "  'good2@1.0.0':\n"
+        "    resolution: {integrity: sha512-GOOD2==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.parse_lockfile(path) == {
+        ("good", "1.0.0"): "sha512-GOOD==",
+        ("good2", "1.0.0"): "sha512-GOOD2==",
+    }
+
+
+def test_prose_line_carries_resolution_as_prose_not_entry(
+    vp: Any, tmp_path: Path
+) -> None:
+    """Pinned GREEN re-check (:829): prose prose lines are not reported.
+
+    A prose line under `settings:` mentioning `resolution:` is not an inline
+    package entry: the untokenized-package-key scan must keep returning [] for
+    it, and the file must parse to its one entry — exactly the contract the
+    pinned test at :829 asserts, replayed here as the composition's over-fire
+    check so the fix cannot over-correct into failing a well-formed lockfile.
+    """
+    body = (
+        "packages:\n\n"
+        "  'good@1.0.0':\n"
+        "    resolution: {integrity: sha512-GOOD==}\n\n"
+        "settings:\n"
+        "  note: resolution: appears here as prose\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.find_untokenized_package_keys(body) == []
+    assert vp.parse_lockfile(path) == {("good", "1.0.0"): "sha512-GOOD=="}
+
+
+def test_quoted_colon_scalar_is_not_the_inline_non_package_shape(
+    vp: Any, tmp_path: Path
+) -> None:
+    """A quoted scalar carrying `:` is not misdetected as the inline shape.
+
+    The inline-entry detector's scalar part-of `_inline_entry_scalar` splits an
+    unquoted line at the first colon — a quoted scalar like 'weird:name@1.0.0'
+    must survive both the quoted-scalar branch and the detector's reported
+    shape, without being reported as an inline non-package mapping. If its
+    scalar were split at `weird`, the line would read as a non-package inline
+    mapping and the file would refuse to parse. Pinned GREEN: the file parses
+    into its map, the entry lands in the map, no refusal, no gap label.
+    """
+    body = (
+        "packages:\n\n"
+        "  'weird:name@1.0.0':\n"
+        "    resolution: {integrity: sha512-AAAABBBB==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.find_untokenized_package_keys(body) == []
+    assert vp.parse_lockfile(path) == {("weird:name", "1.0.0"): "sha512-AAAABBBB=="}
+
+
+def test_prose_tick_note_with_colon_prefix_is_not_an_inline_entry(
+    vp: Any, tmp_path: Path
+) -> None:
+    """A prose line with a colon-set prefix stays prose, never an inline entry.
+
+    A prose line whose first section ends before the first colon (`note:
+    something:`) reads as a non-package inline mapping's scalar `note` —
+    exactly the tension shape staged above. This shape is indistinguishable
+    from `extra:` today only to the token-level reader: `note` carries no `@`,
+    so the detector's current rule keeps it quiet. FLAGGED, not resolved
+    here: any fix's detector must keep this quiet, without leaking the
+    inline refusal onto it, while still refusing `extra:` — the same
+    conclusion both ways: a colon-bearing decorative prefix is not an
+    entry candidate.
+    """
+    body = (
+        "packages:\n\n"
+        "  'good@1.0.0':\n"
+        "    resolution: {integrity: sha512-GOOD==}\n\n"
+        "settings:\n"
+        "  note: something prose-like, not an entry\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.find_untokenized_package_keys(body) == []
+    assert vp.parse_lockfile(path) == {("good", "1.0.0"): "sha512-GOOD=="}
+
+
+# ---------------------------------------------------------------------------
+# Observation 3 — a skip message that hides which classifier decided.
+# ---------------------------------------------------------------------------
+#
+# verify_sigstore's bundle-format compatibility skip returns the same string —
+# "Bundle format not supported by sigstore 4.x — skipped (...)" — whether the
+# decision came from the genuine exception class (isinstance against the
+# imported sigstore.models.InvalidBundle) or from the MRO-name fallback used
+# when that import is unavailable. The CI log shows no difference, so a CI
+# run cannot reveal when the gate is running on the fallback (e.g. after a
+# library upgrade renames the class). Requirement: the skip message must
+# reveal which path decided — distinguishable text for the class-match path
+# vs the fallback path. One test per environment, same stubbing pattern as
+# the pre-existing tests at :1259-1332.
+
+
+def test_bundleformat_skip_message_differs_on_isinstance_path(vp: Any, mocker) -> None:
+    """The genuine-class path's skip message is distinguishable in a CI log.
+
+    Stub environment publishing sigstore.models.InvalidBundle (the genuine
+    class importable) — the isinstance primary branch decides the skip. The
+    resulting message must carry a marker naming the classifier: the class
+    match, not the name fallback, decided here.
+    """
+    published = type("InvalidBundle", (Exception,), {})
+    stub = _sigstore_stub_modules(
+        bundle_error=(published, "validation error: bundle is not valid"),
+        publish_invalid_bundle=published,
+    )
+    mocker.patch.dict(sys.modules, stub)
+    ok, message = vp.verify_sigstore("{}")
+    assert ok is True
+    assert "Bundle format not supported" in message
+    # RED: the message must name the deciding classifier — the genuine class
+    # match, not the undifferentiated text the fallback path produces.
+    assert _CLASS_MATCH_MARKER in message
+
+
+def test_bundleformat_skip_message_differs_on_fallback_path(vp: Any, mocker) -> None:
+    """The fallback path's skip message is distinguishable from the class match.
+
+    Stub environment NOT publishing sigstore.models.InvalidBundle (the default
+    of every pre-existing stub) — the MRO-name fallback decides the skip. The
+    resulting message must carry a marker naming the classifier: the name
+    fallback, not the class match, decided here. A CI log must be able to
+    show when the gate runs on the fallback (e.g. after a library upgrade
+    renames the class).
+    """
+    stub = _sigstore_stub_modules(
+        bundle_error=(_StubInvalidBundle, "validation error: bundle is not valid")
+    )
+    mocker.patch.dict(sys.modules, stub)
+    ok, message = vp.verify_sigstore("{}")
+    assert ok is True
+    assert "Bundle format not supported" in message
+    # RED: the message must name the deciding classifier — the name fallback,
+    # not the identical text the genuine-class path produces.
+    assert _FALLBACK_MARKER in message
+
+
+def test_bundleformat_skip_messages_differ_between_environments(
+    vp: Any, mocker
+) -> None:
+    """The two deciding environments produce distinguishable skip messages.
+
+    Composition check: run both environments through the same stub pattern
+    and assert the resulting skip messages differ between them (class-match
+    vs fallback), and each names its own classifier — so a CI log needs no
+    extra context to show which decided.
+    """
+    published = type("InvalidBundle", (Exception,), {})
+    stub_class = _sigstore_stub_modules(
+        bundle_error=(published, "validation error: bundle is not valid"),
+        publish_invalid_bundle=published,
+    )
+    stub_fallback = _sigstore_stub_modules(
+        bundle_error=(published, "validation error: bundle is not valid")
+    )
+    mocker.patch.dict(sys.modules, stub_class)
+    ok_pub, msg_pub = vp.verify_sigstore("{}")
+    mocker.patch.dict(sys.modules, stub_fallback)
+    ok_fall, msg_fall = vp.verify_sigstore("{}")
+    assert ok_pub is True
+    assert ok_fall is True
+    assert "Bundle format not supported" in msg_pub
+    assert "Bundle format not supported" in msg_fall
+    assert _CLASS_MATCH_MARKER in msg_pub
+    assert _FALLBACK_MARKER in msg_fall
+    # RED: the two messages must be distinguishable.
+    assert msg_pub != msg_fall
+
+
 # ---------------------------------------------------------------------------
 # Aggregate sweep: an all-skip sweep must not report success.
 # ---------------------------------------------------------------------------
@@ -1544,3 +1901,120 @@ def test_sweep_all_excluded_lockfile_still_succeeds(
     assert "Parsed 0 packages" in output
     assert "nothing was verified" not in output.lower()
     assert "All attested packages passed provenance verification." in output
+
+
+# ---------------------------------------------------------------------------
+# Observation 4 — two conditional tests that can never meaningfully fail.
+# ---------------------------------------------------------------------------
+#
+# test_non_sha512_integrity_entry_is_parsed_or_reported (:307) and
+# test_quoted_key_with_colon_is_parsed_or_reported (:359) branch on the
+# parser's own behavior (`if unmatched: ... else: ...`), so each passes
+# whichever way the parser decides — they pin nothing. Their replacements
+# below pin the deterministic behavior observed on HEAD by running the
+# script directly:
+#
+#   - 'legacy-pkg@1.0.0' with integrity `sha1-AAAABBBB==` PARSES into the
+#     map: {('legacy-pkg', '1.0.0'): 'sha1-AAAABBBB=='}
+#   - 'weird:name@1.0.0' (quoted scalar carrying a colon) with integrity
+#     `sha512-AAAABBBB==` PARSES into the map: {('weird:name', '1.0.0'):
+#     'sha512-AAAABBBB=='}
+#
+# Neither shape is reported as a parser gap today (find_unmatched_package_keys
+# returns [] for both; find_untokenized_package_keys too). The replacements
+# pin exactly those outcomes; the originals are left in place for the
+# maintainer to compare and retire.
+#
+# Observed outcomes (python importing scripts/verify_provenance.py by path):
+#   obs4-sha1:  unmatched=[], untokenized=[],
+#               parsed={('legacy-pkg','1.0.0'): 'sha1-AAAABBBB=='}
+#   obs4-colon: unmatched=[], untokenized=[],
+#               parsed={('weird:name','1.0.0'): 'sha512-AAAABBBB=='}}
+
+
+def test_non_sha512_integrity_entry_parses_into_the_map(
+    vp: Any, tmp_path: Path
+) -> None:
+    """Pinned observation: a sha1-integrity entry parses, not reported.
+
+    Replacement for the conditional test_non_sha512_integrity_entry_is_
+    parsed_or_reported (:307, left in place above). Observed on HEAD: the
+    sha1 entry parses into the map with its sha1 value; nothing is reported
+    as an unmatched/untokenized shape. Downstream, check_subject_hash
+    rejects the value naming the algorithm (pinned at
+    :test_non_sha512_integrity_is_rejected_naming_the_algorithm). This test
+    fails if that parse outcome changes.
+    """
+    body = (
+        "packages:\n\n"
+        "  'legacy-pkg@1.0.0':\n"
+        "    resolution: {integrity: sha1-AAAABBBB==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.find_unmatched_package_keys(body) == []
+    assert vp.find_untokenized_package_keys(body) == []
+    assert vp.parse_lockfile(path) == {("legacy-pkg", "1.0.0"): "sha1-AAAABBBB=="}
+
+
+def test_quoted_key_with_colon_parses_into_the_map(vp: Any, tmp_path: Path) -> None:
+    """Pinned observation: a quoted scalar carrying `:` parses, not reported.
+
+    Replacement for the conditional test_quoted_key_with_colon_is_parsed_or_
+    reported (:359, left in place above). Observed on HEAD: the quoted key
+    'weird:name@1.0.0' parses into the map under the name `weird:name`
+    (colon included); nothing is reported as an unmatched/untokenized shape.
+    This test fails if that parse outcome changes.
+    """
+    body = (
+        "packages:\n\n"
+        "  'weird:name@1.0.0':\n"
+        "    resolution: {integrity: sha512-AAAABBBB==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.find_unmatched_package_keys(body) == []
+    assert vp.find_untokenized_package_keys(body) == []
+    assert vp.parse_lockfile(path) == {("weird:name", "1.0.0"): "sha512-AAAABBBB=="}
+
+
+def test_short_value_orphan_below_the_material_floor_stays_quiet(
+    vp: Any, tmp_path: Path
+) -> None:
+    """An orphan with a sub-4-char hash value is below the material floor.
+
+    Pins the `_INTEGRITY_VALUE_RE` boundary the advisor flagged: the value
+    class requires 4+ base64ish chars after the algorithm dash, so an
+    inline orphan carrying `sha512-O==` (3 chars) is not counted as
+    material and the parse stays quiet. This is a DOCUMENTED residual
+    (see the regex comment), not an endorsement — if the quantifier is
+    ever retuned, this test is the conscious-decision marker.
+    """
+    body = (
+        "packages:\n\n"
+        "  'good@1.0.0':\n"
+        "    resolution: {integrity: sha512-GOOD==}\n"
+        "  extra: {resolution: {integrity: sha512-O==}}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.parse_lockfile(path) == {("good", "1.0.0"): "sha512-GOOD=="}
+
+
+def test_orphan_inside_a_snapshots_block_is_refused(vp: Any, tmp_path: Path) -> None:
+    """Orphan material inside a snapshots: block is refused, not silent.
+
+    Pins the composition the advisor's matrix flagged as untested: an
+    inline non-package mapping inside a `snapshots:` entry's body is
+    invisible to the line-anchored ownership walk AND carries hash-shaped
+    material, so the unaccounted classification must catch it — the parse
+    refuses naming the offending key, whatever section the block sits in.
+    """
+    body = (
+        "snapshots:\n\n"
+        "  'keyv@5.6.0':\n"
+        "    dependencies:\n"
+        "      meta: 1.0.0\n"
+        "  extra: {resolution: {integrity: sha512-ORPHAN==}}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    with pytest.raises(RuntimeError) as excinfo:
+        vp.parse_lockfile(path)
+    assert "extra" in str(excinfo.value)
