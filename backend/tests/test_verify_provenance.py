@@ -1514,3 +1514,33 @@ def test_empty_quoted_key_with_resolution_still_parses_to_an_empty_map(
     body = "packages:\n\n  '':\n    resolution: {integrity: sha512-AAAA==}\n"
     path = _write_lockfile(tmp_path, body)
     assert vp.parse_lockfile(path) == {}
+
+
+def test_sweep_all_excluded_lockfile_still_succeeds(
+    vp: Any, tmp_path: Path, mocker, capsys
+) -> None:
+    """A sweep whose every entry is legitimately excluded still exits 0.
+
+    GREEN companion pinning the aggregate guard's documented interaction
+    with the zero-parsed sweep (main()'s docstring: returns 0 "when nothing
+    was parsed at all (a lockfile whose every entry is legitimately
+    excluded, e.g. @zkochan)"). The guard fires only when packages were
+    parsed but none verified; an empty parsed map must skip it entirely —
+    if the guard ever dropped its `packages and` condition, an all-excluded
+    lockfile would start failing with 'nothing was verified' and this test
+    would catch the regression at the sweep level, not just the parser
+    level.
+    """
+    path = _write_lockfile(
+        tmp_path,
+        "packages:\n\n"
+        "  '@zkochan/internal@1.0.0':\n"
+        "    resolution: {integrity: sha512-ZKOCHAN==}\n",
+    )
+    mocker.patch.object(vp, "LOCKFILE", path)
+    exit_code = vp.main()
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Parsed 0 packages" in output
+    assert "nothing was verified" not in output.lower()
+    assert "All attested packages passed provenance verification." in output
