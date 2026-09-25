@@ -405,7 +405,8 @@ def test_repo_lockfile_yields_scoped_entries(vp: Any) -> None:
             " design) — update this test's anchor before trusting its counts."
         )
     raw_integrity_lines = len(re.findall(r"resolution: \{integrity: sha512-", content))
-    parsed, unmatched = vp._scan_lockfile(content)
+    scan = vp._scan_lockfile(content)
+    parsed, unmatched = scan.parsed, scan.unmatched
     assert any(name.startswith("@") for name, _ in parsed)
     assert len(parsed) == raw_integrity_lines
     expected = 0
@@ -1028,16 +1029,18 @@ def test_peer_suffixed_twin_with_integrity_fails_as_a_parser_gap_first(
 # Sigstore classification (verify_sigstore): substring-based skip misfires.
 # ---------------------------------------------------------------------------
 #
-# verify_sigstore classifies NetworkError and VerificationError by class; every
-# other exception falls into the blanket handler, which decides by substring.
-# The stubs below install fake sigstore.* modules (same pattern as
+# verify_sigstore classifies NetworkError and VerificationError by class; the
+# VerificationError branch exempts exactly one library compatibility gap — the
+# sigstore 4.x fixed message "Integrated time only supported for dsse/hashedrekord
+# 0.0.1 types" — and the blanket handler skips only the genuine bundle-format
+# error class (sigstore.models.InvalidBundle, e.g. from Bundle.from_json('[]')),
+# matched by isinstance with an MRO-name fallback for layouts that do not export
+# it. Message text is never the classifier: a generic exception whose wording
+# merely resembles a compatibility message must fail closed. The stubs below
+# install fake sigstore.* modules (same pattern as
 # test_unclassifiable_sigstore_exception_fails_closed) and raise from inside
-# the verification path, so the only variable under test is that substring
-# logic. The genuine sigstore 4.x compatibility skip this gate must keep
-# treating as such: a VerificationError carrying the library's exact fixed
-# message "Integrated time only supported for dsse/hashedrekord 0.0.1 types",
-# and the genuine bundle-format error type (sigstore.models.InvalidBundle,
-# e.g. from Bundle.from_json('[]')). Every other failure must fail closed.
+# the verification path, so the only variable under test is that classification
+# logic. Every other failure must fail closed.
 
 _FIXED_COMPAT_MESSAGE = (
     "Integrated time only supported for dsse/hashedrekord 0.0.1 types"
@@ -1433,3 +1436,81 @@ def test_sweep_with_at_least_one_verified_package_still_succeeds(
     assert exit_code == 0
     assert "Verified via provenance: 1" in output
     assert "No attestation (expected gap): 1" in output
+
+
+def test_unattributed_resolution_block_fails_loudly(vp: Any, tmp_path: Path) -> None:
+    """A resolution-carrying block behind no package entry must fail loudly.
+
+    `ledger:` is a well-formed 2-space key the block splitter tokenizes, but
+    it is not package-shaped: the scan skips it (no `@`), and the ownership
+    walk counts its resolution as owned because any key line starts a block.
+    So `sha512-ORPHAN==` — verification material — is compared against no
+    attestation, reported as no gap, and the run exits 0. The gate's
+    invariant elsewhere is that verification material it cannot attribute
+    fails loudly: parse_lockfile must refuse to proceed, naming the
+    offending key.
+    """
+    body = (
+        "packages:\n\n"
+        "  'good@1.0.0':\n"
+        "    resolution: {integrity: sha512-GOOD==}\n\n"
+        "  ledger:\n"
+        "    resolution: {integrity: sha512-ORPHAN==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    with pytest.raises(RuntimeError, match="ledger"):
+        vp.parse_lockfile(path)
+
+
+def test_unattributed_resolution_block_with_no_other_entries_fails_loudly(
+    vp: Any, tmp_path: Path
+) -> None:
+    """The same hole stands alone: an unattributed resolution alone is loud.
+
+    With no legitimate entry alongside, the parsed map is empty and the
+    zero-parse guard does not fire (the resolution *was* reached — by the
+    unattributed block). The unattributed-resolution refusal must fire on
+    its own, still naming the offending key, not lean on the zero-parse
+    or unreached-resolution guards.
+    """
+    body = "packages:\n\n  ledger:\n    resolution: {integrity: sha512-ORPHAN==}\n"
+    path = _write_lockfile(tmp_path, body)
+    with pytest.raises(RuntimeError, match="ledger"):
+        vp.parse_lockfile(path)
+
+
+def test_all_zkochan_entries_still_parse_to_an_empty_map(
+    vp: Any, tmp_path: Path
+) -> None:
+    """Re-check of a pinned contract: all-@zkochan lockfile still parses to {}.
+
+    Every entry here is package-shaped and deliberately excluded — each
+    resolution is attributed to a (named, excluded) package entry, so the
+    unattributed-resolution refusal must not over-fire on this shape.
+    """
+    body = (
+        "packages:\n\n"
+        "  '@zkochan/internal@1.0.0':\n"
+        "    resolution: {integrity: sha512-ZKOCHAN==}\n"
+    )
+    path = _write_lockfile(tmp_path, body)
+    assert vp.parse_lockfile(path) == {}
+
+
+def test_empty_quoted_key_with_resolution_still_parses_to_an_empty_map(
+    vp: Any, tmp_path: Path
+) -> None:
+    """Re-check of a pinned contract: `'':` with a resolution parses to {}.
+
+    TENSION (flagged, not resolved here): this pinned shape is itself a
+    resolution-carrying block attributed to no package entry — the same
+    class of hole as an unattributed `ledger:` block, since the integrity
+    behind `'':` is verified against nothing. If the unattributed-resolution
+    refusal is written generally, it fires here too and this re-check goes
+    red post-fix; that outcome is the tension surfacing, and it must go
+    back to a human decision (carve the empty key out deliberately, or
+    revise the pinned contract), never be silenced as a drive-by.
+    """
+    body = "packages:\n\n  '':\n    resolution: {integrity: sha512-AAAA==}\n"
+    path = _write_lockfile(tmp_path, body)
+    assert vp.parse_lockfile(path) == {}
