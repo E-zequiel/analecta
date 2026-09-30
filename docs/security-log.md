@@ -226,6 +226,31 @@ These deprecated packages are all transitive deps of electron-builder and cannot
 
 ## Resolved CVEs
 
+### 2026-09-29 — Socket alerts round 1: `electron` 44.4.5 + `markdown-it` 14.3.2 (release 0.5.4)
+
+Trigger: 16 Socket alerts (5 HIGH `electron` CVEs; 1 HIGH + 1 MODERATE
+`markdown-it`; 9 transitive `undici`).
+
+| Package | Advisories | Reachability | Change |
+|---------|-----------|--------------|--------|
+| `electron` | GHSA-9qh4-3jw8-366w, GHSA-gr2m-v5gq-v685, GHSA-j84w-jfhq-vhvj (CVSS 8.3), GHSA-hq2x-r82h-9wj4, GHSA-qmv3-fv6v-rmhq — all closed in the 44.x line at 44.0.0-beta.5/6 | The renderer already runs `sandbox: true` + `contextIsolation` with no `nodeIntegration`, so the `<webview>`/worker and unsandboxed-window surfaces don't apply by configuration. GHSA-j84w (protocol handlers allow cross-origin reads without `corsEnabled`) hits the app's own `app://` and `analecta-file://` schemes. Patching regardless — defense in depth. | `42.5.1` → `44.4.5` |
+| `electron-builder` | None — companion bump, needed to package electron 44 | `26.15.6` predates electron 44 stable | `26.15.6` → `26.17.0` |
+| `markdown-it` | GHSA-r7fv-28h4-cvq7 (HIGH, smartquotes quadratic DoS under `typographer: true`; fixed 14.3.2/15.0.2) + GHSA-253c-mchw-3w2r (MODERATE, linkify quadratic paths; fixed 14.3.1) | The reading view renders arbitrary fetched content and enables both rules | `14.3.0` → `14.3.2`. 15.x deliberately not taken: `@shikijs/markdown-it@4.4.3` (latest) hard-pins `markdown-it: ^14.3.0` as a direct (non-peer) dependency — revisit when shiki publishes v15 support. |
+
+- **Registry integrity verified before adoption** (`pnpm view
+  <pkg>@<version> dist.integrity`, cross-checked against `pnpm-lock.yaml`
+  after install + dedupe): `markdown-it@14.3.2`
+  `sha512-sHHjZ5fJKlgrG4qns2YwVcdNep35h5fERrfkD2YNsb9UFk0UIHarbiTaHKVMlPuWAoiilyK8Fv/jAm11slsY7Q==`;
+  `electron@44.4.5`
+  `sha512-SjgoaeYsSWZfJzubgQU7juvuXMTvn6/e1gAHdGFA/yuMbpF+I+skYqIJ6DdXBXHeWbkbpNpmwZCTpiivtlWZSw==`;
+  `electron-builder@26.17.0`
+  `sha512-iYHBRiagS9sDIbZx1ZD113f5rEGQvtpvTvHf70ovHKJ8mRvxwIkWX7JCwfmVQmVS4eX735p7TZmoxHnBPwF3vA==`.
+- **Consumer smoke tests:** `markdown-it` exercised against the installed
+  instance with `typographer: true` + `linkify: true` (the patched rules) on
+  quote/link-heavy input, plus `markdown-it-footnote` and
+  `markdown-it-task-lists` on the same instance; `electron` reports 44.4.5;
+  full `check.sh` green.
+
 ### 2026-09-24 — release-age enforcement moved to pnpm resolution level + toolchain bump to `pnpm@12.5.1` (unreleased)
 
 | Item | Why | Change |

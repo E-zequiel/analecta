@@ -59,6 +59,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency updates: 15 packages (2026-09-24).
 
 ### Security
+- `electron` bumped from `42.5.1` to `44.4.5`: five HIGH CVEs closed
+  (GHSA-9qh4-3jw8-366w, GHSA-gr2m-v5gq-v685, GHSA-j84w-jfhq-vhvj,
+  GHSA-hq2x-r82h-9wj4, GHSA-qmv3-fv6v-rmhq), with companion `electron-builder`
+  `26.15.6` → `26.17.0` — see `docs/security-log.md`.
+- `markdown-it` bumped from `14.3.0` to `14.3.2`: two quadratic-complexity DoS
+  advisories closed (HIGH GHSA-r7fv-28h4-cvq7, MODERATE
+  GHSA-253c-mchw-3w2r) on rules the reading view enables (`typographer`,
+  `linkify`) — see `docs/security-log.md`.
 - `scripts/verify_provenance.py`: the sweep's failure report now groups collected
   failures by class (registry transport / registry metadata shape / subject-hash /
   sigstore verification), states the affected scope ("N of M parsed packages"), and
