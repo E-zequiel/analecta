@@ -35,6 +35,8 @@ constraint-dependencies = [
     "lxml-html-clean>=0.4.5",
     # Floor, not a pin — DoS / SSRF.
     "anyio>=4.15.1",
+    # Floor, not a pin — DoS / TLS bypass.
+    "urllib3>=2.8.0",
     # Floor, not a pin — sdist exclusion bypass.
     "setuptools>=83.0.0",
 ]

@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency updates: 15 packages (2026-09-24).
 
 ### Security
+- `urllib3` floored to `>=2.8.0` (`uv` constraint), closing three advisories:
+  HTTPS-proxy TLS configuration ignored or overridden (HIGH,
+  GHSA-8988-9cw3-xx77), unbounded chunk-size line buffering in streaming
+  (HIGH, GHSA-vxq7-64xx-v4gw), and an infinite loop in chunked Deflate
+  streaming (MODERATE, GHSA-gh4c-6fx4-qh6g).
 - `fast-uri` override bumped from `3.1.7` to `3.1.8`, closing the host
   case-normalization bypass via percent-encoded octets
   (GHSA-hrr3-gc8f-f4qj).
