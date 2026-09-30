@@ -1,6 +1,13 @@
 # Security Log — Analecta
 
-Catalog of triaged dependency-security alerts — Socket alerts and false-positive patterns, dismissed Dependabot alerts, and resolved CVE/GHSA advisories across the npm and Python ecosystems — for the Analecta project.
+Record of the repository's own security posture: CI integration, the npm
+provenance verification gate, hardening of the project's own code and
+scripts, and the dependency cooldown policy. It carries no third-party CVE
+or advisory records — advisory ids, CVSS scores, and per-bump ledgers are
+deliberately not maintained in tracked docs; the security pins and their
+reasons live inline in the enforcing configs (`pnpm-workspace.yaml`
+overrides, `backend/pyproject.toml` `[tool.uv]` floors), which are the sole
+record.
 
 Referenced by `docs/github-actions-security.md` Controls 9 and 12.
 
@@ -143,364 +150,6 @@ threshold.
 - 2026-08 — gate introduced as a CI job (da93feb); quality gate extended
   to cover `scripts/*.py` (140654f).
 
-## Known false positives (set to "Ignore" in dashboard)
-
-### npm — Obfuscated code (false-positive pattern)
-
-Socket's "Obfuscated code" detector flags packages that use split operations on large strings as an encoding optimization for lookup tables. This is not malware — it is a space-saving technique for static lookup data (HTML entities, tokenizer rules, compiler tables). Standard triage: check Socket's own analyst note; if no network exfiltration, eval injection, or credential access is identified → Ignore.
-
-| Alert ID | Package | Reason |
-|----------|---------|--------|
-| SOCKET-EZEQUIEL-2 | `entities@4.5.0` | HTML entity lookup tables encoded as compact strings |
-| SOCKET-EZEQUIEL-3 | `markdown-it@14.1.1` | Syntax/tokenizer rule tables |
-| SOCKET-EZEQUIEL-5 | `svelte@5.55.7` | Compiler/runtime lookup tables |
-| 2026-05-30 scan | `linkedom@0.18.12` (`package/worker.js`) | Web Worker DOM lookup tables — identical pattern. |
-| 2026-06-07 scan | `commander@9.5.0` | Transitive of electron-builder. Socket analyst: "conventional, non-obfuscated CLI framework component." 200M+ weekly downloads. |
-| 2026-06-07 scan | `cssom@0.5.0` | Standard CSS parser. Socket analyst: "no evidence of malicious behavior." Minified lookup tables. |
-| 2026-06-07 scan | `tiny-async-pool@1.3.0` | Standard concurrency utility. Socket analyst: "no evidence of malicious behavior, no hardcoded secrets." |
-| 2026-06-07 scan | `electron-winstaller@5.4.0` (`wix.dll`) | Compiled Windows binary (WiX toolset). Binary DLLs always appear obfuscated to JS scanners. Windows-only; irrelevant to Linux-only build target. Lifecycle scripts blocked via `allowBuilds`. |
-| 2026-06-07 scan | `graphology@0.26.0` (`specs/read.js`) | Direct dep (VaultGraph). Flagged file is a test spec. Socket analyst: "legitimate unit-test suite." |
-| 2026-06-07 scan | `htmlparser2@10.1.0` | Standard HTML/XML tokenizer. 100M+ weekly downloads. Socket analyst: "non-malicious, standard tokenizer." |
-| 2026-06-07 scan | `@typescript-eslint/eslint-plugin@8.60.0` | Dev dep, linting only. Official typescript-eslint org. |
-| 2026-06-15 scan (16 alerts) | `nodejs-wheel-binaries@24.15.0` (PyPI) | Transitive of `basedpyright` (dev-only). |
-| 2026-09-24 scan (IDs 1221247, 1221250) | `@noble/hashes@1.8.0` (`esm/blake3.js`, `src/sha3.ts`) | Transitive of `pkijs@3.4.1` ← `app-builder-lib` (electron-builder, dev-only build tooling). Native BLAKE3/SHA3 implementations — real cryptographic code, minified/bundled appearance. Socket analyst: "legitimate and standard part of a BLAKE3 implementation... no malicious activity or data leakage is evident" / "conventional, self-contained SHA3/Keccak hashing... implementation appears sound." Upgrade to `@noble/hashes@2.4.0` rejected (2026-09-24): `pkijs@3.4.1` exact-pins `1.8.0` (no range), so removal requires an `overrides:` entry against a deliberate exact pin of a 4-day-old release; `@noble/hashes` 2.x carries API changes pkijs was never tested against; and `2.4.0` ships the same `esm/blake3.js`/`src/sha3.ts` files, so the heuristic would re-flag the newer version. Revisit if a future `pkijs` release declares a 2.x range. |
-| 2026-09-24 scan (ID 3563051) | `yargs@17.7.3` (`build/index.cjs`) | Transitive of `electron-builder@26.15.6` (declares `yargs` exactly; dev-only build tooling). Minified CLI bundle. Socket analyst: "no clear indicators of supply-chain sabotage, credential theft, network exfiltration, persistence, or command execution." Upgrade to `18.2.0` rejected (2026-09-24): exact pin + major bump (17→18) of a build tool's argument parser for a heuristic flag on a minified bundle — `build/index.cjs` exists in yargs 18.x too, so the flag would likely persist. Revisit if `electron-builder` naturally updates its `yargs` dependency. |
-
-- **`linkedom@0.18.12` (`package/worker.js`):** Optional dep of `defuddle@0.19.1` (root `package.json` devDependency — a diagnostic-only tool, never a shipped runtime dep, see `docs/defuddle-decision.md`); Web Worker path is unused in the offline diagnostic script that consumes it.
-- **`nodejs-wheel-binaries@24.15.0` (PyPI):** Ships the compiled `node` binary across ~8 platform wheels; each binary flagged independently — same false-positive class as `electron-winstaller@wix.dll`. Confirmed absent from the shipped PyInstaller `--onedir` artifact (`backend.spec` has no `basedpyright`/`nodejs` references).
-
-### PyPI — Removed packages on npm-only PRs
-
-When a PR triggers the `socket` CI job via `pnpm-lock.yaml` changes only (no `backend/uv.lock` change), Socket's `ci` diff command compares the full repo against its previous `main` baseline. Python packages that were indexed in the baseline but fall outside the PR's diff scope are reported as "Removed."
-
-**Action:** none. This is a diff-session artifact, not a real removal. Confirm by checking whether `backend/uv.lock` changed in the PR.
-
-### PyPI — Alert type false positives (2026-05-21 baseline)
-
-These alert types on these library categories are expected behaviors, not malicious activity:
-
-| Alert type | Packages | Why it fires / Why it's expected |
-|------------|----------|----------------------------------|
-| `filesystemAccess`, `shellAccess` | `trafilatura`, `readability-lxml`, `uvicorn`, `ruff`, `pyyaml` | Web scrapers write temp files; web servers bind sockets; linters exec subprocesses |
-| `networkAccess` | `uvicorn`, `youtube-transcript-api` | Web server binds ports; YouTube client makes HTTP requests — by design |
-| `usesEval` | `readability-lxml`, `sse-starlette`, `ruff` | Readability heuristics; SSE serialization; Ruff processes arbitrary Python source |
-| `hasNativeCode` | `pyyaml` | Ships `_yaml.cpython-*.so` C extension — expected, not injected |
-| `urlStrings` | all Python libs | Static URLs in error messages or tests |
-| `gptAnomaly` | `youtube-transcript-api` | Verbose exception messages with video IDs; low-confidence anomaly |
-| `installScripts` | `ruff` | Rust test fixture in source tree — not an install hook |
-
-`potentialVulnerability` on `pyyaml` (unsafe constructors): backend uses only `yaml.safe_load()` — no `yaml.load()` or `yaml.full_load()` anywhere in `backend/src/`.
-
-### @sveltejs/kit — `potentialVulnerability` (eval in write_tsconfig.js)
-
-Build-time tsconfig/jsconfig JSON parsing. Developer-controlled input, not user input. Not a runtime concern.
-
----
-
-## Dismissed Dependabot alerts
-
-| GHSA | Package | Reason dismissed |
-|------|---------|-----------------|
-| GHSA-hgv7-v322-mmgr | `@sveltejs/kit ≥2.38.0 ≤2.60.0` | `query.batch()` cross-user context merge. |
-
-- **Not applicable:** `query.batch()` not used; single-user Electron desktop app with no concurrent users and no SSR.
-- **Fix present** (locked at 2.60.1). Dismissed 2026-05-21.
-
----
-
-## Maintenance alerts (no action — transitive build-tool deps)
-
-These deprecated packages are all transitive deps of electron-builder and cannot be directly upgraded. They resolve automatically when electron-builder updates its dependency tree.
-
-| Package | Deprecated reason |
-|---------|------------------|
-| `glob@7.2.3` | Old versions contain security vulns |
-| `rimraf@2.6.3` | Versions prior to v4 unsupported |
-| `inflight@1.0.6` | Memory leak; unsupported |
-| `lodash.isequal@4.5.0` | Use `node:util` instead |
-| `boolean@3.2.0` | Package no longer supported |
-| `@humanfs/types@0.15.0` | `unpopularPackage` quality alert (Nicholas Zakas's package — legitimate) |
-| `@socketsecurity/socket-patch-darwin-arm64@2.0.0` | `unpopularPackage` quality alert (Socket's own platform-binary patch package, transitive of the `socket` CLI itself) |
-
----
-
-## Resolved CVEs
-
-### 2026-09-29 — Socket alerts round 1: `electron` 44.4.5 + `markdown-it` 14.3.2 (release 0.5.4)
-
-Trigger: 16 Socket alerts (5 HIGH `electron` CVEs; 1 HIGH + 1 MODERATE
-`markdown-it`; 9 transitive `undici`).
-
-| Package | Advisories | Reachability | Change |
-|---------|-----------|--------------|--------|
-| `electron` | GHSA-9qh4-3jw8-366w, GHSA-gr2m-v5gq-v685, GHSA-j84w-jfhq-vhvj (CVSS 8.3), GHSA-hq2x-r82h-9wj4, GHSA-qmv3-fv6v-rmhq — all closed in the 44.x line at 44.0.0-beta.5/6 | The renderer already runs `sandbox: true` + `contextIsolation` with no `nodeIntegration`, so the `<webview>`/worker and unsandboxed-window surfaces don't apply by configuration. GHSA-j84w (protocol handlers allow cross-origin reads without `corsEnabled`) hits the app's own `app://` and `analecta-file://` schemes. Patching regardless — defense in depth. | `42.5.1` → `44.4.5` |
-| `electron-builder` | None — companion bump, needed to package electron 44 | `26.15.6` predates electron 44 stable | `26.15.6` → `26.17.0` |
-| `markdown-it` | GHSA-r7fv-28h4-cvq7 (HIGH, smartquotes quadratic DoS under `typographer: true`; fixed 14.3.2/15.0.2) + GHSA-253c-mchw-3w2r (MODERATE, linkify quadratic paths; fixed 14.3.1) | The reading view renders arbitrary fetched content and enables both rules | `14.3.0` → `14.3.2`. 15.x deliberately not taken: `@shikijs/markdown-it@4.4.3` (latest) hard-pins `markdown-it: ^14.3.0` as a direct (non-peer) dependency — revisit when shiki publishes v15 support. |
-
-- **Registry integrity verified before adoption** (`pnpm view
-  <pkg>@<version> dist.integrity`, cross-checked against `pnpm-lock.yaml`
-  after install + dedupe): `markdown-it@14.3.2`
-  `sha512-sHHjZ5fJKlgrG4qns2YwVcdNep35h5fERrfkD2YNsb9UFk0UIHarbiTaHKVMlPuWAoiilyK8Fv/jAm11slsY7Q==`;
-  `electron@44.4.5`
-  `sha512-SjgoaeYsSWZfJzubgQU7juvuXMTvn6/e1gAHdGFA/yuMbpF+I+skYqIJ6DdXBXHeWbkbpNpmwZCTpiivtlWZSw==`;
-  `electron-builder@26.17.0`
-  `sha512-iYHBRiagS9sDIbZx1ZD113f5rEGQvtpvTvHf70ovHKJ8mRvxwIkWX7JCwfmVQmVS4eX735p7TZmoxHnBPwF3vA==`.
-- **Consumer smoke tests:** `markdown-it` exercised against the installed
-  instance with `typographer: true` + `linkify: true` (the patched rules) on
-  quote/link-heavy input, plus `markdown-it-footnote` and
-  `markdown-it-task-lists` on the same instance; `electron` reports 44.4.5;
-  full `check.sh` green.
-
-### 2026-09-24 — release-age enforcement moved to pnpm resolution level + toolchain bump to `pnpm@12.5.1` (unreleased)
-
-| Item | Why | Change |
-|------|-----|--------|
-| `pnpm-workspace.yaml`: `minimumReleaseAge: 5760` | Not an advisory response — a policy-gap closure. The 4-day release cooldown existed in two disconnected layers: the maintainer's global pnpm config (`minimumReleaseAge: 5760`, local-only, invisible to CI) and `deps_update.yml`'s updater filter (direct dependencies only). PR #115 demonstrated the gap: its lockfile carried `rolldown@1.2.10` plus all 16 `@rolldown/binding-*@1.2.10` platform binaries (published 2026-09-23), `@oxc-project/types@0.151.0` (09-21) and `esrap@2.3.9` (09-22) — transitives 1–3 days old at merge time. All six CI checks stayed green because the local policy never runs in CI, while the maintainer's `pnpm install --frozen-lockfile` failed with `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` and `node_modules` stayed on the pre-merge tree. | pnpm now enforces the 4-day minimum age itself, at resolution time and at frozen-install verification, for all dependencies including transitive ones, in CI and in every clone. Verified behavior (2026-09-24, scratch workspace): a fresh resolution under the policy picks the newest version older than the cutoff (`rolldown@^1.2.0` → 1.2.9, not 1.2.10), and the workspace-yaml value is honored independently of the global config. |
-| `pnpm` toolchain | Routine bump, bundled into the same branch because the lockfile's env document records the resolved pnpm version and had to be regenerated anyway. | `packageManager` pin `12.4.2` → `12.5.1`, `.mise.toml` `pnpm = "12.5.1"`, `pnpm-lock.yaml` env document regenerated under 12.5.1. |
-
-- **Registry integrity verified before adoption:** `pnpm view pnpm@12.5.1 dist.integrity` → `sha512-4/MFvHhKK8ifWtO2E4iJRw+ujSr182thIW7JHCw9ZAiXdfneOKrDMQROpA8kXLDVZmOS399lgk4ZB+9qLGLeXw==` (hex `e3f305bc784a2bc89f5ad3b6138889470fae8d2af5f36b61216ec91c2c3d64089775f9de38aac331044ea40f245cb0d5666392dfdf65824e1907ef6a2c62de5f`, base64→hex conversion re-derived independently), cross-checked against the registry manifest fetched directly. The regenerated `packageManager` suffix carries that hex.
-- **No cooldown exception needed:** `12.5.1` released 2026-09-18T21:39:59Z, ~5.9 days before this bump (2026-09-24).
-- **Transitive downgrades in the same commit (newest compliant versions, publish dates verified against the registry):** `rolldown` 1.2.10 → 1.2.9 (09-16; satisfies `vite@8.3.0`'s declared `~1.2.6`), the 16 `@rolldown/binding-*` 1.2.10 → 1.2.9 (09-16), `@oxc-project/types` 0.151.0 → 0.150.0 (09-14; exact-pinned by `rolldown@1.2.9`), `esrap` 2.3.9 → 2.3.7 (09-04), `svelte` 5.57.1 → 5.57.0 (08-28 — direct pin reverted: 5.57.1 requires `esrap ^2.3.6`, and the only releases in that range, 2.3.8/2.3.9 of 09-22, violate the cooldown; the next updater run re-bumps both once they mature).
-- **Bypass semantics change (maintainer decision, 2026-09-24):** `workflow_dispatch cooldown=0` now lifts only the updater's direct-dependency gate; pnpm's resolution gate stays active and a too-fresh exact install fails loudly (`ERR_PNPM_NO_MATURE_MATCHING_VERSION`). Genuine early adoption remains maintainer approval plus a dated entry here, never silent.
-- **Local config stays:** the maintainer's global `minimumReleaseAge: 5760` (`~/.config/pnpm/config.yaml`) remains as defense-in-depth for pnpm use outside this repo; inside it, the committed `pnpm-workspace.yaml` value is the single source of truth.
-
-### 2026-09-20 — Python/uv `constraint-dependencies` (`anyio`)
-
-| Package | Advisory(ies) | Floor & rationale |
-|---------|--------------|-------------------|
-| `anyio@4.13.0` | GHSA-82r6-8w77-94w6 / CVE-2026-63374 (CVSS 4.0 `AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N`, CWE-297) — `TLSStream.wrap()` resolves internationalized (non-ASCII) hostnames with IDNA 2003 instead of IDNA 2008 when constructing the `server_hostname` passed to the TLS layer (`wrap_bio()`); because the two standards can map the same Unicode label to different ASCII representations, a certificate legitimately issued for one form can validate on a connection intended for the other. The advisory scopes exploitation to connections `TLSStream.wrap()` / `connect_tcp()` established or redirected by other means to an attacker's host. Fixed in `4.14.2`. | `anyio>=4.15.1` |
-| `anyio@4.13.0` | GHSA-5p39-cfhj-2xmp / CVE-2026-64847 (CVSS 4.0 `AV:L/AC:L/AT:N/PR:L/UI:N/VC:N/VI:N/VA:H`) — `anyio.to_process`/process-pool workers can block indefinitely when a worker subprocess writes to stderr before the parent drains it, an availability DoS. Fixed in `4.14.2`. | `anyio>=4.15.1` |
-| `anyio@4.13.0` | GHSA-3w57-8xmc-8v26 / CVE-2026-63349 — the `extra_groups` API added in `4.14.0` forwards the wrong variable in `open_process`, so a caller clearing supplementary groups silently retains the parent's. Affects `4.14.0` **only**; `4.13.0` is outside the affected range. | `anyio>=4.15.1` |
-
-- **`anyio@4.13.0`:** transitive dep of `httpx2` (via `httpcore2`), `starlette`/`sse-starlette` and `watchfiles`; the backend imports it only through those consumers, never directly. Verified on the bumped environment: `httpcore2` ships `_backends/anyio.py` and selects anyio as the default async backend, so every HTTPS fetch runs through anyio's TLS streams.
-- **Reachability (GHSA-82r6, HIGH):** live. The extraction pipeline fetches arbitrary user-supplied URLs (`backend/src/analecta/extraction/`), and internationalized hostnames are a realistic input class there. The advisory's exploit precondition — the connection must have been redirected to an attacker's host by other means (e.g. DNS-level hijack on an IDN) — is what the HTTPS-fetch path cannot rule out by itself; the IDNA 2003 encoding (fixed to IDNA 2008 upstream) is exercised whenever anyio builds the TLS `server_hostname` for such a connection.
-- **Reachability (GHSA-5p39):** defense-in-depth. The sidecar spawns no anyio process pools (no `to_process`/`open_process`/`run_process` call sites in `backend/src/analecta`), so the affected code path is not exercised; the floor covers it for the transitive chain.
-- **Reachability (GHSA-3w57):** not exposed. The installed `4.13.0` predates the `extra_groups` API the advisory names; the floor excludes the vulnerable `4.14.0` resolution class anyway.
-- **Transitive resolution:** the floor moved `typing-extensions` from `4.15.0` to `4.16.0` (anyio `4.15.1` declares it for `python_full_version < '3.15'`); no advisory against either endpoint.
-- **No cooldown exception needed:** `4.15.1` released 2026-09-05, 15 days before this bump (2026-09-20).
-
-### 2026-09-19 — npm `pnpm` package-manager pin
-
-| Package | CVE(s) | Fix |
-|---------|--------|-----|
-| `pnpm@11.0.6` (published 2026-05-05) — the package manager itself, pinned in `package.json`'s `packageManager` field | 18 advisories — 11 high, 7 medium, 14 distinct CVEs. Install-time attack surface: GHSA-5wx6-mg75-v57r / CVE-2026-55487 (manifest identity spoof satisfies `allowBuilds` → attacker lifecycle scripts), GHSA-vx52-2968-3vc6 (env secrets exfiltrated via proxy-settings env-placeholder expansion), GHSA-c59q-g84q-2gj5 / CVE-2026-82392 (path traversal out of `node_modules` via lockfile depPath), GHSA-vq4v-j7r6-jq4m / CVE-2026-82393 (path traversal out of `node_modules` via tarball manifest name), GHSA-q6j5-fjx5-2mc3 / CVE-2026-50021 (integrity-check bypass via a lockfile missing the integrity field), GHSA-54hh-g5mx-jqcp / CVE-2026-50573 (unsafe default breaks the integrity check), plus 11 more patched at `11.0.7`, `11.4.0`, `11.5.3`, `11.7.0`, `11.8.0` and `11.11.0`. | `packageManager` pin regenerated `11.0.6` → `12.4.2` via `corepack use pnpm@12.4.2`. No `overrides:` entry exists or is needed — pnpm is the tool executing the install, not a workspace dependency; the pin is the control. Target `pnpm@12.4.2`: zero advisories. |
-
-- **Registry integrity verified before adoption:** `pnpm view pnpm@12.4.2 dist.integrity` → `sha512-CK3GYTGAJ1x8ntraOdzwjJxhrU5+rzMKTzRh8QKw+QdCNFTRF/mOctR/7wYWBwZE17/8lzpqV/UJCm18NosHyQ==` (hex `08adc6613180275c7c9edada39dcf08c9c61ad4e7eaf330a4f3461f102b0f907423454d117f98e72d47fef0616070644d7bffc973a6a57f5090a6d7c368b07c9`, base64→hex conversion re-derived independently). The regenerated `packageManager` suffix matches that hex exactly, and the new lockfile's `pnpm@12.4.2` resolution carries the identical integrity string.
-- **The pin, not a manifest range:** the load-bearing pin is `package.json`'s `packageManager` field — pnpm's managed-version switch runs that version in-repo regardless of mise. `.mise.toml` now pins `pnpm = "12.4.2"` to match, so CI — which resolves pnpm through `jdx/mise-action` + `mise exec -- pnpm`, with no corepack — cannot float to a pnpm that writes a different lockfile shape; no workflow or script asserts a pnpm version.
-- **Two additional security fixes in `12.4.2` (vs `12.4.1`, upstream release notes):** dependency executables can no longer take over another package's POSIX bin shim via shell helpers (#14837); GitHub Actions homepage links no longer expose server credentials (GitHub server URLs now require HTTPS, HTTP only for loopback).
-- **Reachability:** pnpm is the package manager — never shipped in the `.deb`/`.rpm`/`.AppImage`, but it executes in CI (with repo tokens in the write-permission job) and on the maintainer's machine at install time. The advisories that matter here are the install-time ones (lifecycle-script execution, env-secret exfiltration, writes outside `node_modules`), which is exactly why the pin is the control.
-- **Lockfile churn observed — two YAML documents, not additive-only:** `pnpm-lock.yaml` is no longer a single YAML document. Per pnpm's own lockfile documentation (`pnpm.io/lockfile`), pnpm writes an **env lockfile** first (when present), carrying `configDependencies` and `packageManagerDependencies`, then the **project lockfile** with the real dependency graph; both declare the same `lockfileVersion` — that field describes entry schema, not document count. The env document appears when the project has config dependencies or when pnpm records the resolved package-manager version — the latter applies here because `package.json` pins pnpm 12+ through `packageManager`: the prepended document records `importers: .: packageManagerDependencies: pnpm: {specifier: 12.4.2}` plus `pnpm@12.4.2` and its 14 `@pnpm/exe.*` platform-binary packages/snapshots, with the project document byte-identical (zero deleted lines). The only way to suppress the env document is `pmOnFail=ignore`, which also stops pnpm enforcing the `packageManager` pin — deliberately rejected. Documented hazard (quoted): a reader that loads a single document "either raises an error or silently gives you the first document", and such a tool "reports that the project has no dependencies, and therefore no vulnerabilities, and a CI gate built on it passes". This repo's readers: `scripts/deps_update.py` treats the lockfile as bytes (snapshot/restore), never parses it — unaffected; `pnpm` itself reads both documents; `scripts/verify-provenance.py` reads the file with a regex over the whole text, so it sees both documents (its scoped-package gap is tracked in the separate scanner work unit). CI consequence, pnpm-documented: since v11.23.0 a frozen install no longer rewrites the env block and fails with `ERR_PNPM_FROZEN_LOCKFILE_WITH_OUTDATED_LOCKFILE` when the recorded pnpm version is missing or no longer matches the pin. Install and `install --frozen-lockfile` were both no-ops under 12.4.2 (`Already up to date`; no relink, no store-dir change) and pnpm 12's built-in lockfile supply-chain-policy check passed (569 entries).
-- **Rollback path:** reverting the pin means `corepack use pnpm@<previous>` (or restoring the previous `packageManager` value) **and** regenerating `pnpm-lock.yaml` with a non-frozen `pnpm install` — the env document records the resolved pnpm version, and a frozen install fails once it disagrees with the pin (see the lockfile bullet above).
-- **Cooldown exception (maintainer-approved 2026-09-19):** `12.4.2` was published 2026-09-15T10:48:29Z, 3.64 days before this bump — 9 hours short of the 4-day minimum release age. Approved explicitly: the urgency is the outgoing pin's 11 high advisories, not `12.4.2`'s own age (it has zero advisories). Recorded here and in `CHANGELOG.md`, never silently.
-
-### 2026-09-18 — npm/pnpm `devalue` override
-
-| Package | CVE(s) | Fix |
-|---------|--------|-----|
-| `devalue@5.9.0` | CVE-2026-81176 / GHSA-9rgm-9g3h-6x36 (CVSS 5.3 MEDIUM, `AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L`, CWE-770) — `devalue.parse` prior to 5.9.2 fails to reject out-of-bounds indices; crafted payloads alternate between different array representations, doing work quadratic with payload size. Affected range `< 5.9.1`; the only release the advisory lists as patched is `5.9.2` — `5.9.1` was published in between but is declared neither affected nor patched, a publication gap; `5.9.2` was adopted as the first confirmed patched release, clear of that ambiguity. Advisory published 2026-09-17, one day before this bump — noticed via the advisory directly, no Dependabot alert yet at adoption time. | `overrides: {devalue: '5.9.2'}` in `pnpm-workspace.yaml`, bumped in place from `5.9.0`. |
-
-- **A pin, not a force:** the two consumers, `svelte@5.57.0` and `@sveltejs/kit@2.70.3`, both declare `devalue: ^5.8.1`, which `5.9.2` satisfies. `pnpm why` shows a single resolved instance; the lockfile's `svelte`/`kit` snapshot lines and the `devalue@5.9.2` package entry all flip to `5.9.2`, and `pnpm dedupe` reported "Already up to date" — no orphaned `5.9.0` remains.
-- **Reachability:** not reachable with untrusted data in the packaged app. Zero direct imports in this repo's code (`frontend/src`, `electron/`); the only consumers are `@sveltejs/kit`'s server runtime (`data_serializer.js`, `form-utils.js`, `env_module.js`, `server/utils.js`) and `svelte`'s `internal/server/*` (SSR rendering) — every `devalue.parse` call site (`form-utils.js:266`) runs in a server/form-action path. Analecta is a static build: `@sveltejs/adapter-static` with `prerender = true; ssr = false` globally (`frontend/src/routes/+layout.ts`), zero `*.server.ts` files (no form actions, no server load functions), no `use:enhance`. Nothing attacker-controlled ever reaches `devalue.parse`; the only parsed payload would be prerendered HTML generated at build time from this project's own data.
-- **Consumer smoke test** (run anyway per the step-5 precedent in this log — no runtime consumer path is exercised by `check.sh`, since no runtime path exists at all) against the real `node_modules/.pnpm/devalue@5.9.2/` instance: replayed `form-utils.js`'s exact call shape — `devalue.stringify([data, meta], reducers)` → `devalue.parse(text, reducers)` with a `File` reviver — on representative data (Date, Map, Set, RegExp, sparse array, Infinity/NaN/undefined); round-trip lossless and re-encode byte-identical. The advisory's out-of-bounds-index class now fails closed: out-of-bounds sparse-array indices (`idx >= len`, negative, `> MAX_ARRAY_INDEX`, non-integer, string), out-of-range sparse `len` (`> MAX_ARRAY_LEN`), and out-of-bounds numeric references (`idx >= values.length`, huge and fractional) all reject immediately with `Invalid input`, while a legitimate sparse array (`[[-7, 5, 4, 1], "v"]` form, matching `stringify`'s own encoding) and a 200 000-element object round-trip still parse correctly.
-- **No cooldown exception needed:** `5.9.2` released 2026-08-27, 22 days before this bump (2026-09-18). Note: `5.9.3`/`5.9.4` published later the same day as this bump — not adopted; no known advisories against `5.9.2`.
-
-### 2026-09-18 — Python/uv `constraint-dependencies`
-
-Security floors in `[tool.uv] constraint-dependencies` (`backend/pyproject.toml`). Each is a **floor, not a pin** — `uv` resolves the newest version satisfying every declared range above it, so the floor only removes vulnerable resolutions. The one-line comments in `pyproject.toml` point here; this table carries the rationale so the file itself doesn't have to.
-
-| Package | Advisory(ies) | Floor & rationale |
-|---------|--------------|-------------------|
-| `starlette@1.0.1` | CVE-2026-54283 (HIGH 7.5, `request.form()` DoS), CVE-2026-48818 (HIGH 7.5, `StaticFiles` SSRF, Windows-only), CVE-2026-48817 (MODERATE 5.3, `HTTPEndpoint` getattr dispatch), CVE-2026-54282 (LOW 3.7, `request.url.hostname` poisoning) | `starlette>=1.3.1` |
-| `soupsieve@2.8.3` | GHSA-2wc2-fm75-p42x (HIGH 7.5, memory exhaustion via large comma-separated CSS selector lists), GHSA-836r-79rf-4m37 (HIGH 7.5, ReDoS in the attribute-value regex) — both fixed by 2.8.x; GHSA-j934-xhv5-fg8f + GHSA-gjv8-xp57-g29c (2026-09-18, availability-only quadratic-CPU DoS in the selector compiler — unanchored trailing-whitespace/comment trim and adjacent-quantifier identifier backtracking; ~10 s CPU per ~20 KB selector and ~17 s per ~12 KB selector, also triggerable through `BeautifulSoup.select()` — both fixed in 2.9) | `soupsieve>=2.9.2` |
-| `lxml-html-clean@0.4.4` | GHSA-4jhm-jv67-739f (CVSS 8.2 HIGH, `Cleaner` does not strip `javascript:` URLs from `xlink:href` with `safe_attrs_only=False`) | `lxml-html-clean>=0.4.5` |
-| `setuptools@82.0.1` | GHSA-h35f-9h28-mq5c (MODERATE 6.1, `MANIFEST.in` exclusion bypass in sdist builds via NFC/NFD Unicode normalization collision on macOS APFS/HFS+) | `setuptools>=83.0.0` |
-
-- **`starlette@1.0.1`:** transitive dep (via `fastapi`, `sse-starlette`); `fastapi` only requires `>=0.46.0`, so a floor here is sufficient.
-- **`soupsieve@2.8.3`:** transitive dep of `beautifulsoup4`. Analecta's own code never calls `.select()`/`.select_one()`/`soupsieve.compile()` (extraction uses only `find_all()` with hardcoded inputs), so both ReDoS/DoS classes need attacker-controlled selector input — the floor is maintained as defense-in-depth for the transitive chain.
-- **`lxml-html-clean@0.4.4`:** transitive dep of `readability-lxml` (via `lxml[html-clean]`), which uses exactly that `Cleaner` configuration in `readability/cleaners.py`, on HTML fetched from arbitrary user-supplied URLs — the vulnerable configuration is live. Frontend's `markdown-it` runs with `html: false`, an incidental downstream mitigation, not a substitute for the fix.
-- **`setuptools@82.0.1`:** transitive dep of `pyinstaller` (unconstrained range). See also the 2026-07-27 entry below.
-
-### 2026-09-11
-
-| Package | CVE(s) | Fix |
-|---------|--------|-----|
-| `js-yaml@4.3.1` | CVE-2026-84375 / GHSA-2883-xcg3-v3hh (CVSS 7.5 HIGH, `AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H`) — `maxTotalMergeKeys` (default 10000) counted only the *keys* of each merge-source mapping, not the source mapping itself. A YAML document that merges a large sequence of *empty* mappings (`{}`, zero keys each) into K targets does `O(N*K)` work in `mergeMappings()` while `totalMergeKeys` never increments, so the guard never trips — the advisory's own PoC (N=20000 empty mappings, K=20000 targets) measured ~13s. | `overrides: {js-yaml: '4.3.2'}` in `pnpm-workspace.yaml`, bumped in place from `4.3.1` — supersedes the `js-yaml@4.3.0` row below. |
-
-- **Not a version bump alone — a real code fix:** `mergeMappings()` now calls `chargeMergeWork(state)` once for the source mapping itself, before iterating its keys (`lib/loader.js:388`, comment: "Count the source mapping itself to bound sequences of empty mappings"), plus an unconditional new cap — `storeMappingPair()` throws `'abnormal merge sequence size'` if a merge sequence (`<<: [...]`) exceeds 100 elements (`lib/loader.js:438`), independent of `maxTotalMergeKeys`.
-- **Reachability:** transitive via `electron-builder`/`dmg-builder`/`app-builder-lib` (build-time packaging tooling, not exercised outside `pnpm dist`) **and** `electron-updater` (a real runtime dependency — confirmed by reading the installed package: `Provider.js:97` calls `js_yaml_1.load(rawData)` on the `latest-linux.yml` manifest fetched from this project's own GitHub Releases feed over HTTPS with SHA-512 verification, not attacker-controlled input despite the CVSS score).
-- **Consumer smoke test** (per `docs/dependency-verification.md` step 5 — neither call site is exercised by `check.sh`) against the real `node_modules/.pnpm/js-yaml@4.3.2/` instance: replayed `Provider.js`'s exact `load()` call on a representative `latest-linux.yml`, output unchanged; replayed the advisory's own PoC verbatim (`YAML11_SCHEMA`, N=20000) — now rejected in ~18ms with `abnormal merge sequence size` instead of completing in ~13000ms, confirming the fix engages; a small, legitimate `<<: *defaults` merge (well under the new 100-element cap) still resolves correctly, ruling out a regression on ordinary merge-key usage.
-- **No cooldown exception needed:** `4.3.2` released 2026-08-26, 16 days before this bump.
-
-### 2026-09-03
-
-| Package | CVE(s) | Fix |
-|---------|--------|-----|
-| `fast-uri@3.1.5` (via `ajv@8.20.0`) | Six HIGH advisories (all CVSS 7.5, `AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N`), superseding the `fast-uri@3.1.4` row below. | `overrides: {'fast-uri': '3.1.7'}` in `pnpm-workspace.yaml`, bumped in place from `3.1.5`. |
-
-- **Four fixed at `3.1.6` (published 2026-08-23):** GHSA-5jgf-p345-68v8 / CVE-2026-75931 (host confusion — `resolve()` emits a scheme-relative `//host` reference verbatim without IDN-canonicalizing it once the effective scheme is known, so re-parsing the result yields a different host; Dependabot alert #47), GHSA-fph4-wmhf-6fwf / CVE-2026-75899 (SSRF — a nested percent-encoded host is decoded twice in one `normalize()`/`resolve()` call, so `%256c%256f%2563%2561%256c%2568%256f%2573%2574` recomposes to `localhost`; alert #48), GHSA-f65p-4m7j-42xc / CVE-2026-75975 (SSRF via malformed IPv6 normalization), GHSA-jqff-g426-hqxp / CVE-2026-76172 (host confusion via percent-encoded scheme normalization).
-- **Two fixed only at `3.1.7` (published 2026-09-02) — repo-level advisories on `fastify/fast-uri`, not yet propagated to GitHub's global advisory DB, so no Dependabot alert yet:** GHSA-qw65-cvwx-89v3 (authority injection — `serialize()`/`normalize()`/`equal()` never validated the `port` component, so a component object `{host: 'trusted.example', port: '8080@evil.example'}` serialized to `http://trusted.example:8080@evil.example/…`, folding the real host into userinfo) and GHSA-58mr-gqgx-xq4g (host confusion — an unbalanced or misplaced `[`/`]` in the authority was waved through as an IP literal instead of being validated as a reg-name).
-- **A pin, not a force:** `ajv@8.20.0` declares `fast-uri: ^3.0.1`; `pnpm why` shows one resolved instance and the lockfile's `ajv@8.20.0` snapshot line flips to `3.1.7`.
-- **Reachability:** not reachable in the packaged app — the sole consumer is `ajv@8.20.0` via `app-builder-lib` (electron-builder, a `devDependency`), which uses `fast-uri` for build-time JSON Schema `$id`/`$ref` resolution over this project's own schemas, never attacker-controlled network input.
-- **Consumer smoke test** (per `docs/dependency-verification.md` step 5) against the real `node_modules/.pnpm/fast-uri@3.1.7/` instance ajv resolves: export key set identical to `3.1.5` (`SCHEMES, default, equal, fastUri, normalize, parse, resolve, resolveComponent, serialize`); `ajv@8.20.0` and `ajv/dist/2019` compile and validate schemas carrying `$id`, cross-file `$ref`, self `$ref`, and `$recursiveRef`/`$recursiveAnchor` unchanged; `ajv`'s own `parse()`/`serialize()`/`resolve()` call shapes round-trip on representative schema IDs; and both `3.1.7`-only PoCs now fail closed — `serialize({…, port: '8080@evil.example'})` throws `URI port is malformed.`, `parse('http://[fe80')` sets `error: 'URI host is malformed.'` and `resolve()` throws — while valid ports and well-formed bracketed IPv6 literals still pass. Non-vacuous: the same bad-port input against the pre-bump `fast-uri@3.1.5` tree still returns `http://trusted.example:8080@evil.example/app`.
-- **Cooldown exception:** `3.1.7` released 2026-09-02, 1 day before this bump (9 short of the 10-day window — tied with the 2026-08-12 `@xmldom/xmldom` bump for the project's largest) — approved explicitly given the uniform CVSS 7.5 host-confusion/SSRF rating. `3.1.6` alone (11 days old, clears the window unaided) would have closed the first four; `3.1.7` also closes the `3.1.7`-only pair and pre-empts their eventual alerts.
-
-### 2026-09-02
-
-| Package | CVE(s) | Fix |
-|---------|--------|-----|
-| `postcss-selector-parser@7.1.1` | GHSA-w9m9-85wc-3x92 / CVE-2026-9358 (CVSS v4 `AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:L` — Low, availability-only; CWE-404). Uncontrolled recursion in `src/selectors/container.js`'s `toString()` (AST serialization) — a deeply nested selector recurses with no depth bound and overflows the stack. Affected `>= 7.1.0, < 7.1.3` (the advisory also covers `< 6.1.3`, but no `6.x` instance resolves in the tree); fixed at `7.1.3`, which adds a 256-level nesting-depth cap that throws a catchable `Error` instead of recursing. | `overrides: {postcss-selector-parser: '7.1.5'}` in `pnpm-workspace.yaml` — a single global entry (`pnpm why` shows one resolved instance). Pinned to `7.1.5` (latest) rather than the `7.1.3` minimum. |
-
-- **Surfaced via** Dependabot alert #46.
-- **A pin, not a force:** the sole consumer, `svelte-eslint-parser@1.8.0` (via `eslint-plugin-svelte@3.23.0`, a root `devDependency`), declares `postcss-selector-parser: ^7.0.0`, which `7.1.5` satisfies — this only removes the resolver's freedom to drift within that range, it doesn't override a declared constraint. Dependabot's "latest possible version that can be installed is 7.1.1" is its own inability to author pnpm `overrides:` for a transitive dep, not a real ceiling — the `pnpm install` confirms `7.1.5` resolves cleanly, and the lockfile's `svelte-eslint-parser` snapshot line flips to `7.1.5` (override took effect, not resolved-and-ignored).
-- **Reachability:** not reachable in the packaged app. `svelte-eslint-parser` is ESLint tooling — runs only during `pnpm lint` / `check.sh`, never ships in the `.deb`/`.rpm`/`.AppImage`, and `lib/parser/style-context.js` feeds it only this project's own component `<style>` selectors (`selectorParser().astSync(rule.selector)`), never attacker-controlled input. Upstream itself rates server-side DoS on user-generated CSS as low risk.
-- **Consumer smoke test** (per `docs/dependency-verification.md` step 5 — `check.sh`'s eslint step proves the module loads under `svelte-eslint-parser@1.8.0` but not that the serialization path still behaves): replayed `style-context.js`'s exact call shape — `selectorParser()` → `astSync()` → `root.walk()` reading `node.source` — against the real `node_modules/.pnpm/postcss-selector-parser@7.1.5/` instance on representative selectors (`:is()`/`:not()`, attribute selectors, combinators, `&` nesting, comma lists); all round-trip through `toString()` correctly, and a 20 000-level nested selector now throws `Error: Cannot parse selector: nesting depth exceeds the maximum of 256` instead of overflowing the stack.
-- **No cooldown exception:** `7.1.5` released 2026-08-07, 26 days before this bump.
-
-### 2026-08-28
-
-| Package | CVE(s) | Fix |
-|---------|--------|-----|
-| `@xmldom/xmldom@0.8.14` / `@xmldom/xmldom@0.9.11` | 12 GHSAs published 2026-08-21, no CVE IDs assigned yet, self-disclosed by the xmldom maintainers. Fixed at `0.8.15` and `0.9.12` respectively — both confirmed non-deprecated. | Same two version-scoped `overrides:` entries in `pnpm-workspace.yaml`, bumped in place: `'plist@3.1.0>@xmldom/xmldom': '0.8.15'` and `'plist@3.1.1>@xmldom/xmldom': '0.9.12'` (plus `'mathml-to-latex@1.8.0>@xmldom/xmldom': '0.9.12'`). |
-
-- **Surfaced via** a Socket `deprecated`/maintenance alert on `0.9.11` (`"this version has critical issues, please update to the latest version"`), then cross-checked by hand against `0.8.14` too.
-- **7 affect both the `0.8.x` (`0.7.0-0.8.14`) and `0.9.x` (`0.9.0-0.9.11`) lines:** GHSA-c7q8-3ch8-vqpv (processing-instruction target injection bypasses `requireWellFormed`), GHSA-965w-775f-mr7g (quadratic-memory consumption), GHSA-6gmq-8vp8-gcm6 (XML fragment injection via `EntityReference.nodeName` during `requireWellFormed` serialization), GHSA-8344-3jmq-59r6 (quadratic-time attribute deduplication, CWE-407), GHSA-93r5-fhx6-vmg9 (quadratic-time parsing via the malformed-input recovery path, CWE-407), GHSA-27p8-2357-5qqv (DocType `name` injection bypasses `requireWellFormed`), GHSA-6h8r-xr42-gp59 (parser silently accepts a not-well-formed end tag followed by a line break and trailing content).
-- **1 affects only `0.8.x`:** GHSA-x4fp-j954-r2f4 (ReDoS in the `0.8.x` end-tag whitespace-trim regex, CWE-1333).
-- **4 affect only `0.9.x`:** GHSA-6mj3-qw4j-hgrw (HTML raw-text closing-tag case mismatch causes O(n²) output amplification), GHSA-3px3-54cx-rmw9 (Name/QName validation bypassable via an embedded line terminator), GHSA-vr34-hp96-76pp (DocType `publicId`/`systemId` validation bypass via line terminator, `0.9.10-0.9.11` only), GHSA-jxjr-3g7g-3944 (element/attribute name validation bypass via line terminator, `0.9.11` only).
-- **Re-verified, not assumed:** the 2026-08-13 finding that `plist@3.1.0` (no `mimeType` arg to `parseFromString`) is incompatible with xmldom's `0.9.x` strict-mimeType check still holds, so the two branches stay unmerged. Ran an isolated install (`plist@3.1.0` + `@xmldom/xmldom@0.8.15` override) and called `plist.parse()`/`plist.build()` on a sample `Info.plist` — both succeeded, confirming this batch's `requireWellFormed` hardening didn't also tighten `0.8.x`'s mimeType handling.
-- **Considered and rejected:** forcing a global `plist: '3.1.1'` override to collapse both branches and drop the `0.8.x` pin — mechanically viable (would satisfy `@electron/osx-sign`'s `^3.0.5` and `@electron/universal`'s `^3.1.0` ranges), but buys zero extra security since `0.8.x` already has a clean patch, at the cost of forcing a resolution over `app-builder-lib`'s own exact `"3.1.0"` pin — unchanged from `26.15.1` through the `27.0.0` alpha line as of this writing — on a code path already established as unreachable (see Reachability below, carried over unchanged from 2026-08-13).
-- **Cooldown exception:** both `0.8.15` and `0.9.12` released 2026-08-21, 7 days before this bump (3 short of the 10-day window) — approved explicitly despite no CVE ID/CVSS score yet, given the GitHub-rated "high" severity on most of the 12 advisories and the upstream deprecation notice on both superseded versions.
-
-### 2026-08-13
-
-| Package | CVE(s) | Fix |
-|---------|--------|-----|
-| `nanoid@3.3.17` | CVE-2026-67213 / GHSA-2v37-7h3g-55p8 (CVSS 8.2 HIGH) | `overrides: {nanoid: '3.3.18'}` in `pnpm-workspace.yaml`. |
-
-- **Corrects the 2026-08-12 entry below:** `3.3.17` (adopted then) is still inside the advisory's own vulnerable range (`< 3.3.18`) — confirmed via the GHSA page itself ("Patched versions: 3.3.18"), Socket's own CSV export (`firstPatchedVersionIdentifier: "3.3.18"`), and npm registry timestamps (`3.3.17` published 2026-08-03, `3.3.18` published 2026-08-07 — distinct, later release). The 2026-08-12 write-up's reachability analysis was correct (`postcss@8.5.23`, build-time only, never calls `customAlphabet`/`customRandom`); only the adopted version number was wrong.
-- **Cooldown exception:** `3.3.18` released 2026-08-07, 6 days before this bump (4 short of the 10-day window, a larger exception than the original) — approved explicitly given the unchanged CVSS 8.2 rating.
-| `@xmldom/xmldom@0.8.13` / `@xmldom/xmldom@0.9.10` | GHSA-w2rr-34g9-rvrj (CVSS 8.7, `createElement()` doesn't validate the element name — a crafted name survives serialization and injects extra attributes/event handlers), GHSA-4w3w-2rp5-g8jm (CVSS 8.7, same injection class via `setAttribute()` bypassing the name validation `createAttribute()` enforces) — both affect `0.7.0-0.8.13` and `0.9.0-0.9.10`, and neither is caught by `requireWellFormed: true`, previously the recommended mitigation. Plus GHSA-g53g-w8rj-fmg7 (CVSS 8.7, `0.9.0-beta.9-0.9.10` only — quadratic-time backtracking parsing an unterminated `<?` processing instruction, stalls the event loop on untrusted XML; the `0.8.x` line was never affected, different bounded parser). All three fixed at `0.8.14` and `0.9.11`. | Two version-scoped `overrides:` entries in `pnpm-workspace.yaml`, deliberately **not unified to one version**: `'plist@3.1.0>@xmldom/xmldom': '0.8.14'` and `'plist@3.1.1>@xmldom/xmldom': '0.9.11'` (plus `'mathml-to-latex@1.8.0>@xmldom/xmldom': '0.9.11'` for the unrelated `defuddle` branch, same target version). |
-
-- **Verified empirically** that unifying would break `plist@3.1.0`: downloaded and diffed both versions' tarballs — the only functional difference between `plist@3.1.0` and `3.1.1` is that `3.1.1`'s `lib/parse.js` added an explicit `"text/xml"` second argument to `DOMParser.parseFromString()`, while `3.1.0` still calls it with none. Reading `xmldom@0.9.11`'s own `dom-parser.js`/`conventions.js` confirms `isValidMimeType(undefined)` is `false`, so `parseFromString` throws a `TypeError` when called without a mimeType — forcing `0.9.11` onto the `3.1.0` branch would break `plist.parse()` outright, not just risk an incompatibility.
-- **Reachability:** both `plist` branches are transitive via `app-builder-lib` (electron-builder); grepping its compiled output shows `plist` is only required from `electronMac.js`, `targets/pkg.js` (macOS `.pkg` target), and `LibUiFramework.js` (an Electron-alternative framework Analecta doesn't configure) — none of those run when packaging `.deb`/`.rpm`/`.AppImage`, Analecta's only build targets. The `mathml-to-latex` branch is a `defuddle` dependency (root `package.json` devDependency, dev-only diagnostic tool, never a shipped runtime dep — see `docs/defuddle-decision.md`).
-- **Cooldown exception, the largest in this project's history:** both `0.8.14` and `0.9.11` released 2026-08-12, 1 day before this bump (9 short of the 10-day window) — approved explicitly given the CVSS 8.7 rating despite the non-reachability above.
-
-### 2026-08-13
-
-| Package | CVE(s) | Fix |
-|---------|--------|-----|
-| `electron@42.1.0` (direct dependency, `electron/package.json`) | GHSA-r4w5-6pfg-jxp5 / CVE-2026-70606 — session-isolation flaw in protocol response handling: a `ProtocolResponse` omitting an explicit session could leak cached responses across isolated session partitions. | Bumped to `42.5.1`. **Not reachable in this app:** both custom protocol handlers (`app://`, `analecta-file://`) return `Response` objects via `protocol.handle()` rather than the legacy `ProtocolResponse` shape, and only `session.defaultSession` is used — no partitioned sessions exist to leak across. |
-
-### 2026-08-12
-
-| Package | CVE(s) | Fix |
-|---------|--------|-----|
-| `js-yaml@4.3.0` | GHSA-5p4m-2wfm-xmqj (no CVE assigned; CVSS 7.5 HIGH, quadratic-time DoS in `!!omap` resolution — the CVE-2026-59870 fix from the 5.x line, never backported to 4.x) | `overrides: {js-yaml: '4.3.1'}` in `pnpm-workspace.yaml`. |
-| `nanoid@3.3.16` | CVE-2026-67213 / GHSA-2v37-7h3g-55p8 (CVSS 8.2 HIGH, infinite loop in `customAlphabet`/`customRandom` when called with `size: 0`) | `overrides: {nanoid: '3.3.17'}` in `pnpm-workspace.yaml`. |
-| `@sveltejs/kit@2.70.1` | CVE-2026-66062 / GHSA-29g2-3rmr-qm68 (CVSS 5.3 MODERATE, ReDoS in `Accept`-header content negotiation) | Bumped to `2.70.2` via Dependabot PR #82 (squash-merged 2026-08-12). |
-
-- **`js-yaml@4.3.0`:** Transitive via `electron-builder`/`dmg-builder`/`app-builder-lib` (build-time tooling only) **and** `electron-updater` (a real runtime dependency — parses `latest-linux.yml` fetched from GitHub Releases when checking for updates). Runtime-reachable, but low practical severity despite the CVSS score: that YAML comes from Analecta's own release feed over HTTPS with SHA-512 verification, not attacker-controlled input — worst case is an updater hang, not compromise.
-- **`nanoid@3.3.16` — Cooldown exception:** `3.3.17` released 2026-08-03, 9 days before this bump (1 short of the 10-day window) — approved explicitly given the CVSS 8.2 rating; EPSS is 0.003 and the only consumer in this tree is `postcss@8.5.23` (build-time CSS tooling), which never calls either custom-generator function, let alone with `size: 0` — not reachable regardless.
-- **`@sveltejs/kit@2.70.1`:** Direct `devDependency`; not reachable in the packaged app — `@sveltejs/adapter-static` means the vulnerable server-side content-negotiation code never ships, present only in the local `pnpm dev` dev server.
-
-### 2026-08-03
-
-| Package | CVE(s) | Fix |
-|---------|--------|-----|
-| `brace-expansion@1.1.16` / `2.1.2` / `5.0.8` | GHSA-rgw5-rvv9-x895 (CVE-2026-69152, HIGH 7.5) — bypasses the `maxLength` mitigation `5.0.8` shipped for GHSA-mh99-v99m-4gvg: two intermediate arrays (`values` in `expand_()`, and `expandSequence()`'s padded-sequence output) were never bounded by `maxLength`, so a ~25 KB input can still OOM-crash the process, and a ~400 KB input can stall the event loop for minutes. Fixed upstream by bounding both. | `overrides: {'brace-expansion@1': '1.1.18', 'brace-expansion@2': '2.1.4', 'brace-expansion@5': '5.0.9'}` in `pnpm-workspace.yaml`. |
-| `fast-uri@3.1.4` (via `ajv@8.20.0`) | GHSA-7p8r-x3mc-p8w7 (CVE-2026-18446, HIGH 7.5) — `\\`/`/\`/`\/` authority introducer parsed as no-authority (folds into path) instead of matching Node's native WHATWG `URL` behavior (used by `fetch()`/`undici`/`http`), which treats `\` as interchangeable with `/` for special schemes. Policy/parser desync for anything using `fast-uri` to enforce host-based rules ahead of a WHATWG-URL consumer. | `overrides: {'fast-uri': '3.1.5'}`. |
-| `undici@7.28.0` (`@electron/get`) / `undici@6.27.0` (`node-gyp`) | 5 CVEs at once, all patched at `7.29.0`: CVE-2026-13697/GHSA-4cwx-7wf7-3272 (HIGH 7.4, cross-user shared-cache disclosure + parse-time crash via degenerate `private` cache-control directives), CVE-2026-16728/GHSA-8xcm-r25x-g524 (MODERATE 4.8, response desync via `interceptors.retry()` serving a stale `Content-Length`), CVE-2026-16729/GHSA-v3r7-h72x-cjcm (MODERATE 4.8, cookie injection via unsanitized `setCookie` domain/`unparsed` fields), CVE-2026-14643/GHSA-jr45-8vmc-qm54 (MODERATE 5.9, cache-control whitespace-around-`=` parse bypass letting authenticated responses land in shared cache), CVE-2026-15157/GHSA-m8rv-5g2x-5cg5 (MODERATE 4.2, CRLF injection via a duck-typed blob's `.type` property). | `overrides: {undici: '7.29.0'}` — **unified from the prior split override** (`@electron/get>undici: 7.28.0` / `node-gyp>undici: 6.27.0`). |
-
-- **`brace-expansion` — Cooldown exception:** all three released 2026-07-30, 4 days before this bump (6 short of the 10-day window) — approved explicitly given the CVSS 7.5 rating; EPSS is 0.003 and exposure is build-time tooling on our own glob patterns, not attacker-controlled input, so real-world urgency was low.
-- **`brace-expansion` — Retires the 2026-07-27 residual-risk carve-out below:** that entry assumed no 1.x/2.x backport existed for GHSA-mh99-v99m-4gvg; `1.1.17`/`2.1.3` were published afterward, and this bump adopts their successors (`1.1.18`/`2.1.4`) directly, so both the original CVE and its bypass are closed on all three lines. `dist.integrity` cross-checked against the npm registry and `pnpm view` for all three versions before adoption.
-- **`fast-uri` — Cooldown exception:** released 2026-07-31, 3 days before this bump — approved explicitly given the CVSS 7.5 host-confusion rating. Verified two ways beyond hash-check: export shape unchanged (`ajv`'s `require("fast-uri")` call gets the same `.parse`/`.resolve`/etc. shape), and the fix itself confirmed empirically — feeding the advisory's exact PoC (`\\evil.com/path`) now throws `"URI authority must not contain a literal backslash"` instead of silently mis-parsing it.
-- **`undici`:** `node-gyp`'s own `package.json` still declares `"undici": "^6.25.0"` (7.x is outside its stated semver range), so this was verified empirically before unifying rather than assumed safe: installed `7.29.0`, required it from `node-gyp`'s own dependency path, and replayed `lib/download.js`'s exact calls (`new RetryAgent(new Agent(), {maxRetries: 3})`, `new RetryAgent(new EnvHttpProxyAgent(opts), {maxRetries: 3})`, then a real `fetch()` through that dispatcher against a live URL) — all succeeded. `pnpm why undici` confirms a single resolved version across both consumers.
-- **`undici` — No cooldown exception needed:** both `7.29.0` and `6.28.0` (the version that would have covered `node-gyp` under the old split) were released 2026-07-24, exactly 10 days before this bump.
-
-### 2026-07-27
-
-| Package | CVE(s) | Fix |
-|---------|--------|-----|
-| `tar@7.5.16` | GHSA-r292-9mhp-454m (MODERATE 5.3, `mapHas`/`filesFilter` stack-overflow DoS) + 4 earlier CVEs it supersedes (GHSA-23hp-3jrh-7fpw CRITICAL 9.2 gzip-bomb DoS, GHSA-8x88-c5mf-7j5w HIGH 8.7 `replace()` infinite loop, GHSA-gvwx-54wh-qm9j MODERATE 5.3 PAX NUL-byte uncaught exception, GHSA-w8wr-v893-vjvp MODERATE 5.3 PAX numeric-path type confusion) | `overrides: {tar: '7.5.21'}` in `pnpm-workspace.yaml` |
-| `fast-uri@3.1.2` (via `ajv@8.20.0`) | GHSA-v2hh-gcrm-f6hx (HIGH 7.5, backslash authority-delimiter host confusion), GHSA-4c8g-83qw-93j6 (HIGH 7.5, failed IDN canonicalization host confusion) | `overrides: {'fast-uri': '3.1.4'}` in `pnpm-workspace.yaml` |
-| `brace-expansion@1.1.14` / `2.1.0` / `5.0.6` | GHSA-mh99-v99m-4gvg (HIGH 7.5, unbounded expansion length OOM), GHSA-3jxr-9vmj-r5cp (HIGH 7.7, exponential-time DoS) | Scoped per major line, **not a single blanket bump**: `overrides: {'brace-expansion@1': '1.1.16', 'brace-expansion@2': '2.1.2', 'brace-expansion@5': '5.0.8'}`. |
-| `postcss@8.5.17` | GHSA-r28c-9q8g-f849 (HIGH 7.5, `sourceMappingURL` path traversal → arbitrary `.map` file disclosure), GHSA-fxqj-rqcc-2cmp | `overrides: {postcss: '8.5.23'}` — 10-day window exception approved given severity (8.5.23 was 3 days old at merge). |
-| `setuptools@82.0.1` (via `pyinstaller`, unconstrained range) | GHSA-h35f-9h28-mq5c (MODERATE 6.1, `MANIFEST.in` exclusion bypass in sdist builds via NFC/NFD Unicode normalization collision on macOS APFS/HFS+) | `[tool.uv] constraint-dependencies = ["setuptools>=83.0.0"]` in `backend/pyproject.toml` |
-| `electron-builder@26.15.3` | — (routine patch bump, not Socket-flagged; bumped ahead of the brace-expansion investigation since it could have shifted `@electron/asar`/`@electron/universal`'s dependency tree — it didn't) | Upgraded to `26.15.6` in `electron/package.json`. |
-
-- **`brace-expansion`:** Verified empirically (real `minimatch` code, real brace-expansion tarballs, isolated `node_modules`) that forcing `5.0.8` onto the `minimatch@3.1.5`/`5.1.9`/`9.0.9` consumer lines throws `TypeError: expand is not a function` — brace-expansion@5.x rebuilt as a named-export-only CJS module via `tshy` (`exports.expand = expand`), while those minimatch versions call the old default-callable export directly (`require('brace-expansion')(...)`). Confirmed the inverse too: 1.1.16/2.1.2/5.0.8 paired with their own matching minimatch line all resolve correctly.
-- **`brace-expansion` — Residual risk, accepted 2026-07-27:** GHSA-mh99-v99m-4gvg has no backport to the 1.x/2.x lines — downloaded and grepped both `1.1.16` and `2.1.2`, neither contains the `EXPANSION_MAX_LENGTH` bound that `5.0.8` has. `minimatch@3.1.5` (→ `glob@7.2.3` → `@electron/asar`, `dir-compare`) and `minimatch@5.1.9`/`9.0.9` (→ `filelist`, `@electron/universal`) stay exposed to it. Accepted because both are electron-builder build-time tooling operating on our own glob patterns, not attacker-controlled input — a hand-maintained `pnpm patch` backport was considered and rejected as worse than the documented residual for a non-attacker-reachable DoS.
-- **`electron-builder@26.15.3`:** Not exercised by `check.sh` (packaging step is skipped there — see "Task workflow" note in project docs); verified via `pnpm install` + `tsc --noEmit` only. Real packaging is exercised by the release workflow.
-
-### 2026-07-13
-
-| Package | CVE | Fix |
-|---------|-----|-----|
-| `soupsieve@2.8.3` | GHSA-2wc2-fm75-p42x (CVSS 7.5 HIGH, memory exhaustion via large comma-separated CSS selector lists), GHSA-836r-79rf-4m37 (CVSS 7.5 HIGH, ReDoS in the attribute-value regex) | `[tool.uv] constraint-dependencies = ["soupsieve>=2.8.4"]` in `backend/pyproject.toml`. |
-| `lxml-html-clean@0.4.4` | GHSA-4jhm-jv67-739f (CVSS 8.2 HIGH, `Cleaner` does not strip `javascript:` URLs from `xlink:href` when `safe_attrs_only=False`) | `[tool.uv] constraint-dependencies = ["lxml-html-clean>=0.4.5"]` in `backend/pyproject.toml`. |
-| `@emnapi/runtime@1.11.1` | — (Socket `obfuscatedFile`/`supplyChainRisk`, no CVE; confidence 0.9 on `package/dist/emnapi.min.mjs`) | `overrides: {'@emnapi/runtime': '1.11.2'}` in `pnpm-workspace.yaml`. |
-
-- **`soupsieve@2.8.3` — Architecture note:** Analecta's own code never calls `.select()`/`.select_one()`/`soupsieve.compile()` (confirmed via grep across `backend/src/`, `readability-lxml`, `trafilatura`) — the vulnerable input is the *selector string*, which is always hardcoded, never attacker-controlled. Low exploitability; fixed anyway since the patch is free (2.8.3 → 2.8.4, no functional change).
-- **`lxml-html-clean@0.4.4`:** Unlike soupsieve above, the vulnerable configuration is confirmed live: `readability-lxml` (a direct extraction dependency, transitively pulling `lxml[html-clean]`) calls `Cleaner(..., safe_attrs_only=False, ...)` in `readability/cleaners.py`, on HTML fetched from arbitrary user-supplied URLs. Frontend's `markdown-it` is configured with `html: false` (`frontend/src/lib/markdown/renderer.ts`), which happens to keep any surviving payload from executing in the reading view — that's an incidental downstream mitigation, not a substitute for the fix.
-- **`@emnapi/runtime@1.11.1`:** Socket's own analyst note found no malicious behavior — dynamic `Function` use limited to environment capability probing, same shape as other WASM-runtime false positives in this catalog. 1.11.2 doesn't reproduce the flag. Transitive via `@rolldown/binding-wasm32-wasi` (optional WASM fallback binding for Vite's Rolldown bundler). Same resolution pattern as the `js-yaml@4.2.0` entry below (2026-07-03): a version bump clears the flag rather than a permanent "Ignore."
-
-### 2026-07-03
-
-| Package | CVE | Fix |
-|---------|-----|-----|
-| `js-yaml@4.2.0` | GHSA-52cp-r559-cp3m (CVSS 7.5, quadratic-time DoS via chained merge-key mappings) | `overrides: {js-yaml: '4.3.0'}` — 10-day window exception approved given severity (4.3.0 was ~7 days old at merge). |
-
-- **Cleared the `obfuscatedFile`/`supplyChainRisk` "monitor" alert** on the previous 4.2.0 minified bundle (formerly documented in "Known false positives" — removed, alert no longer present post-upgrade).
-
-### 2026-06-19
-
-| Package | CVE | Fix |
-|---------|-----|-----|
-| `electron-builder@26.8.1` | CVE-2026-54672 (CVSS 7.8 HIGH — AppImage `LD_LIBRARY_PATH` misconfiguration) | Upgraded to `26.15.3` in `electron/package.json` |
-| `electron-updater@6.8.3` | — (routine patch) | Upgraded to `6.8.9` |
-
-### 2026-06-18
-
-| Package | CVE(s) | Fix |
-|---------|--------|-----|
-| `undici@7.25.0` (via `@electron/get`) | CVE-2026-9678 (MODERATE 5.9, shared-cache whitespace bypass); CVE-2026-9697 (HIGH 7.4, SOCKS5 `requestTls` TLS bypass) | `'@electron/get>undici': '7.28.0'` in `pnpm-workspace.yaml` |
-| `undici@6.25.0` (via `node-gyp`) | GHSA-g8m3-5g58-fq7m, GHSA-vxpw-j846-p89q, GHSA-p88m-4jfj-68fv, GHSA-35p6-xmwp-9g52 | `'node-gyp>undici': '6.27.0'` in `pnpm-workspace.yaml` |
-| `node-gyp@12.3.0` (via `@electron/rebuild`) | — (opportunistic bump) | `node-gyp: '12.4.0'` in `pnpm-workspace.yaml` |
-
-### 2026-06-16
-
-| Package | CVE(s) | Fix |
-|---------|--------|-----|
-| `starlette@1.0.1` | CVE-2026-54283 (HIGH 7.5), CVE-2026-48818 (HIGH 7.5 Windows-only), CVE-2026-48817 (MODERATE 5.3), CVE-2026-54282 (LOW 3.7) | `[tool.uv] constraint-dependencies = ["starlette>=1.3.1"]` in `backend/pyproject.toml` |
-| `markdown-it@14.1.1` | CVE-2026-48988 (MODERATE 5.3, smartquotes DoS) | `pnpm add markdown-it@14.2.0 --save-exact` |
-
-### 2026-06-08
-
-| Package | CVE | Fix |
-|---------|-----|-----|
-| `cookie@0.6.0` (via `@sveltejs/kit`) | CVE-2024-47764 (accept-splitting) | `overrides: {cookie: '0.7.0'}` in `pnpm-workspace.yaml` |
-
-### 2026-05-30
-
-| Package | CVE | Fix |
-|---------|-----|-----|
-| `tmp@0.2.5` (via `tmp-promise` ← `@malept/flatpak-bundler` ← electron-builder) | CVE-2026-44705 (CVSS 7.7, path traversal) | `overrides: {tmp: '0.2.7'}` in `pnpm-workspace.yaml` |
-
-### 2026-05-20 (E1)
-
-| Package | CVEs | Fix |
-|---------|------|-----|
-| `svelte@5.55.5` | CVE-2026-42567 (ReDoS), GHSA-f3cj-j4f6-wq85 (XSS hydratable), CVE-2026-42573 (DOM clobbering XSS), CVE-2026-42599 (spread attr XSS) | Updated to `5.55.8` |
-| `devalue@5.8.0` | CVE-2026-42570 (HIGH 7.5, DoS sparse array) | Updated to `5.8.1` via `@sveltejs/kit@2.60.1` |
-
-### 2026-06-15 (js-yaml, form-data, tar, vite)
-
-| Package | CVE | Fix |
-|---------|-----|-----|
-| `js-yaml@4.1.1` | CVE-2026-53550 (CVSS 5.3, quadratic DoS on attacker-supplied YAML) | `overrides: {js-yaml: '4.2.0'}` |
-| `form-data@4.0.5` | CVE-2026-12143 (CVSS 8.7, CRLF injection via untrusted field names) | `overrides: {form-data: '4.0.6'}` |
-| `tar@7.5.15` | CVE-2026-53655 (CVSS 6.9, PAX header differential) | `overrides: {tar: '7.5.16'}` |
-| `vite@8.0.12` | CVE-2026-53571 (CVSS 8.2, Windows NTFS bypass), CVE-2026-53632 (CVSS 5.5, Windows NTLM) | `overrides: {vite: '8.0.16'}` (devDep; zero Linux runtime risk) |
-
 ---
 
 ## Application & script security hardening
@@ -509,10 +158,28 @@ Security-relevant changes to Analecta's own code and build tooling — not depen
 
 ### 2026-09-18 — release-age window (cooldown) reduced from 10 to 4 days (unreleased)
 
-- **What changed:** the minimum release age enforced by the age-gated dependency updater (`scripts/deps_update.py`'s `COOLDOWN_DAYS`, the `--help` default text, and `deps-update.yml`'s `workflow_dispatch` input default and `${COOLDOWN:-…}` shell fallback) was reduced from 10 days to 4 days, along with every live policy statement in `docs/github-actions-security.md` (Control 7, the Control 10 coverage table, the Maintenance Checklist), `docs/dependency-verification.md`, and `docs/syntax-highlighting.md`. A transition note in Control 7 records the change date itself.
-- **A deliberate relaxation, not a drift:** decided explicitly on 2026-09-18 as a tradeoff between supply-chain protection depth and update freshness — a control was intentionally weakened, not lost. The exception-approval process around the gate (Control 7) is unchanged: merging a package before its window still requires explicit maintainer approval.
-- **Dependabot gap closed in the same change:** `.github/dependabot.yml` now configures a native `cooldown: default-days: 4` on the `github-actions` update block. Previously Dependabot ran unconfigured (default 3-day cooldown on version updates); as before, Dependabot never applies a cooldown to security updates, so the manual release-date check before merging a Dependabot PR (Maintenance Checklist step 5) remains required.
-- **Historical entries below are unaffected — this section exists to say so:** every cooldown-exception entry in Resolved CVEs above quantifies its exception against the window current on its date (10 days until 2026-09-18) — "9 short of the 10-day window" and its siblings read their original numbers deliberately. Socket's "Recently Published threshold: 7 days" in the Setup section is a distinct alert setting, unrelated to this window.
+- **What changed:** the minimum release age enforced by the age-gated
+  dependency updater (`scripts/deps_update.py`'s `COOLDOWN_DAYS`, the
+  `--help` default text, and `deps-update.yml`'s `workflow_dispatch` input
+  default and `${COOLDOWN:-…}` shell fallback) was reduced from 10 days to
+  4 days, along with every live policy statement in
+  `docs/github-actions-security.md` (Control 7, the Control 10 coverage
+  table, the Maintenance Checklist), `docs/dependency-verification.md`, and
+  `docs/syntax-highlighting.md`. The window is enforced at both resolution
+  and frozen-install: pnpm's `minimumReleaseAge` (5760 minutes) rejects
+  too-fresh resolutions for all dependencies including transitive ones, and
+  a frozen install fails loudly on an entry that violates it.
+- **A deliberate relaxation, not a drift:** decided explicitly on
+  2026-09-18 as a tradeoff between supply-chain protection depth and update
+  freshness — a control was intentionally weakened, not lost. The
+  exception-approval process around the gate (Control 7) is unchanged:
+  merging a package before its window still requires explicit maintainer
+  approval; genuine early adoption is never silent.
+- **Dependabot gap closed in the same change:** `.github/dependabot.yml`
+  now configures a native `cooldown: default-days: 4` on the
+  `github-actions` update block. As before, Dependabot never applies a
+  cooldown to security updates, so the manual release-date check before
+  merging a Dependabot PR (Maintenance Checklist step 5) remains required.
 
 ### 2026-08-13 — `scripts/deps_update.py` GitHub Actions log-injection hardening (release 0.5.2)
 
