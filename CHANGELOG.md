@@ -59,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency updates: 15 packages (2026-09-24).
 
 ### Security
+- `fast-uri` override bumped from `3.1.7` to `3.1.8`, closing the host
+  case-normalization bypass via percent-encoded octets
+  (GHSA-hrr3-gc8f-f4qj).
 - `brace-expansion` override bumped per major — `1.1.18` → `1.1.21`,
   `2.1.4` → `2.1.7`, `5.0.9` → `5.0.12` — closing the quadratic-time DoS in
   the `{a},b}` rewrite (GHSA-q2hr-2g5m-vwhr) on all three held lines.
