@@ -55,7 +55,7 @@ overrides:
   # DoS.
   tar: '7.5.21'
   # URL parsing bypass.
-  fast-uri: '3.1.7'
+  fast-uri: '3.1.8'
   # Invariant comment: split per major line — do NOT collapse to one version:
   # 5.x is a named-export-only CJS build, while minimatch@3/5/9 call the old
   # default-callable export (verified empirically — real TypeErrors).
