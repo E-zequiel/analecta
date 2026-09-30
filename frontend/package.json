@@ -37,7 +37,7 @@
     "d3-force": "3.0.0",
     "graphology": "0.26.0",
     "graphology-layout-forceatlas2": "0.10.1",
-    "markdown-it": "14.3.0",
+    "markdown-it": "14.3.2",
     "markdown-it-footnote": "4.0.0",
     "markdown-it-task-lists": "2.1.1",
     "shiki": "4.4.3",
