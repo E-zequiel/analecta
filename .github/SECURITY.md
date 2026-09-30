@@ -80,4 +80,6 @@ Analecta maintains documented controls for dependency integrity, CI/CD pipeline 
 
 - [`docs/dependency-verification.md`](../docs/dependency-verification.md) — per-dependency hash verification protocol for npm/pnpm and Python/uv, including cross-checks against registry integrity fields and lockfile diffs.
 - [`docs/github-actions-security.md`](../docs/github-actions-security.md) — GitHub Actions security model: SHA-pinned action references, per-job least-privilege permissions, age-gated dependency updates, and SLSA provenance attestation verification.
-- [`docs/security-log.md`](../docs/security-log.md) — the general security log: triaged dependency-security alerts (Socket false positives, dismissed Dependabot alerts) and the resolved CVE/GHSA history for npm and Python/uv dependencies.
+- [`docs/security-log.md`](../docs/security-log.md) — the repo's security
+  records: the project's own code-security changes, the CI Socket/provenance
+  gates, and dependency pin policy (security pins).

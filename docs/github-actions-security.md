@@ -215,7 +215,8 @@ This ensures that if a package that cleared the 4-day cooldown contains a malici
 
 **Resolution-level enforcement (2026-09-24):** The cooldown is no longer only an updater-side filter. `pnpm-workspace.yaml` carries `minimumReleaseAge: 5760`, so pnpm itself refuses to resolve or install any dependency — direct or transitive — published less than 4 days ago, in CI and in every clone. This closes the gap demonstrated by PR #115 (2026-09-24): the updater's direct-deps-only filter committed a lockfile whose transitive tree (`rolldown@1.2.10` + 17 sibling resolutions, published 1–3 days before the merge) violated the maintainer's local-only policy — CI stayed green because the local policy never runs there, while local `pnpm install --frozen-lockfile` failed. pnpm enforces the policy both when resolving fresh versions and when verifying an existing lockfile on frozen installs, so CI's frozen installs now fail closed on non-compliant lockfiles. If the cooldown value ever changes, change `minimumReleaseAge` and the updater's default together — they are the same 4 days.
 
-**Transition records:** The deliberate change to this window's value is recorded in `docs/security-log.md` (2026-09-18, release-age window); the move of enforcement into pnpm's resolution layer and the `pnpm@12.5.1` toolchain bump (2026-09-24) are recorded there too.
+**Transition records:** The deliberate change to this window's value is
+recorded in `docs/security-log.md` (2026-09-18, release-age window).
 
 ---
 
@@ -300,8 +301,11 @@ The script calls `pnpm exec socket` (lockfile-pinned, `socket@1.1.99`) — never
 ### Interpreting results
 
 - **No issues:** proceed.
-- **Known false positives:** check the false-positive catalog in `docs/security-log.md` before acting.
-- **New alert:** investigate before committing. If it is a confirmed false positive, add it to the catalog with a justification. If it is a real risk, do not merge.
+- **Known false positives:** a previously investigated and dismissed alert
+  pattern — proceed, without re-investigating.
+- **New alert:** investigate before committing. If it is a confirmed false
+  positive, document the disposition where the team decides (Socket dashboard
+  "Ignore") and merge. If it is a real risk, do not merge.
 
 ### Quota
 
@@ -719,8 +723,9 @@ Under Actions → General → "Fork pull request workflows from outside collabor
 
 1. Install with `pnpm add` or `uv add` as usual. If `pnpm add` hits `ERR_PNPM_IGNORED_BUILDS`, see the warning under "Verifying allowlist entries" (Control 11) before touching `pnpm-workspace.yaml` — pnpm auto-writes an unresolved placeholder there that is easy to commit by mistake.
 2. **Immediately run** `./scripts/socket-audit.sh` — do not commit or push before the scan completes.
-3. Review any new alerts against the false-positive catalog in `docs/security-log.md`.
-4. If the alert is a confirmed false positive, add it to the catalog before committing.
+3. Review any new alerts; investigate before installing.
+4. If the alert is a confirmed false positive, document the disposition where
+   the team decides (Socket dashboard "Ignore") before committing.
 5. If the alert indicates a real risk, do not install the package — find an alternative or escalate.
 6. For new npm packages: the `verify-provenance` CI job will automatically check whether the package has a SLSA provenance attestation. If it does, the attestation is verified against Sigstore on every PR. No manual action required unless the job fails (see Control 10).
 

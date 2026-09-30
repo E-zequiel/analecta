@@ -59,14 +59,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency updates: 15 packages (2026-09-24).
 
 ### Security
+- `undici` override bumped from `7.29.0` to `7.30.0`, closing nine
+  transitive Socket alerts on the pinned version; the pin's one-line reason
+  lives inline in `pnpm-workspace.yaml`.
 - `electron` bumped from `42.5.1` to `44.4.5`: five HIGH CVEs closed
   (GHSA-9qh4-3jw8-366w, GHSA-gr2m-v5gq-v685, GHSA-j84w-jfhq-vhvj,
   GHSA-hq2x-r82h-9wj4, GHSA-qmv3-fv6v-rmhq), with companion `electron-builder`
-  `26.15.6` → `26.17.0` — see `docs/security-log.md`.
+  `26.15.6` → `26.17.0`.
 - `markdown-it` bumped from `14.3.0` to `14.3.2`: two quadratic-complexity DoS
   advisories closed (HIGH GHSA-r7fv-28h4-cvq7, MODERATE
   GHSA-253c-mchw-3w2r) on rules the reading view enables (`typographer`,
-  `linkify`) — see `docs/security-log.md`.
+  `linkify`).
 - `scripts/verify_provenance.py`: the sweep's failure report now groups collected
   failures by class (registry transport / registry metadata shape / subject-hash /
   sigstore verification), states the affected scope ("N of M parsed packages"), and
@@ -113,7 +116,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now lifts only the updater's gate; pnpm's gate stays, and a too-fresh package
   fails loudly (`ERR_PNPM_NO_MATURE_MATCHING_VERSION`) — genuine early exceptions
   remain maintainer-approved and logged. See `docs/github-actions-security.md`
-  (Control 7) and `docs/security-log.md` (2026-09-24).
+  (Control 7).
 - `scripts/verify_provenance.py`: the Sigstore check's compatibility carve-outs are
   now class-based, closing the residual fail-open windows left after the 2026-09-21
   fail-closed fix — the blanket exception handler still returned ok (a skip) for
@@ -198,7 +201,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   top of anyio) and GHSA-5p39-cfhj-2xmp / CVE-2026-64847 (process-pool workers
   block indefinitely on undrained stderr; not exercised by the sidecar).
   GHSA-3w57-8xmc-8v26 / CVE-2026-63349 affects `4.14.0` only and is excluded
-  defensively. See `docs/security-log.md`.
+  defensively.
 - `scripts/verify_provenance.py`: the lockfile parser could not match quoted scoped
   package names, so the SLSA-provenance gate silently verified only the unscoped
   subset — 0 of the lockfile's 156 scoped entries carrying a resolution were seen
@@ -239,44 +242,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pnpm` package-manager pin bumped from `11.0.6` to `12.4.2` (`packageManager`
   field in `package.json`), patching 18 advisories in the outgoing pin — 11 high,
   7 medium, 14 distinct CVEs; cooldown exception (published 3.64 days before the
-  bump, 9 hours short of the 4-day minimum release age) maintainer-approved — see
-  `docs/security-log.md`.
+  bump, 9 hours short of the 4-day minimum release age) maintainer-approved.
 - Release-cooldown policy (minimum release age for dependency updates) relaxed from
   10 days to 4 days across the age-gated updater (`scripts/deps_update.py`,
   `deps-update.yml`), the normative docs, and a newly configured native Dependabot
-  `cooldown: default-days: 4` — a deliberate control relaxation; historical
-  cooldown-exception records keep their original numbers, see
-  `docs/security-log.md`.
+  `cooldown: default-days: 4` — a deliberate control relaxation, recorded in
+  `docs/security-log.md` (2026-09-18, release-age window).
 - `devalue` bumped from `5.9.0` to `5.9.2` (`overrides:` entry in
   `pnpm-workspace.yaml`), patching GHSA-9rgm-9g3h-6x36 / CVE-2026-81176
   (quadratic-time DoS: `devalue.parse` fails to reject out-of-bounds indices;
   transitive via `@sveltejs/kit`/`svelte`, not reachable with untrusted data in
-  this adapter-static build) — see `docs/security-log.md`.
+  this adapter-static build).
 - `soupsieve` bumped from `2.8.4` to `2.9.2` (#109 via Dependabot, then floor
   raised in `backend/pyproject.toml`'s `constraint-dependencies`), patching
   GHSA-j934-xhv5-fg8f and GHSA-gjv8-xp57-g29c (quadratic-CPU DoS in the CSS
-  selector compiler, fixed in `2.9`) — see `docs/security-log.md`.
+  selector compiler, fixed in `2.9`).
 - `@xmldom/xmldom` bumped from `0.8.14`/`0.9.11` to `0.8.15`/`0.9.12` (two
   version-scoped `overrides:` entries in `pnpm-workspace.yaml`, kept separate
   rather than unified), patching 12 GHSAs published 2026-08-21
   (well-formedness/validation bypasses past `requireWellFormed`, plus
-  quadratic-time and ReDoS denial-of-service on untrusted XML/HTML input) — see
-  `docs/security-log.md`.
+  quadratic-time and ReDoS denial-of-service on untrusted XML/HTML input).
 - `postcss-selector-parser` pinned to `7.1.5` (new `overrides:` entry in
   `pnpm-workspace.yaml`), patching GHSA-w9m9-85wc-3x92 / CVE-2026-9358
-  (stack-overflow DoS via uncontrolled recursion in AST serialization) — see
-  `docs/security-log.md`.
+  (stack-overflow DoS via uncontrolled recursion in AST serialization).
 - `fast-uri` bumped from `3.1.5` to `3.1.7` (`overrides:` entry in
   `pnpm-workspace.yaml`, updated in place), patching six HIGH CVSS 7.5 advisories
   — GHSA-5jgf-p345-68v8 / CVE-2026-75931, GHSA-fph4-wmhf-6fwf / CVE-2026-75899,
   GHSA-f65p-4m7j-42xc / CVE-2026-75975, GHSA-jqff-g426-hqxp / CVE-2026-76172 (host
   confusion / SSRF, fixed at `3.1.6`) and GHSA-qw65-cvwx-89v3, GHSA-58mr-gqgx-xq4g
-  (authority injection / host confusion, fixed only at `3.1.7`) — see
-  `docs/security-log.md`.
+  (authority injection / host confusion, fixed only at `3.1.7`).
 - `js-yaml` bumped from `4.3.1` to `4.3.2` (`overrides:` entry in
   `pnpm-workspace.yaml`, updated in place), patching CVE-2026-84375 /
   GHSA-2883-xcg3-v3hh (quadratic-time DoS via empty-mapping merge keys in `!!omap`
-  resolution) — see `docs/security-log.md`.
+  resolution).
 
 ## [0.5.3] - 2026-08-19
 
@@ -293,13 +291,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Electron bumped from 42.1.0 to 42.5.1, patching GHSA-r4w5-6pfg-jxp5 / CVE-2026-70606 (cross-partition cached-response leak via a `ProtocolResponse` without an explicit session; not reachable — `protocol.handle()` `Response` objects only, no partitioned sessions) — see `docs/security-log.md`.
-- `scripts/deps_update.py`: GitHub Actions `::error::` prints now collapse embedded newlines from subprocess-derived text before printing, preventing log-line injection via multi-line stderr — see `docs/security-log.md`.
-- `js-yaml` bumped from 4.3.0 to 4.3.1 (`overrides:` in `pnpm-workspace.yaml`), patching GHSA-5p4m-2wfm-xmqj (quadratic-time DoS in `!!omap` resolution) — see `docs/security-log.md`.
-- `nanoid` pinned to 3.3.17 via a new `overrides:` entry in `pnpm-workspace.yaml`, patching CVE-2026-67213 / GHSA-2v37-7h3g-55p8 (infinite loop in `customAlphabet`/`customRandom` with `size: 0`) — see `docs/security-log.md`.
-- `@sveltejs/kit` bumped from 2.70.1 to 2.70.2 (#82, via Dependabot), patching CVE-2026-66062 / GHSA-29g2-3rmr-qm68 (ReDoS in `Accept`-header content negotiation) — see `docs/security-log.md`.
-- `nanoid` bumped from 3.3.17 to 3.3.18 (`overrides:` in `pnpm-workspace.yaml`), correcting the entry above: `3.3.17` was still inside GHSA-2v37-7h3g-55p8's vulnerable range — `3.3.18` is the first patched version — see `docs/security-log.md`.
-- `@xmldom/xmldom` bumped from `0.8.13`/`0.9.10` to `0.8.14`/`0.9.11` (two version-scoped `overrides:` entries in `pnpm-workspace.yaml`, kept separate rather than unified), patching GHSA-w2rr-34g9-rvrj, GHSA-4w3w-2rp5-g8jm and GHSA-g53g-w8rj-fmg7 (element/attribute-name validation bypasses and a `0.9.x`-only quadratic-time processing-instruction DoS) — see `docs/security-log.md`.
+- Electron bumped from 42.1.0 to 42.5.1, patching GHSA-r4w5-6pfg-jxp5 / CVE-2026-70606 (cross-partition cached-response leak via a `ProtocolResponse` without an explicit session; not reachable — `protocol.handle()` `Response` objects only, no partitioned sessions).
+- `scripts/deps_update.py`: GitHub Actions `::error::` prints now collapse embedded newlines from subprocess-derived text before printing, preventing log-line injection via multi-line stderr — see `docs/security-log.md` (2026-08-13, log-injection hardening).
+- `js-yaml` bumped from 4.3.0 to 4.3.1 (`overrides:` in `pnpm-workspace.yaml`), patching GHSA-5p4m-2wfm-xmqj (quadratic-time DoS in `!!omap` resolution).
+- `nanoid` pinned to 3.3.17 via a new `overrides:` entry in `pnpm-workspace.yaml`, patching CVE-2026-67213 / GHSA-2v37-7h3g-55p8 (infinite loop in `customAlphabet`/`customRandom` with `size: 0`).
+- `@sveltejs/kit` bumped from 2.70.1 to 2.70.2 (#82, via Dependabot), patching CVE-2026-66062 / GHSA-29g2-3rmr-qm68 (ReDoS in `Accept`-header content negotiation).
+- `nanoid` bumped from 3.3.17 to 3.3.18 (`overrides:` in `pnpm-workspace.yaml`), correcting the entry above: `3.3.17` was still inside GHSA-2v37-7h3g-55p8's vulnerable range — `3.3.18` is the first patched version.
+- `@xmldom/xmldom` bumped from `0.8.13`/`0.9.10` to `0.8.14`/`0.9.11` (two version-scoped `overrides:` entries in `pnpm-workspace.yaml`, kept separate rather than unified), patching GHSA-w2rr-34g9-rvrj, GHSA-4w3w-2rp5-g8jm and GHSA-g53g-w8rj-fmg7 (element/attribute-name validation bypasses and a `0.9.x`-only quadratic-time processing-instruction DoS).
 
 ### Fixed
 

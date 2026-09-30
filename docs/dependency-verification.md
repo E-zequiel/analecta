@@ -85,7 +85,7 @@ it does (see `_ensure_exact_specifier()`). When bumping a pin by hand,
 verify the resulting `package.json` line yourself — don't trust
 `--save-exact` alone.
 
-CVE-driven patches of *transitive* dependencies use a different mechanism
+security-driven patches of *transitive* dependencies use a different mechanism
 (`overrides:` in `pnpm-workspace.yaml`) but the same
 exact-pin-plus-hash-check principle. See the note on
 [two-mechanism split](#two-mechanism-split) below before editing overrides.
@@ -157,7 +157,7 @@ when the consumer's code path is itself covered by the frontend build,
 `overrides:`-forced transitive dependency whose real consumer only runs in a
 code path this project's own build never exercises (e.g. `plist`'s macOS
 `.pkg`/code-signing code, dead weight in a `.deb`/`.rpm`/`.AppImage`-only
-build — see `docs/security-log.md`'s xmldom entries), and a devDependency
+build), and a devDependency
 invoked only by a manual/diagnostic script (`defuddle`, `socket` — the case
 the `deps_update.py` note above already names). "Resolved-and-ignored is not
 the same as taking effect."
@@ -177,7 +177,7 @@ const pkg = require(require('path').resolve('node_modules/.pnpm/<pkg>@<version>/
 
 Two rules this step is easy to get wrong:
 
-- **Run it against every touched branch, not just one.** A CVE-driven
+- **Run it against every touched branch, not just one.** A security-driven
   override often touches several version-scoped branches at once (see
   [Scoped overrides](#scoped-overrides) below) — each is a separately
   resolved package instance and needs its own smoke test.
@@ -219,8 +219,7 @@ A sandbox-only test of the first branch (same package versions, scratch
 directory) had already answered the planning question — whether `0.8.15`
 still tolerates `plist@3.1.0`'s missing `mimeType` argument — but got
 mistaken for having verified the real change too, and the `0.9.x` branches
-had no smoke test at all until a later audit caught the gap. See
-`docs/security-log.md`'s 2026-08-28 entry for the full advisory list.
+had no smoke test at all until a later audit caught the gap.
 
 ## Worked example (npm / pnpm)
 
@@ -291,7 +290,7 @@ installed packages against `uv.lock`, the same way pnpm verifies against
 
 ### 1. Force the version with a constraint
 
-CVE-driven patches of *transitive* Python dependencies use a version floor in
+security-driven patches of *transitive* Python dependencies use a version floor in
 `backend/pyproject.toml`:
 
 ```toml
@@ -350,7 +349,7 @@ top of a diff you already have, while breaking `uv lock --upgrade-package`
 `pyproject.toml` edit before every upgrade).
 
 `constraint-dependencies` in `[tool.uv]` use floors (`>=`) regardless — they
-express CVE-fix minima for transitive deps and must remain flexible so uv can
+express security-fix minima for transitive deps and must remain flexible so uv can
 satisfy cross-package constraints.
 
 ## Worked example (Python / uv)
@@ -462,8 +461,8 @@ version neither expects:
 ```yaml
 # pnpm-workspace.yaml
 overrides:
-  '@electron/get>undici': '7.28.0'   # 7.x branch: CVE-2026-9678, CVE-2026-9697
-  'node-gyp>undici': '6.27.0'        # 6.x branch: GHSA-g8m3/vxpw/p88m/35p6
+  '@electron/get>undici': '7.28.0'   # 7.x branch
+  'node-gyp>undici': '6.27.0'        # 6.x branch
 ```
 
 A single global `undici: '7.28.0'` override would force node-gyp's `^6.x`
@@ -473,38 +472,27 @@ time. Document the two entries separately so a future reviewer doesn't
 
 ### Comment convention for `overrides:`
 
-`docs/security-log.md` → *Resolved CVEs* is the source of truth for **why**
-an override exists: advisory IDs, CVSS, reachability analysis, the consumer
-smoke test from step 5, and any cooldown exception. Its sections are dated and
-append-only. **`pnpm-workspace.yaml` does not restate any of it.** The file had
-accumulated a second copy of that narrative, re-appended in place on every bump
-— `js-yaml` reached three stacked dated notes. That is a chronological log
-living in a config file: it drifts from the doc as soon as one side is
-corrected and the other isn't.
+**Each override and floor carries its security reason inline, in the
+config, as a one-word or short-phrase comment** (`# Path traversal.`,
+`# DoS.`) — no advisory ids, CVSS scores, dates, or narrative anywhere.
+No external table or ledger exists: the config is the sole record, and
+the reason is updated or removed together with the pin it annotates — a
+bumped or dropped pin takes its comment with it.
 
-Each entry carries one pointer line naming the dated section:
+The only comments allowed beyond the reason are the **invariants** —
+constraints that editing this file alone, without reading anything else,
+could silently undo. The previous section's "don't simplify them into
+one" is exactly such an invariant, and so is its inverse. Three apply
+today: the per-major `brace-expansion` split and the two-branch
+`@xmldom/xmldom` split, neither of which may be collapsed; and the
+unified `undici` entry, which may not be re-split, despite `node-gyp`
+declaring `^6.25.0`. Keep each to a line or two, stating the constraint
+and what breaks if it is violated.
 
-```yaml
-# CVE pin — see docs/security-log.md (2026-09-11).
-js-yaml: '4.3.2'
-```
-
-Add prose beyond that pointer only for **an invariant that editing this file
-alone, without reading the docs, could silently undo**. The previous section's
-"don't simplify them into one" is exactly such an invariant, and so is its
-inverse. Three apply today: the per-major `brace-expansion` split and the
-two-branch `@xmldom/xmldom` split, neither of which may be collapsed; and the
-unified `undici` entry, which may not be re-split, despite `node-gyp` declaring
-`^6.25.0`. Keep each to a line or two, stating the constraint and what breaks
-if it is violated — not the evidence, which belongs in the doc.
-
-When a pin is bumped, update the date in its pointer and record the new
-material in `docs/security-log.md`. Don't append a second note here.
-
-The same pointer convention applies to `backend/pyproject.toml`'s
-`[tool.uv] constraint-dependencies` floors: each security comment is one line
-naming the advisory IDs and pointing at the dated entry in
-`docs/security-log.md`, carrying only the "floor, not a pin" invariant locally.
+The same convention applies to `backend/pyproject.toml`'s `[tool.uv]
+constraint-dependencies` floors: one line — "Floor, not a pin" plus the
+short security reason — carrying the "floor, not a pin" invariant and
+the reason locally.
 
 This convention does not extend to `allowBuilds`, higher up in the same file.
 That block's comment documents a hazard you can only hit while editing it —
