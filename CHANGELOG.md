@@ -59,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency updates: 15 packages (2026-09-24).
 
 ### Security
+- `brace-expansion` override bumped per major — `1.1.18` → `1.1.21`,
+  `2.1.4` → `2.1.7`, `5.0.9` → `5.0.12` — closing the quadratic-time DoS in
+  the `{a},b}` rewrite (GHSA-q2hr-2g5m-vwhr) on all three held lines.
 - `undici` override bumped from `7.29.0` to `7.30.0`, closing nine
   transitive Socket alerts on the pinned version; the pin's one-line reason
   lives inline in `pnpm-workspace.yaml`.
