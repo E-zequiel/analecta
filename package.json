@@ -9,15 +9,15 @@
     "dist": "pnpm --filter frontend build && python scripts/build_sidecar.py && pnpm --filter analecta-electron run dist"
   },
   "devDependencies": {
-    "@types/node": "26.6.2",
+    "@types/node": "26.6.3",
     "defuddle": "0.19.4",
     "eslint": "10.11.0",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-svelte": "3.23.0",
     "prettier": "3.8.3",
     "prettier-plugin-svelte": "4.1.1",
-    "socket": "1.1.176",
-    "typescript-eslint": "8.60.0"
+    "socket": "1.2.0",
+    "typescript-eslint": "8.70.1"
   },
   "packageManager": "pnpm@12.5.1+sha512.e3f305bc784a2bc89f5ad3b6138889470fae8d2af5f36b61216ec91c2c3d64089775f9de38aac331044ea40f245cb0d5666392dfdf65824e1907ef6a2c62de5f"
 }
