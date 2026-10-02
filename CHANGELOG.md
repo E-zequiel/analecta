@@ -3,338 +3,53 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project adheres to
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
 ## [0.5.4] - 2026-09-29
 
-### Changed
-
-- `pnpm` toolchain bumped from `12.4.2` to `12.5.1` (`packageManager` pin,
-  `.mise.toml`, and the lockfile's env document regenerated under the new
-  version). Registry integrity verified per `docs/dependency-verification.md`;
-  no cooldown exception needed (`12.5.1` released 2026-09-18, ~5.9 days before
-  this bump). Part of the same branch as the release-age enforcement change
-  below.
-- Dependency update #115's non-cooldown-compliant transitive resolutions
-  downgraded to the newest versions satisfying the new `minimumReleaseAge:
-  5760` policy: `rolldown` 1.2.9 (and its 16 `@rolldown/binding-*` platform
-  binaries), `@oxc-project/types` 0.150.0, `esrap` 2.3.7, and `svelte` back to
-  5.57.0 (5.57.1's `esrap ^2.3.6` requirement is unavailable under the
-  cooldown until 2026-09-26; the next updater run re-bumps). Local `pnpm
-  install --frozen-lockfile` now passes.
-- `socket` (Socket.dev CLI, the local dependency-scan tooling behind
-  `scripts/socket-audit.sh`) bumped from `1.1.99` to `1.1.176`, staying
-  current with the audit tool; no advisories against either version (verified
-  per-version against OSV). The CLI's own declared
-  `@socketsecurity/socket-patch` stays at `2.0.0` (the 4.0.0 patch line is a
-  feature release, not a fix — forcing it would require an `overrides:` entry
-  against the CLI's declared dependency, rejected); the lockfile's
-  peer-suffix key reshuffle is mechanical, with socket's integrity matching
-  the registry-recorded digest. No cooldown exception needed: `1.1.176`
-  released 2026-09-17, 4.02 days before this bump (2026-09-21).
-- Dependency updates: 10 packages (2026-08-20).
-- `shiki` and `@shikijs/markdown-it` bumped from 4.2.0 to 4.4.3 (2026-08-21),
-  unblocking the pair excluded from the 2026-08-20 automated update (#92)
-  after `@shikijs/themes`/`@shikijs/langs` moved to 4.4.3 while these two
-  stayed pinned. `markdown-it` stays at 14.3.0: the published
-  `@shikijs/markdown-it@4.4.3` hard-pins `markdown-it: ^14.3.0` as a direct
-  (non-peer) dependency, incompatible with `markdown-it@15.0.0` — not
-  fixable locally, needs an upstream `@shikijs/markdown-it` release.
-- `jdx/mise-action` bumped from v4.2.4 to v4.2.5, across `ci.yml`,
-  `deps-update.yml`, `release.yml`, and `socket-manual.yml` (#93).
-- Dependency updates: 7 packages (2026-08-27).
-- `jdx/mise-action` bumped from v4.2.5 to v4.3.0, across `ci.yml`,
-  `deps-update.yml`, `release.yml`, and `socket-manual.yml` (#100).
-- Dependency updates: 7 packages (2026-09-03).
-- Dependency updates: 3 packages (2026-09-10).
-- `backend/pyproject.toml`: `build-system.requires` bumped from
-  `uv_build>=0.11.8,<0.12.0` to `>=0.12.13,<0.13.0`, aligning the pinned
-  build backend with the `uv 0.12.13` toolchain installed via
-  `mise upgrade --bump` (2026-09-11) — the prior upper bound excluded the
-  now-current uv, which `uv build` was silently tolerating via a
-  compatibility fallback rather than failing.
-- Dependency updates: 2 packages (2026-09-17).
-- Dependency updates: 15 packages (2026-09-24).
-
-### Security
-- `urllib3` floored to `>=2.8.0` (`uv` constraint), closing three advisories:
-  HTTPS-proxy TLS configuration ignored or overridden (HIGH,
-  GHSA-8988-9cw3-xx77), unbounded chunk-size line buffering in streaming
-  (HIGH, GHSA-vxq7-64xx-v4gw), and an infinite loop in chunked Deflate
-  streaming (MODERATE, GHSA-gh4c-6fx4-qh6g).
-- `fast-uri` override bumped from `3.1.7` to `3.1.8`, closing the host
-  case-normalization bypass via percent-encoded octets
-  (GHSA-hrr3-gc8f-f4qj).
-- `brace-expansion` override bumped per major — `1.1.18` → `1.1.21`,
-  `2.1.4` → `2.1.7`, `5.0.9` → `5.0.12` — closing the quadratic-time DoS in
-  the `{a},b}` rewrite (GHSA-q2hr-2g5m-vwhr) on all three held lines.
-- `undici` override bumped from `7.29.0` to `7.30.0`, closing nine
-  transitive Socket alerts on the pinned version; the pin's one-line reason
-  lives inline in `pnpm-workspace.yaml`.
-- `electron` bumped from `42.5.1` to `44.4.5`: five HIGH CVEs closed
-  (GHSA-9qh4-3jw8-366w, GHSA-gr2m-v5gq-v685, GHSA-j84w-jfhq-vhvj,
-  GHSA-hq2x-r82h-9wj4, GHSA-qmv3-fv6v-rmhq), with companion `electron-builder`
-  `26.15.6` → `26.17.0`.
-- `markdown-it` bumped from `14.3.0` to `14.3.2`: two quadratic-complexity DoS
-  advisories closed (HIGH GHSA-r7fv-28h4-cvq7, MODERATE
-  GHSA-253c-mchw-3w2r) on rules the reading view enables (`typographer`,
-  `linkify`).
-- `scripts/verify_provenance.py`: the sweep's failure report now groups collected
-  failures by class (registry transport / registry metadata shape / subject-hash /
-  sigstore verification), states the affected scope ("N of M parsed packages"), and
-  labels the registry-shape class with its hostile interpretation (a registry-level
-  actor reshaping the served document — a supply-chain signal, not an
-  availability incident); classification is decided by the exception's class at the
-  raise site (new RegistryTransportError/RegistryShapeError RuntimeError
-  subclasses), never by message wording. Exit codes and the aggregate zero-verified
-  guard are unchanged. see `docs/security-log.md` (2026-09-25).
-- `scripts/verify_provenance.py`: advisory-sweep hardening of the gate's own
-  verification logic — an inline non-package mapping carrying `integrity:`
-  material (`extra: {resolution: {integrity: …}}` after an entry) was invisible
-  to every guard and either verified by nobody or silently absorbed as the
-  preceding entry's parsed integrity when that entry had no resolution of its own;
-  the single-pass scan now classifies material by line shape and `parse_lockfile`
-  refuses naming the orphan (comment lines and prose without hash-shaped values
-  stay quiet). The unsupported-integrity-algorithm diagnostic now names the
-  algorithm on every failure path (previously "payload parse error" and "no sha512
-  subject found" masked it behind the attestation). The bundle-format compatibility
-  skip's message names the deciding classifier (genuine class match vs
-  exception-class-name fallback), making library-upgrade drift visible in CI logs.
-  see `docs/security-log.md` (2026-09-25).
-- `scripts/verify_provenance.py`: a resolution-carrying block behind a key that is
-  no package entry at all (e.g. a 2-space `ledger:` key under `packages:`) was read
-  and skipped silently — the integrity behind it is verification material matched
-  against no attestation, reported as no gap, with the run exiting 0 (the ownership
-  walk counted the line as owned, since any key line starts a block, and every
-  other guard saw nothing). A new unaccounted-resolution-block guard in
-  `parse_lockfile` now fails the parse naming the offending keys; empty-scalar keys
-  (`''`, degenerate malformed input) and the `@zkochan/` exclusions stay deliberate
-  silent skips. In the same pass, the conflicting-duplicate guard was folded into
-  the single lockfile scan (it hand-mirrored the parser's predicate in a second
-  pass — identical by construction, but two passes could disagree about coverage
-  after any future edit): the scan now returns one `LockfileScan` record and the
-  zero-parse guard derives `reached` from that same pass. see
-  `docs/security-log.md` (2026-09-25).
-- `pnpm-workspace.yaml`: new `minimumReleaseAge: 5760` setting — the 4-day
-  release cooldown is now enforced by pnpm itself at resolution and frozen-install
-  verification, for all dependencies including transitive ones, in CI and in every
-  clone. Closes the gap where `deps-update.yml`'s direct-deps-only filter could
-  commit a lockfile whose transitive tree violated the maintainer's local-only
-  policy — PR #115 did exactly that (transitives 1–3 days old at merge; CI
-  green, local install failing). Bypass semantics: `workflow_dispatch cooldown=0`
-  now lifts only the updater's gate; pnpm's gate stays, and a too-fresh package
-  fails loudly (`ERR_PNPM_NO_MATURE_MATCHING_VERSION`) — genuine early exceptions
-  remain maintainer-approved and logged. See `docs/github-actions-security.md`
-  (Control 7).
-- `scripts/verify_provenance.py`: the Sigstore check's compatibility carve-outs are
-  now class-based, closing the residual fail-open windows left after the 2026-09-21
-  fail-closed fix — the blanket exception handler still returned ok (a skip) for
-  any unclassifiable exception whose message merely contained "validation error" or
-  "failed to load bundle", and the `VerificationError` handler skipped on any
-  message containing "only supported"/"not supported" instead of the library's one
-  fixed compatibility sentence. The bundle-format skip is now decided by the
-  exception class (`sigstore.models.InvalidBundle`, the genuine 4.2.0 load-failure
-  class; a class-NAME fallback exists only for environments where the genuine class
-  is unimportable, and it cannot fire when the real class is present — an
-  unrelated class whose name merely resembles `InvalidBundle` fails closed), and
-  the timestamp-compat skip fires only on the library's exact fixed message
-  ("Integrated time only supported for dsse/hashedrekord 0.0.1 types"), never on
-  loose substring resemblance. Message text is never matched for classification;
-  the Sigstore check also gained its first full classification matrix (success,
-  `VerificationError` fatal, `NetworkError` skip, unimportable, both compatibility
-  skips, unclassifiable fail-closed) — it previously had one test. see
-  `docs/security-log.md`.
-- `scripts/verify_provenance.py`: the sweep's summary is now guarded at the
-  aggregate level — a run that parsed packages but verified zero of them exits 1
-  with an explicit 'nothing was verified' failure naming the likely cause (every
-  answer read as the no-attestation gap because the metadata source was stripped or
-  censored), instead of reporting success over a run that verified nothing. This
-  closes the remaining metadata-source censorship bypass left after the 2026-09-21
-  per-package transport fix: well-formed metadata with `dist.attestations` stripped
-  for every package still reads as the legitimate ~60% gap per-package, so only the
-  aggregate can catch a full strip. Maintainer-approved semantics: fail only at
-  exactly zero verified — partial censorship below 100% remains a recorded,
-  deliberate limit (fully discriminating requires an out-of-band anchor, not
-  taken). A lockfile whose every entry is legitimately excluded (e.g.
-  all-`@zkochan`) still exits 0. see `docs/security-log.md`.
-- `scripts/verify_provenance.py`: two lockfile entries resolving to the same
-  `(name, version)` identity — byte-identical duplicate keys or across quoting
-  variants (`'pkg@1.0.0':` / `pkg@1.0.0:`) — silently overwrote each other in the
-  parser's verified map (last one wins), dropping one attested hash from
-  verification while the gate reported success. A new conflicting-duplicate guard
-  in `parse_lockfile` now fails the parse naming the colliding identity and both
-  integrity values; identical values remain a quiet dedup. The identity itself is
-  unchanged (peer suffixes stay excluded by design — suffixed keys carrying
-  integrity already fail loudly as parser gaps). see `docs/security-log.md`.
-- `scripts/verify_provenance.py`: every nested layer of the registry answer is now
-  validated at runtime — the previous `cast()` calls validated nothing, so a
-  well-formed answer with a wrong nested shape (`dist: null`, `dist.attestations:
-  "no"`, a truthy non-object bundle document, a non-list `attestations`, a
-  non-object entry, a non-string `predicateType`, a matched attestation whose
-  `bundle` is `None`) crashed the sweep with an unclassified
-  `AttributeError`/`TypeError` that escaped the sweep's per-package collection. All
-  of these are now classified failures naming the package and the source. Once the
-  metadata advertises `dist.attestations.url`, a bundle document carrying no
-  SLSA-provenance attestation also fails loudly instead of resolving to the
-  legitimate no-attestation skip — a registry-level MITM can no longer turn a
-  declared attestation into a silent 'no provenance yet' pass by serving a stripped
-  or reshaped document (the legitimate skip is reserved for well-formed metadata
-  without a usable url). see `docs/security-log.md`.
-- `scripts/verify_provenance.py`: advisory round on the gate's new logic — the
-  sweep no longer aborts at the first registry transport failure (collected and
-  reported at the end, complete picture), a column-0 resolution line can no longer
-  be owned silently (it stole a block's ownership and mis-named the drifted line,
-  or parsed with the drifted hash when it was the block's only resolution), a
-  well-formed-but-unusable registry answer is "malformed package metadata" instead
-  of "could not reach" (truthy non-object bodies previously crashed the sweep), and
-  the `verify_sigstore` docstring describes the real classification. Transport
-  retries remain deliberately absent (CI layer's job) — see
-  `docs/security-log.md`.
-- `scripts/verify_provenance.py`: four fail-open/false-positive holes in the gate's
-  own verification logic closed — a partially drifted lockfile could shrink the
-  verified set silently (a drifted entry absorbed into a `snapshots:` block —
-  peerless snapshots keys are byte-identical to `packages:` keys — could even
-  overwrite the legitimate entry's integrity and misattribute the hash comparison);
-  an unclassifiable Sigstore-library exception was reported as verified/skipped-ok
-  (now fail-closed); a failed registry request was indistinguishable from "package
-  has no provenance" (a sweep whose every request failed could exit 0 having
-  verified nothing — now loud, naming the package and source); and a prose line
-  mentioning `resolution:` failed the parse on a valid lockfile (now only
-  package-shaped inline entries are reported). see `docs/security-log.md`.
-- `anyio` bumped from `4.13.0` to `4.15.1` (floor `anyio>=4.15.1` in
-  `backend/pyproject.toml`'s `constraint-dependencies`), patching
-  GHSA-82r6-8w77-94w6 / CVE-2026-63374 (HIGH: `TLSStream.wrap()` resolves
-  internationalized hostnames with IDNA 2003 instead of IDNA 2008, so a certificate
-  issued for one mapping can validate on a connection to the other — live on the
-  extraction path, which fetches arbitrary user URLs over `httpx2`/`httpcore2` on
-  top of anyio) and GHSA-5p39-cfhj-2xmp / CVE-2026-64847 (process-pool workers
-  block indefinitely on undrained stderr; not exercised by the sidecar).
-  GHSA-3w57-8xmc-8v26 / CVE-2026-63349 affects `4.14.0` only and is excluded
-  defensively.
-- `scripts/verify_provenance.py`: the lockfile parser could not match quoted scoped
-  package names, so the SLSA-provenance gate silently verified only the unscoped
-  subset — 0 of the lockfile's 156 scoped entries carrying a resolution were seen
-  (the file holds 277 scoped keys; the rest are `snapshots:`-style entries without
-  one), while the job reported success. Scoped entries now parse (584 packages
-  seen, was 428), and a new coverage guard fails the job loudly on any
-  package-shaped key carrying a resolution that the parser did not match, so a
-  future lockfile-format drift cannot hide again.
-- `scripts/verify_provenance.py`: a follow-up hardening pass replaced the guard's
-  fixed 300-character lookahead with a per-entry block scope — matching each key
-  against the body of its own entry rather than a fixed distance past it —
-  because the window both crossed into the following entry (reporting an unresolved
-  package-shaped key as a parser gap, failing CI on a valid lockfile) and missed a
-  resolution block longer than the window; the parser and the guard now share one
-  pass, so they cannot disagree about what was covered. The script also gained its
-  first tests (`backend/tests/test_verify_provenance.py`, loaded by path since the
-  hyphenated filename cannot be imported by name), covering scoped and unscoped
-  entries, both lockfile documents, entries without a resolution, the `@zkochan`
-  exclusion, and both window regressions. `docs/security-log.md` records the
-  change.
-- `scripts/verify_provenance.py`: the coverage guard no longer has a silent hole. A
-  key line it cannot tokenize cannot vanish from the parsed and the reported set at
-  once any more — colons are now allowed inside a quoted key scalar, and only
-  there (an unquoted scalar still excludes them, or a prose line ending in `:`
-  would split an entry's block and hide its resolution) — a package-shaped block
-  whose resolution carries no `integrity:` line is reported instead of skipped, and
-  both of those are backed by a scan that is independent of the block splitter, so
-  a splitter regression cannot hide behind the primitive whose completeness is in
-  question. A lockfile whose shape drifts past the parser entirely (four-space
-  indentation, a tab, a renamed top-level key) now fails loudly instead of
-  reporting success over zero packages. A non-`sha512-` integrity no longer skips
-  the entry silently either: it parses and is then rejected downstream with a
-  diagnostic naming the unsupported algorithm. The real-lockfile test no longer
-  asserts existence only, and the `@zkochan` exclusion is documented rather than
-  mysterious — pnpm's own vendored packages are published without provenance
-  attestations, verified against the registry. `docs/security-log.md` records the
-  change.
-- `pnpm` package-manager pin bumped from `11.0.6` to `12.4.2` (`packageManager`
-  field in `package.json`), patching 18 advisories in the outgoing pin — 11 high,
-  7 medium, 14 distinct CVEs; cooldown exception (published 3.64 days before the
-  bump, 9 hours short of the 4-day minimum release age) maintainer-approved.
-- Release-cooldown policy (minimum release age for dependency updates) relaxed from
-  10 days to 4 days across the age-gated updater (`scripts/deps_update.py`,
-  `deps-update.yml`), the normative docs, and a newly configured native Dependabot
-  `cooldown: default-days: 4` — a deliberate control relaxation, recorded in
-  `docs/security-log.md` (2026-09-18, release-age window).
-- `devalue` bumped from `5.9.0` to `5.9.2` (`overrides:` entry in
-  `pnpm-workspace.yaml`), patching GHSA-9rgm-9g3h-6x36 / CVE-2026-81176
-  (quadratic-time DoS: `devalue.parse` fails to reject out-of-bounds indices;
-  transitive via `@sveltejs/kit`/`svelte`, not reachable with untrusted data in
-  this adapter-static build).
-- `soupsieve` bumped from `2.8.4` to `2.9.2` (#109 via Dependabot, then floor
-  raised in `backend/pyproject.toml`'s `constraint-dependencies`), patching
-  GHSA-j934-xhv5-fg8f and GHSA-gjv8-xp57-g29c (quadratic-CPU DoS in the CSS
-  selector compiler, fixed in `2.9`).
-- `@xmldom/xmldom` bumped from `0.8.14`/`0.9.11` to `0.8.15`/`0.9.12` (two
-  version-scoped `overrides:` entries in `pnpm-workspace.yaml`, kept separate
-  rather than unified), patching 12 GHSAs published 2026-08-21
-  (well-formedness/validation bypasses past `requireWellFormed`, plus
-  quadratic-time and ReDoS denial-of-service on untrusted XML/HTML input).
-- `postcss-selector-parser` pinned to `7.1.5` (new `overrides:` entry in
-  `pnpm-workspace.yaml`), patching GHSA-w9m9-85wc-3x92 / CVE-2026-9358
-  (stack-overflow DoS via uncontrolled recursion in AST serialization).
-- `fast-uri` bumped from `3.1.5` to `3.1.7` (`overrides:` entry in
-  `pnpm-workspace.yaml`, updated in place), patching six HIGH CVSS 7.5 advisories
-  — GHSA-5jgf-p345-68v8 / CVE-2026-75931, GHSA-fph4-wmhf-6fwf / CVE-2026-75899,
-  GHSA-f65p-4m7j-42xc / CVE-2026-75975, GHSA-jqff-g426-hqxp / CVE-2026-76172 (host
-  confusion / SSRF, fixed at `3.1.6`) and GHSA-qw65-cvwx-89v3, GHSA-58mr-gqgx-xq4g
-  (authority injection / host confusion, fixed only at `3.1.7`).
-- `js-yaml` bumped from `4.3.1` to `4.3.2` (`overrides:` entry in
-  `pnpm-workspace.yaml`, updated in place), patching CVE-2026-84375 /
-  GHSA-2883-xcg3-v3hh (quadratic-time DoS via empty-mapping merge keys in `!!omap`
-  resolution).
+(No user-visible changes — dependency maintenance and internal tooling only.)
 
 ## [0.5.3] - 2026-08-19
 
 ### Fixed
 
-- `backend/src/analecta/extraction/article.py`: readability-lxml's `remove_unlikely_candidates()` matches an element's `class`/`id` string against a boilerplate-pattern regex via plain substring search, not word-bounded — an auto-generated TOC-anchor heading `id` (e.g. `heading-part-4-the-extraction-step`) containing `extra` (from "extraction") was enough to get the whole heading dropped as boilerplate before scoring ever ran, independent of the class-based heading checks `_strip_heading_classes()` already covered. Heading `id` is never consumed downstream (Markdown headings carry no id), so `_strip_heading_classes()` now drops it unconditionally after its own permalink-anchor-unwrap logic is done reading it.
-- `backend/src/analecta/extraction/article.py`: readability-lxml's `score_node()` gives every `<ul>`/`<ol>`/`<li>` a flat `-3` base content score. A CMS that wraps each list item's own text in a `<p>` (`<li><p>text</p></li>`, or `<li><p>label</p><ul>nested</ul></li>` for a labeled sub-list) makes that `<p>` the parent/grandparent of a `score_paragraphs()` candidate, so the enclosing `<ul>`/`<ol>` only survives if enough accumulated paragraph score clears the `-3` floor. A short or sparse list — few items, or items that are themselves just a one-line label over a nested sub-list (the `if __name__ == "__main__":` guard's "run directly" / "import as a module" breakdown is exactly this shape) — rarely does, and `sanitize()`'s `weight + content_score < 0` check then silently dropped the *entire* list, at any nesting depth, even when the content was substantial and clearly not boilerplate. New `_rescue_list_item_paragraphs()` unwraps each `<li>`'s own `<p>` wrapper before readability runs, at every list depth — this removes the `<li>` from `score_paragraphs()`'s candidacy sweep entirely (a `<p>`'s score only ever propagates to its parent and grandparent, never further, so a list's own items never usefully contributed to its *parent's* candidacy either way) while leaving the `<ul>`/`<ol>`/`<li>` structure itself untouched, so markdownify still renders proper indented (sub-)bullets.
-
-### Changed
-
-- Dependency updates: `jdx/mise-action` bumped from v4.2.0 to v4.2.4 and `actions/attest-build-provenance` from v4.1.1 to v4.2.2, across `ci.yml`, `deps-update.yml`, `release.yml`, and `socket-manual.yml` (#86).
+- `backend/src/analecta/extraction/article.py`: readability-lxml's
+  `remove_unlikely_candidates()` matches an element's `class`/`id` string
+  against a boilerplate-pattern regex via plain substring search, not
+  word-bounded — an auto-generated TOC-anchor heading `id` (e.g.
+  `heading-part-4-the-extraction-step`) containing `extra` (from
+  "extraction") was enough to get the whole heading dropped as boilerplate
+  before scoring ever ran, independent of the class-based heading checks
+  `_strip_heading_classes()` already covered. Heading `id` is never
+  consumed downstream (Markdown headings carry no id), so
+  `_strip_heading_classes()` now drops it unconditionally after its own
+  permalink-anchor-unwrap logic is done reading it.
+- `backend/src/analecta/extraction/article.py`: readability-lxml's
+  `score_node()` gives every `<ul>`/`<ol>`/`<li>` a flat `-3` base content
+  score. A CMS that wraps each list item's own text in a `<p>`
+  (`<li><p>text</p></li>`, or `<li><p>label</p><ul>nested</ul></li>` for a
+  labeled sub-list) makes that `<p>` the parent/grandparent of a
+  `score_paragraphs()` candidate, so the enclosing `<ul>`/`<ol>` only
+  survives if enough accumulated paragraph score clears the `-3` floor. A
+  short or sparse list — few items, or items that are themselves just a
+  one-line label over a nested sub-list — rarely does, and `sanitize()`'s
+  `weight + content_score < 0` check then silently dropped the *entire*
+  list, at any nesting depth, even when the content was substantial and
+  clearly not boilerplate. New `_rescue_list_item_paragraphs()` unwraps
+  each `<li>`'s own `<p>` wrapper before readability runs, at every list
+  depth — this removes the `<li>` from `score_paragraphs()`'s candidacy
+  sweep entirely (a `<p>`'s score only ever propagates to its parent and
+  grandparent, never further, so a list's own items never usefully
+  contributed to its *parent's* candidacy either way) while leaving the
+  `<ul>`/`<ol>`/`<li>` structure itself untouched, so markdownify still
+  renders proper indented (sub-)bullets.
 
 ## [0.5.2] - 2026-08-13
 
-### Security
-
-- Electron bumped from 42.1.0 to 42.5.1, patching GHSA-r4w5-6pfg-jxp5 / CVE-2026-70606 (cross-partition cached-response leak via a `ProtocolResponse` without an explicit session; not reachable — `protocol.handle()` `Response` objects only, no partitioned sessions).
-- `scripts/deps_update.py`: GitHub Actions `::error::` prints now collapse embedded newlines from subprocess-derived text before printing, preventing log-line injection via multi-line stderr — see `docs/security-log.md` (2026-08-13, log-injection hardening).
-- `js-yaml` bumped from 4.3.0 to 4.3.1 (`overrides:` in `pnpm-workspace.yaml`), patching GHSA-5p4m-2wfm-xmqj (quadratic-time DoS in `!!omap` resolution).
-- `nanoid` pinned to 3.3.17 via a new `overrides:` entry in `pnpm-workspace.yaml`, patching CVE-2026-67213 / GHSA-2v37-7h3g-55p8 (infinite loop in `customAlphabet`/`customRandom` with `size: 0`).
-- `@sveltejs/kit` bumped from 2.70.1 to 2.70.2 (#82, via Dependabot), patching CVE-2026-66062 / GHSA-29g2-3rmr-qm68 (ReDoS in `Accept`-header content negotiation).
-- `nanoid` bumped from 3.3.17 to 3.3.18 (`overrides:` in `pnpm-workspace.yaml`), correcting the entry above: `3.3.17` was still inside GHSA-2v37-7h3g-55p8's vulnerable range — `3.3.18` is the first patched version.
-- `@xmldom/xmldom` bumped from `0.8.13`/`0.9.10` to `0.8.14`/`0.9.11` (two version-scoped `overrides:` entries in `pnpm-workspace.yaml`, kept separate rather than unified), patching GHSA-w2rr-34g9-rvrj, GHSA-4w3w-2rp5-g8jm and GHSA-g53g-w8rj-fmg7 (element/attribute-name validation bypasses and a `0.9.x`-only quadratic-time processing-instruction DoS).
-
-### Fixed
-
-- `scripts/deps_update.py`: an unhandled exception during a dependency update run could leave `uv.lock`/`pnpm-lock.yaml`/a workspace `package.json` carrying an unverified, unreported mutation on disk — 3 of the run's 4 crash-recovery paths restored the report (`_up=[]`, an `::error::`) but not the file, and `deps-update.yml`'s CI job commits any diff it finds in those files unconditionally. Every crash path now shares one restore-then-record helper, closing the gap.
-- `scripts/deps_update.py`: the crash-recovery restore in `main()` only took effect when `--verify` was passed — the pre-run snapshot was only captured `if verify`, so a crash during a `--verify`-less run (the documented local/manual invocation) still left the same unreported mutation on disk. Snapshot capture is now unconditional; `--verify` continues to gate only whether `check.sh` bisection runs. A crash on the Node side now also always resyncs `node_modules` after restoring the manifests, including at a previously-untouched crash site — a manifest restore without it left `node_modules` reflecting packages the just-restored manifest no longer names, a mismatch invisible to `git status` since `node_modules` is gitignored.
-- `scripts/deps_update.py`: `update_node`'s `candidates` counter incremented from `pnpm outdated`'s report, before the per-package npm registry fetch — unlike `update_python`, which only counts a candidate after that fetch succeeds. A Node workspace mixing one package's total fetch failure with another's missing release-date timestamp could clear both escalation checks at once and report zero errors, despite every candidate in that workspace going unevaluated for the cooldown gate. Both ecosystems now count identically: `fetch_ok == 0` implies `candidates == 0` in both.
-- `scripts/deps_update.py`: both Node-side crash-recovery call sites in `main()` called `_resync_node_modules()` directly after `_guard()` returned, unguarded — an exception there (e.g. `pnpm` missing from `PATH`, undecodable subprocess output) escaped `main()` entirely uncaught, discarding the PR body and every other workspace's already-applied updates before anything was ever written. `_guard()` now takes an optional `on_restore` hook, invoked after the snapshot restore and the crash message are recorded, itself wrapped in a try/except — a failing hook is now recorded like any other crash, not reproduced uncaught one level up.
-- `scripts/deps_update.py`: `update_python()`/`update_node()` built their `errors` list locally and only returned it once their per-package loop finished — an unhandled exception partway through (e.g. `pnpm`/`uv` vanishing from `PATH` mid-run) discarded every error already recorded for packages processed before the crash, along with the crash itself, leaving the PR body's error section incomplete. `errors` is now a caller-owned list both functions mutate in place, so `_guard()`'s crash handler still has everything recorded up to that point.
-- `scripts/deps_update.py`: `_ensure_exact_specifier()` rewrote the first `"<name>": "<version>"` match anywhere in a workspace's `package.json` text — reachable against the root workspace's `scripts` block, which precedes `devDependencies` there (unlike `frontend`/`electron`), since the root workspace was added to `_WORKSPACE_DIR`. A future script sharing a name with a devDependency (e.g. a `"eslint"` script) would have its command string rewritten instead of the real specifier. The search now starts at the first `dependencies`/`devDependencies`-flavored key in the file.
-- `scripts/deps_update.py`: `_guard()`'s own call to `_restore_snapshot()` — unlike its `on_restore` hook two lines below, already wrapped by a prior fix — was itself unguarded: a write failure there (the same disk-full condition that could have triggered the crash being handled) propagated a new, unrelated exception straight out of `_guard`, abandoning the run before the original crash was ever recorded. Now wrapped the same way `on_restore` already was. `_guard()` also now catches `KeyboardInterrupt` alongside `Exception`, so a manual Ctrl+C mid-run still triggers the same restore-and-record path — instead of leaving an already-applied package bump unrecorded on disk — before re-raising so the process actually stops rather than silently continuing to the next workspace.
-- `scripts/deps_update.py`: `_apply_node_package()`'s `finally` block wrote back `package.json`/`pnpm-lock.yaml` unguarded — a failure there (e.g. the same disk-full condition that caused the failure being handled) raised out of `finally`, and Python's finally-masks-pending-return semantics silently replaced the function's already-computed `(False, reason)` with that new, uncaught exception, discarding the real diagnostic and escalating rollback scope to the caller's whole workspace. The restore is now guarded; a failure there is logged, not allowed to mask the original return.
-- `scripts/deps_update.py`: `_resync_node_modules()` could raise instead of returning `False` if the underlying `pnpm install` couldn't even be started (e.g. `pnpm` missing from `PATH`) — every one of its three call sites (`update_node`'s per-package failure path, `_verify_node`'s initial and per-step resyncs) trusted a plain boolean as the only failure signal, so an unexpected raise escaped mid-loop instead of being handled the same way as a bad `pnpm` exit code. Now caught and converted to `False` inside `_resync_node_modules()` itself, so every existing caller's handling already covers it.
-- `scripts/deps_update.py`: `update_node`'s per-package failure path always moved on to the next candidate even when the post-failure `node_modules` resync itself failed — unlike `_verify_node`'s equivalent bisection loop, which already stops in that case. `node_modules` can no longer be trusted to match the manifests once a resync fails (`_resync_node_modules()`'s own contract), so `update_node` now stops processing the rest of that workspace's candidates too, instead of risking further bumps against a tree that might already be inconsistent.
-- `scripts/deps_update.py`: `_verify_python()`/`_verify_node()` built their survivors/blocked/errors as function-local lists, returned only once the bisection loop finished normally — the same "discarded on a mid-loop crash" shape a prior fix already closed for `update_python()`/`update_node()`'s `errors`, but never extended to these two. A crash partway through a multi-package bisection batch discarded every package already individually reconfirmed via `check.sh` earlier in that same run, not just the ones after the crash point. Both functions now mutate caller-owned lists in place instead.
-- `scripts/deps_update.py`: a package blocked (failed `check.sh` in isolation) in two different Node workspaces in the same run — `@types/node` kept version-aligned across `frontend`/`electron` is a real case — rendered as two byte-identical PR-body entries with no way to tell them apart, unlike `Updated` entries, which are already tagged with their workspace. `_verify_node()`'s blocked entries are now tagged the same way and rendered with their workspace in the PR body.
-- `scripts/deps_update.py`: `_record_registry_health()`'s "all release-date lookups failed" escalation message didn't name which registry (PyPI vs npm) failed, unlike the sibling "all fetches failed" message right above it — the raw CI `::error::` annotation gave no ecosystem indication in isolation. Now included in both.
-- `scripts/deps_update.py`: `_ensure_exact_specifier()`'s dependency-block detection matched any quoted string ending in "dependencies" — key or not, real dependency-type key or not — and didn't bound a match to the end of the block it found. A `"keywords"` array containing the string `"dependencies"`, or a same-shaped script key like `"checkDependencies"`, could anchor the search at the wrong place, and a match could leak past its own block into an unrelated later one. Now scoped to an explicit allow-list of the six real npm dependency-type keys, each bounded to its own object's brace span.
-- `scripts/deps_update.py`: `_verify_python()`/`_verify_node()`'s bisection loop leaves each confirmed survivor's real change on disk as it goes, but a crash later in the same loop (caught by `_guard()`) restored the lockfile/manifests all the way back to the pre-batch pristine snapshot — discarding every already-confirmed survivor's on-disk change while `survivors` (deliberately preserved through the crash by a prior fix) kept reporting them as applied. The committed `uv.lock`/`pnpm-lock.yaml` and the PR body/CHANGELOG bullet it produces could then disagree about what was actually updated. Both functions now update the same snapshot `_guard()` restores from after every confirmed survivor, so a later crash only discards the in-progress candidate's own unconfirmed change.
-- `scripts/deps_update.py`: `_verify_node()`'s two `node_modules` resync-failure paths appended straight to the `errors` list instead of going through `_record_error()`, unlike every other failure class in the file — neither ever printed the GitHub Actions `::error::` annotation the rest of the file's failures do, despite a broken `node_modules` mid-bisection being one of the more serious failure modes. Now routed through `_record_error()` like the rest.
-- `scripts/deps_update.py`: `_apply_node_package()`'s `finally` block, on a restore failure, only printed to stdout — the message never reached the `errors` list `_pr_body()` reads from, so a manifest pair possibly left mutually inconsistent by a failed rollback was invisible in the committed PR body. Now recorded via `_record_error()`.
-- `scripts/deps_update.py`: `_apply_python_package()` had no snapshot/restore around `uv lock --upgrade-package`, unlike `_apply_node_package()`'s explicit guarantee for `package.json`/`pnpm-lock.yaml`. `uv`'s own lockfile write (confirmed against its upstream source) is a direct, non-atomic write, not temp-file-then-rename — a normal resolution failure never touches `uv.lock`, but the `uv` subprocess dying mid-write (OOM, disk-full, `SIGKILL`) can leave it truncated behind a non-zero returncode, which `update_python`'s loop treats as a handled per-package failure, not a crash `_guard()` restores from — so the corruption would ride through the rest of that run unrestored, self-healing only when `--verify` was also passed. `_apply_python_package()` now snapshots and restores `uv.lock` the same way `_apply_node_package()` does for its manifest pair. Side effect: an unexpected exception from the `uv` subprocess itself (e.g. missing from `PATH`) is now also caught here and turned into a per-package `(False, reason)` instead of propagating out to `_guard()` — previously that crashed the whole ecosystem run and reverted every package `update_python()` had already applied; now, since `_apply_python_package()`'s own guarantee makes `uv.lock` trustworthy either way, the loop just moves on to the next package and the earlier ones stay applied, matching how `update_node()` already recovers from the equivalent Node-side failure.
-
-### Changed
-
-- Dependency updates: 2 packages (2026-08-06).
-- Dependency updates: 5 packages (2026-08-13).
+(No user-visible changes — dependency maintenance and internal tooling only.)
 
 ## [0.5.1] - 2026-08-03
 
@@ -344,91 +59,394 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- In-app auto-update: `latest-linux.yml`, the file `electron-updater` needs to resolve new releases, was generated on every build but never uploaded as a release asset — every update check has failed silently since the first release. Now uploaded alongside the installers.
+- In-app auto-update: `latest-linux.yml` — the file `electron-updater` needs
+  to discover new releases — was generated on every build but never uploaded
+  as a release asset, so update checks failed silently. It is now uploaded
+  alongside the installers.
 
 ## [0.5.0] - 2026-07-31
 
 ### Added
 
-- Settings → Vault Graph has a new "Auto-animate on load / drag" toggle for the vault graph's live layout animation. The preference persists across sessions and is on by default, except on first launch when the OS reports `prefers-reduced-motion: reduce`, in which case it starts off.
-- The vault graph in Collecta has its own pause/resume button: it stops or restarts the animation for the current session regardless of the Settings preference, and switches itself from Pause to Play whenever the animation runs its course on its own — not just when clicked.
-- The reading view's right-click context menu has a new "Copy Analecta deep link" item, between "Open in browser" and "Show in system explorer" — copies the same `analecta://open?id=...` link the toolbar button already produced, without needing to open the entry first.
+- Settings → Vault Graph has a new "Auto-animate on load / drag" toggle for the
+  vault graph's live layout animation. The preference persists across sessions
+  and is on by default, except on first launch when the OS reports
+  `prefers-reduced-motion: reduce`, in which case it starts off.
+- The vault graph in Collecta has its own pause/resume button: it stops or
+  restarts the animation for the current session regardless of the Settings
+  preference, and switches itself from Pause to Play whenever the animation
+  runs its course on its own — not just when clicked.
+- The reading view's right-click context menu has a new "Copy Analecta deep
+  link" item, between "Open in browser" and "Show in system explorer" — copies
+  the same `analecta://open?id=...` link the toolbar button already produced,
+  without needing to open the entry first.
 
 ### Changed
 
-- The reading-view toolbar button that copies an entry's `analecta://` deep link is now labeled "Copy Analecta deep link" instead of "Copy URL" — the button's behavior is unchanged, only the label now says what it actually copies.
-- In the LIBRARY, UNREAD, READ, BOOKMARK, GEM, ARCHIVE, and TAGS dashboards, clicking a list entry now opens its reading view directly instead of the local graph. The local graph is now reached via a dedicated button on the row (graph-network icon) — previously that button ("View") opened the reading view, and clicking the row opened the graph.
-- The local graph panel in any dashboard can now be exited back to the plain list view: re-clicking the same dashboard in the left sidebar closes it, and a new button (scroll-text icon, top-right of the graph panel) does the same. Previously the only way out was switching to a different dashboard.
-- The vault graph on the Collecta dashboard now starts each connected cluster already spread out to fill the available space, instead of clumped together, before continuing its usual live-settling motion from that point. Node size also now scales with how many connections a node has — entries and tags share the same size range, so a well-connected tag reads as prominent as a well-connected entry — with the least-connected nodes noticeably smaller and the difference between low and high connectivity now more pronounced.
-- In the LIBRARY, UNREAD, READ, BOOKMARK, GEM, and ARCHIVE dashboards, opening a row's local graph panel narrows the list column; while it's open, that row's source-type badge and local-graph button now sit together in the row's bottom-right corner instead of staying centered against the full row, freeing horizontal room for the title and tags in the narrower column. Row layout is unchanged whenever no local graph panel is open.
-- The dark theme's cyan (`gem` badges, backlink labels, `h4` headings, and graph node fill) is now a lighter, softer shade (`#8dd5fe`, up from `#7dcfff`). Code-block syntax highlighting is unaffected and keeps the original Tokyo Night cyan.
-- Settings → Accent color: the "Cyan" option has been replaced by "Magenta" (a Tokyo Night violet/purple). Selecting Cyan as the accent color made hover states on links and other cyan-tinted UI indistinguishable from their resting state, because the accent color and the fixed cyan syntax color became identical.
-- Italic text (`*em*`) in the reading view is no longer rendered in cyan — it now matches the body text color, distinguished only by the italic style.
-- Tag nodes in the local graph, the vault graph, and grouped Backlinks entries are now colored magenta instead of green. The selected/focused node in both graphs (and, in the vault graph, search-matched nodes) is now colored green instead of the accent color — previously, picking "Magenta" as the accent color made a selected tag node indistinguishable from an ordinary one.
-- Connected-entry titles in the right sidebar's BACKLINKS panel are no longer cyan — they now use the same muted-to-bright hover treatment as the "recently viewed" stack panel in the same sidebar (dim at rest, brightening on hover), instead of a flat, fixed color.
-- Text sizing across both sidebars now shares the same three font-size tokens instead of scattered hardcoded values. Most visibly, connected-entry titles in the right sidebar's BACKLINKS panel grow from 12px to match the row-title size used everywhere else a list shows an entry's title (~13.94px). The smallest token, used for counts like a tag's entry count or a backlinks group's count, is also bumped up slightly (12.24px, up from 11.9px) for legibility.
-- The same font-size scaling now extends to Settings, the first-run setup screen, the reading-view toolbar's document title, the inline dashboard search filter, and the Collecta dashboard's card counts and section-navigation buttons — text in these areas now grows and shrinks with the "UI font size" setting instead of staying a fixed size regardless of it. The Settings slider's min/max labels and the "saved" checkmark are also slightly larger (12.24px, up from 11px) for legibility, matching the smallest sidebar token.
-- Settings and first-run form inputs/buttons, the reading-view toolbar's document title, and the inline dashboard search filter now share the same font-size token as the sidebars' empty-state text, instead of each carrying their own near-identical value — consolidating onto an existing token instead of introducing new ones. Right-click context menu items (entry menu and tag menu) now share the row-title token too. Both of the tokens involved grow slightly as part of this consolidation — the row-title tier to 13.94px (up from 13.26px), the empty-state/secondary-text tier to 13.09px (up from 12.75px) — which also makes both sidebars' row titles, entry status indicators, the "recently viewed" panel's titles, and every empty-state/status message across the app marginally larger. Settings' "Rescan vault"/"Localize images" result text moves from the field-label tier to the same tier as loading/empty-state text, matching its actual role.
-- Tables and footnotes in the reading view now scale with the "Reading font size" setting instead of staying a fixed size regardless of it, matching how headings and code blocks already behaved. Also sized up while at it: table text from 13px to 85% of body size (~15.3px at the default reading size), footnote text from 12px to 80% (~14.4px), and the footnote back-reference arrow to nearly match its surrounding footnote text instead of reading slightly smaller than it.
-- The vault graph's node labels, and the local graph's node labels/tag captions/"No connections" empty state, now scale with the "UI font size" setting instead of staying a fixed size regardless of it. The local graph's empty state also now shares the same font-size token as the identical "No connections." message in the right sidebar's BACKLINKS panel.
-- Loading and empty-state text ("Loading…", "No entries.", "No tags yet.", the sidecar boot screen, search results) now reads at one consistent size across every screen that shows it, instead of 3-4 slightly different sizes depending on which screen it appeared on — the most visible change is the global search dialog's status text, which is now somewhat smaller to match the rest. Error messages (Settings, first-run, the reading view, the editor) are likewise consolidated onto one size, deliberately kept a size above loading/empty-state text so an error never reads as less important than a "Loading…" message. Dashboard row titles in the LIBRARY, UNREAD, READ, BOOKMARK, GEM, and ARCHIVE dashboards now match the row-title size already used in the TAGS and Collecta dashboards, instead of being about 8% larger than they were. The first-run setup screen's title is now the same size as the Settings page title. The "Keyboard shortcuts" heading now reads the same size whether it's opened as its own dialog (`Ctrl+/`) or viewed embedded in Settings. The vault graph's own "Loading…"/"No connections yet." message now matches the same loading/empty-state size used everywhere else. Its title ("Vault Graph"), node/edge count readout, search field, and match-count badge now scale with the "UI font size" setting instead of staying fixed, and grow (11px to 12.24–13.94px depending on the element) to match the sizes already used by their equivalents elsewhere in the app — section headers, secondary readouts, text inputs, and count badges, respectively — instead of being noticeably smaller than all of them.
-- The "Keyboard shortcuts" panel's section labels ("Navigation", "Tabs", "Reader") and key-cap chips (e.g. `Ctrl+B`) grow from 10.54px to 12.24px, in both the standalone dialog (`Ctrl+/`) and the copy embedded in Settings — the section labels now match the identical-looking group headers in the right sidebar's BACKLINKS panel, and the key-cap chips grow along with them since the two were sized identically to begin with. The shortcut description text moves onto the same font-size token, with no visible change.
-- Tag chips in the TAGS dashboard and Collecta's tag view are now small rectangular badges (`border-radius: 3.75px`, matching the inline-code chip) instead of rounded pills, matching the Keyboard Shortcuts panel's key-cap style — bordered in `--terminal` at rest, with tighter padding. Hover now highlights the border in the accent color instead of a dimmer accent variant; the active/expanded chip is marked with a darker accent border, a small drop shadow, and accent-colored text, instead of only a plain accent-colored border. Resting chip text now uses the dimmer `--fg-dark` tone instead of full-brightness `--fg`, and the chip's background moved from `--bg-highlight` (used elsewhere in the app exclusively for hover states) to the page background — at rest the chip is now defined by its border alone, with no fill. The entry-count badge is smaller and square instead of a rounded pill.
-- Inline code spans (single backtick) in the reading view and editor preview no longer use `--bg-highlight` for their background — the same color used everywhere else in the app exclusively for hover/active states, which made a code span read as an interactive element rather than a piece of formatted text. The background is now a solid accent-tinted chip (50% `--accent` mixed over `--bg-alt`) with dark (`--bg-dark`) text for contrast, and horizontal padding/corner radius are tightened further (down to 3.75px, from 5px).
+- The reading-view toolbar button that copies an entry's `analecta://` deep
+  link is now labeled "Copy Analecta deep link" instead of "Copy URL" — the
+  button's behavior is unchanged, only the label now says what it actually
+  copies.
+- In the LIBRARY, UNREAD, READ, BOOKMARK, GEM, ARCHIVE, and TAGS dashboards,
+  clicking a list entry now opens its reading view directly instead of the
+  local graph. The local graph is now reached via a dedicated button on the
+  row (graph-network icon) — previously that button ("View") opened the
+  reading view, and clicking the row opened the graph.
+- The local graph panel in any dashboard can now be exited back to the plain
+  list view: re-clicking the same dashboard in the left sidebar closes it, and
+  a new button (scroll-text icon, top-right of the graph panel) does the same.
+  Previously the only way out was switching to a different dashboard.
+- The vault graph on the Collecta dashboard now starts each connected cluster
+  already spread out to fill the available space, instead of clumped together,
+  before continuing its usual live-settling motion from that point. Node size
+  also now scales with how many connections a node has — entries and tags
+  share the same size range, so a well-connected tag reads as prominent as a
+  well-connected entry — with the least-connected nodes noticeably smaller and
+  the difference between low and high connectivity now more pronounced.
+- In the LIBRARY, UNREAD, READ, BOOKMARK, GEM, and ARCHIVE dashboards, opening
+  a row's local graph panel narrows the list column; while it's open, that
+  row's source-type badge and local-graph button now sit together in the row's
+  bottom-right corner instead of staying centered against the full row, freeing
+  horizontal room for the title and tags in the narrower column. Row layout is
+  unchanged whenever no local graph panel is open.
+- The dark theme's cyan (`gem` badges, backlink labels, `h4` headings, and
+  graph node fill) is now a lighter, softer shade (`#8dd5fe`, up from
+  `#7dcfff`). Code-block syntax highlighting is unaffected and keeps the
+  original Tokyo Night cyan.
+- Settings → Accent color: the "Cyan" option has been replaced by "Magenta" (a
+  Tokyo Night violet/purple). Selecting Cyan as the accent color made hover
+  states on links and other cyan-tinted UI indistinguishable from their resting
+  state, because the accent color and the fixed cyan syntax color became
+  identical.
+- Italic text (`*em*`) in the reading view is no longer rendered in cyan — it
+  now matches the body text color, distinguished only by the italic style.
+- Tag nodes in the local graph, the vault graph, and grouped Backlinks entries
+  are now colored magenta instead of green. The selected/focused node in both
+  graphs (and, in the vault graph, search-matched nodes) is now colored green
+  instead of the accent color — previously, picking "Magenta" as the accent
+  color made a selected tag node indistinguishable from an ordinary one.
+- Connected-entry titles in the right sidebar's BACKLINKS panel are no longer
+  cyan — they now use the same muted-to-bright hover treatment as the "recently
+  viewed" stack panel in the same sidebar (dim at rest, brightening on hover),
+  instead of a flat, fixed color.
+- Text sizing across both sidebars now shares the same three font-size tokens
+  instead of scattered hardcoded values. Most visibly, connected-entry titles
+  in the right sidebar's BACKLINKS panel grow from 12px to match the row-title
+  size used everywhere else a list shows an entry's title (~13.94px). The
+  smallest token, used for counts like a tag's entry count or a backlinks
+  group's count, is also bumped up slightly (12.24px, up from 11.9px) for
+  legibility.
+- The same font-size scaling now extends to Settings, the first-run setup
+  screen, the reading-view toolbar's document title, the inline dashboard
+  search filter, and the Collecta dashboard's card counts and
+  section-navigation buttons — text in these areas now grows and shrinks with
+  the "UI font size" setting instead of staying a fixed size regardless of it.
+  The Settings slider's min/max labels and the "saved" checkmark are also
+  slightly larger (12.24px, up from 11px) for legibility, matching the smallest
+  sidebar token.
+- Settings and first-run form inputs/buttons, the reading-view toolbar's
+  document title, and the inline dashboard search filter now share the same
+  font-size token as the sidebars' empty-state text, instead of each carrying
+  their own near-identical value — consolidating onto an existing token rather
+  than introducing new ones. Right-click context menu items (entry menu and tag
+  menu) now share the row-title token too. Both of the tokens involved grow
+  slightly — the row-title tier to 13.94px (up from 13.26px), the
+  empty-state/secondary-text tier to 13.09px (up from 12.75px) — which also
+  makes both sidebars' row titles, entry status indicators, the "recently
+  viewed" panel's titles, and every empty-state/status message across the app
+  marginally larger. Settings' "Rescan vault"/"Localize images" result text
+  moves from the field-label tier to the same tier as loading/empty-state text,
+  matching its actual role.
+- Tables and footnotes in the reading view now scale with the "Reading font
+  size" setting instead of staying a fixed size regardless of it, matching how
+  headings and code blocks already behave. Table text also grows from 13px to
+  85% of body size (~15.3px at the default reading size), footnote text from
+  12px to 80% (~14.4px), and the footnote back-reference arrow now nearly
+  matches its surrounding footnote text instead of reading slightly smaller
+  than it.
+- The vault graph's node labels, and the local graph's node labels/tag
+  captions/"No connections" empty state, now scale with the "UI font size"
+  setting instead of staying a fixed size regardless of it. The local graph's
+  empty state also now shares the same font-size token as the identical "No
+  connections." message in the right sidebar's BACKLINKS panel.
+- Loading and empty-state text ("Loading…", "No entries.", "No tags yet.", the
+  sidecar boot screen, search results) now reads at one consistent size across
+  every screen that shows it, instead of 3-4 slightly different sizes depending
+  on which screen it appeared on — the most visible change is the global search
+  dialog's status text, which is now somewhat smaller to match the rest. Error
+  messages (Settings, first-run, the reading view, the editor) are likewise
+  consolidated onto one size, deliberately kept a size above loading/empty-state
+  text so an error never reads as less important than a "Loading…" message.
+  Dashboard row titles in the LIBRARY, UNREAD, READ, BOOKMARK, GEM, and ARCHIVE
+  dashboards now match the row-title size already used in the TAGS and Collecta
+  dashboards, instead of being about 8% larger than they were. The first-run
+  setup screen's title is now the same size as the Settings page title. The
+  "Keyboard shortcuts" heading now reads the same size whether it's opened as
+  its own dialog (`Ctrl+/`) or viewed embedded in Settings. The vault graph's
+  own "Loading…"/"No connections yet." message now matches the same
+  loading/empty-state size used everywhere else. Its title ("Vault Graph"),
+  node/edge count readout, search field, and match-count badge now scale with
+  the "UI font size" setting instead of staying fixed, and grow (11px to
+  12.24–13.94px depending on the element) to match the sizes already used by
+  their equivalents elsewhere in the app — section headers, secondary readouts,
+  text inputs, and count badges, respectively — instead of being noticeably
+  smaller than all of them.
+- The "Keyboard shortcuts" panel's section labels ("Navigation", "Tabs",
+  "Reader") and key-cap chips (e.g. `Ctrl+B`) grow from 10.54px to 12.24px, in
+  both the standalone dialog (`Ctrl+/`) and the copy embedded in Settings — the
+  section labels now match the identical-looking group headers in the right
+  sidebar's BACKLINKS panel, and the key-cap chips grow along with them since
+  the two were sized identically to begin with. The shortcut description text
+  moves onto the same font-size token, with no visible change.
+- Tag chips in the TAGS dashboard and Collecta's tag view are now small
+  rectangular badges (`border-radius: 3.75px`, matching the inline-code chip)
+  instead of rounded pills, matching the Keyboard Shortcuts panel's key-cap
+  style — bordered in `--terminal` at rest, with tighter padding. Hover now
+  highlights the border in the accent color instead of a dimmer accent variant;
+  the active/expanded chip is marked with a darker accent border, a small drop
+  shadow, and accent-colored text, instead of only a plain accent-colored
+  border. Resting chip text now uses the dimmer `--fg-dark` tone instead of
+  full-brightness `--fg`, and the chip's background moved from `--bg-highlight`
+  (used elsewhere in the app exclusively for hover states) to the page
+  background — at rest the chip is now defined by its border alone, with no
+  fill. The entry-count badge is smaller and square instead of a rounded pill.
+- Inline code spans (single backtick) in the reading view and editor preview no
+  longer use `--bg-highlight` for their background — the same color used
+  everywhere else in the app exclusively for hover/active states, which made a
+  code span read as an interactive element rather than a piece of formatted
+  text. The background is now a solid accent-tinted chip (50% `--accent` mixed
+  over `--bg-alt`) with dark (`--bg-dark`) text for contrast, and horizontal
+  padding/corner radius are tightened further (down to 3.75px, from 5px).
 
 ### Fixed
 
-- A link whose visible text is an inline code span (e.g. `` [`code`](url) ``) now turns cyan on hover like any other link — previously only the underline showed, because the code span's own fixed text color overrode the link's hover color.
-- The right sidebar's BACKLINKS panel now has the same spacing above its first hashtag group or "Direct" section as the left sidebar has above its first tag — `.bl-rich-scroll` (grouped connections) was missing the top padding its sibling `.bl-list` (single-tag view) already had.
-- Opening the editor from the reading view now lands the cursor near where you were reading instead of always jumping to the top of the article — the reading view's scroll position (as a fraction of the article's length) carries over and is mapped onto the nearest line in the source Markdown.
-- The source-type badge (`article`, `youtube`, etc.) on each row in the LIBRARY, UNREAD, READ, BOOKMARK, GEM, and ARCHIVE dashboards is now vertically centered against the full row, matching the local-graph button beside it — it previously sat pinned near the top of the row, level with the title, whenever the row's date/status/tag line gave it extra height.
-- The dek/subtitle sentence beneath an article's title is no longer silently dropped from Substack extraction. Substack renders two `<h1>` elements on a post page — the publication name in the navbar, then the actual headline — and the dek-rescue mechanism (see the 0.4.0 entry above) was always anchoring on the first, wrong one; it also only recognized a dek shaped as a `<p>`, while Substack renders its subtitle as `<h3 class="subtitle">`. Both are now handled: the rescue anchors on whichever `<h1>` actually matches the extracted title, and a subtitle-classed heading is accepted as a dek shape alongside `<p>`.
-- Fenced code blocks in the reading view and editor preview now scale with the user's chosen reading-view font size instead of rendering at a fixed, smaller size regardless of that setting.
-- Inline code spans (single backtick) in the reading view and editor preview no longer sit visibly low against the surrounding text's line — a missing `vertical-align` let the padded, backgrounded span default to baseline alignment instead. Tightened the span's horizontal padding and corner radius to match.
-- A connected entry's title in the right sidebar's BACKLINKS panel — under a hashtag group, under Direct, or listing a tag's entries — now shows the full title on hover as a tooltip, instead of the truncated, ellipsized text being the only cue to what it says.
-- Several UI containers that hold text now grow along with it instead of clipping or overlapping once the "UI font size" setting is raised. The toolbar and the reading view's metadata bar (status badge, URL, date) had a fixed pixel height with no room to grow; the LIBRARY/UNREAD/READ/BOOKMARK/GEM/ARCHIVE dashboards' compact row layout reserved a fixed gutter for the source-type badge next to the title, with no fallback if the badge outgrew it; and the "Keyboard shortcuts" panel — both the `Ctrl+/` dialog and its copy embedded in Settings — was the only dialog in the app without a safety-net maximum width, so its two-column layout could force the box wider than intended. None of these are visible at the default font size.
-- A few more text-truncating containers now scale their own width/max-width along with the "UI font size" setting instead of truncating at the same fixed pixel point regardless of it: the toolbar's active-document-title area, the global search dialog (`Ctrl+K`), the Collecta dashboard's "Last opened" entry link, and the reading view's "search to connect" dialog. These already had ellipsis truncation as a fallback, so nothing was breaking — they'll now simply have more room before truncating at larger font sizes.
-- The remaining fixed-pixel container sizes in the app now scale with the "UI font size" setting: the left sidebar's tag-list scroll region and "Add entry by URL" dialog, the global search dialog's results list, every right-click context menu's minimum width, the TAGS dashboard's tag-chip count badge/edit field/context menu, the local-graph column's width in every dashboard, and the reading view's tag-editing dialog and its autocomplete suggestion list. All were already scrollable, wrapping, or otherwise non-breaking at a fixed size — this is a consistency pass, not a fix for a clipping bug.
-- A fenced code block's background in the reading view and editor preview is now visibly distinct from the surrounding article in both themes, instead of blending into the page. Shiki's built-in Tokyo Night theme happens to use the exact same hex for its editor background as this project's `--bg`, so the generated CSS was reusing that variable verbatim for the code block's own fill — which meant the block had no background of its own, only its 1px border to mark its edges (barely visible in light theme, and in dark theme left the block indistinguishable from the page at a glance even though the border itself read fine). The block now gets its own surface color in both themes (`--bg-dark` in dark, `--bg-alt` in light) via `frontend/scripts/gen-shiki-css.mjs`, regenerated into `shiki-classes.css`.
-- In the TAGS dashboard, opening a local graph panel used to leave the selected tag's entry list stacked below the tag-chip grid in the same narrowed left column, often pushed out of view and requiring a scroll to reach. The entry list now renders in its own full-width strip below the local graph instead, with a fixed height and independent scrolling, leaving the left column dedicated to the tag grid alone.
+- A link whose visible text is an inline code span (e.g. `` [`code`](url) ``)
+  now turns cyan on hover like any other link — previously only the underline
+  showed, because the code span's own fixed text color overrode the link's
+  hover color.
+- The right sidebar's BACKLINKS panel now has the same spacing above its first
+  hashtag group or "Direct" section as the left sidebar has above its first
+  tag — `.bl-rich-scroll` (grouped connections) was missing the top padding its
+  sibling `.bl-list` (single-tag view) already had.
+- Opening the editor from the reading view now lands the cursor near where you
+  were reading instead of always jumping to the top of the article — the
+  reading view's scroll position (as a fraction of the article's length)
+  carries over and is mapped onto the nearest line in the source Markdown.
+- The source-type badge (`article`, `youtube`, etc.) on each row in the
+  LIBRARY, UNREAD, READ, BOOKMARK, GEM, and ARCHIVE dashboards is now
+  vertically centered against the full row, matching the local-graph button
+  beside it — it previously sat pinned near the top of the row, level with the
+  title, whenever the row's date/status/tag line gave it extra height.
+- The dek/subtitle sentence beneath an article's title is no longer silently
+  dropped from Substack extraction. Substack renders two `<h1>` elements on a
+  post page — the publication name in the navbar, then the actual headline —
+  and the dek-rescue mechanism introduced in 0.4.0 was always anchoring on the
+  first, wrong one; it also only recognized a dek shaped as a `<p>`, while
+  Substack renders its subtitle as `<h3 class="subtitle">`. Both are now
+  handled: the rescue anchors on whichever `<h1>` actually matches the
+  extracted title, and a subtitle-classed heading is accepted as a dek shape
+  alongside `<p>`.
+- Fenced code blocks in the reading view and editor preview now scale with the
+  user's chosen reading-view font size instead of rendering at a fixed, smaller
+  size regardless of that setting.
+- Inline code spans (single backtick) in the reading view and editor preview no
+  longer sit visibly low against the surrounding text's line — a missing
+  `vertical-align` let the padded, backgrounded span default to baseline
+  alignment instead. Tightened the span's horizontal padding and corner radius
+  to match.
+- A connected entry's title in the right sidebar's BACKLINKS panel — under a
+  hashtag group, under Direct, or listing a tag's entries — now shows the full
+  title on hover as a tooltip, instead of the truncated, ellipsized text being
+  the only cue to what it says.
+- Several UI containers that hold text now grow along with it instead of
+  clipping or overlapping once the "UI font size" setting is raised. The
+  toolbar and the reading view's metadata bar (status badge, URL, date) had a
+  fixed pixel height with no room to grow; the
+  LIBRARY/UNREAD/READ/BOOKMARK/GEM/ARCHIVE dashboards' compact row layout
+  reserved a fixed gutter for the source-type badge next to the title, with no
+  fallback if the badge outgrew it; and the "Keyboard shortcuts" panel — both
+  the `Ctrl+/` dialog and its copy embedded in Settings — was the only dialog
+  in the app without a safety-net maximum width, so its two-column layout
+  could force the box wider than intended. None of these are visible at the
+  default font size.
+- A few more text-truncating containers now scale their own width/max-width
+  along with the "UI font size" setting instead of truncating at the same fixed
+  pixel point regardless of it: the toolbar's active-document-title area, the
+  global search dialog (`Ctrl+K`), the Collecta dashboard's "Last opened" entry
+  link, and the reading view's "search to connect" dialog. These already had
+  ellipsis truncation as a fallback, so nothing was breaking — they'll now
+  simply have more room before truncating at larger font sizes.
+- The remaining fixed-pixel container sizes in the app now scale with the "UI
+  font size" setting: the left sidebar's tag-list scroll region and "Add entry
+  by URL" dialog, the global search dialog's results list, every right-click
+  context menu's minimum width, the TAGS dashboard's tag-chip count
+  badge/edit field/context menu, the local-graph column's width in every
+  dashboard, and the reading view's tag-editing dialog and its autocomplete
+  suggestion list. All were already scrollable, wrapping, or otherwise
+  non-breaking at a fixed size — this is a consistency pass, not a fix for a
+  clipping bug.
+- A fenced code block's background in the reading view and editor preview is
+  now visibly distinct from the surrounding article in both themes, instead of
+  blending into the page. Shiki's built-in Tokyo Night theme happens to use the
+  exact same hex for its editor background as this project's `--bg`, so the
+  generated CSS was reusing that variable verbatim for the code block's own
+  fill — which meant the block had no background of its own, only its 1px
+  border to mark its edges (barely visible in light theme, and in dark theme
+  left the block indistinguishable from the page at a glance even though the
+  border itself read fine). The block now gets its own surface color in both
+  themes (`--bg-dark` in dark, `--bg-alt` in light) via
+  `frontend/scripts/gen-shiki-css.mjs`, regenerated into `shiki-classes.css`.
+- In the TAGS dashboard, opening a local graph panel used to leave the selected
+  tag's entry list stacked below the tag-chip grid in the same narrowed left
+  column, often pushed out of view and requiring a scroll to reach. The entry
+  list now renders in its own full-width strip below the local graph instead,
+  with a fixed height and independent scrolling, leaving the left column
+  dedicated to the tag grid alone.
 
 ## [0.4.0] - 2026-07-28
 
 ### Added
 
-- X/Twitter extraction — paste a tweet URL (`Ctrl+L`) to capture it as clean Markdown, via X's syndication endpoint with an official-oEmbed fallback for endpoint drift. No headless-browser rendering involved. Pulls in the tweet's full reply chain all the way up to the conversation's root, regardless of how many times authorship changes along the way. Video and animated-GIF media link out to X rather than being downloaded (X doesn't serve real `.gif` files). Tweet hashtags render as plain links and are kept out of Analecta's own tag/backlink system. A tweet's own line breaks are preserved as hard breaks in the saved Markdown, matching how they appear on x.com. Every tweet block — the main tweet, each entry in a reply chain, and any quoted tweet — opens with a bold, profile-linked author name directly followed by the tweet's text on the next line, so it's clear at a glance whose words follow. Consecutive tweets in a reply chain are separated by a `---` rule. A long-form "Note Tweet" gets a visible truncation marker instead of silently cutting off mid-sentence — X's public syndication/oEmbed endpoints don't expose a Note Tweet's full text, only a legacy-length preview.
-- Article extraction now resolves classic Twitter/X widget embeds (a `blockquote.twitter-tweet` or an equivalent iframe) found inside third-party articles into fully rendered tweet content — author, text, and any photo — instead of the embed being silently dropped or garbled, which is what happened before this change. Falls back to the embed's own static text (or a bare link to the tweet) if the tweet can no longer be fetched. Runs unconditionally, independent of headless-browser rendering — no opt-out currently exists. See `docs/privacy.md` for the exposure this adds: reading such an article now contacts X's syndication endpoint for each embedded tweet, not only when a tweet URL is pasted directly.
-- Every extracted entry now records a `low_confidence` flag in its frontmatter, set when extraction likely missed JavaScript-rendered content (thin extracted text, or a page whose raw HTML is mostly `<script>` tags). Diagnostic only — nothing acts on it automatically; check an entry's frontmatter directly if its capture looks thin.
+- X/Twitter extraction — paste a tweet URL (`Ctrl+L`) to capture it as clean
+  Markdown, via X's syndication endpoint with an official-oEmbed fallback for
+  endpoint drift. No headless-browser rendering involved. Pulls in the tweet's
+  full reply chain all the way up to the conversation's root, regardless of how
+  many times authorship changes along the way. Video and animated-GIF media link
+  out to X rather than being downloaded (X doesn't serve real `.gif` files).
+  Tweet hashtags render as plain links and are kept out of Analecta's own
+  tag/backlink system. A tweet's own line breaks are preserved as hard breaks in
+  the saved Markdown, matching how they appear on x.com. Every tweet block — the
+  main tweet, each entry in a reply chain, and any quoted tweet — opens with a
+  bold, profile-linked author name directly followed by the tweet's text on the
+  next line, so it's clear at a glance whose words follow. Consecutive tweets in
+  a reply chain are separated by a `---` rule. A long-form "Note Tweet" gets a
+  visible truncation marker instead of silently cutting off mid-sentence — X's
+  public syndication/oEmbed endpoints don't expose a Note Tweet's full text, only
+  a legacy-length preview.
+- Article extraction now resolves classic Twitter/X widget embeds (a
+  `blockquote.twitter-tweet` or an equivalent iframe) found inside third-party
+  articles into fully rendered tweet content — author, text, and any photo —
+  instead of the embed being silently dropped or garbled. Falls back to the
+  embed's own static text (or a bare link to the tweet) if the tweet can no
+  longer be fetched. Runs unconditionally, independent of headless-browser
+  rendering — no opt-out currently exists. See `docs/privacy.md` for the exposure
+  this adds: reading such an article now contacts X's syndication endpoint for
+  each embedded tweet, not only when a tweet URL is pasted directly.
+- Every extracted entry now records a `low_confidence` flag in its frontmatter,
+  set when extraction likely missed JavaScript-rendered content (thin extracted
+  text, or a page whose raw HTML is mostly `<script>` tags). Diagnostic only —
+  nothing acts on it automatically; check an entry's frontmatter directly if its
+  capture looks thin.
 
 ### Removed
 
-- The browser-rendered (Chromium) extraction fallback — the initial release's "defuddle as a rendered-page fallback." Extraction is now handled exclusively by the direct-fetch pipeline (trafilatura and readability-lxml, see `docs/extraction.md`), with no fallback for pages whose content only exists after client-side JavaScript runs. See `docs/defuddle-decision.md` for why.
+- The browser-rendered (Chromium) extraction fallback — the initial release's
+  "defuddle as a rendered-page fallback." Extraction is now handled exclusively
+  by the direct-fetch pipeline (trafilatura and readability-lxml, see
+  `docs/extraction.md`), with no fallback for pages whose content only exists
+  after client-side JavaScript runs. See `docs/defuddle-decision.md` for why.
 
 ### Security
 
-- Extraction requests no longer identify Analecta or its maintainer to the sites they fetch — requests present as a generic, current Chrome on Linux with a coherent header set, single-sourced from Electron's bundled Chromium version (privacy context: `docs/privacy.md`) — see `docs/security-log.md`.
-- Every URL the extraction pipeline fetches (submitted URL, redirects, discovered remote image URLs) is now resolved and validated before the request goes out — `http(s)`-only, rejection of non-public resolved addresses (including encoded/IPv4-mapped forms), direct connection to a validated address with per-address fallback, hostname-targeted TLS verification — see `docs/security-log.md` (full writeup: `docs/electron-shell-security.md` § 7).
-- A remote image that fails to download now gets one retry, then is replaced with a local placeholder instead of a preserved remote URL that would re-expose the reading IP on every reopen; a new "Localize remote images" action in Settings → Maintenance backfills older entries — see `docs/security-log.md`.
-- The reading view's Content Security Policy no longer permits loading images from arbitrary remote (`https:`) hosts — only local vault assets and inline data, closing the last path by which a remote image could silently re-fetch — see `docs/security-log.md`.
+- Extraction requests no longer identify Analecta or its maintainer — requests
+  present as a generic current-Chrome-on-Linux identity with a coherent header
+  set — see `docs/security-log.md`.
+- Every URL the extraction pipeline fetches (submitted URL, redirects, discovered
+  remote image URLs) is resolved and validated before the request goes out —
+  `http(s)`-only, rejection of non-public resolved addresses, and a direct
+  connection to the validated address so the check and the connection cannot
+  diverge — see `docs/security-log.md`.
+- A failed remote-image download gets one retry, then a local placeholder instead
+  of a preserved remote URL; a "Localize remote images" maintenance action
+  backfills older entries — see `docs/security-log.md`.
+- The reading view's Content Security Policy only loads local vault assets and
+  inline data, closing the last path by which a remote image could silently
+  re-fetch — no arbitrary remote image hosts — see `docs/security-log.md`.
 
 ### Fixed
 
-- Packaged Linux builds now show the correct taskbar/alt-tab label and icon on Wayland compositors — the app previously broadcast `analecta-electron` as its window identity instead of `analecta`.
-- Images with root-relative (`/foo.svg`) or protocol-relative (`//cdn.example.com/foo.svg`) `src` URLs are now resolved against the source article's URL before download, instead of leaking a broken path into the saved Markdown.
-- Extracted articles now record the post-redirect URL as their canonical source URL instead of the originally requested one, so a domain or scheme change mid-redirect (e.g. `http://` → `https://`, or a moved Substack post) no longer causes the image-resolution fix above to resolve relative asset paths against the wrong host.
-- Article headings are no longer silently dropped on sites (e.g. MDN) that wrap the entire heading text in a self-referencing permalink link — previously treated as a link-only heading and discarded during extraction.
-- The article's opening content — paragraphs, and any list, table, or other block content interleaved among them (e.g. MDN's "properties can be categorized in two types" list on the CSS Inheritance page) — is no longer silently dropped on reference-doc sites (e.g. MDN) that place the title and intro text in a separate sibling from the rest of the body content — previously treated as a low-value fragment and discarded in favor of the higher-scoring body section; an earlier version of this fix reunited only the paragraphs, leaving an interleaved list orphaned and dropped along with the rest of the fragment.
-- Very short code examples (e.g. a single one-line CSS declaration, on MDN) are no longer silently dropped from the direct-fetch extraction pass — previously discarded by a generic content-density heuristic that treats short, imageless wrapper elements as decorative cruft.
-- Tables using `rowspan`/`colspan` to avoid repeating a value across grouped rows (e.g. MDN's cascade precedence table) no longer come out of the direct-fetch extraction pass with values shifted into the wrong column — the Markdown conversion had no concept of merged cells, so a row's remaining values collapsed into the leftmost columns instead of the ones they belonged to.
-- Small reference tables that are almost entirely link text (e.g. an MDN "Specifications" table linking to a single spec) are no longer silently dropped entirely from the direct-fetch extraction pass — previously caught by the same link-density heuristic already mitigated for lists, but not for tables.
-- Links inside reference-doc content (e.g. an MDN "Specifications" table) no longer get corrupted or broken apart when they contain an internal line break — the direct-fetch extraction pass previously left this as a literal newline in the Markdown, which downstream renderers treat as the start of a new block (heading, list item, etc.), splitting the link in two.
-- The dek/standfirst sentence beneath an article's title (e.g. milkroad.com, socket.dev), and a hero image accompanying it, are no longer silently dropped from the direct-fetch extraction pass on sites that place the title and dek in a header section structurally separate from the rest of the body content — previously discarded entirely along with the lower-scoring section it lived in, surviving only as unused page metadata.
-- Code blocks on sites that mark the language with a plain `lang=""` attribute instead of a `language-*` class (e.g. socket.dev's blog, which uses Chakra UI's `<Code>` component) now keep their syntax highlighting in the direct-fetch extraction pass, instead of coming out as an unlabeled code fence. Added `json` to the reading-view syntax highlighter's language list, and a fenced code block whose language isn't in that list (a gap in the list itself, or a non-code `lang=""` value picked up by the fix above) now renders as plain, unhighlighted text instead of failing to render at all.
-- Code blocks on Pandoc-generated static sites (e.g. arthurrump.com), which mark the language as a bare sibling class (`class="sourceCode html"`) rather than a `language-*`-prefixed one, now keep their syntax highlighting in the direct-fetch extraction pass instead of coming out as an unlabeled code fence.
-- The hero image rescue added for header-split pages (e.g. socket.dev) no longer misses the image on articles whose `<title>` tag is SEO-truncated with a trailing ellipsis — the truncated title's similarity to the hero image's full, untruncated `alt` text could fall just short of the matching threshold even though the image was right there.
-- A labeled list item's own short nested list (e.g. socket.dev's "Execution telemetry path:" and "Result exfiltration path:", each holding a single API path) is no longer silently dropped from the direct-fetch extraction pass — a sibling list long enough to clear the same content-length threshold (a 4-item "Payload delivery paths:" list on the same page) was unaffected, only the short ones vanished.
-- A short bold caption label directly above an image (e.g. system76.com's "See-through" and "Nearly opaque" photo labels) is no longer silently dropped from the direct-fetch extraction pass — the same content-length threshold as above, this time hitting the label's own wrapper element. The first label in a section usually survived by accident (grouped with the section's heading and intro text), masking that every subsequent standalone label on the same page was affected.
-- The footnote beneath an MDN "Formal syntax" block (e.g. "This syntax reflects the latest standard as per …") is no longer silently dropped from the direct-fetch extraction pass, while the syntax diagram right above it survived untouched — the same link-density heuristic already mitigated for lists and tables, this time hitting the footnote's `<footer>` wrapper.
+- Packaged Linux builds now show the correct taskbar/alt-tab label and icon on
+  Wayland compositors — the app previously broadcast `analecta-electron` as its
+  window identity instead of `analecta`.
+- Images with root-relative (`/foo.svg`) or protocol-relative
+  (`//cdn.example.com/foo.svg`) `src` URLs are now resolved against the source
+  article's URL before download, instead of leaking a broken path into the saved
+  Markdown.
+- Extracted articles now record the post-redirect URL as their canonical source
+  URL instead of the originally requested one, so a domain or scheme change
+  mid-redirect (e.g. `http://` → `https://`, or a moved Substack post) no longer
+  causes the image-resolution fix above to resolve relative asset paths against
+  the wrong host.
+- Article headings are no longer silently dropped on sites (e.g. MDN) that wrap
+  the entire heading text in a self-referencing permalink link — previously
+  treated as a link-only heading and discarded during extraction.
+- The article's opening content — paragraphs, and any list, table, or other block
+  content interleaved among them (e.g. MDN's "properties can be categorized in
+  two types" list on the CSS Inheritance page) — is no longer silently dropped on
+  reference-doc sites (e.g. MDN) that place the title and intro text in a
+  separate sibling from the rest of the body content — previously treated as a
+  low-value fragment and discarded in favor of the higher-scoring body section;
+  an earlier version of this fix reunited only the paragraphs, leaving an
+  interleaved list orphaned and dropped along with the rest of the fragment.
+- Very short code examples (e.g. a single one-line CSS declaration, on MDN) are
+  no longer silently dropped from the direct-fetch extraction pass — previously
+  discarded by a generic content-density heuristic that treats short, imageless
+  wrapper elements as decorative cruft.
+- Tables using `rowspan`/`colspan` to avoid repeating a value across grouped rows
+  (e.g. MDN's cascade precedence table) no longer come out of the direct-fetch
+  extraction pass with values shifted into the wrong column — the Markdown
+  conversion had no concept of merged cells, so a row's remaining values
+  collapsed into the leftmost columns instead of the ones they belonged to.
+- Small reference tables that are almost entirely link text (e.g. an MDN
+  "Specifications" table linking to a single spec) are no longer silently dropped
+  entirely from the direct-fetch extraction pass — previously caught by the same
+  link-density heuristic already mitigated for lists, but not for tables.
+- Links inside reference-doc content (e.g. an MDN "Specifications" table) no
+  longer get corrupted or broken apart when they contain an internal line break —
+  the direct-fetch extraction pass previously left this as a literal newline in
+  the Markdown, which downstream renderers treat as the start of a new block
+  (heading, list item, etc.), splitting the link in two.
+- The dek/standfirst sentence beneath an article's title (e.g. milkroad.com,
+  socket.dev), and a hero image accompanying it, are no longer silently dropped
+  from the direct-fetch extraction pass on sites that place the title and dek in
+  a header section structurally separate from the rest of the body content —
+  previously discarded entirely along with the lower-scoring section it lived in,
+  surviving only as unused page metadata.
+- Code blocks on sites that mark the language with a plain `lang=""` attribute
+  instead of a `language-*` class (e.g. socket.dev's blog, which uses Chakra UI's
+  `<Code>` component) now keep their syntax highlighting in the direct-fetch
+  extraction pass, instead of coming out as an unlabeled code fence. Added `json`
+  to the reading-view syntax highlighter's language list, and a fenced code block
+  whose language isn't in that list (a gap in the list itself, or a non-code
+  `lang=""` value picked up by the fix above) now renders as plain, unhighlighted
+  text instead of failing to render at all.
+- Code blocks on Pandoc-generated static sites (e.g. arthurrump.com), which mark
+  the language as a bare sibling class (`class="sourceCode html"`) rather than a
+  `language-*`-prefixed one, now keep their syntax highlighting in the
+  direct-fetch extraction pass instead of coming out as an unlabeled code fence.
+- The hero image rescue added for header-split pages (e.g. socket.dev) no longer
+  misses the image on articles whose `<title>` tag is SEO-truncated with a
+  trailing ellipsis — the truncated title's similarity to the hero image's full,
+  untruncated `alt` text could fall just short of the matching threshold even
+  though the image was right there.
+- A labeled list item's own short nested list (e.g. socket.dev's "Execution
+  telemetry path:" and "Result exfiltration path:", each holding a single API
+  path) is no longer silently dropped from the direct-fetch extraction pass — a
+  sibling list long enough to clear the same content-length threshold (a 4-item
+  "Payload delivery paths:" list on the same page) was unaffected, only the short
+  ones vanished.
+- A short bold caption label directly above an image (e.g. system76.com's
+  "See-through" and "Nearly opaque" photo labels) is no longer silently dropped
+  from the direct-fetch extraction pass — the same content-length threshold as
+  above, this time hitting the label's own wrapper element. The first label in a
+  section usually survived by accident (grouped with the section's heading and
+  intro text), masking that every subsequent standalone label on the same page
+  was affected.
+- The footnote beneath an MDN "Formal syntax" block (e.g. "This syntax reflects
+  the latest standard as per …") is no longer silently dropped from the
+  direct-fetch extraction pass, while the syntax diagram right above it survived
+  untouched — the same link-density heuristic already mitigated for lists and
+  tables, this time hitting the footnote's `<footer>` wrapper.
 
 ## [0.3.1] - 2026-07-13
 
@@ -436,22 +454,61 @@ Initial public release.
 
 ### Added
 
-- Web extraction — paste a URL (`Ctrl+L`) to capture articles, YouTube transcripts, and Substack posts as clean Markdown, using trafilatura and readability-lxml for content extraction, markdownify for the Markdown conversion, youtube-transcript-api for transcripts, and defuddle as a rendered-page fallback.
-- Native Markdown reading view — every captured entry renders as clean, formatted Markdown via markdown-it, with Shiki for syntax-highlighted code blocks.
-- Local vault — every entry saved as a Markdown file in a user-controlled directory, compatible with Logseq and other PKM tools.
-- Reading library — status-based organisation: Unread, Read, Bookmark, Gem, Archive.
+- Web extraction — paste a URL (`Ctrl+L`) to capture articles, YouTube transcripts,
+  and Substack posts as clean Markdown, using trafilatura and readability-lxml for
+  content extraction, markdownify for the Markdown conversion,
+  youtube-transcript-api for transcripts, and defuddle as a rendered-page fallback.
+- Native Markdown reading view — every captured entry renders as clean, formatted
+  Markdown via markdown-it, with Shiki for syntax-highlighted code blocks.
+- Local vault — every entry saved as a Markdown file in a user-controlled
+  directory, compatible with Logseq and other PKM tools.
+- Reading library — status-based organisation: Unread, Read, Bookmark, Gem,
+  Archive.
 - Full-text search across titles and content powered by SQLite FTS5 (`Ctrl+K`).
-- Tag list, automatic bidirectional Linked Mentions, clickable `[[wikilink]]` rendering, and clickable `#hashtag` navigation to the TAGS dashboard across the vault. Hashtags and tag names accept Spanish-accented letters (`áéíóúñü`) and symbols (`_ - ' ~ ^`) in addition to ASCII. Tag identity is unified vault-wide and case-insensitive — `Python`, `python`, and `#PYTHON` all count as the same tag, while preserving whichever casing was curated first for display — but accent- and symbol-sensitive: `café` and `cafe` are different tags. A `#hashtag` that happens to match another entry's title resolves to it in the backlinks panel and vault graph across the full charset, so `#café` correctly connects to a "Café" entry and `#well-being` to a "Well-Being" entry, not just plain-ASCII titles. Creating or renaming a tag anywhere — the sidebar, the TAGS dashboard, or the reading view's inline "Add tag…" box — enforces the same hashtag charset, so every newly minted tag stays writable as an inline `#hashtag`, with one consistent, clearly visible error message for invalid names; a tag name that already exists (however it got there) is always usable and re-assignable regardless of charset. A newly created tag now shows up on the TAGS dashboard immediately instead of requiring a rescan. Renaming a tag into another existing tag's name merges the two, with an explicit confirmation step since the merge can't be undone. Right-clicking a wikilink opens the context menu for the linked entry; middle-clicking a wikilink adds the linked entry to the right-sidebar entry stack without leaving the current reading view; hovering a wikilink or hashtag shows a type label (`[[Wikilink]]`/`TAGS`) in the status bar. A wikilink with an empty or whitespace-only alias (`[[Title|]]`) is now fully indexed for the backlinks panel and vault graph, matching how it already rendered in the reading view.
-- Vault reconciliation — files edited outside Analecta (another editor, a sync tool) are automatically re-derived for tags, links, and search content the next time the sidecar starts, plus a manual "Rescan vault" action (`Ctrl+R`, also available in Settings) for edits made while the app is already running; an open reading view for the edited entry refreshes in place.
+- Tag list, automatic bidirectional Linked Mentions, clickable `[[wikilink]]`
+  rendering, and clickable `#hashtag` navigation to the TAGS dashboard across the
+  vault. Hashtags and tag names accept Spanish-accented letters (`áéíóúñü`) and
+  symbols (`_ - ' ~ ^`) in addition to ASCII. Tag identity is unified vault-wide
+  and case-insensitive — `Python`, `python`, and `#PYTHON` all count as the same
+  tag, while preserving whichever casing was curated first for display — but
+  accent- and symbol-sensitive: `café` and `cafe` are different tags. A `#hashtag`
+  that happens to match another entry's title resolves to it in the backlinks panel
+  and vault graph across the full charset, so `#café` correctly connects to a
+  "Café" entry and `#well-being` to a "Well-Being" entry, not just plain-ASCII
+  titles. Creating or renaming a tag anywhere — the sidebar, the TAGS dashboard, or
+  the reading view's inline "Add tag…" box — enforces the same hashtag charset, so
+  every newly minted tag stays writable as an inline `#hashtag`, with one
+  consistent, clearly visible error message for invalid names; a tag name that
+  already exists (however it got there) is always usable and re-assignable
+  regardless of charset. A newly created tag shows up on the TAGS dashboard
+  immediately instead of requiring a rescan. Renaming a tag into another existing
+  tag's name merges the two, with an explicit confirmation step since the merge
+  can't be undone. Right-clicking a wikilink opens the context menu for the linked
+  entry; middle-clicking a wikilink adds the linked entry to the right-sidebar
+  entry stack without leaving the current reading view; hovering a wikilink or
+  hashtag shows a type label (`[[Wikilink]]`/`TAGS`) in the status bar. A wikilink
+  with an empty or whitespace-only alias (`[[Title|]]`) is fully indexed for the
+  backlinks panel and vault graph, matching how it already rendered in the reading
+  view.
+- Vault reconciliation — files edited outside Analecta (another editor, a sync
+  tool) are automatically re-derived for tags, links, and search content the next
+  time the sidecar starts, plus a manual "Rescan vault" action (`Ctrl+R`, also
+  available in Settings) for edits made while the app is already running; an open
+  reading view for the edited entry refreshes in place.
 - Manually connect related entries via a search-to-connect dialog.
-- Vault-wide knowledge graph, built with Sigma.js and graphology, and per-entry subgraph, built with d3-force.
+- Vault-wide knowledge graph, built with Sigma.js and graphology, and per-entry
+  subgraph, built with d3-force.
 - Built-in Markdown editor with CodeMirror 6 and Tokyo Night theme.
 - Multi-tab reading with scroll position persistence across sessions.
 - System tray integration (configurable close-to-tray behavior, off by default).
 - Clipboard-to-URL capture via `Ctrl+L`.
 - Auto-updates via electron-updater.
-- Native Linux packaging — `.deb`, `.rpm`, `.AppImage` — with correct application identity and icons, including taskbar/alt-tab icon support on Wayland compositors, built with electron-builder.
-- Release integrity verification — SHA256SUMS checksums for all packaged installers, plus a Sigstore build provenance attestation (attaches automatically once the repository goes public).
+- Native Linux packaging — `.deb`, `.rpm`, `.AppImage` — with correct application
+  identity and icons, including taskbar/alt-tab icon support on Wayland
+  compositors, built with electron-builder.
+- Release integrity verification — SHA256SUMS checksums for all packaged
+  installers, plus a Sigstore build provenance attestation (attaches automatically
+  once the repository goes public).
 
 [Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.5.4...HEAD
 [0.5.4]: https://github.com/E-zequiel/analecta/releases/tag/v0.5.4
