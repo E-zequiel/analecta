@@ -1,5 +1,5 @@
 [tools]
 python = "3.14"
 node   = "lts"
-pnpm   = "12.5.1"
+pnpm   = "12.8.0"
 uv     = "latest"

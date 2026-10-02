@@ -1632,7 +1632,7 @@ class TestMainExceptionIsolation:
     holds for unexpected exceptions, not just the (ok, reason) tuples the
     functions normally return. See scripts/deps_update.py's earlier bug
     where an exception from update_node/_verify_node/_verify_python on one
-    workspace crashed main() before the PR body (and CHANGELOG entry) for
+    workspace crashed main() before the PR body for
     every other workspace's already-applied updates was ever written.
     """
 
@@ -1731,7 +1731,6 @@ class TestMainExceptionIsolation:
         (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
         (tmp_path / "backend").mkdir(exist_ok=True)
         (tmp_path / "backend" / "uv.lock").write_text("")
-        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
         monkeypatch.setattr(deps_update, "REPO_ROOT", tmp_path)
         monkeypatch.setattr(deps_update, "update_python", fake_update_python)
@@ -1776,7 +1775,6 @@ class TestMainExceptionIsolation:
             pkg.parent.mkdir(parents=True, exist_ok=True)
             pkg.write_text("{}")
         (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
-        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
         def fake_update_python(
             cooldown: int, errors: list[str]
@@ -1840,7 +1838,6 @@ class TestMainExceptionIsolation:
             pkg.parent.mkdir(parents=True, exist_ok=True)
             pkg.write_text("{}")
         (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
-        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
         def fake_update_python(
             cooldown: int, errors: list[str]
@@ -1919,7 +1916,6 @@ class TestMainExceptionIsolation:
         lock_path.write_bytes(original_lock)
         (tmp_path / "backend").mkdir()
         (tmp_path / "backend" / "uv.lock").write_text("")
-        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
         def fake_update_python(
             cooldown: int, errors: list[str]
@@ -2005,7 +2001,6 @@ class TestMainExceptionIsolation:
         lock_path.write_bytes(original_lock)
         (tmp_path / "backend").mkdir()
         (tmp_path / "backend" / "uv.lock").write_text("")
-        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
         applied_frontend_pkg = b'{"dependencies": {"svelte": "5.1.0"}}'
 
@@ -2096,7 +2091,6 @@ class TestMainExceptionIsolation:
             pkg.parent.mkdir(parents=True, exist_ok=True)
             pkg.write_text("{}")
         (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
-        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
         def fake_update_python(
             cooldown: int, errors: list[str]
@@ -2150,7 +2144,6 @@ class TestMainExceptionIsolation:
         lock_path.write_bytes(original_lock)
         (tmp_path / "backend").mkdir()
         (tmp_path / "backend" / "uv.lock").write_text("")
-        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
         def fake_update_python(
             cooldown: int, errors: list[str]
@@ -2212,7 +2205,6 @@ class TestMainExceptionIsolation:
         (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
         (tmp_path / "backend").mkdir()
         (tmp_path / "backend" / "uv.lock").write_text("")
-        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
         def fake_update_python(
             cooldown: int, errors: list[str]
@@ -2264,7 +2256,6 @@ class TestMainExceptionIsolation:
         (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
         (tmp_path / "backend").mkdir()
         (tmp_path / "backend" / "uv.lock").write_text("")
-        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
         def fake_update_python(
             cooldown: int, errors: list[str]
@@ -2408,8 +2399,8 @@ class TestErrorsSurviveMidLoopCrash:
     ) -> None:
         """End-to-end version of the test above: through main() itself
         (real update_node(), real _guard()), not just checking the list
-        the two functions above assert on directly — the CHANGELOG entry's
-        actual promise is that both messages reach the committed PR body.
+        the two functions above assert on directly — the PR body's actual
+        promise is that both messages reach the committed PR body.
         """
         old = datetime.now(UTC) - timedelta(days=30)
         monkeypatch.setattr(deps_update, "_WORKSPACE_DIR", {"frontend": "frontend"})
@@ -2419,7 +2410,6 @@ class TestErrorsSurviveMidLoopCrash:
         (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n")
         (tmp_path / "backend").mkdir()
         (tmp_path / "backend" / "uv.lock").write_text("")
-        (tmp_path / "CHANGELOG.md").write_text("## [Unreleased]\n")
 
         def fake_update_python(
             cooldown: int, errors: list[str]

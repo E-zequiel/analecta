@@ -409,7 +409,7 @@ def _verify_python(
     back to the pre-batch pristine bytes, silently wiping the on-disk change
     for every survivor already confirmed before the crash — while
     *survivors* (deliberately preserved through the crash) keeps reporting
-    them as applied, so the committed uv.lock and the PR body/CHANGELOG
+    them as applied, so the committed uv.lock and the PR body
     would disagree about what actually changed.
     """
     if _run_check(REPO_ROOT, "backend"):
@@ -1078,88 +1078,6 @@ def _pr_body(
 
 
 # ---------------------------------------------------------------------------
-# CHANGELOG.md
-# ---------------------------------------------------------------------------
-
-
-def _changelog_bullet(py_up: list[Updated], nd_up: list[Updated]) -> str | None:
-    """Build the single rollup line for a run's applied updates, or None if none.
-
-    One line per script run (not one per package) — every dependency update
-    needs a CHANGELOG entry per CLAUDE.md's Changelog Hard Constraint, but this
-    updater has no CVE awareness (that's the hand-crafted `fix(deps)` path),
-    so everything it applies is a routine, non-security bump and belongs under
-    `### Changed`, not `### Security`.
-    """
-    total = len(py_up) + len(nd_up)
-    if total == 0:
-        return None
-    today = datetime.now(UTC).strftime("%Y-%m-%d")
-    plural = "package" if total == 1 else "packages"
-    return f"- Dependency updates: {total} {plural} ({today})."
-
-
-def _insert_changelog_entry(text: str, bullet: str) -> str | None:
-    """Insert *bullet* as the last line of `### Changed` under `## [Unreleased]`.
-
-    Anchors on the literal `## [Unreleased]` heading and only ever edits
-    within that block (up to the next `## [` heading) — never a published
-    version section. Creates the `### Changed` subsection if the block
-    doesn't have one yet, appending it after any other subsections already
-    there. Returns None if the anchor isn't found, so the caller can warn
-    and skip instead of guessing at a different insertion point.
-    """
-    lines = text.split("\n")
-    try:
-        start = next(
-            i for i, line in enumerate(lines) if line.strip() == "## [Unreleased]"
-        )
-    except StopIteration:
-        return None
-
-    end = next(
-        (i for i in range(start + 1, len(lines)) if lines[i].startswith("## [")),
-        len(lines),
-    )
-    block = lines[start + 1 : end]
-
-    changed_idx = next(
-        (i for i, line in enumerate(block) if line.strip() == "### Changed"), None
-    )
-
-    if changed_idx is None:
-        while block and block[-1].strip() == "":
-            block.pop()
-        while block and block[0].strip() == "":
-            block.pop(0)
-        new_block = [""]
-        if block:
-            new_block += [*block, ""]
-        new_block += ["### Changed", "", bullet, ""]
-        block = new_block
-    else:
-        stop = next(
-            (
-                i
-                for i in range(changed_idx + 1, len(block))
-                if block[i].startswith("### ")
-            ),
-            len(block),
-        )
-        sub = block[changed_idx + 1 : stop]
-        while sub and sub[-1].strip() == "":
-            sub.pop()
-        if not sub:
-            sub.append("")
-        sub.append(bullet)
-        sub.append("")
-        block[changed_idx + 1 : stop] = sub
-
-    lines[start + 1 : end] = block
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -1346,21 +1264,6 @@ def main() -> None:
         )
         _ = pr_body_file.write_text(body)
         print(f"    PR body written to {pr_body_file}")
-
-        bullet = _changelog_bullet(py_up, nd_up)
-        if bullet:
-            changelog_path = REPO_ROOT / "CHANGELOG.md"
-            updated_changelog = _insert_changelog_entry(
-                changelog_path.read_text(), bullet
-            )
-            if updated_changelog is None:
-                print(
-                    "::warning::CHANGELOG.md: '## [Unreleased]' heading not found"
-                    " — skipping entry, add it manually"
-                )
-            else:
-                _ = changelog_path.write_text(updated_changelog)
-                print("    CHANGELOG.md updated")
 
     had_error = bool(py_errors) or bool(nd_errors_tagged) or bool(nd_verify_errors)
     if had_error and total_up == 0:
