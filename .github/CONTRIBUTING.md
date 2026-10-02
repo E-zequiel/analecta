@@ -33,7 +33,7 @@ cd backend && mise exec -- uv sync && cd ..
 # Install frontend and Electron dependencies
 mise exec -- pnpm install
 
-# Enable repo git hooks (blocks feat/fix commits missing a CHANGELOG.md entry)
+# Enable repo git hooks (blocks user-facing feat/fix commits missing a CHANGELOG.md entry)
 git config core.hooksPath .githooks
 ```
 
@@ -113,9 +113,9 @@ TypeScript, Svelte, and Electron code are covered by manual QA only; no automate
 
 ### Changelog requirement
 
-Every PR that changes user-facing behavior must add a line under `## [Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md), in the same commit. Internal refactors, tests, docs, and CI changes don't need an entry.
+Every PR that changes user-facing behavior must add a line under `## [Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md), in the same commit. Internal refactors, tests, docs, CI changes, and dependency updates don't need an entry; security-relevant changes that merit a record go to [`docs/security-log.md`](../docs/security-log.md).
 
-The `commit-msg` hook (enabled by `git config core.hooksPath .githooks`, see Getting started) enforces this automatically: it blocks any `feat`/`fix` commit that doesn't have `CHANGELOG.md` staged. For a `feat`/`fix` commit that genuinely has no user-facing effect, skip the check with `git commit --no-verify`.
+The `commit-msg` hook (enabled by `git config core.hooksPath .githooks`, see Getting started) enforces this automatically: it blocks any `feat`/`fix` commit that doesn't have `CHANGELOG.md` staged — except the `deps` scope, whose commits never carry an entry by policy. For a `feat`/`fix` commit that genuinely has no user-facing effect, skip the check with `git commit --no-verify`.
 
 ## Commit conventions
 
