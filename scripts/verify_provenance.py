@@ -309,7 +309,7 @@ def _scan_lockfile(content: str) -> LockfileScan:
             ver = m.group(2) or m.group(4)
             # pnpm's own vendored packages are published without provenance:
             # the npm registry serves dist.attestations (with a provenance
-            # url) for e.g. devalue@5.9.2 and @sveltejs/kit@2.70.3, but not
+            # url) for e.g. devalue@6.0.2 and @sveltejs/kit@2.70.3, but not
             # for @zkochan/js-yaml@0.0.11 — its metadata shows
             # `_from: file:zkochan-js-yaml-0.0.11.tgz` — so they can never be
             # verified by this gate. The real lockfile has zero @zkochan
