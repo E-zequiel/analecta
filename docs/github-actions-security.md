@@ -616,7 +616,7 @@ With this pattern:
 
 ### What this proves, and what it doesn't
 
-This is the producer-side complement to Control 10 (which verifies *upstream* npm packages' provenance). It answers a different question than the manual `SHA256SUMS` signing already in place (see `docs/release-process.md`'s verification step, and the local, gitignored `CLAUDE.md` for the signing procedure itself):
+This is the producer-side complement to Control 10 (which verifies *upstream* npm packages' provenance). It answers a different question than the manual `SHA256SUMS` signing already in place (see `docs/release-process.md`'s verification step):
 
 | Mechanism | Question answered | Trust anchor |
 |---|---|---|

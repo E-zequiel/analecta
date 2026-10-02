@@ -33,8 +33,7 @@ Authoritative description of the npm SLSA provenance gate
 (`scripts/verify_provenance.py`, CI job `verify-provenance` in `ci.yml`).
 Maintained in place: this section always describes the gate as it exists
 now. Dated change records live under `### Change history` below; the
-release-facing summary lives in `CHANGELOG.md`; the implementation is the
-source of truth for behavior.
+implementation is the source of truth for behavior.
 
 **What it guarantees.** For every entry in `pnpm-lock.yaml` whose package
 publishes an SLSA provenance attestation on npm, the gate (1) fetches the
@@ -154,7 +153,11 @@ threshold.
 
 ## Application & script security hardening
 
-Security-relevant changes to Analecta's own code and build tooling — not dependency advisories — recorded here so the CHANGELOG's `### Security` one-liners carry a full-text backing. Newest first; each date is the release that carried the change.
+Security-relevant changes to Analecta's own code and build tooling — not
+dependency advisories — are recorded here: this file is their record
+(CHANGELOG carries user-visible changes only, by policy; dependency updates
+are never registered in it). Newest first; each date is the release that
+carried the change.
 
 ### 2026-09-18 — release-age window (cooldown) reduced from 10 to 4 days (unreleased)
 
