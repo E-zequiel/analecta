@@ -40,6 +40,12 @@ allowBuilds:
   # Control 11 in docs/github-actions-security.md before setting it `true`.
   electron-winstaller: false
 
+# pnpm package-manager dependency (self-managed pnpm via the lockfile,
+# resolved on install) — keep in sync with .mise.toml and package.json
+# `packageManager`.
+configDependencies:
+  pnpm: 12.8.0
+
 # Security pins — exact versions held by override, with a one-word security
 # reason each. No advisory ids, CVSS scores, dates, or per-bump narrative:
 # this file is the only record; the reason dies with the pin.

@@ -35,7 +35,8 @@ pnpm resolves this with a **non-flat** `node_modules/` layout:
 
 - **Electron:** works natively with pnpm workspaces; no configuration needed.
 - **SvelteKit:** first-class support; `pnpm create svelte@latest` is the recommended scaffold.
-- **mise:** pnpm is managed as a native tool (`pnpm = "12.5.1"` in `.mise.toml`), with no dependency on `npm install -g` or corepack.
+- **mise:** pnpm is managed as a native tool (`pnpm = "12.8.0"` in `.mise.toml`), with no
+  dependency on `npm install -g` or corepack.
 - **GitHub Actions:** `pnpm/action-setup` is an official, widely-adopted action.
 
 ## Decision
@@ -49,7 +50,7 @@ Managed via mise:
 [tools]
 python = "3.14"
 node   = "lts"
-pnpm   = "12.5.1"
+pnpm   = "12.8.0"
 uv     = "latest"
 ```
 
