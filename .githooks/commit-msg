@@ -1,8 +1,10 @@
 #!/usr/bin/env sh
 # Blocks user-facing feat/fix commits that don't stage a CHANGELOG.md entry.
 # CHANGELOG.md records user-visible changes only — dependency updates
-# (chore(deps)/fix(deps), manual, scripted, or Dependabot) get no entry, and
-# security changes that merit a record go to docs/security-log.md instead.
+# (chore(deps)/fix(deps), manual, scripted, or Dependabot) get no entry.
+# Security/privacy changes the user can feel: full writeup in
+# docs/security-log.md, plus a terse CHANGELOG ### Security line referencing
+# it. Security-relevant internals the user never touches: security-log only.
 # Escape hatch for non-user-facing feat/fix commits: git commit --no-verify
 
 commit_msg_file="$1"
@@ -28,7 +30,8 @@ Add a line under ## [Unreleased] in CHANGELOG.md, then: git add CHANGELOG.md
 
 Not user-facing? Non-user-facing feat/fix can skip this check with:
 git commit --no-verify (chore(deps)/fix(deps) are exempt entirely — dependency
-updates are no longer registered in CHANGELOG by policy; security records go
-to docs/security-log.md).
+updates are never registered in CHANGELOG by policy; user-felt security
+changes carry a terse CHANGELOG line plus the docs/security-log.md writeup,
+invisible security internals go to docs/security-log.md only).
 EOF
 exit 1
