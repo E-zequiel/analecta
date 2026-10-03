@@ -15,15 +15,20 @@ Referenced by `docs/github-actions-security.md` Controls 9 and 12.
 
 ## CI Integration
 
-Defined in `.github/workflows/ci.yml` (`socket` job) and `.github/workflows/release.yml`.
+Defined in `.github/workflows/ci.yml` (`socket` job) and
+`.github/workflows/release.yml`.
 
-- `ci.yml`: triggers on PRs with `pnpm-lock.yaml` or `backend/uv.lock` changes. Runs `pnpm exec socket ci --org Ezequiel --no-interactive`.
-- `release.yml`: unconditional, runs before build on every version tag. Uses `socket scan create . --json --no-interactive --org Ezequiel` (not `socket ci` — that subcommand requires PR context).
-- `socket-manual.yml`: `workflow_dispatch` for on-demand scans against any branch ref. Dispatch on `main`, set `ref` input to the target branch.
+- `ci.yml`: triggers on PRs with `pnpm-lock.yaml` or `backend/uv.lock`
+  changes. Runs
+  `pnpm exec socket ci --org Ezequiel --no-interactive`.
+- `release.yml`: unconditional, runs before build on every version tag.
+  Uses `socket scan create . --json --no-interactive --org Ezequiel`
+  (not `socket ci` — that subcommand requires PR context).
+- `socket-manual.yml`: `workflow_dispatch` for on-demand scans against any
+  branch ref. Dispatch on `main`, set `ref` input to the target branch.
 
-**Free plan limitation:** Socket only posts PR comments — it cannot block merges. Acceptable for solo-dev workflow.
-
----
+**Free plan limitation:** Socket only posts PR comments — it cannot block
+merges. Acceptable for solo-dev workflow.
 
 ---
 
@@ -156,41 +161,48 @@ threshold.
 Security-relevant changes to Analecta's own code and build tooling — not
 dependency advisories — are recorded here: this file is their record
 (CHANGELOG carries user-visible changes only, by policy; dependency updates
-are never registered in it). Newest first; each date is the release that
-carried the change.
+are never registered in it). Newest first; each heading carries the
+change date and the release that shipped it.
 
-### 2026-09-18 — release-age window (cooldown) reduced from 10 to 4 days (unreleased)
+### 2026-09-18 — release-age window (cooldown) reduced from 10 to 4 days (release 0.5.4)
 
-- **What changed:** the minimum release age enforced by the age-gated
-  dependency updater (`scripts/deps_update.py`'s `COOLDOWN_DAYS`, the
-  `--help` default text, and `deps-update.yml`'s `workflow_dispatch` input
-  default and `${COOLDOWN:-…}` shell fallback) was reduced from 10 days to
-  4 days, along with every live policy statement in
-  `docs/github-actions-security.md` (Control 7, the Control 10 coverage
-  table, the Maintenance Checklist), `docs/dependency-verification.md`, and
-  `docs/syntax-highlighting.md`. The window is enforced at both resolution
-  and frozen-install: pnpm's `minimumReleaseAge` (5760 minutes) rejects
-  too-fresh resolutions for all dependencies including transitive ones, and
-  a frozen install fails loudly on an entry that violates it.
-- **A deliberate relaxation, not a drift:** decided explicitly on
-  2026-09-18 as a tradeoff between supply-chain protection depth and update
-  freshness — a control was intentionally weakened, not lost. The
-  exception-approval process around the gate (Control 7) is unchanged:
-  merging a package before its window still requires explicit maintainer
-  approval; genuine early adoption is never silent.
-- **Dependabot gap closed in the same change:** `.github/dependabot.yml`
-  now configures a native `cooldown: default-days: 4` on the
-  `github-actions` update block. As before, Dependabot never applies a
-  cooldown to security updates, so the manual release-date check before
-  merging a Dependabot PR (Maintenance Checklist step 5) remains required.
+- **What:** the updater's minimum release age was reduced from 10 days to
+  4 days (`scripts/deps_update.py`'s `COOLDOWN_DAYS`, the `--help` default
+  text, and `deps-update.yml`'s input default and shell fallback) and a
+  native `cooldown: default-days: 4` was configured in
+  `.github/dependabot.yml` (0e58186). The window is enforced at both
+  resolution and frozen-install through pnpm's `minimumReleaseAge: 5760`
+  (23faf93).
+- **Why:** a deliberate tradeoff between supply-chain protection depth and
+  update freshness, not drift. The exception-approval process around the
+  gate is unchanged: early adoption still requires explicit maintainer
+  approval and is never silent. Live policy statements: Control 7 and the
+  Maintenance Checklist in `docs/github-actions-security.md`, and
+  `docs/dependency-verification.md`.
 
 ### 2026-08-13 — `scripts/deps_update.py` GitHub Actions log-injection hardening (release 0.5.2)
 
-- `scripts/deps_update.py`: two GitHub Actions `::error::` prints (`_record_error()`, and `_resync_node_modules()`'s own) carried raw, unsanitized subprocess-derived text, unlike the PR-body path which already ran the same text through `_sanitize_reason()`. An embedded newline in multi-line stderr (routine for pnpm's `ERR_PNPM_*` blocks) could put a later line at the start of its own log line, letting it be parsed as an unrelated Actions workflow command (e.g. `::stop-commands::`) instead of inert log text. Both now collapse newlines the same way before printing, with a much wider limit than the PR body's markdown-table-cell truncation — only the newline-collapsing was ever the point.
+- **What:** the two `::error::` annotation prints (`_record_error()` and
+  `_resync_node_modules()`'s) now collapse embedded newlines in
+  subprocess-derived text before printing, matching the PR-body path's
+  `_sanitize_reason()` (1ea7352).
+- **Why:** an embedded newline could put a later line at the start of its
+  own log line, letting it be parsed as an unrelated Actions workflow
+  command (e.g. `::stop-commands::`) instead of inert log text.
 
 ### 2026-07-28 — extraction & reading-view privacy hardening (release 0.4.0)
 
-- Extraction requests no longer identify Analecta or its maintainer to the sites they fetch — the previous User-Agent embedded a personal GitHub URL on every request. Requests now present as a generic, current Chrome on Linux, with a coherent header set (client hints, fetch metadata) to match, single-sourced from Electron's own bundled Chromium version so it can't go stale or drift from the browser Analecta actually ships with. See `docs/privacy.md`.
-- Every URL the extraction pipeline fetches directly — the submitted URL, any redirect target encountered while fetching it, and remote image URLs discovered in already-fetched page content — is now resolved and validated before the request goes out: only `http(s)` schemes are allowed, the pipeline resolves the host itself, rejects the fetch if any resolved address isn't allocated for public use (loopback, link-local, private including RFC 1918 and CGNAT, reserved, unspecified, benchmarking/documentation ranges, or multicast — including an internal IPv4 address embedded in an IPv4-mapped, NAT64, or deprecated IPv4-compatible IPv6 address), and connects directly to one of the validated addresses it resolved rather than re-resolving the hostname for the connection — closing both a hostname string that encodes a blocked address in a form a naive check wouldn't parse (e.g. decimal/hex/octal IPv4) and a hostname whose DNS answer changes between the check and the connection. A resolved address that refuses or times out the connection falls back to the next validated address for that same hostname, so a dual-stack site isn't broken by one unreachable address family. TLS certificate verification still targets the original hostname. No such validation previously existed for this fetch. See `docs/electron-shell-security.md` § 7.
-- A remote image that fails to download (network error, or a non-image response) now gets one retry and, if that also fails, is replaced with a local placeholder instead of keeping the original remote URL — a preserved URL would re-fetch, and re-expose the reading IP, every time the entry was reopened. A new "Localize remote images" action in Settings → Maintenance backfills any entries already saved with a live remote image reference from before this fix.
-- The reading view's Content Security Policy no longer permits loading images from arbitrary remote (`https:`) hosts — only local vault assets and inline data. Since extraction already localizes every image, this closes off the one remaining path (a hand-edited or otherwise unusual entry) by which a remote image reference could silently re-fetch and expose the reading IP.
+- **What:** extraction requests no longer identify Analecta or its
+  maintainer — they present as a generic, current Chrome on Linux
+  (c707ccd). Mechanism: `docs/privacy.md`.
+- **What:** every URL the extraction pipeline fetches is resolved and
+  validated before the request goes out — `http(s)`-only, public addresses
+  only, connection pinned to the validated address (7233c13, af73a6b,
+  c84135d). Full writeup: `docs/electron-shell-security.md` § 7.
+- **What:** a failed remote-image download gets one retry, then a local
+  placeholder instead of a preserved remote URL; the "Localize remote
+  images" maintenance action backfills older entries (5229def). Mechanism:
+  `docs/privacy.md`.
+- **What:** the reading view's CSP `img-src` no longer permits arbitrary
+  remote image hosts — local vault assets and inline data only (a6d6ff8).
+  Mechanism: `docs/privacy.md`.
