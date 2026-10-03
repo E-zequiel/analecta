@@ -1,16 +1,22 @@
 # Contributing to Analecta
 
-Analecta is primarily a personal project. Bug reports and small improvements are welcome. Before working on a significant change, open an issue first so we can discuss the approach — this avoids wasted effort on both sides.
+Analecta is primarily a personal project. Bug reports and small
+improvements are welcome. Before working on a significant change, open an
+issue first so we can discuss the approach — this avoids wasted effort on
+both sides.
 
-By participating in this project, you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
+By participating in this project, you agree to the [Code of
+Conduct](CODE_OF_CONDUCT.md).
 
 ## Prerequisites
 
 A single tool manages the entire toolchain:
 
-- **[mise](https://mise.jdx.dev/)** — installs Python, Node.js, and pnpm at the exact versions declared in `.mise.toml`.
+- **[mise](https://mise.jdx.dev/)** — installs Python, Node.js, and pnpm at
+  the exact versions declared in `.mise.toml`.
 
-Install mise following the [official instructions](https://mise.jdx.dev/getting-started.html), then run:
+Install mise following the [official
+instructions](https://mise.jdx.dev/getting-started.html), then run:
 
 ```sh
 mise install
@@ -58,10 +64,10 @@ cd backend && mise exec -- uv run python -m analecta
 
 **Full application** (Electron shell + SvelteKit hot reload + sidecar):
 
-`pnpm electron:dev` only compiles the Electron TypeScript and points the window at
-`http://localhost:5173` — it does not start the Vite dev server itself, and the sidecar
-process it spawns is always the PyInstaller binary in `binaries/`, never raw Python
-source. Two terminals, in order:
+`pnpm electron:dev` only compiles the Electron TypeScript and points the
+window at `http://localhost:5173` — it does not start the Vite dev server
+itself, and the sidecar process it spawns is always the PyInstaller binary
+in `binaries/`, never raw Python source. Two terminals, in order:
 
 ```sh
 # once, and again after any backend/src/analecta/** change
@@ -74,12 +80,14 @@ mise exec -- pnpm --filter frontend dev
 mise exec -- pnpm electron:dev
 ```
 
-Starting terminal 2 before Vite is up fails the window load (`did-fail-load`).
+Starting terminal 2 before Vite is up fails the window load
+(`did-fail-load`).
 
 ## Building from source
 
 > [!IMPORTANT]
-> The sidecar build **must** be run from the repository root. Running it from `backend/` exits silently with a stale binary.
+> The sidecar build **must** be run from the repository root. Running it
+> from `backend/` exits silently with a stale binary.
 
 ```sh
 # Build the Python sidecar (PyInstaller → binaries/)
@@ -97,25 +105,54 @@ cd backend && mise exec -- uv run pytest -v
 
 ## Quality gate
 
-All contributions must pass the quality gate with **zero warnings** before opening a PR. CI enforces the same check:
+All contributions must pass the quality gate with **zero warnings** before
+opening a PR. CI enforces the same check:
 
 ```sh
 mise exec -- ./scripts/check.sh
 ```
 
-The gate covers Python (ruff, basedpyright, pytest) and TypeScript/Svelte (ESLint, svelte-check, prettier).
+The gate covers Python (ruff, basedpyright, pytest) and TypeScript/Svelte
+(ESLint, svelte-check, prettier).
 
 ### Test requirement
 
-Every change to `backend/src/analecta/**` carries its tests in the same commit; zero coverage on new backend code blocks merging. Beyond coverage: a test added for a bug fix or a new guard must be shown to fail against the code *without* the change, on the assertion that targets the specific behaviour being fixed — a test that passes either way proves nothing. The full policy, including how it applies to brand-new modules, is in [`docs/testing-policy.md`](../docs/testing-policy.md).
+Every change to `backend/src/analecta/**` carries its tests in the same
+commit; zero coverage on new backend code blocks merging. Beyond coverage:
+a test added for a bug fix or a new guard must be shown to fail against
+the code *without* the change, on the assertion that targets the specific
+behaviour being fixed — a test that passes either way proves nothing. The
+full policy, including how it applies to brand-new modules, is in
+[`docs/testing-policy.md`](../docs/testing-policy.md).
 
-TypeScript, Svelte, and Electron code are covered by manual QA only; no automated frontend tests are required.
+TypeScript, Svelte, and Electron code are covered by manual QA only; no
+automated frontend tests are required.
 
 ### Changelog requirement
 
-Every PR that changes user-facing behavior must add a line under `## [Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md), in the same commit. Internal refactors, tests, docs, CI changes, and dependency updates don't need an entry; security-relevant changes that merit a record go to [`docs/security-log.md`](../docs/security-log.md).
+Every change sorts into one of these records:
 
-The `commit-msg` hook (enabled by `git config core.hooksPath .githooks`, see Getting started) enforces this automatically: it blocks any `feat`/`fix` commit that doesn't have `CHANGELOG.md` staged — except the `deps` scope, whose commits never carry an entry by policy. For a `feat`/`fix` commit that genuinely has no user-facing effect, skip the check with `git commit --no-verify`.
+- **User-facing behavior** — a line under `## [Unreleased]` in
+  [`CHANGELOG.md`](../CHANGELOG.md), in the same commit.
+- **Security or privacy changes the Analecta user can feel** (what the
+  app reveals to remote sites, what it fetches, what it stores) — the full
+  writeup goes in a dated section of
+  [`docs/security-log.md`](../docs/security-log.md), and the CHANGELOG
+  carries a terse `### Security` line referencing that file.
+- **Security-relevant internals the user never touches** (CI and build
+  tooling, provenance gates) — `docs/security-log.md` only, never the
+  CHANGELOG.
+- **Nothing anywhere** — internal refactors, tests, docs, CI changes, and
+  dependency updates, manual, scripted, or Dependabot, including
+  transitive bumps, even CVE-driven ones: the security pins and their
+  reasons live inline in the enforcing config files.
+
+The `commit-msg` hook (enabled by `git config core.hooksPath .githooks`,
+see Getting started) enforces this automatically: it blocks any
+`feat`/`fix` commit that doesn't have `CHANGELOG.md` staged — except the
+`deps` scope, whose commits never carry an entry by policy. For a
+`feat`/`fix` commit that genuinely has no user-facing effect, skip the
+check with `git commit --no-verify`.
 
 ## Commit conventions
 
@@ -135,14 +172,22 @@ Use the imperative mood. Keep the subject line under 72 characters.
 ## Submitting a pull request
 
 > [!IMPORTANT]
-> CI includes a dependency security scan that only runs on branches within this repository, not on fork pull requests. Fork PRs cannot pass the required CI checks and cannot be merged directly.
+> CI includes a dependency security scan that only runs on branches within
+> this repository, not on fork pull requests. Fork PRs cannot pass the
+> required CI checks and cannot be merged directly.
 
 The project uses a maintainer-applies workflow:
 
-1. **Open an issue** describing the change. Wait for maintainer sign-off before writing code — this avoids wasted effort on both sides.
-2. **Develop your changes** on a local fork or clone. Run `mise exec -- ./scripts/check.sh` and confirm it passes with zero warnings.
-3. **Share your work** via the issue thread: either a link to your fork branch or `git format-patch` output attached to the issue.
-4. **The maintainer applies your commits** to a branch in this repository, preserving your authorship, and opens the PR from there. You appear as the commit author in the project history.
+1. **Open an issue** describing the change. Wait for maintainer sign-off
+   before writing code — this avoids wasted effort on both sides.
+2. **Develop your changes** on a local fork or clone. Run
+   `mise exec -- ./scripts/check.sh` and confirm it passes with zero
+   warnings.
+3. **Share your work** via the issue thread: either a link to your fork
+   branch or `git format-patch` output attached to the issue.
+4. **The maintainer applies your commits** to a branch in this repository,
+   preserving your authorship, and opens the PR from there. You appear as
+   the commit author in the project history.
 
 Response times are best-effort for a solo-maintained project.
 
@@ -161,4 +206,7 @@ These apply to all contributions — violations will block merging:
 
 ## Dependency changes
 
-Adding or upgrading dependencies requires following the verification protocol in [`docs/dependency-verification.md`](../docs/dependency-verification.md). This applies to both Python and Node packages.
+Adding or upgrading dependencies requires following the verification
+protocol in
+[`docs/dependency-verification.md`](../docs/dependency-verification.md).
+This applies to both Python and Node packages.
