@@ -83,12 +83,39 @@ export type UpdateCheckResult =
 	| { status: 'unavailable' }
 	| { status: 'error' };
 
+// The check hits GitHub Releases over the network; without a guard a hung
+// IPC would stall the settings page indefinitely.
+const UPDATE_CHECK_TIMEOUT_MS = 30_000;
+
 export async function getAppVersion(): Promise<string> {
 	return invoke('get-app-version') as Promise<string>;
 }
 
+export function isUpdateCheckResult(value: unknown): value is UpdateCheckResult {
+	if (typeof value !== 'object' || value === null) return false;
+	const { status, version } = value as { status?: unknown; version?: unknown };
+	if (status === 'available') return typeof version === 'string';
+	return status === 'up-to-date' || status === 'unavailable' || status === 'error';
+}
+
 export async function checkUpdate(): Promise<UpdateCheckResult> {
-	return invoke('check-update') as Promise<UpdateCheckResult>;
+	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<never>((_, reject) => {
+		timeoutId = setTimeout(
+			() => reject(new Error('Update check timed out')),
+			UPDATE_CHECK_TIMEOUT_MS
+		);
+	});
+	try {
+		const result = await Promise.race([invoke('check-update'), timeout]);
+		if (!isUpdateCheckResult(result)) {
+			console.warn('Invalid check-update payload from main process', result);
+			return { status: 'error' };
+		}
+		return result;
+	} finally {
+		clearTimeout(timeoutId);
+	}
 }
 
 export async function downloadAndInstallUpdate(): Promise<void> {

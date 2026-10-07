@@ -23,15 +23,20 @@ export type UpdateCheckResult =
 // resolves null only when the updater is inactive (unpacked/dev); when the
 // latest version is not newer it both emits 'update-not-available' and
 // resolves with isUpdateAvailable: false; errors reject the promise and also
-// fire the 'error' event already logged by initUpdater.
+// fire the 'error' event already logged by initUpdater (checked 6.8.9: the
+// checkForUpdates .catch emits 'error' before rethrowing, so the rejection
+// is never silently unexpected — hence no second log here).
 export async function runUpdateCheck(): Promise<UpdateCheckResult> {
 	try {
 		const result = await autoUpdater.checkForUpdates();
-		if (result !== null && result.isUpdateAvailable) {
+		// Inactive updater = update checks unavailable (semantics above).
+		if (result === null) return { status: 'unavailable' };
+		if (result.isUpdateAvailable) {
 			return { status: 'available', version: result.updateInfo.version };
 		}
 		return { status: 'up-to-date' };
 	} catch {
+		// The 'error' event handler in initUpdater already logged the cause.
 		return { status: 'error' };
 	}
 }
