@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import type { BrowserWindow } from 'electron';
 import { assertVaultPath, assertExistsPath, setVaultPath } from './vault-state.js';
 import { getSidecarPort } from './sidecar.js';
-import { checkForUpdates, downloadUpdate, quitAndInstall } from './updater.js';
+import { runUpdateCheck, downloadUpdate, quitAndInstall } from './updater.js';
 
 let initialDeepLink: string | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -122,7 +122,10 @@ export function registerIpcHandlers(): void {
 		new Notification({ title, body }).show();
 	});
 
-	ipcMain.handle('check-update', () => (app.isPackaged ? checkForUpdates() : Promise.resolve()));
+	ipcMain.handle('check-update', () =>
+		app.isPackaged ? runUpdateCheck() : Promise.resolve({ status: 'unavailable' } as const)
+	);
+	ipcMain.handle('get-app-version', () => app.getVersion());
 	ipcMain.handle('download-and-install-update', async () => {
 		if (!app.isPackaged) return;
 		await downloadUpdate();
