@@ -13,8 +13,27 @@ export function initUpdater(win: BrowserWindow): void {
 	});
 }
 
-export function checkForUpdates(): Promise<void> {
-	return autoUpdater.checkForUpdates().then(() => undefined);
+export type UpdateCheckResult =
+	| { status: 'available'; version: string }
+	| { status: 'up-to-date' }
+	| { status: 'unavailable' }
+	| { status: 'error' };
+
+// electron-updater semantics (verified against its out/*.d.ts + AppUpdater.js):
+// resolves null only when the updater is inactive (unpacked/dev); when the
+// latest version is not newer it both emits 'update-not-available' and
+// resolves with isUpdateAvailable: false; errors reject the promise and also
+// fire the 'error' event already logged by initUpdater.
+export async function runUpdateCheck(): Promise<UpdateCheckResult> {
+	try {
+		const result = await autoUpdater.checkForUpdates();
+		if (result !== null && result.isUpdateAvailable) {
+			return { status: 'available', version: result.updateInfo.version };
+		}
+		return { status: 'up-to-date' };
+	} catch {
+		return { status: 'error' };
+	}
 }
 
 export function downloadUpdate(): Promise<void> {

@@ -13,6 +13,7 @@ const ALLOWED_CHANNELS = new Set([
 	'clipboard-read',
 	'notify',
 	'check-update',
+	'get-app-version',
 	'download-and-install-update',
 	'relaunch',
 	'get-login-item',
