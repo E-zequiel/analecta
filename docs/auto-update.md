@@ -27,6 +27,17 @@ mechanism — and the resulting UX — differs per target (see below).
 5. `autoDownload` is `false` (set in `initUpdater`) — nothing downloads until the user
    explicitly clicks the banner. There is no silent background install.
 
+## Manual check in Settings
+
+In addition to the automatic startup check, Settings → About shows the running
+app version (via IPC `get-app-version` → `app.getVersion()`) and a
+"Check for updates" button that re-runs the same `check-update` IPC on demand.
+On `available`, electron-updater emits `update-available` exactly as on startup,
+so the existing push listener renders the banner — the button's own feedback
+just points to it. `up-to-date` reports the running version; `unavailable`
+means the build is unpacked/dev (no update checks); `error` asks the user to
+retry. The result is not persisted.
+
 ## Draft releases are invisible
 
 `electron-builder.yml` sets `releaseType: draft`. `electron-updater`'s GitHub provider

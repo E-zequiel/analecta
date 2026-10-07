@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { openDialog, updateVaultScope, relaunch, setCloseToTray } from '$lib/platform';
+	import {
+		openDialog,
+		updateVaultScope,
+		relaunch,
+		setCloseToTray,
+		getAppVersion,
+		checkUpdate,
+	} from '$lib/platform';
 	import { config as configApi, system as systemApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
 	import { tooltip } from '$lib/actions/tooltip';
@@ -39,6 +46,11 @@
 	let rescanResult = $state('');
 	let localizingImages = $state(false);
 	let localizeImagesResult = $state('');
+
+	// About: app version display + manual update check
+	let appVersion = $state('—');
+	let checkingForUpdate = $state(false);
+	let updateCheckNote = $state('');
 
 	let uiFontTimer: ReturnType<typeof setTimeout> | null = null;
 	let readingFontTimer: ReturnType<typeof setTimeout> | null = null;
@@ -95,6 +107,11 @@
 	}
 
 	onMount(async () => {
+		try {
+			appVersion = await getAppVersion();
+		} catch {
+			appVersion = '—';
+		}
 		try {
 			const cfg = await configApi.get();
 			form = {
@@ -273,6 +290,28 @@
 
 	function toggleGraphAnimation() {
 		graphAnimationEnabled.update((v) => !v);
+	}
+
+	async function checkForUpdates() {
+		checkingForUpdate = true;
+		updateCheckNote = '';
+		try {
+			const result = await checkUpdate();
+			updateCheckNote =
+				result.status === 'available'
+					? `Update to v${result.version} is available — see the banner above.`
+					: result.status === 'up-to-date'
+						? appVersion === '—'
+							? "You're up to date."
+							: `You're up to date (v${appVersion}).`
+						: result.status === 'unavailable'
+							? "Update checks aren't available in development builds."
+							: "Couldn't check for updates — try again.";
+		} catch {
+			updateCheckNote = "Couldn't check for updates — try again.";
+		} finally {
+			checkingForUpdate = false;
+		}
 	}
 </script>
 
@@ -504,6 +543,31 @@
 					{form.close_to_tray ? 'On' : 'Off'}
 				</button>
 			</div>
+		</section>
+
+		<section>
+			<h2>About</h2>
+			<div class="field toggle-field">
+				<label for="app-version">Version</label>
+				<span class="about-version">{appVersion}</span>
+			</div>
+			<div class="field toggle-field">
+				<label
+					for="check-updates"
+					use:tooltip={'Checks for a newer published release now, in addition to the automatic check on startup'}
+				>
+					Check for updates
+				</label>
+				<button
+					id="check-updates"
+					class="action-btn"
+					onclick={checkForUpdates}
+					disabled={checkingForUpdate}
+				>
+					{checkingForUpdate ? 'Checking…' : 'Check for updates'}
+				</button>
+			</div>
+			{#if updateCheckNote}<p class="maintenance-result">{updateCheckNote}</p>{/if}
 		</section>
 	</div>
 
@@ -896,6 +960,11 @@
 		margin: 0.5rem 0 0;
 		font-size: var(--font-size-sublabel);
 		color: var(--green);
+	}
+
+	.about-version {
+		font-size: var(--font-size-count);
+		color: var(--fg);
 	}
 
 	.action-btn {

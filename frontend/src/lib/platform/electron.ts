@@ -74,8 +74,21 @@ export async function relaunch(): Promise<void> {
 	await invoke('relaunch');
 }
 
-export async function checkUpdate(): Promise<void> {
-	await invoke('check-update');
+// Mirrors the union exported by electron/main/updater.ts (the IPC result of
+// `check-update`). Kept local — the renderer and main bundles do not share
+// a types module.
+export type UpdateCheckResult =
+	| { status: 'available'; version: string }
+	| { status: 'up-to-date' }
+	| { status: 'unavailable' }
+	| { status: 'error' };
+
+export async function getAppVersion(): Promise<string> {
+	return invoke('get-app-version') as Promise<string>;
+}
+
+export async function checkUpdate(): Promise<UpdateCheckResult> {
+	return invoke('check-update') as Promise<UpdateCheckResult>;
 }
 
 export async function downloadAndInstallUpdate(): Promise<void> {
