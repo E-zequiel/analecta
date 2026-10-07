@@ -7,6 +7,7 @@
 		setCloseToTray,
 		getAppVersion,
 		checkUpdate,
+		type UpdateCheckResult,
 	} from '$lib/platform';
 	import { config as configApi, system as systemApi } from '$lib/api/client';
 	import { applyFont } from '$lib/font';
@@ -48,6 +49,9 @@
 	let localizeImagesResult = $state('');
 
 	// About: app version display + manual update check
+	// '—' is the "unknown" sentinel: initial state and the fetch-failure
+	// fallback. checkForUpdates() keys off it to omit the version
+	// from the up-to-date note when the real version was never learned.
 	let appVersion = $state('—');
 	let checkingForUpdate = $state(false);
 	let updateCheckNote = $state('');
@@ -110,7 +114,8 @@
 		try {
 			appVersion = await getAppVersion();
 		} catch {
-			appVersion = '—';
+			// Fetch failure: appVersion already holds the '—' "unknown"
+			// sentinel, so there is nothing to reset here.
 		}
 		try {
 			const cfg = await configApi.get();
@@ -292,23 +297,34 @@
 		graphAnimationEnabled.update((v) => !v);
 	}
 
+	// Same failure wording for both the 'error' status and the thrown/
+	// timeout catch path — one constant keeps the two from drifting.
+	const UPDATE_CHECK_FAILURE_NOTE =
+		"Couldn't check for updates — check your connection and try again.";
+
+	// Self-documenting status→note mapping, one branch per UpdateCheckResult
+	// variant — replaces the former 4-way nested ternary.
+	function noteFor(result: UpdateCheckResult): string {
+		switch (result.status) {
+			case 'available':
+				return `Update to v${result.version} is available — see the banner above.`;
+			case 'up-to-date':
+				// '—' means the version was never learned, so omit it.
+				return appVersion === '—' ? "You're up to date." : `You're up to date (v${appVersion}).`;
+			case 'unavailable':
+				return "Update checks aren't available in development builds.";
+			case 'error':
+				return UPDATE_CHECK_FAILURE_NOTE;
+		}
+	}
+
 	async function checkForUpdates() {
 		checkingForUpdate = true;
 		updateCheckNote = '';
 		try {
-			const result = await checkUpdate();
-			updateCheckNote =
-				result.status === 'available'
-					? `Update to v${result.version} is available — see the banner above.`
-					: result.status === 'up-to-date'
-						? appVersion === '—'
-							? "You're up to date."
-							: `You're up to date (v${appVersion}).`
-						: result.status === 'unavailable'
-							? "Update checks aren't available in development builds."
-							: "Couldn't check for updates — try again.";
+			updateCheckNote = noteFor(await checkUpdate());
 		} catch {
-			updateCheckNote = "Couldn't check for updates — try again.";
+			updateCheckNote = UPDATE_CHECK_FAILURE_NOTE;
 		} finally {
 			checkingForUpdate = false;
 		}
