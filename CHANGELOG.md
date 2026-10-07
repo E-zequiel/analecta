@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Settings: new About section showing the app version and a manual
+  "Check for updates" button with inline feedback (update available → the
+  usual update banner appears; up to date, dev build, and failure states
+  are reported in place).
+
 ## [0.5.4] - 2026-09-29
 
 (No user-visible changes — dependency maintenance and internal tooling only.)
