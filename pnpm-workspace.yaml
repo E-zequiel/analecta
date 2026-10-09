@@ -71,7 +71,11 @@ overrides:
   # Path traversal.
   postcss: '8.5.23'
   # DoS.
-  postcss-selector-parser: '7.1.5'
+  postcss-selector-parser: '7.1.6'
+  # Event-loop DoS.
+  source-map-js: '1.2.2'
+  # Cross-user cache disclosure.
+  http-cache-semantics: '4.3.0'
   # Memory disclosure.
   devalue: '6.0.2'
   # Deliberately unified into one entry — do NOT re-split per consumer
