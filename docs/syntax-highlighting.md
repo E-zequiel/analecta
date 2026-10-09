@@ -135,12 +135,22 @@ produced during the next `pnpm build` (step 10 of `check.sh`). Commit the
 updated `shiki-classes.css` alongside the package changes.
 
 `@shikijs/markdown-it` pins `markdown-it` as a direct (non-peer) dependency —
-`^14.3.0` as of `@shikijs/markdown-it@4.4.3` (`pnpm view @shikijs/markdown-it@<version>
-dependencies` shows the exact range for a given release). `markdown-it` cannot
-be upgraded past that ceiling until `@shikijs/markdown-it` itself widens it —
-expect `markdown-it` to keep appearing under "Blocked" in automated
-dependency-update PRs for this reason specifically, not as a `check.sh`
-regression to chase.
+`^15.0.2` as of `@shikijs/markdown-it@4.5.0` (`pnpm view
+@shikijs/markdown-it@<version> dependencies` shows the exact range for a given
+release). The pair must move together: while the plugin is behind, `markdown-it`
+cannot be upgraded past the plugin's ceiling — expect `markdown-it` to appear
+under "Blocked" in automated dependency-update PRs while the pair is out of
+sync, not as a `check.sh` regression to chase. (Verified 2026-10-09: the joint
+`markdown-it` 15.0.2 + `@shikijs/markdown-it` 4.5.0 bump passes `check.sh`
+while either one alone fails it.)
+
+`markdown-it` 15 bundles its own TypeScript declarations — `@types/markdown-it`
+was removed in the 15.0.2 upgrade and must not be re-added. The bundled `Token`
+types also differ from `@types/markdown-it`: `meta` is
+`Record<string, unknown> | null` (not `any`) and `attrGet` returns
+`string | number | null` (not `string | null`), so plugin interfaces stored in
+`token.meta` extend `Record<string, unknown>` and renderer code narrows attr
+values to string explicitly.
 
 To regenerate manually without a full build:
 
