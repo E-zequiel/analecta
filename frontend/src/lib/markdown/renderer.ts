@@ -94,11 +94,11 @@ export function createRenderer(
 			})
 		);
 
-	const defaultImage = md.renderer.rules['image']!;
+	const defaultImage = md.renderer.rules['image'];
 
 	md.renderer.rules['image'] = (tokens, idx, options, env, self) => {
 		const token = tokens[idx];
-		const src = token.attrGet('src') ?? '';
+		const src = String(token.attrGet('src') ?? '');
 		if (src && !src.startsWith('http') && !src.startsWith('asset:')) {
 			const absolute = resolveImagePath(markdownFilePath, src);
 			token.attrSet('src', convertFileSrc(absolute));

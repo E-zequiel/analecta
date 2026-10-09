@@ -1,4 +1,4 @@
-import type MarkdownIt from 'markdown-it';
+import type { MarkdownIt } from 'markdown-it';
 
 export type ResolveWikilinkTitle = (title: string) => number | null;
 
@@ -6,7 +6,10 @@ export interface WikilinkOptions {
 	resolveTitle: ResolveWikilinkTitle;
 }
 
-interface WikilinkMeta {
+// Extends Record<string, unknown> to cross markdown-it 15's Token.meta type
+// (Record<string, unknown> | null), both when assigning and when casting in
+// the renderer rule.
+interface WikilinkMeta extends Record<string, unknown> {
 	title: string;
 	alias: string | null;
 	entryId: number | null;

@@ -1,6 +1,9 @@
-import type MarkdownIt from 'markdown-it';
+import type { MarkdownIt } from 'markdown-it';
 
-interface HashtagMeta {
+// Extends Record<string, unknown> to cross markdown-it 15's Token.meta type
+// (Record<string, unknown> | null), both when assigning and when casting in
+// the renderer rule.
+interface HashtagMeta extends Record<string, unknown> {
 	raw: string;
 	normalized: string;
 }
