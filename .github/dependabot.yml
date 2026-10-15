@@ -4,6 +4,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+      day: thursday
+      time: "09:00"
+      timezone: Etc/UTC
     cooldown:
       default-days: 4
     groups:

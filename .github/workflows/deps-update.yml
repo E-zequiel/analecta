@@ -2,7 +2,7 @@ name: Dependency Update
 
 on:
   schedule:
-    - cron: '0 12 * * 4'  # Every Thursday at 12:00 UTC (09:00 ART)
+    - cron: '0 9 * * 5'  # Every Friday at 09:00 UTC (06:00 ART)
   workflow_dispatch:
     inputs:
       cooldown:
