@@ -2,6 +2,8 @@ version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    # Thursday 09:00 UTC, one day ahead of deps-update.yml (Friday): its PRs
+    # get a full CI day before the lockfile updater runs.
     schedule:
       interval: weekly
       day: thursday

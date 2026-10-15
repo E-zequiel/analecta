@@ -2,7 +2,10 @@ name: Dependency Update
 
 on:
   schedule:
-    - cron: '0 9 * * 5'  # Every Friday at 09:00 UTC (06:00 ART)
+    # Every Friday, 09:07 UTC (06:07 UTC-3).
+    # Minute 7 avoids GitHub's start-of-hour load spike for scheduled events;
+    # execution itself is best-effort (delayed under high load, not exact).
+    - cron: '7 9 * * 5'
   workflow_dispatch:
     inputs:
       cooldown:
