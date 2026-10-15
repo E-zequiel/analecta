@@ -187,7 +187,7 @@ The sidecar build (`scripts/build_sidecar.py`) runs inside the locked Python env
 
 ## Control 7: Age-Gated Dependency Updates
 
-`.github/workflows/deps-update.yml` runs on a weekly schedule (Thursdays at 12:00 UTC) and via `workflow_dispatch` (repo write-access users only). It updates Python and Node lock files, but applies a **cooldown gate** before touching any package:
+`.github/workflows/deps-update.yml` runs on a weekly schedule (Fridays at 09:00 UTC) and via `workflow_dispatch` (repo write-access users only). It updates Python and Node lock files, but applies a **cooldown gate** before touching any package:
 
 1. Detect outdated packages via `uv` and `pnpm outdated`.
 2. Query the upstream registry for the new version's release date (PyPI JSON API, npm registry `time` map).
