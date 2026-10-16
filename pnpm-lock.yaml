@@ -351,8 +351,8 @@ importers:
         specifier: 4.1.1
         version: 4.1.1(prettier@3.8.3)(svelte@5.57.2(@typescript-eslint/types@8.60.0))
       socket:
-        specifier: 1.7.0
-        version: 1.7.0
+        specifier: 1.8.0
+        version: 1.8.0
       typescript-eslint:
         specifier: 8.71.1
         version: 8.71.1(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
@@ -2605,8 +2605,8 @@ packages:
     resolution: {integrity: sha512-2wcC/oGxHis/BoHkkPwldgiPSYcpZK3JU28WoMVv55yHJgcZ8rlXvuG9iZggz+sU1d4bRgIGASwyWqjxu3FM0g==}
     engines: {node: '>=18'}
 
-  socket@1.7.0:
-    resolution: {integrity: sha512-fnE69BV9yL0vbex/Qj/DcvfwVDeMpRX5cl32XgvYB0crD6Ovk1nmG2L1u5htOHYEhy+fG6rCetLt1ReVHG02rg==}
+  socket@1.8.0:
+    resolution: {integrity: sha512-mOsqf78g90+makf72sNw5WRR8Zw2OB+n6psSEFa/hYrV+ohUpSp8xZd07q4jHHcec1/bVzMYcDx1653gLhg2cQ==}
     engines: {node: '>=18.20.8', pnpm: '>=10.33.0'}
     hasBin: true
 
@@ -5225,7 +5225,7 @@ snapshots:
       mrmime: 2.0.1
       totalist: 3.0.1
 
-  socket@1.7.0:
+  socket@1.8.0:
     dependencies:
       '@socketsecurity/socket-patch': 2.0.0
       form-data: 4.0.6
