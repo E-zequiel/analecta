@@ -16,7 +16,7 @@
     "eslint-plugin-svelte": "3.23.1",
     "prettier": "3.8.3",
     "prettier-plugin-svelte": "4.1.1",
-    "socket": "1.7.0",
+    "socket": "1.8.0",
     "typescript-eslint": "8.71.1"
   },
   "packageManager": "pnpm@12.8.0+sha512.ORbpVZzfvd99ySHomZB2WEQlFh3nc/bKv39HRn8NlFK/qJponsJFdTrT1Vq8s89wbmZ6wSBi28nGJfvXK8og3A=="
