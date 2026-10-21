@@ -197,7 +197,8 @@
 					settings: {
 						...forceAtlas2.inferSettings(subGraph),
 						barnesHutOptimize: subGraph.order > 150,
-						scalingRatio: 25,
+						// Aligned with runLayout's scalingRatio — see the comment there.
+						scalingRatio: 45,
 						gravity: 0.0575,
 						adjustSizes: true,
 					},
@@ -268,10 +269,13 @@
 				...forceAtlas2.inferSettings(graph),
 				barnesHutOptimize: n > 150,
 				// Shared with liveSettings below on purpose: the settled layout and the
-				// live reheat must agree, or the first drag would jolt nodes toward a
-				// different equilibrium. Higher repulsion + lighter gravity than the FA2
-				// defaults keep clusters legible without clumping everything centerward.
-				scalingRatio: 30,
+				// live reheat must agree on the equilibrium parameters, or the first drag
+				// would jolt nodes toward a different equilibrium. Edge attraction's
+				// coefficient is fixed (does not scale with scalingRatio), so raising it
+				// is what separates node from node *within* a cluster; effective strong-
+				// gravity pull is scalingRatio-independent, so inter-cluster separation
+				// grows more gently.
+				scalingRatio: 45,
 				gravity: 0.02,
 				adjustSizes: true,
 			},
@@ -387,10 +391,16 @@
 		const liveSettings = {
 			...forceAtlas2.inferSettings(graph),
 			barnesHutOptimize: data.nodes.length > 150,
-			// Must match runLayout's settings — see the comment there.
-			scalingRatio: 30,
+			// Equilibrium params must match runLayout's — see the comment there.
+			scalingRatio: 45,
 			gravity: 0.02,
 			adjustSizes: true,
+			// inferSettings' inherited slowDown (1 + log(order)) dampens per-tick
+			// displacement ~7x on a 300-node vault — the reason live drift feels
+			// sluggish. A lower value here speeds the visible motion. Only the live
+			// sim: the layout passes want the slower, more stable convergence, and
+			// at equilibrium dx ≈ 0 so the differing speed factor causes no jolt.
+			slowDown: 3,
 		};
 		let liveTicksLeft = 0;
 		let liveRafId = 0;
