@@ -38,11 +38,32 @@
 		);
 	}
 
-	// Tick budget for every live heat() call (Play button, node-drag reheat, and the
-	// post-layout auto-start). ~67 seconds of rAF frames at 60 fps; motion decays well
-	// before exhaustion because FA2 settles, but a larger budget gives the simulation
-	// more runway to keep drifting instead of freezing mid-settle.
-	const HEAT_TICKS = 4000;
+	// Shared forceAtlas2 equilibrium tuning — every FA2 call site (positionByComponent's
+	// per-component pass, runLayout's joint pass, and the live simulation) must use these
+	// same values, or a drag reheat would jolt nodes toward a different equilibrium.
+	// Mechanism (from graphology-layout-forceatlas2's source): edge attraction's
+	// coefficient is fixed and does not scale with scalingRatio, so raising it is the only
+	// knob that separates node from node *within* a cluster; effective strong-gravity
+	// pull is scalingRatio-independent, so inter-cluster separation grows more gently.
+	const FA2_SCALING_RATIO = 45;
+	const FA2_GRAVITY = 0.02;
+
+	// Live-simulation speed. inferSettings' inherited slowDown (1 + log(order)) dampens
+	// per-tick displacement ~7x on a 300-node vault — the reason drift felt sluggish.
+	// Lower value = faster visible motion. Live-only: the layout passes want the slower,
+	// more stable convergence, and at equilibrium dx ≈ 0 so the differing speed factor
+	// causes no jolt on reheat. Small graphs get a gentler speed: a handful of nodes
+	// under the same per-tick forces would just twitch around a mostly-empty layout.
+	const LIVE_SLOW_DOWN = 3;
+	const LIVE_SLOW_DOWN_SMALL_GRAPH = 5;
+	const LIVE_SMALL_GRAPH_MAX_NODES = 40;
+
+	// Motion horizon for every live heat() call (Play button, node-drag reheat, and the
+	// post-layout auto-start), in wall-clock milliseconds — not rAF frames, which
+	// exhaust twice as fast on 120/144 Hz displays. Motion decays well before the
+	// horizon because FA2 settles; the horizon only bounds how long perturbed nodes
+	// may keep drifting.
+	const HEAT_DURATION_MS = 60_000;
 
 	const {
 		onopen,
@@ -197,9 +218,8 @@
 					settings: {
 						...forceAtlas2.inferSettings(subGraph),
 						barnesHutOptimize: subGraph.order > 150,
-						// Aligned with runLayout's scalingRatio — see the comment there.
-						scalingRatio: 45,
-						gravity: 0.0575,
+						scalingRatio: FA2_SCALING_RATIO,
+						gravity: FA2_GRAVITY,
 						adjustSizes: true,
 					},
 				});
@@ -268,15 +288,9 @@
 			settings: {
 				...forceAtlas2.inferSettings(graph),
 				barnesHutOptimize: n > 150,
-				// Shared with liveSettings below on purpose: the settled layout and the
-				// live reheat must agree on the equilibrium parameters, or the first drag
-				// would jolt nodes toward a different equilibrium. Edge attraction's
-				// coefficient is fixed (does not scale with scalingRatio), so raising it
-				// is what separates node from node *within* a cluster; effective strong-
-				// gravity pull is scalingRatio-independent, so inter-cluster separation
-				// grows more gently.
-				scalingRatio: 45,
-				gravity: 0.02,
+				// Shared equilibrium constants — see the comment at their definition.
+				scalingRatio: FA2_SCALING_RATIO,
+				gravity: FA2_GRAVITY,
 				adjustSizes: true,
 			},
 		});
@@ -391,50 +405,49 @@
 		const liveSettings = {
 			...forceAtlas2.inferSettings(graph),
 			barnesHutOptimize: data.nodes.length > 150,
-			// Equilibrium params must match runLayout's — see the comment there.
-			scalingRatio: 45,
-			gravity: 0.02,
+			// Shared equilibrium constants — see the comment at their definition.
+			scalingRatio: FA2_SCALING_RATIO,
+			gravity: FA2_GRAVITY,
 			adjustSizes: true,
-			// inferSettings' inherited slowDown (1 + log(order)) dampens per-tick
-			// displacement ~7x on a 300-node vault — the reason live drift feels
-			// sluggish. A lower value here speeds the visible motion. Only the live
-			// sim: the layout passes want the slower, more stable convergence, and
-			// at equilibrium dx ≈ 0 so the differing speed factor causes no jolt.
-			slowDown: 3,
+			// Speed constant — see LIVE_SLOW_DOWN's comment; scaled to graph size.
+			slowDown:
+				data.nodes.length < LIVE_SMALL_GRAPH_MAX_NODES
+					? LIVE_SLOW_DOWN_SMALL_GRAPH
+					: LIVE_SLOW_DOWN,
 		};
-		let liveTicksLeft = 0;
+		let liveDeadlineAt = 0;
 		let liveRafId = 0;
 		// True only after an explicit user Pause this mount — distinct from isAnimating
-		// being false because the tick budget simply ran out. Stops the drag auto-reheat
-		// below from silently overriding an explicit pause; a natural exhaustion still
-		// lets the next drag resume things, which is the whole point of a tick budget.
+		// being false because the motion horizon simply ran out. Stops the drag
+		// auto-reheat below from silently overriding an explicit pause; a natural
+		// exhaustion still lets the next drag resume things, which is the whole point
+		// of a motion horizon.
 		let manuallyPaused = false;
 
 		function tick() {
 			liveRafId = 0;
-			if (liveTicksLeft <= 0) {
-				// Tick budget exhausted on its own (not via stopHeat) — mirror the
+			if (performance.now() >= liveDeadlineAt) {
+				// Motion horizon reached on its own (not via stopHeat) — mirror the
 				// button back to Play so the user can restart the motion.
 				isAnimating = false;
 				return;
 			}
 			forceAtlas2.assign(graph, { iterations: 1, settings: liveSettings });
 			sigma.refresh();
-			liveTicksLeft--;
 			liveRafId = requestAnimationFrame(tick);
 		}
 
 		// No longer gates on graphAnimationEnabled itself — that preference only decides
 		// whether the two auto-trigger call sites below invoke heat() at all. Once called
 		// (auto or via the manual Play button), heat() always runs.
-		function heat(ticks = HEAT_TICKS) {
+		function heat(durationMs = HEAT_DURATION_MS) {
 			isAnimating = true;
-			liveTicksLeft = ticks;
+			liveDeadlineAt = performance.now() + durationMs;
 			if (liveRafId === 0) liveRafId = requestAnimationFrame(tick);
 		}
 
 		function stopHeat() {
-			liveTicksLeft = 0;
+			liveDeadlineAt = 0;
 			cancelAnimationFrame(liveRafId);
 			liveRafId = 0;
 			isAnimating = false;
