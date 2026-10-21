@@ -17,9 +17,9 @@ and this project adheres to
   per-component, joint, and live-simulation passes, live-simulation speed
   `slowDown` overridden to 3 for larger graphs (5 below 40 nodes) where
   the inherited 1 + log(n) damped per-tick drift ~7x, and the motion
-  horizon made wall-clock based (60 s) instead of frame-counted, with the
-  budget shortened for small graphs; equilibrium settings are shared
-  between the initial layout and the live simulation).
+  horizon made wall-clock based (60 s) instead of frame-counted;
+  equilibrium settings are shared between the initial layout and the
+  live simulation).
 
 ### Added
 
