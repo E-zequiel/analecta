@@ -261,8 +261,12 @@
 			settings: {
 				...forceAtlas2.inferSettings(graph),
 				barnesHutOptimize: n > 150,
-				scalingRatio: 15,
-				gravity: 0.0575,
+				// Shared with liveSettings below on purpose: the settled layout and the
+				// live reheat must agree, or the first drag would jolt nodes toward a
+				// different equilibrium. Higher repulsion + lighter gravity than the FA2
+				// defaults keep clusters legible without clumping everything centerward.
+				scalingRatio: 20,
+				gravity: 0.04,
 				adjustSizes: true,
 			},
 		});
@@ -377,8 +381,9 @@
 		const liveSettings = {
 			...forceAtlas2.inferSettings(graph),
 			barnesHutOptimize: data.nodes.length > 150,
-			scalingRatio: 15,
-			gravity: 0.0575,
+			// Must match runLayout's settings — see the comment there.
+			scalingRatio: 20,
+			gravity: 0.04,
 			adjustSizes: true,
 		};
 		let liveTicksLeft = 0;

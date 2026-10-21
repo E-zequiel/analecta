@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- Vault graph: more visible node motion and wider cluster separation
+  (moderate forceAtlas2 retune: repulsion `scalingRatio` 15 → 20, center
+  `gravity` 0.0575 → 0.04, applied to both the initial layout and the live
+  simulation).
+
 ### Added
 
 - Settings: new About section showing the app version and a manual
