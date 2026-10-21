@@ -37,8 +37,8 @@
 		windowStartMove,
 		windowIsMaximized,
 		onWindowMaximized,
-	} from '$lib/platform';
-	import { tooltip } from '$lib/actions/tooltip';
+	} from '#lib/platform';
+	import { tooltip } from '#lib/actions/tooltip';
 	import {
 		sidebarCollapsed,
 		sidebarWidth,
@@ -48,8 +48,8 @@
 		expandAllSignal,
 		rightSidebarOpen,
 		rightSidebarWidth,
-	} from '$lib/stores/ui';
-	import { activeEntryTitle } from '$lib/stores/tabs';
+	} from '#lib/stores/ui';
+	import { activeEntryTitle } from '#lib/stores/tabs';
 	import { page } from '$app/state';
 	import {
 		viewerEntry,
@@ -62,7 +62,7 @@
 		editorShowPreview,
 		editorIsDirty,
 		editorActions,
-	} from '$lib/stores/toolbar';
+	} from '#lib/stores/toolbar';
 
 	const SECTION_ICONS = {
 		library: Library,

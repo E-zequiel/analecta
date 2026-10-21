@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { entries as entriesApi } from '$lib/api/client';
+import { entries as entriesApi } from '#lib/api/client';
 import { entryAddedTick, entryChangedTick } from './sse';
 
 // lowercase title -> entry id, for resolving [[wikilinks]] to a real entry.

@@ -3,7 +3,10 @@
   "version": "0.5.4",
   "private": true,
   "type": "module",
-  "scripts": {
+  "imports": {
+		"#lib/*": "./src/lib/*"
+	},
+	"scripts": {
     "dev": "vite dev",
     "build": "node scripts/gen-shiki-css.mjs && vite build",
     "preview": "vite preview",
@@ -12,7 +15,7 @@
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "4.0.0",
-    "@sveltejs/kit": "2.70.3",
+    "@sveltejs/kit": "3.1.0",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@types/node": "26.6.5",
     "svelte": "5.57.2",
@@ -36,7 +39,7 @@
     "d3-force": "3.0.0",
     "graphology": "0.26.0",
     "graphology-layout-forceatlas2": "0.10.1",
-    "markdown-it": "15.0.2",
+    "markdown-it": "15.0.3",
     "markdown-it-footnote": "4.0.0",
     "markdown-it-task-lists": "2.1.1",
     "shiki": "4.5.0",

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { revealInDir, openUrl, confirm } from '$lib/platform';
-	import { entries as entriesApi } from '$lib/api/client';
-	import { contextMenu, hideContextMenu } from '$lib/stores/contextMenu';
-	import { closeTab } from '$lib/stores/tabs';
-	import { entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
+	import { revealInDir, openUrl, confirm } from '#lib/platform';
+	import { entries as entriesApi } from '#lib/api/client';
+	import { contextMenu, hideContextMenu } from '#lib/stores/contextMenu';
+	import { closeTab } from '#lib/stores/tabs';
+	import { entryChangedTick, lastChangedEntry } from '#lib/stores/sse';
 
 	let menuEl = $state<HTMLElement | null>(null);
 	let adjustedX = $state(0);

@@ -10,10 +10,10 @@
 		forceY,
 	} from 'd3-force';
 	import type { SimulationLinkDatum, SimulationNodeDatum } from 'd3-force';
-	import { entries as entriesApi, type GraphEdge, type GraphNode } from '$lib/api/client';
-	import { tooltip } from '$lib/actions/tooltip';
-	import { showContextMenu } from '$lib/stores/contextMenu';
-	import { openEntryTab } from '$lib/stores/tabs';
+	import { entries as entriesApi, type GraphEdge, type GraphNode } from '#lib/api/client';
+	import { tooltip } from '#lib/actions/tooltip';
+	import { showContextMenu } from '#lib/stores/contextMenu';
+	import { openEntryTab } from '#lib/stores/tabs';
 
 	const {
 		nodes,

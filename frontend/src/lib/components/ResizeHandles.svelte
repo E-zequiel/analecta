@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { windowStartResize } from '$lib/platform';
+	import { windowStartResize } from '#lib/platform';
 
 	const { maximized = false }: { maximized?: boolean } = $props();
 

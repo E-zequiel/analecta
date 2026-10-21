@@ -1,26 +1,26 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { readTextFile, writeTextFile } from '$lib/platform';
-	import { entries as entriesApi, type Entry } from '$lib/api/client';
-	import { entryChangedTick } from '$lib/stores/sse';
-	import { entryTitleIndex, ensureEntryTitleIndexLoaded } from '$lib/stores/entryTitles';
-	import { pendingEditorScrollFraction } from '$lib/stores/ui';
+	import { readTextFile, writeTextFile } from '#lib/platform';
+	import { entries as entriesApi, type Entry } from '#lib/api/client';
+	import { entryChangedTick } from '#lib/stores/sse';
+	import { entryTitleIndex, ensureEntryTitleIndexLoaded } from '#lib/stores/entryTitles';
+	import { pendingEditorScrollFraction } from '#lib/stores/ui';
 	import {
 		editorSaving,
 		editorSaved,
 		editorShowPreview,
 		editorIsDirty,
 		editorActions,
-	} from '$lib/stores/toolbar';
-	import { createRenderer } from '$lib/markdown/renderer';
-	import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
-	import '$lib/markdown/tokyo-night.css';
-	import '$lib/markdown/shiki-classes.css';
+	} from '#lib/stores/toolbar';
+	import { createRenderer } from '#lib/markdown/renderer';
+	import MarkdownEditor from '#lib/components/MarkdownEditor.svelte';
+	import '#lib/markdown/tokyo-night.css';
+	import '#lib/markdown/shiki-classes.css';
 
-	const entryId = $derived(parseInt($page.params['id'] as string));
+	const entryId = $derived(parseInt(page.params['id'] as string));
 
 	let entry = $state<Entry | null>(null);
 	let content = $state('');

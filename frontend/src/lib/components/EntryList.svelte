@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { Entry } from '$lib/api/client';
-	import { navigateInTab, openEntryTab } from '$lib/stores/tabs';
-	import { showContextMenu } from '$lib/stores/contextMenu';
-	import { tooltip } from '$lib/actions/tooltip';
+	import type { Entry } from '#lib/api/client';
+	import { navigateInTab, openEntryTab } from '#lib/stores/tabs';
+	import { showContextMenu } from '#lib/stores/contextMenu';
+	import { tooltip } from '#lib/actions/tooltip';
 	import { Eye, EyeClosed, Bookmark, Gem, ChartNetwork } from '@lucide/svelte';
 
 	const {

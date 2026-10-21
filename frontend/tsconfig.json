@@ -1,6 +1,19 @@
 {
-	"extends": "./.svelte-kit/tsconfig.json",
+	"extends": "$app/tsconfig",
+	"include": ["src", "test", "*"],
+	"exclude": [
+		"../node_modules/**",
+		"../src/service-worker.js",
+		"../src/service-worker"
+	],
 	"compilerOptions": {
+		// Subpath-imports mirror of the `imports` field in package.json:
+		// TS resolves extensionless `#lib/*` specifiers via paths, while Vite
+		// resolves them through the imports map at build time.
+		"paths": {
+			"#lib": ["./src/lib"],
+			"#lib/*": ["./src/lib/*"]
+		},
 		"allowJs": true,
 		"checkJs": true,
 		"esModuleInterop": true,

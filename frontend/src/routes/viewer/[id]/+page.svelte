@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { openUrl, confirm, readTextFile } from '$lib/platform';
+	import { openUrl, confirm, readTextFile } from '#lib/platform';
 	import { ChevronDown, ChevronRight, TriangleAlert } from '@lucide/svelte';
 	import {
 		entries as entriesApi,
@@ -11,31 +11,31 @@
 		ApiError,
 		type Entry,
 		type Tag,
-	} from '$lib/api/client';
-	import { createRenderer } from '$lib/markdown/renderer';
-	import '$lib/markdown/tokyo-night.css';
-	import '$lib/markdown/shiki-classes.css';
+	} from '#lib/api/client';
+	import { createRenderer } from '#lib/markdown/renderer';
+	import '#lib/markdown/tokyo-night.css';
+	import '#lib/markdown/shiki-classes.css';
 	import {
 		lastViewedId,
 		pendingScrollRestore,
 		pendingEditorScrollFraction,
 		scrollPositions,
 		selectedTag,
-	} from '$lib/stores/ui';
-	import { ensureEntryTab, closeTab, openEntryTab, navigateInSectionTab } from '$lib/stores/tabs';
-	import { entryChangedTick, lastChangedEntry, vaultRescannedTick } from '$lib/stores/sse';
-	import { entryTitleIndex, ensureEntryTitleIndexLoaded } from '$lib/stores/entryTitles';
-	import { showContextMenu } from '$lib/stores/contextMenu';
+	} from '#lib/stores/ui';
+	import { ensureEntryTab, closeTab, openEntryTab, navigateInSectionTab } from '#lib/stores/tabs';
+	import { entryChangedTick, lastChangedEntry, vaultRescannedTick } from '#lib/stores/sse';
+	import { entryTitleIndex, ensureEntryTitleIndexLoaded } from '#lib/stores/entryTitles';
+	import { showContextMenu } from '#lib/stores/contextMenu';
 	import {
 		viewerEntry,
 		viewerFontSize,
 		viewerTagsOpen,
 		viewerBacklinksOpen,
 		viewerActions,
-	} from '$lib/stores/toolbar';
-	import { tooltip } from '$lib/actions/tooltip';
+	} from '#lib/stores/toolbar';
+	import { tooltip } from '#lib/actions/tooltip';
 
-	const entryId = $derived(parseInt($page.params['id'] as string));
+	const entryId = $derived(parseInt(page.params['id'] as string));
 
 	$effect(() => {
 		if (!isNaN(entryId)) lastViewedId.set(entryId);

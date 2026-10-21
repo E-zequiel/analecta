@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { confirm } from '$lib/platform';
+	import { confirm } from '#lib/platform';
 	import {
 		entries as entriesApi,
 		tags as tagsApi,
@@ -11,7 +11,7 @@
 		type Entry,
 		type Tag,
 		type SubgraphResult,
-	} from '$lib/api/client';
+	} from '#lib/api/client';
 	import {
 		activeSection,
 		selectedTag,
@@ -19,15 +19,15 @@
 		sidebarTagPreview,
 		rightSidebarOpen,
 		dashboardPreviewEntryId,
-	} from '$lib/stores/ui';
-	import { entryAddedTick, entryChangedTick } from '$lib/stores/sse';
-	import { navigateInTab, navigateInSectionTab } from '$lib/stores/tabs';
-	import { showContextMenu } from '$lib/stores/contextMenu';
-	import EntryList from '$lib/components/EntryList.svelte';
-	import SortBar from '$lib/components/SortBar.svelte';
-	import LocalGraph from '$lib/components/LocalGraph.svelte';
-	import VaultGraph from '$lib/components/VaultGraph.svelte';
-	import { tooltip } from '$lib/actions/tooltip';
+	} from '#lib/stores/ui';
+	import { entryAddedTick, entryChangedTick } from '#lib/stores/sse';
+	import { navigateInTab, navigateInSectionTab } from '#lib/stores/tabs';
+	import { showContextMenu } from '#lib/stores/contextMenu';
+	import EntryList from '#lib/components/EntryList.svelte';
+	import SortBar from '#lib/components/SortBar.svelte';
+	import LocalGraph from '#lib/components/LocalGraph.svelte';
+	import VaultGraph from '#lib/components/VaultGraph.svelte';
+	import { tooltip } from '#lib/actions/tooltip';
 	import {
 		Eye,
 		EyeClosed,

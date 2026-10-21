@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { Entry } from '$lib/api/client';
+import type { Entry } from '#lib/api/client';
 
 // Incremented each time the backend emits an `entry_added` SSE event.
 export const entryAddedTick = writable(0);

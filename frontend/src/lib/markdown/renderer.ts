@@ -23,7 +23,7 @@ import langJson from '@shikijs/langs/json';
 import { createStyleToClassTransformer } from './shiki-style-to-class.js';
 import wikilink, { type ResolveWikilinkTitle } from './wikilink';
 import hashtag from './hashtag';
-import { convertFileSrc } from '$lib/platform';
+import { convertFileSrc } from '#lib/platform';
 
 const highlighter = createHighlighterCoreSync({
 	themes: [tokyoNight],

@@ -7,11 +7,11 @@
 	import { UndirectedGraph } from 'graphology';
 	import forceAtlas2 from 'graphology-layout-forceatlas2';
 	import { BowArrow, Focus, Maximize2, Pause, Play, Waypoints, X } from '@lucide/svelte';
-	import { entries as entriesApi, type GraphResult } from '$lib/api/client';
-	import { showContextMenu } from '$lib/stores/contextMenu';
-	import { openEntryTab } from '$lib/stores/tabs';
-	import { tooltip } from '$lib/actions/tooltip';
-	import { graphAnimationEnabled } from '$lib/stores/ui';
+	import { entries as entriesApi, type GraphResult } from '#lib/api/client';
+	import { showContextMenu } from '#lib/stores/contextMenu';
+	import { openEntryTab } from '#lib/stores/tabs';
+	import { tooltip } from '#lib/actions/tooltip';
+	import { graphAnimationEnabled } from '#lib/stores/ui';
 
 	type VaultNodeAttrs = {
 		label: string;

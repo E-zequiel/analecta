@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { shortcutsOpen } from '$lib/stores/ui';
+	import { shortcutsOpen } from '#lib/stores/ui';
 
 	function close() {
 		shortcutsOpen.set(false);

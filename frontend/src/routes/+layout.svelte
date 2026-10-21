@@ -15,9 +15,9 @@
 		setCloseToTray,
 		onWindowMaximized,
 		windowIsMaximized,
-	} from '$lib/platform';
-	import { port } from '$lib/stores/sidecar';
-	import { entryAddedTick, entryChangedTick, vaultRescannedTick } from '$lib/stores/sse';
+	} from '#lib/platform';
+	import { port } from '#lib/stores/sidecar';
+	import { entryAddedTick, entryChangedTick, vaultRescannedTick } from '#lib/stores/sse';
 	import {
 		sidebarCollapsed,
 		sidebarWidth,
@@ -29,7 +29,7 @@
 		selectedTag,
 		sidebarTagPreview,
 		dashboardPreviewEntryId,
-	} from '$lib/stores/ui';
+	} from '#lib/stores/ui';
 	import {
 		tabs,
 		activeTabId,
@@ -40,18 +40,18 @@
 		restoreTabsFromConfig,
 		saveTabs,
 		navigateInSectionTab,
-	} from '$lib/stores/tabs';
-	import { pkm, config as configApi, system as systemApi } from '$lib/api/client';
-	import { applyFont } from '$lib/font';
-	import SidecarLoadingScreen from '$lib/components/SidecarLoadingScreen.svelte';
-	import Sidebar from '$lib/components/Sidebar.svelte';
-	import TitleBar from '$lib/components/TitleBar.svelte';
-	import RightSidebar from '$lib/components/RightSidebar.svelte';
-	import ResizeHandles from '$lib/components/ResizeHandles.svelte';
-	import SearchDialog from '$lib/components/SearchDialog.svelte';
-	import ShortcutsDialog from '$lib/components/ShortcutsDialog.svelte';
-	import ContextMenu from '$lib/components/ContextMenu.svelte';
-	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
+	} from '#lib/stores/tabs';
+	import { pkm, config as configApi, system as systemApi } from '#lib/api/client';
+	import { applyFont } from '#lib/font';
+	import SidecarLoadingScreen from '#lib/components/SidecarLoadingScreen.svelte';
+	import Sidebar from '#lib/components/Sidebar.svelte';
+	import TitleBar from '#lib/components/TitleBar.svelte';
+	import RightSidebar from '#lib/components/RightSidebar.svelte';
+	import ResizeHandles from '#lib/components/ResizeHandles.svelte';
+	import SearchDialog from '#lib/components/SearchDialog.svelte';
+	import ShortcutsDialog from '#lib/components/ShortcutsDialog.svelte';
+	import ContextMenu from '#lib/components/ContextMenu.svelte';
+	import UpdateBanner from '#lib/components/UpdateBanner.svelte';
 
 	const { children } = $props();
 

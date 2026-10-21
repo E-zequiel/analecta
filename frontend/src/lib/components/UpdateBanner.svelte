@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { downloadAndInstallUpdate, relaunch } from '$lib/platform';
+	import { downloadAndInstallUpdate, relaunch } from '#lib/platform';
 
 	const { version }: { version: string } = $props();
 	let installing = $state(false);
