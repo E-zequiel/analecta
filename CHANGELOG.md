@@ -13,10 +13,13 @@ and this project adheres to
 - Vault graph: more visible node motion and wider cluster separation
   (forceAtlas2 retune: repulsion `scalingRatio` 15 → 45 — edge attraction
   does not scale with it, so this is what separates node from node inside
-  each cluster —, center `gravity` 0.0575 → 0.02, live-simulation tick
-  budget 2000 → 4000 frames, and a live-only `slowDown` of 3 overriding
-  the inherited 1 + log(n) that damped per-tick drift ~7x; equilibrium
-  settings are shared between the initial layout and the live simulation).
+  each cluster —, center `gravity` 0.0575 → 0.02 uniformly across the
+  per-component, joint, and live-simulation passes, live-simulation speed
+  `slowDown` overridden to 3 for larger graphs (5 below 40 nodes) where
+  the inherited 1 + log(n) damped per-tick drift ~7x, and the motion
+  horizon made wall-clock based (60 s) instead of frame-counted, with the
+  budget shortened for small graphs; equilibrium settings are shared
+  between the initial layout and the live simulation).
 
 ### Added
 
