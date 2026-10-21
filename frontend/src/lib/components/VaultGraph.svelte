@@ -38,6 +38,12 @@
 		);
 	}
 
+	// Tick budget for every live heat() call (Play button, node-drag reheat, and the
+	// post-layout auto-start). ~67 seconds of rAF frames at 60 fps; motion decays well
+	// before exhaustion because FA2 settles, but a larger budget gives the simulation
+	// more runway to keep drifting instead of freezing mid-settle.
+	const HEAT_TICKS = 4000;
+
 	const {
 		onopen,
 		ontagclick,
@@ -265,8 +271,8 @@
 				// live reheat must agree, or the first drag would jolt nodes toward a
 				// different equilibrium. Higher repulsion + lighter gravity than the FA2
 				// defaults keep clusters legible without clumping everything centerward.
-				scalingRatio: 20,
-				gravity: 0.04,
+				scalingRatio: 30,
+				gravity: 0.02,
 				adjustSizes: true,
 			},
 		});
@@ -382,8 +388,8 @@
 			...forceAtlas2.inferSettings(graph),
 			barnesHutOptimize: data.nodes.length > 150,
 			// Must match runLayout's settings — see the comment there.
-			scalingRatio: 20,
-			gravity: 0.04,
+			scalingRatio: 30,
+			gravity: 0.02,
 			adjustSizes: true,
 		};
 		let liveTicksLeft = 0;
@@ -411,7 +417,7 @@
 		// No longer gates on graphAnimationEnabled itself — that preference only decides
 		// whether the two auto-trigger call sites below invoke heat() at all. Once called
 		// (auto or via the manual Play button), heat() always runs.
-		function heat(ticks = 2000) {
+		function heat(ticks = HEAT_TICKS) {
 			isAnimating = true;
 			liveTicksLeft = ticks;
 			if (liveRafId === 0) liveRafId = requestAnimationFrame(tick);
@@ -425,7 +431,7 @@
 		}
 		startLiveSimulation = () => {
 			manuallyPaused = false;
-			heat(2000);
+			heat();
 		};
 		stopLiveSimulation = () => {
 			manuallyPaused = true;
@@ -517,7 +523,7 @@
 				const pos = sigma.viewportToGraph(event);
 				graph.setNodeAttribute(draggedNode, 'x', pos.x);
 				graph.setNodeAttribute(draggedNode, 'y', pos.y);
-				if (!manuallyPaused && get(graphAnimationEnabled)) heat(2000);
+				if (!manuallyPaused && get(graphAnimationEnabled)) heat();
 			}
 		});
 
@@ -538,7 +544,7 @@
 		const rafId = requestAnimationFrame(() => {
 			sigma.refresh();
 			sigma.getCamera().setState({ x: 0.5, y: 0.5, angle: 0, ratio: 1 });
-			if (get(graphAnimationEnabled)) heat(2000);
+			if (get(graphAnimationEnabled)) heat();
 		});
 
 		return () => {
