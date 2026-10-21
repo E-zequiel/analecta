@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { entries as entriesApi, type Entry } from '$lib/api/client';
-	import { searchOpen } from '$lib/stores/ui';
-	import { navigateInTab } from '$lib/stores/tabs';
+	import { entries as entriesApi, type Entry } from '#lib/api/client';
+	import { searchOpen } from '#lib/stores/ui';
+	import { navigateInTab } from '#lib/stores/tabs';
 
 	let query = $state('');
 	let results = $state<Entry[]>([]);

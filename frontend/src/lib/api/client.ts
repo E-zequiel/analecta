@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { port } from '$lib/stores/sidecar';
+import { port } from '#lib/stores/sidecar';
 
 // ---------------------------------------------------------------------------
 // Error

@@ -8,11 +8,11 @@
 		getAppVersion,
 		checkUpdate,
 		type UpdateCheckResult,
-	} from '$lib/platform';
-	import { config as configApi, system as systemApi } from '$lib/api/client';
-	import { applyFont } from '$lib/font';
-	import { tooltip } from '$lib/actions/tooltip';
-	import { graphAnimationEnabled } from '$lib/stores/ui';
+	} from '#lib/platform';
+	import { config as configApi, system as systemApi } from '#lib/api/client';
+	import { applyFont } from '#lib/font';
+	import { tooltip } from '#lib/actions/tooltip';
+	import { graphAnimationEnabled } from '#lib/stores/ui';
 
 	const ACCENT_OPTIONS = [
 		{ id: 'red', label: 'Red' },

@@ -1,7 +1,7 @@
 import { writable, get, derived, type Readable } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { activeSection } from './ui';
-import { entries, config } from '$lib/api/client';
+import { entries, config } from '#lib/api/client';
 
 export type TabKind = 'section' | 'viewer';
 

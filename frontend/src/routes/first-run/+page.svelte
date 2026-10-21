@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { openDialog, updateVaultScope, relaunch } from '$lib/platform';
-	import { config as configApi } from '$lib/api/client';
+	import { openDialog, updateVaultScope, relaunch } from '#lib/platform';
+	import { config as configApi } from '#lib/api/client';
 
 	let vaultPath = $state('');
 	let submitting = $state(false);

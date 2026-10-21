@@ -25,7 +25,7 @@
 	} from '@lucide/svelte';
 	import { writable } from 'svelte/store';
 	import { SvelteMap } from 'svelte/reactivity';
-	import { clipboardReadText } from '$lib/platform';
+	import { clipboardReadText } from '#lib/platform';
 	import {
 		entries as entriesApi,
 		tags as tagsApi,
@@ -33,7 +33,7 @@
 		ApiError,
 		type Entry,
 		type Tag,
-	} from '$lib/api/client';
+	} from '#lib/api/client';
 	import {
 		sidebarCollapsed,
 		sidebarWidth,
@@ -47,13 +47,13 @@
 		sidebarTagPreview,
 		preSettingsState,
 		pendingScrollRestore,
-	} from '$lib/stores/ui';
-	import { viewerEntry } from '$lib/stores/toolbar';
-	import { navigateInTab, navigateInSectionTab, openEntryTab } from '$lib/stores/tabs';
-	import { showContextMenu } from '$lib/stores/contextMenu';
-	import { entryAddedTick, entryChangedTick, lastChangedEntry } from '$lib/stores/sse';
-	import { tooltip } from '$lib/actions/tooltip';
-	import { flash } from '$lib/actions/flash';
+	} from '#lib/stores/ui';
+	import { viewerEntry } from '#lib/stores/toolbar';
+	import { navigateInTab, navigateInSectionTab, openEntryTab } from '#lib/stores/tabs';
+	import { showContextMenu } from '#lib/stores/contextMenu';
+	import { entryAddedTick, entryChangedTick, lastChangedEntry } from '#lib/stores/sse';
+	import { tooltip } from '#lib/actions/tooltip';
+	import { flash } from '#lib/actions/flash';
 
 	const SECTIONS = [
 		{ id: 'library', label: 'LIBRARY', icon: Library },

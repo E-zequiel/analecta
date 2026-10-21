@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 function persisted<T>(key: string, initialValue: T) {
 	const stored = browser ? localStorage.getItem(key) : null;

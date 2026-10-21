@@ -6,11 +6,11 @@
 		type Entry,
 		type HashtagGroup,
 		type OutgoingLink,
-	} from '$lib/api/client';
-	import { selectedTag, sidebarTagPreview } from '$lib/stores/ui';
-	import { entryChangedTick } from '$lib/stores/sse';
-	import { showContextMenu } from '$lib/stores/contextMenu';
-	import { tooltip } from '$lib/actions/tooltip';
+	} from '#lib/api/client';
+	import { selectedTag, sidebarTagPreview } from '#lib/stores/ui';
+	import { entryChangedTick } from '#lib/stores/sse';
+	import { showContextMenu } from '#lib/stores/contextMenu';
+	import { tooltip } from '#lib/actions/tooltip';
 
 	export type StackEntry = {
 		id: string;

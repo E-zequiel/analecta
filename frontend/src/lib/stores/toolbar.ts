@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { Entry } from '$lib/api/client';
+import type { Entry } from '#lib/api/client';
 
 // ── Viewer ─────────────────────────────────────────────────────────
 
