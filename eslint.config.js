@@ -55,6 +55,18 @@ export default tseslint.config(
     },
   },
 
+  // ── Frontend: vite.config.ts — type-checked like Electron's config ───────
+  {
+    files: ['frontend/vite.config.ts'],
+    extends: tseslint.configs.recommendedTypeChecked,
+    languageOptions: {
+      parserOptions: {
+        project: './frontend/tsconfig.json',
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+
   // ── Frontend: Svelte — Svelte rules + TS recommended ─────────────────────
   // Type checking for Svelte component internals is handled by svelte-check.
   {
