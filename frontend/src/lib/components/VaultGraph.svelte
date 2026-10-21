@@ -42,9 +42,10 @@
 	// per-component pass, runLayout's joint pass, and the live simulation) must use these
 	// same values, or a drag reheat would jolt nodes toward a different equilibrium.
 	// Mechanism (from graphology-layout-forceatlas2's source): edge attraction's
-	// coefficient is fixed and does not scale with scalingRatio, so raising it is the only
-	// knob that separates node from node *within* a cluster; effective strong-gravity
-	// pull is scalingRatio-independent, so inter-cluster separation grows more gently.
+	// coefficient is fixed and does not scale with scalingRatio, so raising it is the
+	// primary knob that separates node from node *within* a cluster (adjustSizes and
+	// linLogMode also influence spacing); effective strong-gravity pull is
+	// scalingRatio-independent, so inter-cluster separation grows more gently.
 	const FA2_SCALING_RATIO = 45;
 	const FA2_GRAVITY = 0.02;
 
@@ -60,9 +61,8 @@
 
 	// Motion horizon for every live heat() call (Play button, node-drag reheat, and the
 	// post-layout auto-start), in wall-clock milliseconds — not rAF frames, which
-	// exhaust twice as fast on 120/144 Hz displays. Motion decays well before the
-	// horizon because FA2 settles; the horizon only bounds how long perturbed nodes
-	// may keep drifting.
+	// exhaust twice as fast on 120/144 Hz displays. The horizon only bounds how long
+	// perturbed nodes may keep drifting; whether motion decays on its own near FA2
 	const HEAT_DURATION_MS = 60_000;
 
 	const {
