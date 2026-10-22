@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-22
+
 ### Fixed
 
 - The archived badge in the expanded tag views (Collecta tag page) used the
@@ -537,7 +539,8 @@ Initial public release.
   installers, plus a Sigstore build provenance attestation (attaches automatically
   once the repository goes public).
 
-[Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.5.4...HEAD
+[Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/E-zequiel/analecta/releases/tag/v0.6.0
 [0.5.4]: https://github.com/E-zequiel/analecta/releases/tag/v0.5.4
 [0.5.3]: https://github.com/E-zequiel/analecta/releases/tag/v0.5.3
 [0.5.2]: https://github.com/E-zequiel/analecta/releases/tag/v0.5.2
