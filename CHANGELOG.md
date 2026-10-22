@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- The archived badge in the expanded tag views (Collecta tag page) used the
+  native `title` attribute for its hover hint — inconsistent with the
+  app-wide custom tooltip; it now uses the same tooltip action as every
+  other badge and control.
+
 ### Changed
 
 - Vault graph: more visible node motion and wider cluster separation

@@ -613,7 +613,7 @@
 										<span class="tag-entry-title">{entry.title}</span>
 										<div class="tag-entry-badges">
 											{#if entry.flags.includes('archive')}
-												<span class="entry-badge entry-badge-archive" title="archived"
+												<span class="entry-badge entry-badge-archive" use:tooltip={'Archived'}
 													><Archive size={15} /></span
 												>
 											{/if}
@@ -668,7 +668,7 @@
 								<span class="tag-entry-title">{entry.title}</span>
 								<div class="tag-entry-badges">
 									{#if entry.flags.includes('archive')}
-										<span class="entry-badge entry-badge-archive" title="archived"
+										<span class="entry-badge entry-badge-archive" use:tooltip={'Archived'}
 											><Archive size={15} /></span
 										>
 									{/if}
