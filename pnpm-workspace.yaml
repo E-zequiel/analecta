@@ -74,6 +74,12 @@ overrides:
   source-map-js: '1.2.2'
   # Cross-user cache disclosure.
   http-cache-semantics: '4.3.0'
+  # Invariant: forced beyond the consumer's declared range on purpose —
+  # socket-patch@2.0.0 declares zod ^3.24.4, but the zod 3 line never gets
+  # the fix (patched only in 4.6.6+) and no Socket release moves off zod 3
+  # (even socket-patch 5.0.1 pins 3.25.76). Consumer smoke-tested before
+  # the pin stood; re-verify the smoke on every socket-patch bump.
+  '@socketsecurity/socket-patch@2.0.0>zod': '4.6.7'
   # Deliberately unified into one entry — do NOT re-split per consumer
   # (node-gyp declares ^6.25.0).
   undici: '7.30.0'
