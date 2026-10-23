@@ -17,6 +17,8 @@ export default defineConfig({
 		}),
 		svelteTesting()
 	],
+	// Electron main-process tests are a separate vitest project
+	// (electron/vitest.config.mts, run by the same check.sh step).
 	test: {
 		environment: 'jsdom',
 		include: ['src/**/*.test.ts']

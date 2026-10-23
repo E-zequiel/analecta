@@ -73,7 +73,7 @@ Two invariants:
   revisited once there is a meaningful baseline to threshold against.
 
 Electron main-process logic runs as a second vitest project:
-`electron/vitest.config.ts`-suite (`environment: 'node'`, `main/**/*.test.ts`),
+`electron/vitest.config.mts`-suite (`environment: 'node'`, `main/**/*.test.ts`),
 run right after the frontend suite by the same gate step. The build
 tsconfig excludes `main/**/*.test.ts` (tests never land in `dist/`); their
 type-checking lives in `electron/tsconfig.test.json`, referenced by the

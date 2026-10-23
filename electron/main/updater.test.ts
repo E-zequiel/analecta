@@ -90,16 +90,20 @@ describe('initUpdater', () => {
 		expect(autoUpdater.autoDownload).toBe(false);
 		expect(onCalls.map(([event]) => event)).toEqual(['update-available', 'error']);
 
-		const [, forward] = onCalls[0];
-		forward('1.2.3');
+		const forwardEntry = onCalls.find(([event]) => event === 'update-available');
+		expect(forwardEntry).toBeDefined();
+		forwardEntry![1]('1.2.3');
 		expect(win.webContents.send).toHaveBeenCalledWith('update-available', '1.2.3');
 	});
 
 	test('packaged build: the error listener logs once', () => {
 		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		initUpdater(win);
-		const [, onError] = onCalls[1];
-		onError(new Error('boom'));
+		// Look the listener up by event name instead of positional index —
+		// registration order must not decide which hook each test exercises.
+		const errorEntry = onCalls.find(([event]) => event === 'error');
+		expect(errorEntry).toBeDefined();
+		errorEntry![1](new Error('boom'));
 		expect(errorSpy).toHaveBeenCalledWith('[updater]', expect.any(Error));
 	});
 

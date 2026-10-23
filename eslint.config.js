@@ -41,8 +41,11 @@ export default tseslint.config(
   },
 
   // ── Electron: vitest test files — type-checked against tsconfig.test.json ─
-  // The build tsconfig.json excludes *.test.ts (tests must never be emitted
-  // into dist/), so they get their own project here.
+  // The build tsconfig.json excludes main/**/*.test.ts (tests must never be
+  // emitted into dist/), so they get their own project here. Flat-config
+  // semantics: this later block overrides the electron block above for
+  // exactly these files (project swap, unbound-method off for the vi.mocked
+  // idiom).
   {
     files: ['electron/**/*.test.ts', 'electron/vitest.config.mts'],
     extends: tseslint.configs.recommendedTypeChecked,
