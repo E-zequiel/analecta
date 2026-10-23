@@ -30,7 +30,7 @@ run_frontend() {
   mise exec -- pnpm --filter frontend exec svelte-kit sync
 
   echo "==> prettier --check"
-  mise exec -- pnpm exec prettier --check "electron/**/*.ts" "frontend/src/**/*.{ts,svelte}" "frontend/scripts/**/*.mjs" "scripts/**/*.mjs"
+  mise exec -- pnpm exec prettier --check "electron/**/*.ts" "electron/**/*.mts" "frontend/src/**/*.{ts,svelte}" "frontend/scripts/**/*.mjs" "scripts/**/*.mjs"
 
   echo "==> eslint"
   mise exec -- pnpm exec eslint electron/main electron/preload frontend/src frontend/scripts scripts
@@ -42,8 +42,9 @@ run_frontend() {
   echo "==> svelte-check"
   mise exec -- pnpm --filter frontend check --fail-on-warnings
 
-  echo "==> vitest (frontend unit tests)"
+  echo "==> vitest (frontend + electron main unit tests)"
   mise exec -- pnpm --filter frontend test
+  mise exec -- pnpm --filter analecta-electron test
 
   echo "==> vite build"
   mise exec -- pnpm --filter frontend build

@@ -30,7 +30,7 @@ Steps in order:
 **TypeScript / Svelte:**
 
 5. `pnpm --filter frontend exec svelte-kit sync` — generates `.svelte-kit/tsconfig.json` (required before ESLint type-checked rules)
-6. `pnpm exec prettier --check "electron/**/*.ts" "frontend/src/**/*.{ts,svelte}" "frontend/scripts/**/*.mjs"` — formatting
+6. `pnpm exec prettier --check "electron/**/*.ts" "electron/**/*.mts" "frontend/src/**/*.{ts,svelte}" "frontend/scripts/**/*.mjs"` — formatting
 7. `pnpm exec eslint electron/main electron/preload frontend/src frontend/scripts` — linting
 8. `cd electron && pnpm exec tsc --noEmit` — Electron type-checking
 9. `pnpm --filter frontend check --fail-on-warnings` — SvelteKit type-checking (`svelte-check`)
@@ -72,9 +72,13 @@ Two invariants:
   merged around. No coverage thresholds are configured yet — they are
   revisited once there is a meaningful baseline to threshold against.
 
-Electron main-process logic (`electron/main/*.test.ts`) is planned as a
-second vitest project mocking the `electron` and `electron-updater` modules;
-it is not wired in yet.
+Electron main-process logic runs as a second vitest project:
+`electron/vitest.config.ts`-suite (`environment: 'node'`, `main/**/*.test.ts`),
+run right after the frontend suite by the same gate step. The build
+tsconfig excludes `main/**/*.test.ts` (tests never land in `dist/`); their
+type-checking lives in `electron/tsconfig.test.json`, referenced by the
+type-checked eslint block for test files. `electron-updater` and `electron`
+are mocked in the test files.
 
 ### vite build: accepted chunk size hints
 

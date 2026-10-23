@@ -40,6 +40,25 @@ export default tseslint.config(
     },
   },
 
+  // ── Electron: vitest test files — type-checked against tsconfig.test.json ─
+  // The build tsconfig.json excludes *.test.ts (tests must never be emitted
+  // into dist/), so they get their own project here.
+  {
+    files: ['electron/**/*.test.ts', 'electron/vitest.config.mts'],
+    extends: tseslint.configs.recommendedTypeChecked,
+    languageOptions: {
+      parserOptions: {
+        project: './electron/tsconfig.test.json',
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      // vi.mocked(autoUpdater.method) is the vitest idiom for configuring a
+      // mock singleton; the method is never actually invoked unbound.
+      '@typescript-eslint/unbound-method': 'off',
+    },
+  },
+
   // ── Frontend: TypeScript — type-checked rules ─────────────────────────────
   {
     files: ['frontend/src/**/*.ts'],
