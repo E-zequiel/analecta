@@ -42,6 +42,9 @@ run_frontend() {
   echo "==> svelte-check"
   mise exec -- pnpm --filter frontend check --fail-on-warnings
 
+  echo "==> vitest (frontend unit tests)"
+  mise exec -- pnpm --filter frontend test
+
   echo "==> vite build"
   mise exec -- pnpm --filter frontend build
 }

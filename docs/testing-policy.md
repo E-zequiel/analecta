@@ -111,7 +111,16 @@ Arm B is the rare case. Most changes are Arm A.
 
 Unchanged: every change under `backend/src/analecta/**` carries its tests in the
 same commit. A `check.sh` run reporting zero coverage on new backend code is a
-blocker. TypeScript, Svelte, and Electron code are covered by manual QA only.
+blocker.
+
+Since the vitest infrastructure (2026-10, `feat/frontend-vitest-infra`) the
+same requirement covers testable TypeScript logic: every change to
+non-component logic under `frontend/src/lib/**`, `frontend/scripts/`, and
+`electron/main/**` carries vitest tests in the same commit; `check.sh
+frontend` runs the suite as a gate step. Svelte components, UI wiring, and
+the Electron shell itself stay on manual QA — vitest covers logic, not
+pixels. No browser automation runs against the Electron shell: the ceiling
+for frontend automation is `mise exec -- ./scripts/check.sh frontend`.
 
 ## The post-gate review pass
 
@@ -152,4 +161,9 @@ method and the Arm A / Arm B split apply to any regression or guard test in
 `check.sh backend` gate, and the pattern this policy exists to catch first showed up
 in `scripts/deps_update.py` tests.
 
-Frontend and Electron testing is in `docs/quality-gate.md`.
+Frontend vitest tests live next to the code they check (`*.test.ts` co-located
+under `frontend/src/`, `*.test.ts` beside the module under `electron/main/`),
+run through the `check.sh frontend` gate; mechanics are described in
+`docs/quality-gate.md` (Vitest section). A vitest regression test follows the
+demonstrated-red method the same way a pytest one does: run it against the
+pre-change code and watch it fail on the targeted assertion.

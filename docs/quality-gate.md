@@ -1,7 +1,8 @@
 # Quality Gate — Analecta
 
 > Living document. Reflects active decisions on formatting, linting, type-checking, and testing.
-> Update whenever `backend/pyproject.toml`, `eslint.config.js`, or `.prettierrc` configuration changes.
+> Update whenever `backend/pyproject.toml`, `eslint.config.js`, `.prettierrc`,
+> or `frontend/vitest.config.ts` configuration changes.
 
 ---
 
@@ -33,7 +34,8 @@ Steps in order:
 7. `pnpm exec eslint electron/main electron/preload frontend/src frontend/scripts` — linting
 8. `cd electron && pnpm exec tsc --noEmit` — Electron type-checking
 9. `pnpm --filter frontend check --fail-on-warnings` — SvelteKit type-checking (`svelte-check`)
-10. `pnpm --filter frontend build` — Vite production build
+10. `pnpm --filter frontend test` — vitest unit tests
+11. `pnpm --filter frontend build` — Vite production build
 
 The script fails on the first step that does not pass (`set -euo pipefail`). Every
 implementation block is considered complete **only after this script passes clean**.
@@ -46,6 +48,33 @@ implementation block is considered complete **only after this script passes clea
 
 `svelte-check` is run with `--fail-on-warnings`. There are **zero accepted warnings** —
 any warning must be investigated and resolved before considering a block complete.
+
+### vitest
+
+Config at `frontend/vitest.config.ts` — standalone, deliberately not merging
+`vite.config.ts` (SvelteKit 3 keeps its configuration inside the `sveltekit()`
+plugin, which spins up the whole framework). Composition:
+
+| Piece | Role |
+|-------|------|
+| `svelte({ preprocess: vitePreprocess() })` | compiles `.svelte` under test |
+| `svelteTesting()` (`@testing-library/svelte/vite`) | browser export condition for `svelte` + per-test auto-cleanup |
+| `environment: 'jsdom'` | DOM for renderer-side tests |
+| `include: ['src/**/*.test.ts']` | co-located tests under `frontend/src/` |
+
+Two invariants:
+
+- **The canary must never be skipped.** `frontend/src/lib/testing/canary.test.ts`
+  pins the runner, the jsdom environment, and Svelte 5 compilation in one
+  file. If it fails after a toolchain bump, suspect the whole suite's
+  silence — fix the canary before debugging individual tests.
+- **Zero accepted failures.** Same bar as `svelte-check`: a red suite is not
+  merged around. No coverage thresholds are configured yet — they are
+  revisited once there is a meaningful baseline to threshold against.
+
+Electron main-process logic (`electron/main/*.test.ts`) is planned as a
+second vitest project mocking the `electron` and `electron-updater` modules;
+it is not wired in yet.
 
 ### vite build: accepted chunk size hints
 
