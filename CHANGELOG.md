@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Frontend unit-test infrastructure: vitest with jsdom and
+  @testing-library/svelte, integrated into `check.sh frontend` and CI
+  (first tests cover the app-updater status mapping and the markdown
+  parsers).
+
 ## [0.6.0] - 2026-10-22
 
 ### Fixed
