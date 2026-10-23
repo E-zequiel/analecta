@@ -44,6 +44,8 @@ run_frontend() {
 
   echo "==> vitest (frontend + electron main unit tests)"
   mise exec -- pnpm --filter frontend test
+  # The electron package is named "analecta-electron" — a plain --filter
+  # electron matches zero workspace projects and exits 0 (silent no-op).
   mise exec -- pnpm --filter analecta-electron test
 
   echo "==> vite build"
