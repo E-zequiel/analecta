@@ -12,5 +12,5 @@
     "resolveJsonModule": true
   },
   "include": ["main/**/*", "preload/**/*"],
-  "exclude": ["dist", "node_modules"]
+  "exclude": ["dist", "node_modules", "main/**/*.test.ts"]
 }

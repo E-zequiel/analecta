@@ -1,0 +1,9 @@
+// Project for the vitest test files, referenced only by eslint's type-checked
+// rules (and editors opening the tests). The build tsconfig.json excludes
+// `main/**/*.test.ts` so tests are never compiled into dist/ — this one
+// exists so the tests are still type-checked (eslint project, tsserver).
+{
+	"extends": "./tsconfig.json",
+	"include": ["main/**/*", "vitest.config.mts"],
+	"exclude": ["dist", "node_modules"]
+}

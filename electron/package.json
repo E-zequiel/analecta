@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc && VITE_DEV_SERVER_URL=http://localhost:5173 electron dist/main/index.js",
+    "test": "vitest run",
     "dist": "tsc && electron-builder --config ../electron-builder.yml --publish never"
   },
   "dependencies": {
@@ -21,6 +22,8 @@
     "@types/node": "26.6.5",
     "electron": "45.0.0-beta.5",
     "electron-builder": "26.17.0",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
   }
 }
