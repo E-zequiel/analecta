@@ -19,5 +19,5 @@
     "socket": "1.8.4",
     "typescript-eslint": "8.71.2"
   },
-  "packageManager": "pnpm@12.8.0+sha512.ORbpVZzfvd99ySHomZB2WEQlFh3nc/bKv39HRn8NlFK/qJponsJFdTrT1Vq8s89wbmZ6wSBi28nGJfvXK8og3A=="
+  "packageManager": "pnpm@12.15.0+sha512.s5UdbW/0qfE9x89WzSjSuOs328ycaOUuHhGRhz6p+CoBcoerULqtxczElPA2xnwOR+sTYIwvo29HcRth6hKOYQ=="
 }
