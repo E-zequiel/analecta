@@ -8,6 +8,14 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Security
+
+- Electron 45.0.0-beta.5 → 45.0.0: pulls the fix for the eMudhra
+  intermediate certificate authority compromise (CVE-2026-115570) that
+  could let a man-in-the-middle impersonate trusted servers on the
+  app's auto-update channel (electron-updater → GitHub Releases). The
+  reading view and the Python sidecar are not affected — they use
+  separate certificate stores.
 ## [0.6.0] - 2026-10-22
 
 ### Fixed
