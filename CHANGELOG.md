@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-27
+
 ### Security
 
 - Electron 45.0.0-beta.5 → 45.0.0: pulls the fix for the eMudhra
@@ -547,7 +549,8 @@ Initial public release.
   installers, plus a Sigstore build provenance attestation (attaches automatically
   once the repository goes public).
 
-[Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/E-zequiel/analecta/releases/tag/v0.6.1
 [0.6.0]: https://github.com/E-zequiel/analecta/releases/tag/v0.6.0
 [0.5.4]: https://github.com/E-zequiel/analecta/releases/tag/v0.5.4
 [0.5.3]: https://github.com/E-zequiel/analecta/releases/tag/v0.5.3
