@@ -134,8 +134,12 @@ below.
 ### 4. Post-install — cross-check the lockfile
 
 ```bash
-grep -A 1 "'<pkg>@<version>'" pnpm-lock.yaml
+grep -A 1 "<pkg>@<version>" pnpm-lock.yaml
 ```
+
+Match without inner quotes: pnpm ≥12.15 writes plain-name lockfile keys
+unquoted (`fast-uri@3.1.9:`), while scoped names stay single-quoted —
+the bare substring matches either form.
 
 Confirm the `integrity:` line matches the value saved in step 1. If they
 differ, do not proceed — abort and investigate the discrepancy before merging.
