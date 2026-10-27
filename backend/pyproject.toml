@@ -38,7 +38,7 @@ constraint-dependencies = [
     # Floor, not a pin — DoS / TLS bypass.
     "urllib3>=2.8.0",
     # Floor, not a pin — sdist exclusion bypass.
-    "setuptools>=83.0.0",
+    "setuptools>=84.1.0",
 ]
 
 [project.scripts]
