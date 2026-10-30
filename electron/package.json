@@ -16,14 +16,14 @@
     "dist": "tsc && electron-builder --config ../electron-builder.yml --publish never"
   },
   "dependencies": {
-    "electron-updater": "6.8.9"
+    "electron-updater": "6.8.11"
   },
   "devDependencies": {
     "@types/node": "26.6.5",
     "electron": "45.0.0",
-    "electron-builder": "26.17.0",
+    "electron-builder": "26.18.0",
     "typescript": "7.0.2",
-    "vite": "8.3.4",
+    "vite": "8.3.5",
     "vitest": "5.0.5"
   }
 }
