@@ -63,7 +63,7 @@ def test_extract_creates_entry(
     tmp_path: Path, client: TestClient, mocker: MockerFixture
 ) -> None:
     """POST /extract returns EntryOut and writes vault files."""
-    mocker.patch("analecta.api.routes.extract.extract", return_value=_fake_content())
+    mocker.patch("analecta.extraction.pipeline.extract", return_value=_fake_content())
     mocker.patch.object(AssetDownloader, "process", return_value="<p>Hello world</p>")
 
     r = client.post("/api/v1/extract", json={"url": "https://example.com/article"})
@@ -107,7 +107,7 @@ def test_extract_publishes_sse_event(tmp_path: Path, mocker: MockerFixture) -> N
     app = _FastAPI(lifespan=lifespan)
     app.include_router(extract_router, prefix="/api/v1")
 
-    mocker.patch("analecta.api.routes.extract.extract", return_value=_fake_content())
+    mocker.patch("analecta.extraction.pipeline.extract", return_value=_fake_content())
     mocker.patch.object(AssetDownloader, "process", return_value="<p>Hello world</p>")
 
     with TestClient(app) as c:
@@ -128,7 +128,7 @@ def test_extract_422_on_extraction_error(
     client: TestClient, mocker: MockerFixture
 ) -> None:
     mocker.patch(
-        "analecta.api.routes.extract.extract",
+        "analecta.extraction.pipeline.extract",
         side_effect=ExtractionError("fetch failed"),
     )
     r = client.post("/api/v1/extract", json={"url": "https://example.com/bad"})
@@ -140,7 +140,7 @@ def test_extract_422_on_not_implemented(
     client: TestClient, mocker: MockerFixture
 ) -> None:
     mocker.patch(
-        "analecta.api.routes.extract.extract",
+        "analecta.extraction.pipeline.extract",
         side_effect=NotImplementedError("X/Twitter not supported"),
     )
     r = client.post("/api/v1/extract", json={"url": "https://x.com/post/1"})
@@ -151,7 +151,7 @@ def test_extract_409_on_duplicate_url(
     tmp_path: Path, client: TestClient, mocker: MockerFixture
 ) -> None:
     """Second POST with the same URL returns 409."""
-    mocker.patch("analecta.api.routes.extract.extract", return_value=_fake_content())
+    mocker.patch("analecta.extraction.pipeline.extract", return_value=_fake_content())
     mocker.patch.object(AssetDownloader, "process", return_value="<p>Hello world</p>")
 
     url = "https://example.com/article"

@@ -90,7 +90,7 @@ def _make_app(tmp_path: Path) -> FastAPI:
 @pytest.mark.integration
 async def test_sse_receives_entry_added(tmp_path: Path, mocker: MockerFixture) -> None:
     mocker.patch(
-        "analecta.api.routes.extract.extract",
+        "analecta.extraction.pipeline.extract",
         return_value=ExtractedContent(
             title="Test Article",
             html="<p>Hello</p>",
