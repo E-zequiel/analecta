@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     lock_fd: int | None = None
     if not config.first_run and not insecure_dev:
         token = generate_session_token()
-        discovery.write(port=0, token=token, pid=os.getpid())
+        discovery.write(port=_bound_port, token=token, pid=os.getpid())
         lock_fd = VaultLock(config.vault_path).acquire()
         if lock_fd is None:
             discovery.remove()
@@ -120,10 +120,15 @@ app.include_router(system.router, prefix="/api/v1", dependencies=_D5_AUTH)
 app.include_router(tags.router, prefix="/api/v1", dependencies=_D5_AUTH)
 
 
+_bound_port: int = 0
+
+
 def main() -> None:
     """Find a free port, signal Electron, and start the uvicorn server."""
+    global _bound_port
     setup_logging()
     port = _find_free_port()
+    _bound_port = port
     app.state.port = port
     print(f"LISTENING_ON_PORT:{port}", flush=True)
     uv_config = uvicorn.Config(app, host="127.0.0.1", port=port, log_config=None)

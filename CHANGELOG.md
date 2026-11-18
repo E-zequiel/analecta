@@ -8,6 +8,16 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- The sidecar binary doubles as a CLI for bots and terminal use:
+  `analecta extract <url>` captures a URL, `analecta index` prints an
+  OKF-style index, and `analecta log` prints the update log — all
+  computed on the fly from the vault. Human text by default, `--json`
+  for agents. When the app is running the CLI talks to it through the
+  authenticated loopback; otherwise it opens the vault directly as the
+  single writer (refusing if another process holds the lock).
+
 ### Security
 
 - The sidecar authenticates every API route with a per-run session
