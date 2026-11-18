@@ -18,7 +18,7 @@ def generator_actor() -> str:
     return f"analecta/{version}"
 
 
-_FM_BLOCK = re.compile(r"^(---\n)([\s\S]*?)(\n---\n)", re.MULTILINE)
+FM_BLOCK = re.compile(r"^(---\n)([\s\S]*?)(\n---\n)", re.MULTILINE)
 
 
 def update_linked(
@@ -37,7 +37,7 @@ def update_linked(
     Returns:
         Modified Markdown string, or the original if no frontmatter found.
     """
-    m = _FM_BLOCK.match(markdown)
+    m = FM_BLOCK.match(markdown)
     if not m:
         return markdown
 

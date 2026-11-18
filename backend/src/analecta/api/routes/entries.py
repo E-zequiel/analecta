@@ -792,6 +792,11 @@ async def delete_entry(
     record = await asyncio.to_thread(index.get_entry, entry_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Entry not found")
+    # Cascade (owner decision D13): deleting an entry deletes the synthesis
+    # entries citing it, in the same operation.
+    from analecta.storage.synthesis import delete_syntheses_for_entry
+
+    await asyncio.to_thread(delete_syntheses_for_entry, index, record)
     file_path = Path(record.file_path)
     slug = file_path.stem
     assets_dir = file_path.parent.parent / "assets" / slug

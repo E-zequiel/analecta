@@ -10,6 +10,9 @@ and this project adheres to
 
 ### Changed
 
+- Deleting an entry now deletes the bot synthesis entries that cite it,
+  in the same operation (the reverse is not true: deleting a synthesis
+  never touches its capture).
 - New captures carry Open Knowledge Format provenance in their
   frontmatter: `type: reference`, `generated` (pipeline version and
   timestamp), and `sources` (the captured URL, byline, and publish
