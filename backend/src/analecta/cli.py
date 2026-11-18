@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from analecta.config import load_config
 from analecta.extraction import extract
+from analecta.manifest import write_vault_manifest
 
 if TYPE_CHECKING:
     from analecta.storage.index import EntryRecord
@@ -198,7 +199,11 @@ def run_extract_standalone(vault_path: Path, url: str) -> EntryRecord:
         index = VaultIndex(vault_path / "analecta.db")
         try:
             vault = VaultManager(vault_path)
-            return asyncio.run(extract_to_vault(index, vault, url, extract_fn=extract))
+            created = asyncio.run(
+                extract_to_vault(index, vault, url, extract_fn=extract)
+            )
+            write_vault_manifest(vault_path)
+            return created
         finally:
             index.close()
     finally:
@@ -351,6 +356,7 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
                     )
 
                 _write()
+                write_vault_manifest(vp)
             finally:
                 index.close()
         finally:
@@ -399,6 +405,7 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
                     generated_by=args.by,
                 )
                 created = index.get_entry(eid)
+                write_vault_manifest(vp)
             finally:
                 index.close()
         finally:

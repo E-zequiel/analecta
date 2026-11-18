@@ -10,6 +10,13 @@ and this project adheres to
 
 ### Added
 
+- The vault root now carries a generated `AGENTS.md` manifest
+  documenting the vault's grammar for external agents: wikilink and
+  hashtag identity rules, `linked:` semantics, the frontmatter fields
+  beyond OKF (with the description-vs-summary distinction and the
+  `summary_basis` freshness rule), the flags contract (bots read,
+  never write), and the single-writer rule. Regenerated on every app
+  launch and CLI vault run; not hand-maintained.
 - New "Synthesis" sidebar section (ReceiptText icon) listing bot synthesis
   entries; every other section — Library, Unread, Read, Bookmark, Gem —
   stays captures-only so entries are never double-listed.
