@@ -70,7 +70,7 @@
 		if (id === 'archive') return { flag: 'archive' };
 		if (id === 'bookmark' || id === 'gem') return { flag: id, exclude_flag: 'archive' };
 		if (id === 'library') return { exclude_flag: 'archive' };
-		return { status: id, exclude_flag: 'archive' };
+		return { read_state: id, exclude_flag: 'archive' };
 	}
 
 	let counts = $state<Record<string, number>>({});
@@ -239,7 +239,7 @@
 		if (isArchived) return false;
 		if (sectionId === 'library') return true;
 		if (sectionId === 'bookmark' || sectionId === 'gem') return e.flags.includes(sectionId);
-		return e.status === sectionId;
+		return e.read_state === sectionId;
 	}
 
 	$effect(() => {

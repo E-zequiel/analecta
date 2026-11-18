@@ -82,8 +82,8 @@
 	async function setStatus(status: 'read' | 'unread') {
 		const entry = $contextMenu.entry;
 		hideContextMenu();
-		if (!entry || entry.status === status) return;
-		const updated = await entriesApi.patch(entry.id, { status });
+		if (!entry || entry.read_state === status) return;
+		const updated = await entriesApi.patch(entry.id, { read_state: status });
 		lastChangedEntry.set(updated);
 		entryChangedTick.update((n) => n + 1);
 	}
@@ -146,7 +146,7 @@
 		<div class="separator"></div>
 		<button
 			class="menu-item"
-			class:is-current={$contextMenu.entry?.status === 'read'}
+			class:is-current={$contextMenu.entry?.read_state === 'read'}
 			onclick={() => setStatus('read')}
 			role="menuitem"
 		>
@@ -154,7 +154,7 @@
 		</button>
 		<button
 			class="menu-item"
-			class:is-current={$contextMenu.entry?.status === 'unread'}
+			class:is-current={$contextMenu.entry?.read_state === 'unread'}
 			onclick={() => setStatus('unread')}
 			role="menuitem"
 		>

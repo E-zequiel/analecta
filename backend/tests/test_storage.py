@@ -315,7 +315,7 @@ def test_get_entry_roundtrip(index: VaultIndex):
     got = index.get_entry(entry_id)
     assert got is not None
     assert got.title == "Roundtrip"
-    assert got.status == "unread"
+    assert got.read_state == "unread"
     assert got.id == entry_id
 
 
@@ -329,12 +329,12 @@ def test_duplicate_url_raises_integrity_error(index: VaultIndex):
         index.add_entry(_entry(url="https://dup.com"))
 
 
-def test_update_status(index: VaultIndex):
+def test_update_read_state(index: VaultIndex):
     entry_id = index.add_entry(_entry())
-    index.update_status(entry_id, "read")
+    index.update_read_state(entry_id, "read")
     entry = index.get_entry(entry_id)
     assert entry is not None
-    assert entry.status == "read"
+    assert entry.read_state == "read"
 
 
 def test_update_tags_sets_json(index: VaultIndex):
@@ -430,12 +430,12 @@ def test_list_entries_all(index: VaultIndex):
     assert len(index.list_entries()) == 2
 
 
-def test_list_entries_by_status(index: VaultIndex):
+def test_list_entries_by_read_state(index: VaultIndex):
     id1 = index.add_entry(_entry(url="https://a.com"))
     index.add_entry(_entry(url="https://b.com"))
-    index.update_status(id1, "read")
-    assert len(index.list_entries(status="read")) == 1
-    assert len(index.list_entries(status="unread")) == 1
+    index.update_read_state(id1, "read")
+    assert len(index.list_entries(read_state="read")) == 1
+    assert len(index.list_entries(read_state="unread")) == 1
 
 
 def test_get_all_titles_empty(index: VaultIndex):
@@ -1606,7 +1606,7 @@ def _days_since_sunday() -> int:
 
 def test_get_metrics_read_today_counts_in_week(index: VaultIndex):
     entry_id = index.add_entry(_entry())
-    index.update_status(entry_id, "read")
+    index.update_read_state(entry_id, "read")
     m = index.get_metrics()
     assert m["reads_week"] == 1
 
@@ -1617,7 +1617,7 @@ def test_get_metrics_read_since_sunday_counts_in_week(index: VaultIndex):
         pytest.skip("today is Sunday — boundary already covered by other test")
     entry_id = index.add_entry(_entry())
     index._conn.execute(
-        "UPDATE entries SET read_at = ?, status = 'read' WHERE id = ?",
+        "UPDATE entries SET read_at = ?, read_state = 'read' WHERE id = ?",
         (_read_at(days_ago=days - 1), entry_id),
     )
     index._conn.commit()
@@ -1628,7 +1628,7 @@ def test_get_metrics_read_before_sunday_excluded_from_week(index: VaultIndex):
     days = _days_since_sunday()
     entry_id = index.add_entry(_entry())
     index._conn.execute(
-        "UPDATE entries SET read_at = ?, status = 'read' WHERE id = ?",
+        "UPDATE entries SET read_at = ?, read_state = 'read' WHERE id = ?",
         (_read_at(days_ago=days + 1), entry_id),
     )
     index._conn.commit()

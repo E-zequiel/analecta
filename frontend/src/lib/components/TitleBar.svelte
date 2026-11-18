@@ -236,7 +236,7 @@
 				<div class="tb-group">
 					<button
 						class="btn-icon"
-						class:active={$viewerEntry.status === 'read'}
+						class:active={$viewerEntry.read_state === 'read'}
 						onclick={() => $viewerActions!.setStatus('read')}
 						use:tooltip={'Read'}
 						aria-label="Read"
@@ -245,7 +245,7 @@
 					</button>
 					<button
 						class="btn-icon"
-						class:active={$viewerEntry.status === 'unread'}
+						class:active={$viewerEntry.read_state === 'unread'}
 						onclick={() => $viewerActions!.setStatus('unread')}
 						use:tooltip={'Unread'}
 						aria-label="Unread"

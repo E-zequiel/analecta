@@ -9,7 +9,7 @@ export const entryChangedTick = writable(0);
 
 // Incremented specifically on a `vault_rescanned` SSE event (manual or automatic
 // reconciliation of files edited outside Analecta). Open viewers use this — not
-// entryChangedTick, which also fires on ordinary tag/flag/status patches — to
+// entryChangedTick, which also fires on ordinary tag/flag/read-state patches
 // re-read their file from disk without over-firing on unrelated entry edits.
 export const vaultRescannedTick = writable(0);
 

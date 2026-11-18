@@ -71,7 +71,7 @@ def build_frontmatter(content: ExtractedContent, created_at: str) -> str:
         "source_type": content.source_type,
         "created_at": created_at,
         "tags": [],
-        "status": "unread",
+        "read_state": "unread",
     }
     for field in ("author", "description", "published"):
         if content.metadata.get(field):

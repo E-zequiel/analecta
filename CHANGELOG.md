@@ -8,6 +8,15 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- The entry read-state storage key is renamed from `status` to
+  `read_state` (SQLite column and Markdown frontmatter). Existing vault
+  files are rewritten in place on the next launch; reading states, the
+  Unread/Read labels, and all behavior are unchanged. The rename keeps
+  `status` free for the Open Knowledge Format vocabulary
+  (draft/stable/deprecated).
+
 ## [0.6.1] - 2026-10-27
 
 ### Security

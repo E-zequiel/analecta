@@ -62,7 +62,7 @@
 				title: entry.title,
 				url: entry.url,
 				file_path: entry.file_path,
-				status: entry.status,
+				read_state: entry.read_state,
 				flags: entry.flags,
 			});
 		} catch {

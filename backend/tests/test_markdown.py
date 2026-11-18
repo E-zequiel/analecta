@@ -44,7 +44,7 @@ def test_frontmatter_required_fields():
     assert "source_type:" in fm
     assert "created_at:" in fm
     assert "tags: []" in fm
-    assert "status: unread" in fm
+    assert "read_state: unread" in fm
 
 
 def test_frontmatter_is_valid_yaml():
@@ -55,7 +55,7 @@ def test_frontmatter_is_valid_yaml():
     assert data["url"] == "https://example.com/article"
     assert data["source_type"] == "article"
     assert data["tags"] == []
-    assert data["status"] == "unread"
+    assert data["read_state"] == "unread"
 
 
 def test_frontmatter_escapes_title_with_colon():

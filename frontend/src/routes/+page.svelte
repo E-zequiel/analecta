@@ -116,7 +116,7 @@
 		if (section === 'archive') return { flag: 'archive', tag, ...sort };
 		if (FLAG_SECTIONS.has(section)) return { flag: section, exclude_flag: 'archive', tag, ...sort };
 		// unread / read
-		return { status: section, exclude_flag: 'archive', tag, ...sort };
+		return { read_state: section, exclude_flag: 'archive', tag, ...sort };
 	}
 
 	// Fetch subgraph when an entry is selected in a dashboard
@@ -617,8 +617,8 @@
 													><Archive size={15} /></span
 												>
 											{/if}
-											<span class="entry-badge entry-status-{entry.status}">
-												{#if entry.status === 'read'}
+											<span class="entry-badge entry-status-{entry.read_state}">
+												{#if entry.read_state === 'read'}
 													<Eye size={15} />
 												{:else}
 													<EyeClosed size={15} />
@@ -672,8 +672,8 @@
 											><Archive size={15} /></span
 										>
 									{/if}
-									<span class="entry-badge entry-status-{entry.status}">
-										{#if entry.status === 'read'}
+									<span class="entry-badge entry-status-{entry.read_state}">
+										{#if entry.read_state === 'read'}
 											<Eye size={15} />
 										{:else}
 											<EyeClosed size={15} />
