@@ -908,6 +908,12 @@
 		>
 			<div class="content-inner">
 				<h1 class="entry-title">{entry.title}</h1>
+				{#if entry.summary}
+					<div class="bot-summary">
+						<span class="bot-summary-label">Bot summary</span>
+						<p class="bot-summary-text">{entry.summary}</p>
+					</div>
+				{/if}
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 				<div
 					class="markdown-body"
@@ -952,6 +958,26 @@
 		overflow-y: auto;
 		min-width: 0;
 		overflow-anchor: none;
+	}
+
+	.bot-summary {
+		margin: 12px 0 20px;
+		padding: 10px 14px;
+		border-left: 3px solid var(--accent);
+		background: var(--bg-dark);
+	}
+
+	.bot-summary-label {
+		font-size: 11px;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--fg-muted);
+	}
+
+	.bot-summary-text {
+		margin: 6px 0 0;
+		font-size: 15px;
+		color: var(--fg);
 	}
 
 	.content-inner {

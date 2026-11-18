@@ -10,6 +10,11 @@ and this project adheres to
 
 ### Added
 
+- New "Síntesis" sidebar section (ReceiptText icon) listing bot synthesis
+  entries; every other section — Library, Unread, Read, Bookmark, Gem —
+  stays captures-only so entries are never double-listed.
+- Bot summaries are now visible in the reading view (below the title)
+  and in list rows.
 - Bots can record a short summary on any entry — CLI `analecta summary
   <entry> --text --by` or `PATCH /entries/{id}` with `summary` — stored
   in the entry's frontmatter together with `summary_basis`, a hash of
