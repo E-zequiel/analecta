@@ -21,6 +21,7 @@ from analecta.api.routes import (
     tags,
 )
 from analecta.config import load_config, setup_logging
+from analecta.manifest import write_vault_manifest
 from analecta.session_security import (
     SessionDiscovery,
     VaultLock,
@@ -81,6 +82,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
         rename_frontmatter_status_keys(config.vault_path)
         backfill_okf_frontmatter(config.vault_path)
+    write_vault_manifest(config.vault_path)
     app.state.config = config
     app.state.index = index
     app.state.event_bus = EventBus()
