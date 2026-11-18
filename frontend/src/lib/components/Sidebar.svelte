@@ -22,6 +22,7 @@
 		Archive,
 		TriangleAlert,
 		X,
+		ReceiptText,
 	} from '@lucide/svelte';
 	import { writable } from 'svelte/store';
 	import { SvelteMap } from 'svelte/reactivity';
@@ -61,16 +62,21 @@
 		{ id: 'read', label: 'READ', icon: Eye },
 		{ id: 'bookmark', label: 'BOOKMARK', icon: Bookmark },
 		{ id: 'gem', label: 'GEM', icon: Gem },
+		{ id: 'synthesis', label: 'SÍNTESIS', icon: ReceiptText },
 		{ id: 'archive', label: 'ARCHIVE', icon: Archive },
 	] as const;
 
 	type SectionId = (typeof SECTIONS)[number]['id'];
 
 	function sectionParams(id: string): Parameters<typeof entriesApi.list>[0] {
+		// D11: the Síntesis section is synthesis-only; every other section is
+		// captures-only so entries are never double-listed.
 		if (id === 'archive') return { flag: 'archive' };
-		if (id === 'bookmark' || id === 'gem') return { flag: id, exclude_flag: 'archive' };
-		if (id === 'library') return { exclude_flag: 'archive' };
-		return { read_state: id, exclude_flag: 'archive' };
+		if (id === 'synthesis') return { source_type: 'synthesis' };
+		if (id === 'bookmark' || id === 'gem')
+			return { flag: id, exclude_flag: 'archive', exclude_source_type: 'synthesis' };
+		if (id === 'library') return { exclude_flag: 'archive', exclude_source_type: 'synthesis' };
+		return { read_state: id, exclude_flag: 'archive', exclude_source_type: 'synthesis' };
 	}
 
 	let counts = $state<Record<string, number>>({});
@@ -237,8 +243,10 @@
 		const isArchived = e.flags.includes('archive');
 		if (sectionId === 'archive') return isArchived;
 		if (isArchived) return false;
-		if (sectionId === 'library') return true;
+		if (sectionId === 'library') return e.source_type !== 'synthesis';
+		if (sectionId === 'synthesis') return e.source_type === 'synthesis';
 		if (sectionId === 'bookmark' || sectionId === 'gem') return e.flags.includes(sectionId);
+		if (e.source_type === 'synthesis') return false;
 		return e.read_state === sectionId;
 	}
 

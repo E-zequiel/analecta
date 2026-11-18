@@ -106,6 +106,9 @@ class EntryRecord:
         created_at: ISO 8601 timestamp.
         updated_at: ISO 8601 timestamp.
         read_state: Entry read-state (unread/read).
+        summary: Bot-side short summary (UI display); agent record lives
+            in the frontmatter (D9).
+        summary_basis: Body hash recorded with the summary.
         tags_json: JSON-encoded list of tag name strings.
         id: Database row id; ``None`` before insertion.
     """
@@ -117,6 +120,8 @@ class EntryRecord:
     created_at: str
     updated_at: str
     read_state: str = "unread"
+    summary: str | None = None
+    summary_basis: str | None = None
     tags_json: str = "[]"
     flags_json: str = "[]"
     id: int | None = None
@@ -447,6 +452,8 @@ class VaultIndex:
     def list_entries(
         self,
         read_state: str | None = None,
+        source_type: str | None = None,
+        exclude_source_type: str | None = None,
         flag: str | None = None,
         exclude_flag: str | None = None,
         sort_by: str = "created_at",
@@ -456,6 +463,9 @@ class VaultIndex:
 
         Args:
             read_state: Optional read-state filter.
+            source_type: Optional exact source-type filter.
+            exclude_source_type: Optional source-type exclusion (e.g.
+                ``synthesis`` to keep Library captures-only).
             flag: Optional flag filter (bookmark / gem / archive); matches entries
                 whose flags_json array contains this value.
             exclude_flag: Optional flag exclusion; omits entries whose flags_json
@@ -476,6 +486,12 @@ class VaultIndex:
         if read_state is not None:
             conditions.append("read_state = ?")
             params.append(read_state)
+        if source_type is not None:
+            conditions.append("source_type = ?")
+            params.append(source_type)
+        if exclude_source_type is not None:
+            conditions.append("source_type != ?")
+            params.append(exclude_source_type)
         if flag is not None:
             conditions.append(
                 "EXISTS (SELECT 1 FROM json_each(flags_json) WHERE value = ?)"
@@ -594,6 +610,22 @@ class VaultIndex:
                 "UPDATE entries SET read_state = ?, updated_at = ? WHERE id = ?",
                 (read_state, _now(), entry_id),
             )
+        self._conn.commit()
+
+    @_synchronized
+    def update_summary(self, entry_id: int, summary: str, basis: str) -> None:
+        """Mirror the bot summary into the DB (frontmatter stays the record).
+
+        Args:
+            entry_id: Target row id.
+            summary: Short bot summary (≤ 500 chars, enforced by callers).
+            basis: The body hash (D9) recorded with the summary.
+        """
+        self._conn.execute(
+            "UPDATE entries SET summary = ?, summary_basis = ?, updated_at = ?"
+            " WHERE id = ?",
+            (summary, basis, _now(), entry_id),
+        )
         self._conn.commit()
 
     @_synchronized
@@ -2130,6 +2162,8 @@ def _row_to_entry(row: sqlite3.Row) -> EntryRecord:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         read_state=row["read_state"],
+        summary=row["summary"],
+        summary_basis=row["summary_basis"],
         tags_json=row["tags_json"],
         flags_json=row["flags_json"],
     )

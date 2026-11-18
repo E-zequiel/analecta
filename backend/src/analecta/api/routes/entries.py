@@ -74,6 +74,8 @@ class EntryOut(BaseModel):
         created_at: ISO 8601 creation timestamp.
         updated_at: ISO 8601 last-update timestamp.
         read_state: Entry read-state string.
+        summary: Bot-side short summary (or null).
+        summary_basis: Body hash recorded with the summary.
         tags: List of structural tag names (Tags UI-assigned). Deliberately
             kept separate from content_tags, not unioned — see "Why
             EntryOut.tags isn't the true union" in
@@ -91,6 +93,8 @@ class EntryOut(BaseModel):
     created_at: str
     updated_at: str
     read_state: str
+    summary: str | None
+    summary_basis: str | None
     tags: list[str]
     content_tags: list[str]
     flags: list[str]
@@ -327,6 +331,8 @@ def entry_out(record: EntryRecord, content_tags: list[str] | None = None) -> Ent
         created_at=record.created_at,
         updated_at=record.updated_at,
         read_state=record.read_state,
+        summary=record.summary,
+        summary_basis=record.summary_basis,
         tags=json.loads(record.tags_json),
         content_tags=content_tags or [],
         flags=json.loads(record.flags_json),
@@ -341,6 +347,8 @@ def entry_out(record: EntryRecord, content_tags: list[str] | None = None) -> Ent
 @router.get("/entries", response_model=list[EntryOut])
 async def list_entries(
     read_state: str | None = None,
+    source_type: str | None = None,
+    exclude_source_type: str | None = None,
     flag: str | None = None,
     exclude_flag: str | None = None,
     tag: str | None = None,
@@ -357,6 +365,9 @@ async def list_entries(
 
     Args:
         read_state: Optional read-state filter (unread / read).
+        source_type: Optional exact source-type filter.
+        exclude_source_type: Optional source-type exclusion (e.g.
+            ``synthesis`` keeps Library captures-only).
         flag: Optional flag filter (bookmark / gem / archive).
         exclude_flag: Optional flag exclusion — omits entries containing this flag
             (e.g. ``archive`` to hide archived entries from the library view).
@@ -373,6 +384,10 @@ async def list_entries(
         records = await asyncio.to_thread(index.search, q)
         if read_state:
             records = [r for r in records if r.read_state == read_state]
+            if source_type:
+                records = [r for r in records if r.source_type == source_type]
+            if exclude_source_type:
+                records = [r for r in records if r.source_type != exclude_source_type]
         if flag:
             records = [r for r in records if flag in json.loads(r.flags_json)]
         if exclude_flag:
@@ -388,6 +403,12 @@ async def list_entries(
         records: list[EntryRecord] = []
         for entry in fetched:
             if read_state is not None and entry.read_state != read_state:
+                continue
+            if source_type is not None and entry.source_type != source_type:
+                continue
+            if exclude_source_type is not None and (
+                entry.source_type == exclude_source_type
+            ):
                 continue
             if flag is not None and flag not in json.loads(entry.flags_json):
                 continue
@@ -405,6 +426,8 @@ async def list_entries(
         records = await asyncio.to_thread(
             index.list_entries,
             read_state=read_state,
+            source_type=source_type,
+            exclude_source_type=exclude_source_type,
             flag=flag,
             exclude_flag=exclude_flag,
             sort_by=sort_by,
@@ -552,14 +575,16 @@ async def patch_entry(
             raise HTTPException(status_code=404, detail="Entry not found")
         file_path = Path(record.file_path)
 
-        def _write_summary() -> None:
+        def _write_summary() -> str:
             text = file_path.read_text(encoding="utf-8")
             basis = body_sha16(text)
             file_path.write_text(
                 set_summary_fields(text, new_summary, basis), encoding="utf-8"
             )
+            return basis
 
-        await asyncio.to_thread(_write_summary)
+        basis = await asyncio.to_thread(_write_summary)
+        await asyncio.to_thread(index.update_summary, entry_id, new_summary, basis)
     if (new_tags := body.tags) is not None:
         try:
             await asyncio.to_thread(index.update_tags, entry_id, new_tags)

@@ -61,6 +61,9 @@
 						<div class="entry-top">
 							<span class="entry-title">{entry.title}</span>
 						</div>
+						{#if entry.summary}
+							<div class="entry-summary">{entry.summary}</div>
+						{/if}
 						<div class="entry-meta">
 							<span class="entry-date">{formatDate(entry.created_at)}</span>
 							{#if showStatusLabel}
@@ -118,6 +121,9 @@
 						<div class="entry-top">
 							<span class="entry-title">{entry.title}</span>
 						</div>
+						{#if entry.summary}
+							<div class="entry-summary">{entry.summary}</div>
+						{/if}
 						<div class="entry-meta">
 							<span class="entry-date">{formatDate(entry.created_at)}</span>
 							{#if showStatusLabel}
@@ -229,6 +235,17 @@
 	.entry-date {
 		font-size: 0.68rem;
 		color: var(--fg-muted);
+	}
+
+	.entry-summary {
+		font-size: 12px;
+		color: var(--fg-muted);
+		display: -webkit-box;
+		line-clamp: 2;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+		margin: 2px 0 0;
 	}
 
 	.entry-status,

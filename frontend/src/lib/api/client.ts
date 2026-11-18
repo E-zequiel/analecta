@@ -29,6 +29,8 @@ export interface Entry {
 	created_at: string;
 	updated_at: string;
 	read_state: string;
+	summary?: string | null;
+	summary_basis?: string | null;
 	tags: string[];
 	content_tags: string[];
 	flags: string[];
@@ -185,6 +187,8 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 export const entries = {
 	list(params?: {
 		read_state?: string;
+		source_type?: string;
+		exclude_source_type?: string;
 		flag?: string;
 		exclude_flag?: string;
 		tag?: string;
