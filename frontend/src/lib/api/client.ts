@@ -1,4 +1,5 @@
 import { get } from 'svelte/store';
+import { getSessionToken } from '#lib/platform';
 import { port } from '#lib/stores/sidecar';
 
 // ---------------------------------------------------------------------------
@@ -152,10 +153,12 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 	if (p === null) throw new ApiError(0, 'Sidecar not ready');
 
 	const hasBody = opts.body !== undefined;
+	const token = await getSessionToken();
 	const res = await fetch(`http://localhost:${p}/api/v1${path}`, {
 		...opts,
 		headers: {
 			...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+			...(token ? { Authorization: `Bearer ${token}` } : {}),
 			...opts.headers,
 		},
 	});

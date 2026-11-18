@@ -6,8 +6,17 @@ import { CHROME_MAJOR } from './chrome-identity.js';
 
 let sidecarProcess: ChildProcess | null = null;
 let cachedPort: number | null = null;
+let cachedSessionToken: string | null = null;
 let sidecarReady = false;
 const portResolvers: Array<(port: number) => void> = [];
+
+/**
+ * Per-run sidecar session token (D5). Sourced from sidecar stdout — never
+ * from the on-disk discovery file, which stays 0600 root-owner readable.
+ */
+export function getSessionToken(): string | null {
+	return cachedSessionToken;
+}
 
 /** Resolves only after SIDECAR_READY — guarantees HTTP is accepting connections. */
 export function getSidecarPort(): Promise<number> {
@@ -42,6 +51,8 @@ export function spawnSidecar(): void {
 			if (trimmed.startsWith('LISTENING_ON_PORT:')) {
 				cachedPort = parseInt(trimmed.slice('LISTENING_ON_PORT:'.length), 10);
 				// Port is cached but resolvers wait until SIDECAR_READY.
+			} else if (trimmed.startsWith('SIDECAR_TOKEN:')) {
+				cachedSessionToken = trimmed.slice('SIDECAR_TOKEN:'.length);
 			} else if (trimmed.startsWith('VAULT_PATH:')) {
 				setVaultPath(trimmed.slice('VAULT_PATH:'.length));
 			} else if (trimmed === 'SIDECAR_READY') {

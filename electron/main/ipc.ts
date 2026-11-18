@@ -2,7 +2,7 @@ import { ipcMain, dialog, shell, clipboard, Notification, app } from 'electron';
 import fs from 'fs/promises';
 import type { BrowserWindow } from 'electron';
 import { assertVaultPath, assertExistsPath, setVaultPath } from './vault-state.js';
-import { getSidecarPort } from './sidecar.js';
+import { getSidecarPort, getSessionToken } from './sidecar.js';
 import { runUpdateCheck, downloadUpdate, quitAndInstall } from './updater.js';
 
 let initialDeepLink: string | null = null;
@@ -35,6 +35,9 @@ function withDialogTimeout<T>(promise: Promise<T>): Promise<T> {
 export function registerIpcHandlers(): void {
 	// Returns the cached port from sidecar stdout; awaits if not yet available.
 	ipcMain.handle('get-sidecar-port', () => getSidecarPort());
+
+	// Returns the per-run sidecar session token (D5); null in dev runs.
+	ipcMain.handle('get-session-token', () => getSessionToken());
 
 	// Updates the vault scope used by all filesystem IPC handlers.
 	ipcMain.handle('update-vault-scope', (_event, rawPath: unknown) => {
