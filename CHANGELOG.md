@@ -10,6 +10,11 @@ and this project adheres to
 
 ### Changed
 
+- New captures carry Open Knowledge Format provenance in their
+  frontmatter: `type: reference`, `generated` (pipeline version and
+  timestamp), and `sources` (the captured URL, byline, and publish
+  datetime where one exists). Existing vault pages gain the same fields
+  in place on the next launch; page bodies are untouched.
 - The entry read-state storage key is renamed from `status` to
   `read_state` (SQLite column and Markdown frontmatter). Existing vault
   files are rewritten in place on the next launch; reading states, the

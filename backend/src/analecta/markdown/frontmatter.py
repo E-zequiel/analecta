@@ -1,11 +1,22 @@
 """YAML frontmatter builder — M4 pipeline."""
 
+import importlib.metadata
 import re
 from typing import Any
 
 import yaml
 
 from analecta.extraction.core import ExtractedContent
+
+
+def generator_actor() -> str:
+    """Return the OKF actor convention id for this pipeline version."""
+    try:
+        version = importlib.metadata.version("analecta")
+    except importlib.metadata.PackageNotFoundError:  # pragma: no cover - dev tree
+        version = "dev"
+    return f"analecta/{version}"
+
 
 _FM_BLOCK = re.compile(r"^(---\n)([\s\S]*?)(\n---\n)", re.MULTILINE)
 
@@ -54,6 +65,25 @@ def update_linked(
     return f"---\n{new_yaml}---\n{rest}"
 
 
+def _source_entry(content: ExtractedContent) -> dict[str, object]:
+    """Build the OKF ``sources[]`` entry for an extraction.
+
+    ``resource`` is the source URL. ``author`` is the recorded byline.
+    ``last_modified`` carries ``published`` only when it is a full ISO 8601
+    datetime with a ``T`` separator — OKF §5.1 requires an explicit datetime
+    for timestamp-valued keys, and the article convention records a bare
+    date, which must not masquerade as one (D1).
+    """
+    source: dict[str, object] = {"resource": content.url}
+    author = content.metadata.get("author")
+    if author:
+        source["author"] = author
+    published = content.metadata.get("published")
+    if isinstance(published, str) and "T" in published:
+        source["last_modified"] = published
+    return source
+
+
 def build_frontmatter(content: ExtractedContent, created_at: str) -> str:
     """Build a YAML frontmatter block for *content*.
 
@@ -66,6 +96,7 @@ def build_frontmatter(content: ExtractedContent, created_at: str) -> str:
         a Markdown document.
     """
     data: dict[str, object] = {
+        "type": "reference",
         "title": content.title,
         "url": content.url,
         "source_type": content.source_type,
@@ -78,5 +109,7 @@ def build_frontmatter(content: ExtractedContent, created_at: str) -> str:
             data[field] = content.metadata[field]
     if "low_confidence" in content.metadata:
         data["low_confidence"] = content.metadata["low_confidence"]
+    data["generated"] = {"by": generator_actor(), "at": created_at}
+    data["sources"] = [_source_entry(content)]
     body = yaml.dump(data, allow_unicode=True, sort_keys=False)
     return f"---\n{body}---\n"
