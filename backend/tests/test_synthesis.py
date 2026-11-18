@@ -14,7 +14,10 @@ from pathlib import Path
 import pytest
 
 from analecta.storage.index import EntryRecord, VaultIndex
-from analecta.storage.synthesis import create_synthesis_entry
+from analecta.storage.synthesis import (
+    create_synthesis_entry,
+    delete_syntheses_for_entry,
+)
 from analecta.storage.vault import VaultManager
 
 
@@ -191,3 +194,92 @@ def test_synthesis_counts_as_synthesis_not_capture(
     )
     source_types = {r.source_type for r in index.list_entries()}
     assert source_types == {"article", "synthesis"}
+
+
+# ---------------------------------------------------------------------------
+# T4: cascade deletion (D13/S13 — unidirectional)
+# ---------------------------------------------------------------------------
+
+
+def test_delete_capture_cascades_to_synthesis(
+    env: tuple[VaultIndex, VaultManager],
+) -> None:
+    from analecta.storage.synthesis import delete_syntheses_for_entry
+
+    index, vault = env
+    capture = _capture(index)
+    eid = create_synthesis_entry(
+        index,
+        vault,
+        title="Síntesis en cascada",
+        body="Cuerpo que cita la fuente.",
+        source_entries=[capture],
+        generated_by="bot/x",
+    )
+    synth_record = index.get_entry(eid)
+    assert synth_record is not None
+    synth_page = Path(synth_record.file_path)
+    assert synth_page.exists()
+
+    delete_syntheses_for_entry(index, capture)
+
+    assert index.get_entry(eid) is None
+    assert not synth_page.exists()
+
+
+def test_cascade_deletes_only_citing_syntheses(
+    env: tuple[VaultIndex, VaultManager],
+) -> None:
+    from analecta.storage.synthesis import delete_syntheses_for_entry
+
+    index, vault = env
+    a = _capture(index, n=1)
+    b = _capture(index, n=2)
+    keep = create_synthesis_entry(
+        index,
+        vault,
+        title="Síntesis de A",
+        body="Cita a [[Capture 1]].",
+        source_entries=[a],
+        generated_by="bot/x",
+    )
+    other = create_synthesis_entry(
+        index,
+        vault,
+        title="Síntesis de B",
+        body="Cita a [[Capture 2]].",
+        source_entries=[b],
+        generated_by="bot/x",
+    )
+
+    delete_syntheses_for_entry(index, a)
+
+    assert index.get_entry(keep) is None
+    assert index.get_entry(other) is not None
+
+
+def test_deleting_synthesis_leaves_capture_alone(
+    env: tuple[VaultIndex, VaultManager],
+) -> None:
+    """Unidirectional: borrar una síntesis no toca su captura (D13)."""
+    index, vault = env
+    capture = _capture(index)
+    synth_id = create_synthesis_entry(
+        index,
+        vault,
+        title="Síntesis removible",
+        body="Cuerpo.",
+        source_entries=[capture],
+        generated_by="bot/x",
+    )
+    synth = index.get_entry(synth_id)
+    assert synth is not None
+
+    delete_syntheses_for_entry(index, synth)
+
+    assert capture.id is not None
+    capture_after = index.get_entry(capture.id)
+    assert capture_after is not None
+    assert Path(capture_after.file_path).exists() or capture_after.file_path.startswith(
+        "/vault/"
+    )

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
+from analecta.markdown.frontmatter import FM_BLOCK
 from analecta.storage.index import EntryRecord
 from analecta.storage.vault import VaultManager
 
@@ -97,3 +98,68 @@ def create_synthesis_entry(
     index.update_fts_content(eid, title, markdown)
     index.index_backlinks(eid)
     return eid
+
+
+def _synthesis_source_resources(synth: EntryRecord) -> list[str]:
+    """Return the ``sources[].resource`` list of a synthesis page."""
+    try:
+        text = Path(synth.file_path).read_text(encoding="utf-8")
+    except OSError:
+        return []
+    m = FM_BLOCK.match(text)
+    if not m:
+        return []
+    try:
+        data: object = yaml.safe_load(m.group(2))
+    except yaml.YAMLError:
+        return []
+    if not isinstance(data, dict) or data.get("type") != "synthesis":
+        return []
+    sources = data.get("sources", [])
+    if not isinstance(sources, list):
+        return []
+    return [
+        s["resource"]
+        for s in sources
+        if isinstance(s, dict) and isinstance(s.get("resource"), str)
+    ]
+
+
+def find_citing_syntheses(index: VaultIndex, entry: EntryRecord) -> list[EntryRecord]:
+    """Find synthesis entries whose ``sources[]`` cite *entry*'s page.
+
+    Matching is by vault-relative page resource (``/pages/<file>.md``), the
+    same shape ``create_synthesis_entry`` writes.
+
+    Args:
+        index: Vault index singleton.
+        entry: The entry whose citations are searched.
+
+    Returns:
+        The synthesis ``EntryRecord`` objects citing it.
+    """
+    target = f"/pages/{Path(entry.file_path).name}"
+    out: list[EntryRecord] = []
+    for record in index.list_entries():
+        if record.source_type != "synthesis" or record.id == entry.id:
+            continue
+        if target in _synthesis_source_resources(record):
+            out.append(record)
+    return out
+
+
+def delete_syntheses_for_entry(index: VaultIndex, entry: EntryRecord) -> None:
+    """Delete syntheses citing *entry*, in cascade (owner decision D13).
+
+    Unidirectional by construction: a synthesis is never cited by another
+    synthesis in v1 (single-source), so passing a synthesis is a no-op —
+    deleting one never touches its capture.
+    """
+    for synth in find_citing_syntheses(index, entry):
+        if synth.id is None:
+            continue
+        index.hard_delete(synth.id)
+        try:
+            Path(synth.file_path).unlink(missing_ok=True)
+        except OSError:
+            pass
