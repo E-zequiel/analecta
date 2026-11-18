@@ -113,3 +113,48 @@ def build_frontmatter(content: ExtractedContent, created_at: str) -> str:
     data["sources"] = [_source_entry(content)]
     body = yaml.dump(data, allow_unicode=True, sort_keys=False)
     return f"---\n{body}---\n"
+
+
+def body_sha16(markdown: str) -> str:
+    """Return the D9 freshness hash of the post-frontmatter body.
+
+    The identity is the raw UTF-8 bytes of everything after the closing
+    ``---`` of the frontmatter block, exactly as stored — no normalization.
+    A frontmatter-only rewrite does not move the hash; a body edit does.
+
+    Args:
+        markdown: Raw Markdown text with (or without) YAML frontmatter.
+
+    Returns:
+        The first 16 hex characters of the SHA-256 body digest. Bodyless
+        frontmatter hashes the empty body deterministically.
+    """
+    m = FM_BLOCK.match(markdown)
+    body = markdown[m.end() :] if m else markdown
+    import hashlib
+
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
+
+
+def set_summary_fields(markdown: str, summary: str, basis: str) -> str:
+    """Set the bot-side ``summary`` + ``summary_basis`` frontmatter keys.
+
+    Args:
+        markdown: Raw Markdown text with YAML frontmatter.
+        summary: The short bot summary (≤ 500 chars, enforced by callers).
+        basis: The body hash (see :func:`body_sha16`).
+
+    Returns:
+        Modified Markdown, or the original when no frontmatter is present.
+    """
+    m = FM_BLOCK.match(markdown)
+    if not m:
+        return markdown
+    try:
+        data: dict[str, Any] = yaml.safe_load(m.group(2)) or {}
+    except yaml.YAMLError:
+        return markdown
+    data["summary"] = summary
+    data["summary_basis"] = basis
+    body = yaml.dump(data, allow_unicode=True, sort_keys=False)
+    return f"---\n{body}---\n{markdown[m.end() :]}"

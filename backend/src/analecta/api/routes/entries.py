@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from analecta.api.deps import get_index
+from analecta.api.deps import get_index, get_vault
 from analecta.storage.index import (
     EntryRecord,
     GraphEdgeRecord,
@@ -15,6 +15,7 @@ from analecta.storage.index import (
     InvalidTagNameError,
     VaultIndex,
 )
+from analecta.storage.vault import VaultManager
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -47,12 +48,15 @@ class EntryPatchIn(BaseModel):
 
     Attributes:
         read_state: New read-state value, if provided.
+        summary: Bot-side short summary (≤ 500 chars); written to the
+            entry's frontmatter together with summary_basis (D9).
         tags: Replacement tag list, if provided.
         flags: Replacement flags list, if provided.
         fts: FTS content to reindex, if provided.
     """
 
     read_state: str | None = None
+    summary: str | None = None
     tags: list[str] | None = None
     flags: list[str] | None = None
     fts: FtsPatch | None = None
@@ -90,6 +94,22 @@ class EntryOut(BaseModel):
     tags: list[str]
     content_tags: list[str]
     flags: list[str]
+
+
+class SynthesisIn(BaseModel):
+    """Request body for POST /synthesis.
+
+    Attributes:
+        title: Synthesis title; drives the filename slug.
+        body: Markdown body (wikilinks/hashtags allowed).
+        source_ids: Database ids of the capture entries being synthesized.
+        generated_by: OKF actor convention id of the producing bot.
+    """
+
+    title: str
+    body: str
+    source_ids: list[int]
+    generated_by: str
 
 
 class EntryTitleOut(BaseModel):
@@ -520,6 +540,26 @@ async def patch_entry(
         raise HTTPException(status_code=404, detail="Entry not found")
     if (new_read_state := body.read_state) is not None:
         await asyncio.to_thread(index.update_read_state, entry_id, new_read_state)
+    if (new_summary := body.summary) is not None:
+        if len(new_summary) > 500:
+            raise HTTPException(
+                status_code=400, detail="summary exceeds 500 characters"
+            )
+        from analecta.markdown.frontmatter import body_sha16, set_summary_fields
+
+        record = await asyncio.to_thread(index.get_entry, entry_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Entry not found")
+        file_path = Path(record.file_path)
+
+        def _write_summary() -> None:
+            text = file_path.read_text(encoding="utf-8")
+            basis = body_sha16(text)
+            file_path.write_text(
+                set_summary_fields(text, new_summary, basis), encoding="utf-8"
+            )
+
+        await asyncio.to_thread(_write_summary)
     if (new_tags := body.tags) is not None:
         try:
             await asyncio.to_thread(index.update_tags, entry_id, new_tags)
@@ -773,6 +813,48 @@ async def unlink_entries(
     if await asyncio.to_thread(index.get_entry, target_id) is None:
         raise HTTPException(status_code=404, detail="Target entry not found")
     await asyncio.to_thread(index.remove_link, source_id, target_id)
+
+
+@router.post("/synthesis", status_code=201, response_model=EntryOut)
+async def create_synthesis(
+    body: SynthesisIn,
+    index: VaultIndex = Depends(get_index),
+    vault: VaultManager = Depends(get_vault),
+) -> EntryOut:
+    """Create a first-class synthesis entry citing captured sources.
+
+    Args:
+        body: Synthesis payload (title, body, source ids, bot actor).
+        index: Injected VaultIndex singleton.
+        vault: VaultManager for the configured vault path.
+
+    Returns:
+        The newly created synthesis entry.
+
+    Raises:
+        HTTPException: 404 when any source id does not exist.
+    """
+    from analecta.storage.synthesis import create_synthesis_entry
+
+    source_records = []
+    for sid in body.source_ids:
+        record = await asyncio.to_thread(index.get_entry, sid)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"Source entry {sid} not found")
+        source_records.append(record)
+
+    eid = await asyncio.to_thread(
+        create_synthesis_entry,
+        index,
+        vault,
+        title=body.title,
+        body=body.body,
+        source_entries=source_records,
+        generated_by=body.generated_by,
+    )
+    record = await asyncio.to_thread(index.get_entry, eid)
+    assert record is not None
+    return entry_out(record)
 
 
 @router.delete("/entries/{entry_id}", status_code=204)
