@@ -73,7 +73,7 @@ def test_extract_creates_entry(
     assert data["title"] == "Test Article"
     assert data["url"] == "https://example.com/article"
     assert data["source_type"] == "article"
-    assert data["status"] == "unread"
+    assert data["read_state"] == "unread"
 
     # Markdown file must exist in vault/pages/
     pages = list((tmp_path / "vault" / "pages").glob("*.md"))

@@ -64,8 +64,8 @@
 						<div class="entry-meta">
 							<span class="entry-date">{formatDate(entry.created_at)}</span>
 							{#if showStatusLabel}
-								<span class="entry-status entry-status-{entry.status}">
-									{#if entry.status === 'read'}
+								<span class="entry-status entry-status-{entry.read_state}">
+									{#if entry.read_state === 'read'}
 										<Eye size={15} />
 									{:else}
 										<EyeClosed size={15} />
@@ -121,8 +121,8 @@
 						<div class="entry-meta">
 							<span class="entry-date">{formatDate(entry.created_at)}</span>
 							{#if showStatusLabel}
-								<span class="entry-status entry-status-{entry.status}">
-									{#if entry.status === 'read'}
+								<span class="entry-status entry-status-{entry.read_state}">
+									{#if entry.read_state === 'read'}
 										<Eye size={15} />
 									{:else}
 										<EyeClosed size={15} />

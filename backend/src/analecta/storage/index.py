@@ -105,7 +105,7 @@ class EntryRecord:
         source_type: One of ``article``, ``youtube``, ``substack``, ``x``.
         created_at: ISO 8601 timestamp.
         updated_at: ISO 8601 timestamp.
-        status: Entry status (unread/read).
+        read_state: Entry read-state (unread/read).
         tags_json: JSON-encoded list of tag name strings.
         id: Database row id; ``None`` before insertion.
     """
@@ -116,7 +116,7 @@ class EntryRecord:
     source_type: str
     created_at: str
     updated_at: str
-    status: str = "unread"
+    read_state: str = "unread"
     tags_json: str = "[]"
     flags_json: str = "[]"
     id: int | None = None
@@ -404,7 +404,7 @@ class VaultIndex:
             """
             INSERT INTO entries
                 (title, url, file_path, source_type,
-                 created_at, updated_at, status, tags_json, flags_json)
+                 created_at, updated_at, read_state, tags_json, flags_json)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -414,7 +414,7 @@ class VaultIndex:
                 entry.source_type,
                 entry.created_at,
                 entry.updated_at,
-                entry.status,
+                entry.read_state,
                 entry.tags_json,
                 entry.flags_json,
             ),
@@ -446,7 +446,7 @@ class VaultIndex:
     @_synchronized
     def list_entries(
         self,
-        status: str | None = None,
+        read_state: str | None = None,
         flag: str | None = None,
         exclude_flag: str | None = None,
         sort_by: str = "created_at",
@@ -455,7 +455,7 @@ class VaultIndex:
         """List entries with optional filters and sort control.
 
         Args:
-            status: Optional status filter.
+            read_state: Optional read-state filter.
             flag: Optional flag filter (bookmark / gem / archive); matches entries
                 whose flags_json array contains this value.
             exclude_flag: Optional flag exclusion; omits entries whose flags_json
@@ -473,9 +473,9 @@ class VaultIndex:
             sort_dir = "desc"
         conditions: list[str] = []
         params: list[str] = []
-        if status is not None:
-            conditions.append("status = ?")
-            params.append(status)
+        if read_state is not None:
+            conditions.append("read_state = ?")
+            params.append(read_state)
         if flag is not None:
             conditions.append(
                 "EXISTS (SELECT 1 FROM json_each(flags_json) WHERE value = ?)"
@@ -507,10 +507,10 @@ class VaultIndex:
                 SUM(CASE WHEN NOT EXISTS (
                     SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
                 ) THEN 1 ELSE 0 END) AS library,
-                SUM(CASE WHEN status = 'unread' AND NOT EXISTS (
+                SUM(CASE WHEN read_state = 'unread' AND NOT EXISTS (
                     SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
                 ) THEN 1 ELSE 0 END) AS unread,
-                SUM(CASE WHEN status = 'read' AND NOT EXISTS (
+                SUM(CASE WHEN read_state = 'read' AND NOT EXISTS (
                     SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
                 ) THEN 1 ELSE 0 END) AS read_count,
                 SUM(CASE WHEN EXISTS (
@@ -572,27 +572,27 @@ class VaultIndex:
         }
 
     @_synchronized
-    def update_status(self, entry_id: int, status: str) -> None:
-        """Update an entry's status field.
+    def update_read_state(self, entry_id: int, read_state: str) -> None:
+        """Update an entry's read-state field.
 
-        Sets ``read_at`` to the current timestamp when *status* is ``'read'``
-        so that Collecta read-activity metrics remain accurate.
+        Sets ``read_at`` to the current timestamp when *read_state* is
+        ``'read'`` so that Collecta read-activity metrics remain accurate.
 
         Args:
             entry_id: Target row id.
-            status: New status value.
+            read_state: New read-state value.
         """
-        if status == "read":
+        if read_state == "read":
             now = _now()
             self._conn.execute(
-                "UPDATE entries SET status = ?, updated_at = ?, read_at = ?"
+                "UPDATE entries SET read_state = ?, updated_at = ?, read_at = ?"
                 " WHERE id = ?",
-                (status, now, now, entry_id),
+                (read_state, now, now, entry_id),
             )
         else:
             self._conn.execute(
-                "UPDATE entries SET status = ?, updated_at = ? WHERE id = ?",
-                (status, _now(), entry_id),
+                "UPDATE entries SET read_state = ?, updated_at = ? WHERE id = ?",
+                (read_state, _now(), entry_id),
             )
         self._conn.commit()
 
@@ -2129,7 +2129,7 @@ def _row_to_entry(row: sqlite3.Row) -> EntryRecord:
         source_type=row["source_type"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
-        status=row["status"],
+        read_state=row["read_state"],
         tags_json=row["tags_json"],
         flags_json=row["flags_json"],
     )

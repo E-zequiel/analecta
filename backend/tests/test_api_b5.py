@@ -32,7 +32,7 @@ def _seed_entry(index: VaultIndex, url: str = "https://example.com/1") -> int:
             source_type="article",
             created_at="2024-01-01T00:00:00+00:00",
             updated_at="2024-01-01T00:00:00+00:00",
-            status="unread",
+            read_state="unread",
         )
     )
 

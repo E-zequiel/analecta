@@ -27,7 +27,7 @@ export interface Entry {
 	source_type: string;
 	created_at: string;
 	updated_at: string;
-	status: string;
+	read_state: string;
 	tags: string[];
 	content_tags: string[];
 	flags: string[];
@@ -44,7 +44,7 @@ export interface FtsPatch {
 }
 
 export interface EntryPatch {
-	status?: string;
+	read_state?: string;
 	tags?: string[];
 	flags?: string[];
 	fts?: FtsPatch;
@@ -181,7 +181,7 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
 
 export const entries = {
 	list(params?: {
-		status?: string;
+		read_state?: string;
 		flag?: string;
 		exclude_flag?: string;
 		tag?: string;

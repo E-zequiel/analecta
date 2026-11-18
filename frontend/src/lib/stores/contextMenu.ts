@@ -5,7 +5,7 @@ export interface ContextMenuEntry {
 	title: string;
 	url: string;
 	file_path: string;
-	status: string;
+	read_state: string;
 	flags: string[];
 }
 

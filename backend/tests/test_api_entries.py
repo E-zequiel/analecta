@@ -19,7 +19,7 @@ from analecta.storage.index import EntryRecord, VaultIndex
 # ---------------------------------------------------------------------------
 
 
-def _seed_entry(index: VaultIndex, *, n: int = 1, status: str = "unread") -> int:
+def _seed_entry(index: VaultIndex, *, n: int = 1, read_state: str = "unread") -> int:
     return index.add_entry(
         EntryRecord(
             title=f"Article {n}",
@@ -28,7 +28,7 @@ def _seed_entry(index: VaultIndex, *, n: int = 1, status: str = "unread") -> int
             source_type="article",
             created_at="2024-01-01T00:00:00+00:00",
             updated_at="2024-01-01T00:00:00+00:00",
-            status=status,
+            read_state=read_state,
         )
     )
 
@@ -71,10 +71,10 @@ def seeded_client(tmp_path: Path) -> Generator[TestClient]:
     config = AppConfig(vault_path=tmp_path / "vault")
     # Seed via a separate connection before starting the lifespan
     with VaultIndex(config.vault_path / "analecta.db") as index:
-        e1 = _seed_entry(index, n=1, status="unread")
+        e1 = _seed_entry(index, n=1, read_state="unread")
         index.update_tags(e1, ["python"])
         index.update_fts_content(e1, "Article 1", "Python programming guide")
-        _seed_entry(index, n=2, status="read")
+        _seed_entry(index, n=2, read_state="read")
     with TestClient(app) as c:
         yield c
 
@@ -96,12 +96,12 @@ def test_list_entries_returns_all(seeded_client: TestClient) -> None:
     assert len(r.json()) == 2
 
 
-def test_list_entries_filter_status(seeded_client: TestClient) -> None:
-    r = seeded_client.get("/api/v1/entries?status=read")
+def test_list_entries_filter_read_state(seeded_client: TestClient) -> None:
+    r = seeded_client.get("/api/v1/entries?read_state=read")
     assert r.status_code == 200
     data = r.json()
     assert len(data) == 1
-    assert data[0]["status"] == "read"
+    assert data[0]["read_state"] == "read"
 
 
 def test_list_entries_filter_tag(seeded_client: TestClient) -> None:
@@ -195,11 +195,11 @@ def test_get_entry_includes_content_tags(client: TestClient, tmp_path: Path) -> 
 # ---------------------------------------------------------------------------
 
 
-def test_patch_entry_status(seeded_client: TestClient) -> None:
+def test_patch_entry_read_state(seeded_client: TestClient) -> None:
     entry_id = seeded_client.get("/api/v1/entries").json()[0]["id"]
-    r = seeded_client.patch(f"/api/v1/entries/{entry_id}", json={"status": "read"})
+    r = seeded_client.patch(f"/api/v1/entries/{entry_id}", json={"read_state": "read"})
     assert r.status_code == 200
-    assert r.json()["status"] == "read"
+    assert r.json()["read_state"] == "read"
 
 
 def test_patch_entry_tags(seeded_client: TestClient) -> None:
@@ -240,7 +240,7 @@ def test_list_entries_filter_flag(seeded_client: TestClient) -> None:
 
 
 def test_patch_entry_404(client: TestClient) -> None:
-    r = client.patch("/api/v1/entries/9999", json={"status": "read"})
+    r = client.patch("/api/v1/entries/9999", json={"read_state": "read"})
     assert r.status_code == 404
 
 
@@ -287,7 +287,7 @@ def test_delete_entry_removes_assets_dir(tmp_path: Path) -> None:
                 source_type="article",
                 created_at="2024-01-01T00:00:00+00:00",
                 updated_at="2024-01-01T00:00:00+00:00",
-                status="unread",
+                read_state="unread",
             )
         )
 

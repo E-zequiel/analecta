@@ -428,9 +428,9 @@
 
 	async function setStatus(status: string) {
 		if (!entry) return;
-		const newStatus = entry.status === status ? 'unread' : status;
-		if (newStatus === entry.status) return;
-		const updated = await entriesApi.patch(entry.id, { status: newStatus });
+		const newStatus = entry.read_state === status ? 'unread' : status;
+		if (newStatus === entry.read_state) return;
+		const updated = await entriesApi.patch(entry.id, { read_state: newStatus });
 		entry = updated;
 		lastChangedEntry.set(updated);
 		entryChangedTick.update((n) => n + 1);
@@ -589,7 +589,7 @@
 					title: target.title,
 					url: target.url,
 					file_path: target.file_path,
-					status: target.status,
+					read_state: target.read_state,
 					flags: target.flags,
 				});
 			} catch {
@@ -604,7 +604,7 @@
 			title: entry.title,
 			url: entry.url,
 			file_path: entry.file_path,
-			status: entry.status,
+			read_state: entry.read_state,
 			flags: entry.flags,
 		});
 	}
@@ -820,7 +820,7 @@
 				if (propertiesOpen && entry) fetchLinked();
 			}}
 		>
-			<span class="status-badge">{entry.status}</span>
+			<span class="status-badge">{entry.read_state}</span>
 			<span class="props-url">{entry.url}</span>
 			<span class="props-meta">{formatDate(entry.created_at)}</span>
 			{#if readTime}<span class="props-meta">{readTime}</span>{/if}

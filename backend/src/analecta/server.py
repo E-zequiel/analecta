@@ -46,6 +46,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         Path(":memory:") if config.first_run else config.vault_path / "analecta.db"
     )
     index = VaultIndex(db_path)
+    if not config.first_run:
+        from analecta.maintenance import rename_frontmatter_status_keys
+
+        rename_frontmatter_status_keys(config.vault_path)
     app.state.config = config
     app.state.index = index
     app.state.event_bus = EventBus()

@@ -46,13 +46,13 @@ class EntryPatchIn(BaseModel):
     """Partial-update body for PATCH /entries/{id}.
 
     Attributes:
-        status: New status value, if provided.
+        read_state: New read-state value, if provided.
         tags: Replacement tag list, if provided.
         flags: Replacement flags list, if provided.
         fts: FTS content to reindex, if provided.
     """
 
-    status: str | None = None
+    read_state: str | None = None
     tags: list[str] | None = None
     flags: list[str] | None = None
     fts: FtsPatch | None = None
@@ -69,7 +69,7 @@ class EntryOut(BaseModel):
         source_type: One of article / youtube / substack / x.
         created_at: ISO 8601 creation timestamp.
         updated_at: ISO 8601 last-update timestamp.
-        status: Entry status string.
+        read_state: Entry read-state string.
         tags: List of structural tag names (Tags UI-assigned). Deliberately
             kept separate from content_tags, not unioned — see "Why
             EntryOut.tags isn't the true union" in
@@ -86,7 +86,7 @@ class EntryOut(BaseModel):
     source_type: str
     created_at: str
     updated_at: str
-    status: str
+    read_state: str
     tags: list[str]
     content_tags: list[str]
     flags: list[str]
@@ -306,7 +306,7 @@ def entry_out(record: EntryRecord, content_tags: list[str] | None = None) -> Ent
         source_type=record.source_type,
         created_at=record.created_at,
         updated_at=record.updated_at,
-        status=record.status,
+        read_state=record.read_state,
         tags=json.loads(record.tags_json),
         content_tags=content_tags or [],
         flags=json.loads(record.flags_json),
@@ -320,7 +320,7 @@ def entry_out(record: EntryRecord, content_tags: list[str] | None = None) -> Ent
 
 @router.get("/entries", response_model=list[EntryOut])
 async def list_entries(
-    status: str | None = None,
+    read_state: str | None = None,
     flag: str | None = None,
     exclude_flag: str | None = None,
     tag: str | None = None,
@@ -336,7 +336,7 @@ async def list_entries(
     All filters compose.
 
     Args:
-        status: Optional status filter (unread / read).
+        read_state: Optional read-state filter (unread / read).
         flag: Optional flag filter (bookmark / gem / archive).
         exclude_flag: Optional flag exclusion — omits entries containing this flag
             (e.g. ``archive`` to hide archived entries from the library view).
@@ -351,8 +351,8 @@ async def list_entries(
     """
     if q:
         records = await asyncio.to_thread(index.search, q)
-        if status:
-            records = [r for r in records if r.status == status]
+        if read_state:
+            records = [r for r in records if r.read_state == read_state]
         if flag:
             records = [r for r in records if flag in json.loads(r.flags_json)]
         if exclude_flag:
@@ -367,7 +367,7 @@ async def list_entries(
         fetched = await asyncio.to_thread(index.get_entries_by_ids, ids)
         records: list[EntryRecord] = []
         for entry in fetched:
-            if status is not None and entry.status != status:
+            if read_state is not None and entry.read_state != read_state:
                 continue
             if flag is not None and flag not in json.loads(entry.flags_json):
                 continue
@@ -384,7 +384,7 @@ async def list_entries(
     else:
         records = await asyncio.to_thread(
             index.list_entries,
-            status=status,
+            read_state=read_state,
             flag=flag,
             exclude_flag=exclude_flag,
             sort_by=sort_by,
@@ -518,8 +518,8 @@ async def patch_entry(
     record = await asyncio.to_thread(index.get_entry, entry_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Entry not found")
-    if (new_status := body.status) is not None:
-        await asyncio.to_thread(index.update_status, entry_id, new_status)
+    if (new_read_state := body.read_state) is not None:
+        await asyncio.to_thread(index.update_read_state, entry_id, new_read_state)
     if (new_tags := body.tags) is not None:
         try:
             await asyncio.to_thread(index.update_tags, entry_id, new_tags)
