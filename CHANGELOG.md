@@ -10,6 +10,14 @@ and this project adheres to
 
 ### Added
 
+- Bots can record a short summary on any entry — CLI `analecta summary
+  <entry> --text --by` or `PATCH /entries/{id}` with `summary` — stored
+  in the entry's frontmatter together with `summary_basis`, a hash of
+  the body that lets any consumer detect when the summary no longer
+  matches the content. Summaries are capped at 500 characters.
+- Bots can create synthesis entries — CLI `analecta synthesize` or
+  `POST /api/v1/synthesis` — first-class entries citing the captured
+  sources they synthesize.
 - The sidecar binary doubles as a CLI for bots and terminal use:
   `analecta extract <url>` captures a URL, `analecta index` prints an
   OKF-style index, and `analecta log` prints the update log — all
