@@ -62,7 +62,7 @@
 		{ id: 'read', label: 'READ', icon: Eye },
 		{ id: 'bookmark', label: 'BOOKMARK', icon: Bookmark },
 		{ id: 'gem', label: 'GEM', icon: Gem },
-		{ id: 'synthesis', label: 'SÍNTESIS', icon: ReceiptText },
+		{ id: 'synthesis', label: 'SYNTHESIS', icon: ReceiptText },
 		{ id: 'archive', label: 'ARCHIVE', icon: Archive },
 	] as const;
 

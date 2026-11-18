@@ -10,7 +10,7 @@ and this project adheres to
 
 ### Added
 
-- New "Síntesis" sidebar section (ReceiptText icon) listing bot synthesis
+- New "Synthesis" sidebar section (ReceiptText icon) listing bot synthesis
   entries; every other section — Library, Unread, Read, Bookmark, Gem —
   stays captures-only so entries are never double-listed.
 - Bot summaries are now visible in the reading view (below the title)
