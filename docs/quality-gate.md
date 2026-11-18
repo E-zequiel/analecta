@@ -1,8 +1,8 @@
 # Quality Gate — Analecta
 
-> Living document. Reflects active decisions on formatting, linting, type-checking, and testing.
-> Update whenever `backend/pyproject.toml`, `eslint.config.js`, `.prettierrc`,
-> or `frontend/vitest.config.ts` configuration changes.
+> Living document. Reflects active decisions on formatting, linting, type-checking,
+> and testing. Update whenever `backend/pyproject.toml`, `eslint.config.js`,
+> `.prettierrc`, or `frontend/vitest.config.ts` configuration changes.
 
 ---
 
@@ -14,9 +14,9 @@
 ./scripts/check.sh frontend     # TypeScript / Svelte only
 ```
 
-The no-arg form runs both layers sequentially (backend first). CI calls each layer
-separately — `test-backend` runs `./scripts/check.sh backend` and `check-frontend`
-runs `./scripts/check.sh frontend`.
+The no-arg form runs both layers sequentially (backend first). CI
+calls each layer separately — `test-backend` runs `./scripts/check.sh
+backend` and `check-frontend` runs `./scripts/check.sh frontend`.
 
 Steps in order:
 
@@ -29,11 +29,14 @@ Steps in order:
 
 **TypeScript / Svelte:**
 
-5. `pnpm --filter frontend exec svelte-kit sync` — generates `.svelte-kit/tsconfig.json` (required before ESLint type-checked rules)
-6. `pnpm exec prettier --check "electron/**/*.ts" "electron/**/*.mts" "frontend/src/**/*.{ts,svelte}" "frontend/scripts/**/*.mjs"` — formatting
+5. `pnpm --filter frontend exec svelte-kit sync` — generates
+   `.svelte-kit/tsconfig.json` (required before ESLint type-checked rules)
+6. `pnpm exec prettier --check "electron/**/*.ts" "electron/**/*.mts"
+   "frontend/src/**/*.{ts,svelte}" "frontend/scripts/**/*.mjs"` — formatting
 7. `pnpm exec eslint electron/main electron/preload frontend/src frontend/scripts` — linting
 8. `cd electron && pnpm exec tsc --noEmit` — Electron type-checking
-9. `pnpm --filter frontend check --fail-on-warnings` — SvelteKit type-checking (`svelte-check`)
+9. `pnpm --filter frontend check --fail-on-warnings`
+   — SvelteKit type-checking (`svelte-check`)
 10. `pnpm --filter frontend test` — vitest unit tests
 11. `pnpm --filter frontend build` — Vite production build
 
@@ -46,14 +49,14 @@ implementation block is considered complete **only after this script passes clea
 
 ### svelte-check
 
-`svelte-check` is run with `--fail-on-warnings`. There are **zero accepted warnings** —
-any warning must be investigated and resolved before considering a block complete.
+`svelte-check` is run with `--fail-on-warnings`. There are **zero accepted warnings**
+— any warning must be investigated and resolved before considering a block complete.
 
 ### vitest
 
-Config at `frontend/vitest.config.ts` — standalone, deliberately not merging
-`vite.config.ts` (SvelteKit 3 keeps its configuration inside the `sveltekit()`
-plugin, which spins up the whole framework). Composition:
+Config at `frontend/vitest.config.ts` — standalone, deliberately not
+merging `vite.config.ts` (SvelteKit 3 keeps its configuration inside the
+`sveltekit()` plugin, which spins up the whole framework). Composition:
 
 | Piece | Role |
 |-------|------|
@@ -65,35 +68,34 @@ plugin, which spins up the whole framework). Composition:
 Two invariants:
 
 - **The canary must never be skipped.** `frontend/src/lib/testing/canary.test.ts`
-  pins the runner, the jsdom environment, and Svelte 5 compilation in one
-  file. If it fails after a toolchain bump, suspect the whole suite's
-  silence — fix the canary before debugging individual tests.
-- **Zero accepted failures.** Same bar as `svelte-check`: a red suite is not
-  merged around. No coverage thresholds are configured yet — they are
-  revisited once there is a meaningful baseline to threshold against.
+  pins the runner, the jsdom environment, and Svelte 5 compilation
+  in one file. If it fails after a toolchain bump, suspect the whole
+  suite's silence — fix the canary before debugging individual tests.
+- **Zero accepted failures.** Same bar as `svelte-check`: a red suite
+  is not merged around. No coverage thresholds are configured yet — they
+  are revisited once there is a meaningful baseline to threshold against.
 
 Electron main-process logic runs as a second vitest project:
 `electron/vitest.config.mts`-suite (`environment: 'node'`, `main/**/*.test.ts`),
-run right after the frontend suite by the same gate step. The build
-tsconfig excludes `main/**/*.test.ts` (tests never land in `dist/`); their
-type-checking lives in `electron/tsconfig.test.json`, referenced by the
-type-checked eslint block for test files. `electron-updater` and `electron`
-are mocked in the test files.
+run right after the frontend suite by the same gate step. The build tsconfig
+excludes `main/**/*.test.ts` (tests never land in `dist/`); their type-checking
+lives in `electron/tsconfig.test.json`, referenced by the type-checked eslint block
+for test files. `electron-updater` and `electron` are mocked in the test files.
 
 ### vite build: accepted chunk size hints
 
-Two chunks exceed Vite's default 600 kB threshold. Both are expected and suppressed via
-`build.chunkSizeWarningLimit: 1200` in `vite.config.ts`. Network latency is irrelevant
-in an Electron desktop app — all assets are served locally.
+Two chunks exceed Vite's default 600 kB threshold. Both are expected and suppressed
+via `build.chunkSizeWarningLimit: 1200` in `vite.config.ts`. Network latency
+is irrelevant in an Electron desktop app — all assets are served locally.
 
 | Chunk | Size (minified) | Gzip | Routes | Contents |
 |-------|----------------|------|--------|----------|
 | `shiki-classes` | ~1077 kB | ~208 kB | `viewer/[id]`, `editor/[id]` | Shiki runtime + `@shikijs/langs` (all languages), `markdown-it`, Sigma.js |
 | CodeMirror | ~500 kB | — | `editor/[id]` only | `@codemirror/*`, `@lezer/*`, `@uiw/codemirror-theme-tokyo-night` |
 
-The Shiki chunk is large because `@shikijs/langs` bundles every supported language. The
-CodeMirror chunk is a monolith by design. Neither loads on the initial app launch — they
-are deferred until the user navigates to the relevant route.
+The Shiki chunk is large because `@shikijs/langs` bundles every supported language.
+The CodeMirror chunk is a monolith by design. Neither loads on the initial
+app launch — they are deferred until the user navigates to the relevant route.
 
 ---
 
@@ -131,10 +133,9 @@ are deferred until the user navigates to the relevant route.
 
 ### ASYNC110 in integration tests
 
-`tests/test_api_b6.py` polls `uvicorn.Server.started` with a `while/sleep` loop.
-`ASYNC110` suggests using `asyncio.Event` instead, but `server.started` is an internal
-uvicorn attribute that cannot be replaced with a custom Event. The line is suppressed
-with `# noqa: ASYNC110`.
+`tests/test_api_b6.py` polls `uvicorn.Server.started` with a `while/sleep` loop. `ASYNC110`
+suggests using `asyncio.Event` instead, but `server.started` is an internal uvicorn attribute
+that cannot be replaced with a custom Event. The line is suppressed with `# noqa: ASYNC110`.
 
 ---
 
@@ -142,8 +143,8 @@ with `# noqa: ASYNC110`.
 
 ### Mode
 
-`typeCheckingMode = "strict"` — the highest level. Catches type errors that `basic`
-and `standard` miss.
+`typeCheckingMode = "strict"` — the highest level.
+Catches type errors that `basic` and `standard` miss.
 
 ### Report settings
 
@@ -158,14 +159,14 @@ and `standard` miss.
 
 ### Why relax `reportUnknown*` instead of excluding modules
 
-An earlier configuration excluded `extraction/`, `markdown/`, and `security/` entirely
-from basedpyright, citing the lack of stubs in their third-party dependencies. That
-approach had a critical flaw: excluding a module also silences type errors in **our own
-code** inside it — covering ~30% of the business logic.
+An earlier configuration excluded `extraction/`, `markdown/`, and `security/`
+entirely from basedpyright, citing the lack of stubs in their third-party
+dependencies. That approach had a critical flaw: excluding a module also silences
+type errors in **our own code** inside it — covering ~30% of the business logic.
 
 The correct approach is to keep those modules in scope and relax the `Unknown`-related
-reports that originate from untyped third parties. Basedpyright continues to check
-control flow, our own types, function signatures, and return types.
+reports that originate from untyped third parties. Basedpyright continues
+to check control flow, our own types, function signatures, and return types.
 
 ### Third-party stubs installed as dev dependencies
 
@@ -184,12 +185,12 @@ asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 ```
 
-`asyncio_mode = "strict"` requires `@pytest.mark.asyncio` (or an async fixture) on
-every async test. Prevents async tests from running silently as synchronous.
+`asyncio_mode = "strict"` requires `@pytest.mark.asyncio` (or an async fixture)
+on every async test. Prevents async tests from running silently as synchronous.
 
-`asyncio_default_fixture_loop_scope = "function"` pins the event loop scope explicitly,
-avoiding the pytest-asyncio deprecation warning about the implicit default changing in
-future versions.
+`asyncio_default_fixture_loop_scope = "function"` pins the event
+loop scope explicitly, avoiding the pytest-asyncio deprecation
+warning about the implicit default changing in future versions.
 
 ### Markers
 
@@ -233,9 +234,9 @@ Config at `.prettierrc` (repo root):
 | `printWidth` | `100` | Wider than default 80; appropriate for desktop-only code |
 | `plugins` | `["prettier-plugin-svelte"]` | Svelte parser support |
 
-`.prettierignore` excludes: `node_modules`, `dist`, `build`, `.svelte-kit`, `binaries`,
-`/scripts` (root Python scripts only — anchored with `/` so `frontend/scripts/` is covered),
-`*.md`, `pnpm-lock.yaml`.
+`.prettierignore` excludes: `node_modules`, `dist`, `build`, `.svelte-kit`,
+`binaries`, `/scripts` (root Python scripts only — anchored with
+`/` so `frontend/scripts/` is covered), `*.md`, `pnpm-lock.yaml`.
 
 `pnpm exec prettier --write` is the fix command. `--check` is what `check.sh` runs.
 
@@ -247,18 +248,21 @@ Config at `eslint.config.js` (repo root, ESM flat config). Three rule tiers:
 
 ### Electron TypeScript (`electron/**/*.ts`)
 
-Uses `tseslint.configs.recommendedTypeChecked` with `electron/tsconfig.json` as the
-type-check project. Key rules enabled by this tier:
+Uses `tseslint.configs.recommendedTypeChecked` with `electron/tsconfig.json`
+as the type-check project. Key rules enabled by this tier:
 
-- `@typescript-eslint/no-floating-promises` — catches unhandled Promises (e.g., unvoided `goto()` calls)
-- `@typescript-eslint/no-unsafe-*` — flags dynamic type escapes (`any` coercions, unsafe calls)
+- `@typescript-eslint/no-floating-promises` — catches
+  unhandled Promises (e.g., unvoided `goto()` calls)
+- `@typescript-eslint/no-unsafe-*` — flags dynamic
+  type escapes (`any` coercions, unsafe calls)
 - `@typescript-eslint/require-await` — flags async functions with no await
 
 ### Frontend TypeScript (`frontend/src/**/*.ts`)
 
 Same `recommendedTypeChecked` tier with `frontend/tsconfig.json`. Additional rule:
 
-- `@typescript-eslint/no-unused-vars`: `['error', { argsIgnorePattern: '^_' }]` — allows intentionally unused parameters prefixed with `_`
+- `@typescript-eslint/no-unused-vars`: `['error', { argsIgnorePattern:
+  '^_' }]` — allows intentionally unused parameters prefixed with `_`
 
 ### Build scripts (`frontend/scripts/**/*.mjs`)
 
@@ -268,15 +272,20 @@ Uses `tseslint.configs.recommended` without a TypeScript project (plain JS). Rul
 
 ### Svelte components (`frontend/src/**/*.svelte`)
 
-Uses `tseslint.configs.recommended` (not type-checked — svelte-check handles that) plus
-`eslint-plugin-svelte` `flat/recommended`. Key decisions:
+Uses `tseslint.configs.recommended` (not type-checked — svelte-check
+handles that) plus `eslint-plugin-svelte` `flat/recommended`. Key decisions:
 
-- `svelte/no-navigation-without-resolve`: `['error', { ignoreGoto: true, ignoreLinks: true }]` — the rule targets `onNavigate` hooks that require a `complete()` callback; regular `goto()` calls in event handlers do not need it
-- `svelte/prefer-svelte-reactivity` — fires when `new Map()` or `new Set()` is used in a Svelte file; suppress with `eslint-disable-next-line` for local algorithmic uses (e.g., inside store updater callbacks or pure functions); convert to `SvelteMap`/`SvelteSet` when the value is reactive component state
+- `svelte/no-navigation-without-resolve`: `['error', { ignoreGoto: true,
+  ignoreLinks: true }]` — the rule targets `onNavigate` hooks that require a
+  `complete()` callback; regular `goto()` calls in event handlers do not need it
+- `svelte/prefer-svelte-reactivity` — fires when `new Map()` or `new Set()`
+  is used in a Svelte file; suppress with `eslint-disable-next-line` for local
+  algorithmic uses (e.g., inside store updater callbacks or pure functions);
+  convert to `SvelteMap`/`SvelteSet` when the value is reactive component state
 - `@typescript-eslint/no-unused-vars`: same `argsIgnorePattern: '^_'` as frontend TS
 
-`eslint-config-prettier` is the last entry — disables all formatting rules that conflict
-with Prettier.
+`eslint-config-prettier` is the last entry — disables
+all formatting rules that conflict with Prettier.
 
 ### Suppression policy
 
@@ -287,9 +296,9 @@ Never use file-level `/* eslint-disable */` blocks. Document the reason inline.
 
 ## TypeScript (Electron — `tsc --noEmit`)
 
-`cd electron && pnpm exec tsc --noEmit` checks the Electron main/preload TypeScript
-against `electron/tsconfig.json`. ESLint type-checked rules require this tsconfig to
-be present and valid.
+`cd electron && pnpm exec tsc --noEmit` checks the Electron
+main/preload TypeScript against `electron/tsconfig.json`. ESLint
+type-checked rules require this tsconfig to be present and valid.
 
-The frontend TypeScript is type-checked by `svelte-check` (step 9), which internally
-runs `tsc` with the SvelteKit-generated `.svelte-kit/tsconfig.json`.
+The frontend TypeScript is type-checked by `svelte-check` (step 9), which
+internally runs `tsc` with the SvelteKit-generated `.svelte-kit/tsconfig.json`.

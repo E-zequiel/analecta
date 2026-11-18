@@ -1,34 +1,45 @@
 # Dependency Integrity Verification
 
-This document describes how dependency integrity is verified before and
-after adding or upgrading a direct dependency, for both ecosystems in this
-repo (npm/pnpm in `frontend/` and `electron/`, Python/uv in `backend/`) —
-distinct from the automated, lockfile-wide attestation sweep in
-`scripts/verify_provenance.py` (npm/pnpm only; see
-[Relationship to `verify_provenance.py`](#relationship-to-verify_provenancepy)).
+This document describes how dependency integrity is verified before and after adding
+or upgrading a direct dependency, for both ecosystems in this repo (npm/pnpm in
+`frontend/` and `electron/`, Python/uv in `backend/`) — distinct from the automated,
+lockfile-wide attestation sweep in `scripts/verify_provenance.py` (npm/pnpm only;
+see [Relationship to `verify_provenance.py`](#relationship-to-verify_provenancepy)).
 
 ---
 
 ## Threat model
 
-A registry-level MITM, a compromised maintainer account, or a tampered CDN
-edge node could serve a tarball that doesn't match what the package's
-`package.json` claims to be. pnpm verifies the downloaded tarball against the
-registry's published `dist.integrity` hash automatically during install — but
-that only protects against the tarball changing **after** the registry
-metadata was fetched. It does not by itself give a person a moment to look at
-the hash and notice something is wrong (wrong package, typo-squatted name,
-suspiciously fresh publish) before the code lands in `node_modules/` and the
-lockfile.
+A registry-level MITM, a compromised maintainer account, or a tampered CDN edge node
+could serve a tarball that doesn't match what the package's `package.json` claims to be.
+pnpm verifies the downloaded tarball against the registry's published `dist.integrity`
+hash automatically during install — but that only protects against the tarball changing
+**after** the registry metadata was fetched. It does not by itself give a person a moment
+to look at the hash and notice something is wrong (wrong package, typo-squatted name,
+suspiciously fresh publish) before the code lands in `node_modules/` and the lockfile.
 
 The same threat applies to PyPI, but the npm/pnpm and Python/uv toolchains
 satisfy it through different mechanisms — see the two sections below.
 
 The procedure below adds that moment, and produces a paper trail in the PR/commit.
 
-**Applies regardless of whether a dependency ships.** A devDependency used only by a local diagnostic script (e.g. `defuddle`, see `docs/defuddle-decision.md`) is exposed to the exact same threat — a compromised tarball lands in a developer's `node_modules/` and runs the moment the script is invoked — even though it's never part of a packaged build. "It's just a diagnostic tool" is not a reason to skip this procedure or the Socket scan; both apply to every direct dependency in the lockfile, not only the ones that ship.
+**Applies regardless of whether a dependency ships.** A devDependency used only by a
+local diagnostic script (e.g. `defuddle`, see `docs/defuddle-decision.md`) is exposed
+to the exact same threat — a compromised tarball lands in a developer's `node_modules/`
+and runs the moment the script is invoked — even though it's never part of a packaged
+build. "It's just a diagnostic tool" is not a reason to skip this procedure or the Socket
+scan; both apply to every direct dependency in the lockfile, not only the ones that ship.
 
-**Automated updates (`scripts/deps_update.py`) age-gate these devDependencies but don't check-gate them.** The updater applies its cooldown-and-verify batch logic to the root workspace (`analecta`, which holds `defuddle` and `socket`) the same as it does to `frontend`/`electron` — but its `--verify` step only ever runs `check.sh backend`/`check.sh frontend`, and neither exercises `defuddle` (invoked manually, per `docs/defuddle-decision.md`) or `socket` (invoked only by `scripts/socket-audit.sh`). A version bump to either can land in the auto-generated PR with a clean integrity hash and a passing `check.sh`, yet be functionally untested — treat those two lines in the PR body as unverified beyond the pnpm integrity check until manually exercised (see step 5 below for what "manually exercised" means).
+**Automated updates (`scripts/deps_update.py`) age-gate these devDependencies
+but don't check-gate them.** The updater applies its cooldown-and-verify batch
+logic to the root workspace (`analecta`, which holds `defuddle` and `socket`)
+the same as it does to `frontend`/`electron` — but its `--verify` step only ever
+runs `check.sh backend`/`check.sh frontend`, and neither exercises `defuddle`
+(invoked manually, per `docs/defuddle-decision.md`) or `socket` (invoked only by
+`scripts/socket-audit.sh`). A version bump to either can land in the auto-generated
+PR with a clean integrity hash and a passing `check.sh`, yet be functionally untested
+— treat those two lines in the PR body as unverified beyond the pnpm integrity check
+until manually exercised (see step 5 below for what "manually exercised" means).
 
 ## Procedure (npm / pnpm)
 
@@ -39,56 +50,48 @@ mise exec -- pnpm view "<pkg>@<version>" dist.integrity
 ```
 
 This queries the npm registry's metadata endpoint directly — not a web
-search, not `raw.githubusercontent.com` (rejected for the same reason given
-in `docs/github-actions-security.md` § "When auditing `allowBuilds` entries":
-it's GitHub's CDN for raw content, also widely used by malware as free
-hosting, so a hit there proves nothing). Save this value; compare it against
-the lockfile entry in step 4.
+search, not `raw.githubusercontent.com` (rejected for the same reason given in
+`docs/github-actions-security.md` § "When auditing `allowBuilds` entries": it's GitHub's
+CDN for raw content, also widely used by malware as free hosting, so a hit there
+proves nothing). Save this value; compare it against the lockfile entry in step 4.
 
 ### 2. Pin the exact version
 
-Always pin a direct dependency to the exact version checked in step 1 — never
-a range (`^4`, `~4.25`, etc.).
+Always pin a direct dependency to the exact version
+checked in step 1 — never a range (`^4`, `~4.25`, etc.).
 
-A range doesn't protect anything day to day: `pnpm install --frozen-lockfile`
-(used in CI and recommended locally) installs whatever `pnpm-lock.yaml`
-already resolved to, regardless of what the range in `package.json` says. What
-a range actually does is let a *future* `pnpm update` silently move to a new
-version inside that range without touching `package.json` — the diff a
-reviewer sees is just the lockfile, with no explicit "X → Y" version bump to
-catch in review. An exact pin forces that bump to show up as a one-line
-`package.json` diff, which is the more auditable failure mode.
+A range doesn't protect anything day to day: `pnpm install --frozen-lockfile` (used
+in CI and recommended locally) installs whatever `pnpm-lock.yaml` already resolved
+to, regardless of what the range in `package.json` says. What a range actually does
+is let a *future* `pnpm update` silently move to a new version inside that range
+without touching `package.json` — the diff a reviewer sees is just the lockfile, with
+no explicit "X → Y" version bump to catch in review. An exact pin forces that bump to
+show up as a one-line `package.json` diff, which is the more auditable failure mode.
 
-Before pinning a version that just published, check the **4-day minimum
-window** policy:
+Before pinning a version that just published, check the **4-day minimum window** policy:
 
 ```bash
 mise exec -- pnpm view <pkg> time --json
 ```
 
-The publish timestamp for `<version>` appears under the version key as an
-ISO 8601 date string. The version must have been published at least 4 days
-before the install date.
+The publish timestamp for `<version>` appears under the version key as an ISO 8601 date
+string. The version must have been published at least 4 days before the install date.
 
-If the package is one of a matched pair/family (e.g. a theme's light/dark
-siblings from the same publisher), pin both to the same exact version to avoid
-drift between them.
+If the package is one of a matched pair/family (e.g. a theme's light/dark siblings from
+the same publisher), pin both to the same exact version to avoid drift between them.
 
-`.npmrc` contains `save-exact=true`, and `pnpm add` also takes an explicit
-`--save-exact` flag — but neither reliably strips a pre-existing range
-operator on an *upgrade*. Observed: bumping `@babel/runtime` from `^7` to
-`8.0.0` via `pnpm add @babel/runtime@8.0.0 --save-exact --filter frontend`
-left `^8.0.0` in `package.json`, not `8.0.0`. `deps_update.py` now re-checks
-the specifier after every successful `pnpm add` and rewrites it directly if
-a range operator remains, re-syncing the lockfile with `pnpm install` when
-it does (see `_ensure_exact_specifier()`). When bumping a pin by hand,
-verify the resulting `package.json` line yourself — don't trust
-`--save-exact` alone.
+`.npmrc` contains `save-exact=true`, and `pnpm add` also takes an explicit `--save-exact`
+flag — but neither reliably strips a pre-existing range operator on an *upgrade*.
+Observed: bumping `@babel/runtime` from `^7` to `8.0.0` via `pnpm add @babel/runtime@8.0.0
+--save-exact --filter frontend` left `^8.0.0` in `package.json`, not `8.0.0`.
+`deps_update.py` now re-checks the specifier after every successful `pnpm add` and
+rewrites it directly if a range operator remains, re-syncing the lockfile with `pnpm
+install` when it does (see `_ensure_exact_specifier()`). When bumping a pin by hand,
+verify the resulting `package.json` line yourself — don't trust `--save-exact` alone.
 
-security-driven patches of *transitive* dependencies use a different mechanism
-(`overrides:` in `pnpm-workspace.yaml`) but the same
-exact-pin-plus-hash-check principle. See the note on
-[two-mechanism split](#two-mechanism-split) below before editing overrides.
+security-driven patches of *transitive* dependencies use a different mechanism (`overrides:`
+in `pnpm-workspace.yaml`) but the same exact-pin-plus-hash-check principle. See the
+note on [two-mechanism split](#two-mechanism-split) below before editing overrides.
 
 ### 3. Install
 
@@ -96,40 +99,34 @@ exact-pin-plus-hash-check principle. See the note on
 mise exec -- pnpm install
 ```
 
-pnpm verifies the downloaded tarball's hash against the registry's
-`dist.integrity` internally and **fails the install** on a mismatch — this
-step doesn't trust the hash from step 1 blindly, it's independently re-derived
-from the actual bytes pnpm downloaded.
+pnpm verifies the downloaded tarball's hash against the registry's `dist.integrity`
+internally and **fails the install** on a mismatch — this step doesn't trust the hash
+from step 1 blindly, it's independently re-derived from the actual bytes pnpm downloaded.
 
-**If this step fails with `ERR_PNPM_IGNORED_BUILDS` instead:** the package you
-just bumped has a lifecycle script pnpm won't run without approval — expected,
-`pnpm-workspace.yaml`'s `allowBuilds` denies scripts by default (Control 11,
-`docs/github-actions-security.md`). Before deciding whether to approve it,
-know that pnpm will have already rewritten `pnpm-workspace.yaml` with a
-placeholder line (`<pkg>: set this to true or false`) that is **not** a real
-`false` — left as-is, it silently re-enables the script. Run
-`pnpm approve-builds` to resolve it properly (or hand-edit after verifying the
-script per Control 11), and check `git diff pnpm-workspace.yaml` before
-committing either way.
+**If this step fails with `ERR_PNPM_IGNORED_BUILDS` instead:** the package you just bumped
+has a lifecycle script pnpm won't run without approval — expected, `pnpm-workspace.yaml`'s
+`allowBuilds` denies scripts by default (Control 11, `docs/github-actions-security.md`).
+Before deciding whether to approve it, know that pnpm will have already rewritten
+`pnpm-workspace.yaml` with a placeholder line (`<pkg>: set this to true or false`) that
+is **not** a real `false` — left as-is, it silently re-enables the script. Run `pnpm
+approve-builds` to resolve it properly (or hand-edit after verifying the script per
+Control 11), and check `git diff pnpm-workspace.yaml` before committing either way.
 
-**Multi-package bumps: dedupe before trusting the lockfile.** When one
-`package.json` edit bumps several packages that share a transitive or peer
-dependency (e.g. `@codemirror/state`/`@codemirror/view`, consumed both
-directly and as a peer dependency of a theme package), a plain `pnpm install`
-can leave the *old* version's lockfile entries in place alongside the new
-ones — a satisfied range doesn't force re-resolution. Run:
+**Multi-package bumps: dedupe before trusting the lockfile.** When one `package.json`
+edit bumps several packages that share a transitive or peer dependency (e.g.
+`@codemirror/state`/`@codemirror/view`, consumed both directly and as a peer dependency
+of a theme package), a plain `pnpm install` can leave the *old* version's lockfile entries
+in place alongside the new ones — a satisfied range doesn't force re-resolution. Run:
 
 ```bash
 mise exec -- pnpm dedupe
 ```
 
-immediately after `pnpm install` whenever a bump touches more than one
-package in the same dependency family. This isn't optional cleanup: an
-orphaned old-version entry can produce a real bug that step 4 below won't
-catch, because that check only verifies the *new* tarball, not that the *old*
-one is gone from the graph. See the
-[worked example](#worked-example-pnpm-dedupe-after-a-multi-package-bump)
-below.
+immediately after `pnpm install` whenever a bump touches more than one package in
+the same dependency family. This isn't optional cleanup: an orphaned old-version
+entry can produce a real bug that step 4 below won't catch, because that check only
+verifies the *new* tarball, not that the *old* one is gone from the graph. See the
+[worked example](#worked-example-pnpm-dedupe-after-a-multi-package-bump) below.
 
 ### 4. Post-install — cross-check the lockfile
 
@@ -137,40 +134,36 @@ below.
 grep -A 1 "<pkg>@<version>" pnpm-lock.yaml
 ```
 
-Match without inner quotes: pnpm ≥12.15 writes plain-name lockfile keys
-unquoted (`fast-uri@3.1.9:`), while scoped names stay single-quoted —
-the bare substring matches either form.
+Match without inner quotes: pnpm ≥12.15 writes plain-name
+lockfile keys unquoted (`fast-uri@3.1.9:`), while scoped names
+stay single-quoted — the bare substring matches either form.
 
 Confirm the `integrity:` line matches the value saved in step 1. If they
-differ, do not proceed — abort and investigate the discrepancy before merging.
-This value is what pnpm verified the tarball against, written into a file
-that's committed and diffable — so any subsequent `pnpm install` on a
+differ, do not proceed — abort and investigate the discrepancy before
+merging. This value is what pnpm verified the tarball against, written into
+a file that's committed and diffable — so any subsequent `pnpm install` on a
 different machine gets the same guarantee without re-running this procedure.
 
-Run this check against the lockfile state *after* any `pnpm dedupe` from step
-3 — a hash check against a lockfile that dedupe is about to rewrite verifies
-an artifact you won't end up committing.
+Run this check against the lockfile state *after* any `pnpm dedupe`
+from step 3 — a hash check against a lockfile that dedupe is
+about to rewrite verifies an artifact you won't end up committing.
 
 ### 5. When `check.sh` doesn't exercise the package — manual consumer smoke test
 
-Steps 1–4 prove the tarball is authentic and that the rest of the app still
-builds and tests green. Neither proves the bumped package's own code still
-behaves the way its actual consumer expects — `check.sh` only catches that
-when the consumer's code path is itself covered by the frontend build,
-`svelte-check`, or a backend test. It isn't, in two recurring cases: a
-`overrides:`-forced transitive dependency whose real consumer only runs in a
-code path this project's own build never exercises (e.g. `plist`'s macOS
-`.pkg`/code-signing code, dead weight in a `.deb`/`.rpm`/`.AppImage`-only
-build), and a devDependency
-invoked only by a manual/diagnostic script (`defuddle`, `socket` — the case
-the `deps_update.py` note above already names). "Resolved-and-ignored is not
-the same as taking effect."
+Steps 1–4 prove the tarball is authentic and that the rest of the app still builds and
+tests green. Neither proves the bumped package's own code still behaves the way its actual
+consumer expects — `check.sh` only catches that when the consumer's code path is itself
+covered by the frontend build, `svelte-check`, or a backend test. It isn't, in two recurring
+cases: a `overrides:`-forced transitive dependency whose real consumer only runs in a code
+path this project's own build never exercises (e.g. `plist`'s macOS `.pkg`/code-signing
+code, dead weight in a `.deb`/`.rpm`/`.AppImage`-only build), and a devDependency invoked
+only by a manual/diagnostic script (`defuddle`, `socket` — the case the `deps_update.py`
+note above already names). "Resolved-and-ignored is not the same as taking effect."
 
-When either case applies, `require()` the package directly from its real,
-already-installed location and run the same call the actual consumer makes,
-on representative input. Use `path.resolve()` — a bare relative path is a
-module specifier, not a filesystem path, and `require()` will send it through
-node_modules resolution instead of finding the package:
+When either case applies, `require()` the package directly from its real, already-installed
+location and run the same call the actual consumer makes, on representative input. Use
+`path.resolve()` — a bare relative path is a module specifier, not a filesystem path, and
+`require()` will send it through node_modules resolution instead of finding the package:
 
 ```bash
 mise exec -- node -e "
@@ -181,34 +174,29 @@ const pkg = require(require('path').resolve('node_modules/.pnpm/<pkg>@<version>/
 
 Two rules this step is easy to get wrong:
 
-- **Run it against every touched branch, not just one.** A security-driven
-  override often touches several version-scoped branches at once (see
-  [Scoped overrides](#scoped-overrides) below) — each is a separately
-  resolved package instance and needs its own smoke test.
+- **Run it against every touched branch, not just one.** A security-driven override often
+  touches several version-scoped branches at once (see [Scoped overrides](#scoped-overrides)
+  below) — each is a separately resolved package instance and needs its own smoke test.
 - **Run it against the real repo's `node_modules/.pnpm/`, not a scratch-dir
   install.** An isolated sandbox with matching `package.json` specifiers is
-  legitimate *earlier*, while deciding whether a fix is even viable (e.g.
-  probing whether a candidate version still tolerates a known-fragile call
-  pattern before committing to a plan) — but it doesn't substitute for this
-  step. It can silently diverge from the real graph's peer resolution,
-  nested overrides, or hoisting, so a pass there proves the plan is sound,
-  not that the actual change is verified.
+  legitimate *earlier*, while deciding whether a fix is even viable (e.g. probing
+  whether a candidate version still tolerates a known-fragile call pattern before
+  committing to a plan) — but it doesn't substitute for this step. It can silently
+  diverge from the real graph's peer resolution, nested overrides, or hoisting, so
+  a pass there proves the plan is sound, not that the actual change is verified.
 
-This runs after step 4, independently of `check.sh` — it doesn't matter which
-side of that gate it lands on, only that it happens before the change is
-considered done.
+This runs after step 4, independently of `check.sh` — it doesn't matter which side
+of that gate it lands on, only that it happens before the change is considered done.
 
-No equivalent step exists in the Python/uv flow below, deliberately: `uv
-sync` verifies installed packages against `uv.lock` directly, and `check.sh
-backend` runs the actual backend test suite against the real dependency
-graph — the "consumer never runs under the gate" case this step exists for
-doesn't arise there.
+No equivalent step exists in the Python/uv flow below, deliberately: `uv sync`
+verifies installed packages against `uv.lock` directly, and `check.sh backend`
+runs the actual backend test suite against the real dependency graph — the
+"consumer never runs under the gate" case this step exists for doesn't arise there.
 
-**Worked example:** the `@xmldom/xmldom` 0.8.14/0.9.11 → 0.8.15/0.9.12 bump
-(three `overrides:`-scoped branches — two under `plist`, one under
-`mathml-to-latex`) touched code `check.sh` never runs: the `plist` branches
-only execute inside electron-builder's macOS packaging, `mathml-to-latex`
-only inside `defuddle`'s manual diagnostic. After `pnpm install`:
+**Worked example:** the `@xmldom/xmldom` 0.8.14/0.9.11 → 0.8.15/0.9.12 bump (three
+`overrides:`-scoped branches — two under `plist`, one under `mathml-to-latex`) touched code
+`check.sh` never runs: the `plist` branches only execute inside electron-builder's macOS
+packaging, `mathml-to-latex` only inside `defuddle`'s manual diagnostic. After `pnpm install`:
 
 ```js
 const resolve = (p) => require('path').resolve(p);
@@ -218,18 +206,16 @@ require(resolve('node_modules/.pnpm/mathml-to-latex@1.8.0/node_modules/mathml-to
   .MathMLToLaTeX.convert(sampleMathml);
 ```
 
-against all three real installed instances, confirming each still works.
-A sandbox-only test of the first branch (same package versions, scratch
-directory) had already answered the planning question — whether `0.8.15`
-still tolerates `plist@3.1.0`'s missing `mimeType` argument — but got
-mistaken for having verified the real change too, and the `0.9.x` branches
-had no smoke test at all until a later audit caught the gap.
+against all three real installed instances, confirming each still works. A sandbox-only
+test of the first branch (same package versions, scratch directory) had already answered
+the planning question — whether `0.8.15` still tolerates `plist@3.1.0`'s missing
+`mimeType` argument — but got mistaken for having verified the real change too, and
+the `0.9.x` branches had no smoke test at all until a later audit caught the gap.
 
 ## Worked example (npm / pnpm)
 
 Adding `@uiw/codemirror-theme-tokyo-night-day` (light counterpart of an
-already-installed dark theme), pinned to match the dark sibling's version
-exactly:
+already-installed dark theme), pinned to match the dark sibling's version exactly:
 
 ```bash
 $ mise exec -- pnpm view "@uiw/codemirror-theme-tokyo-night-day@4.25.10" dist.integrity
@@ -247,14 +233,12 @@ Hash from step 1 matches the lockfile from step 4 — verified.
 
 ## Worked example: `pnpm dedupe` after a multi-package bump
 
-Pinning `frontend/package.json` to exact versions bumped
-`@codemirror/state` (6.6.0 → 6.7.0) and `@codemirror/view` (6.42.0 → 6.43.4)
-alongside several other direct dependencies. After `pnpm install`, both the
-old and new versions were still live in `pnpm-lock.yaml`.
-`@uiw/codemirror-theme-tokyo-night` (already exact-pinned, untouched by this
-bump) declares `state`/`view` as peer dependencies; pnpm kept a
-peer-qualified instance of the theme package built against each version pair
-instead of converging on the new one alone.
+Pinning `frontend/package.json` to exact versions bumped `@codemirror/state` (6.6.0 →
+6.7.0) and `@codemirror/view` (6.42.0 → 6.43.4) alongside several other direct dependencies.
+After `pnpm install`, both the old and new versions were still live in `pnpm-lock.yaml`.
+`@uiw/codemirror-theme-tokyo-night` (already exact-pinned, untouched by this bump) declares
+`state`/`view` as peer dependencies; pnpm kept a peer-qualified instance of the theme
+package built against each version pair instead of converging on the new one alone.
 
 The break surfaced in `svelte-check`, not in step 4's hash check:
 
@@ -265,37 +249,33 @@ assignable to type 'import(".../@codemirror+view@6.43.4/.../index").KeyBinding'.
     Types have separate declarations of a private property 'flags'.
 ```
 
-TypeScript treats `SelectionRange` from the two `@codemirror/state` module
-instances as distinct nominal types — structurally identical, but different
-classes because they came from two separately resolved packages. A second
-plain `pnpm install` reported `Already up to date` and did not fix it;
-`pnpm dedupe` re-resolved the graph, dropped the orphaned `6.6.0`/`6.42.0`
-entries from `pnpm-lock.yaml`, and the type error disappeared.
+TypeScript treats `SelectionRange` from the two `@codemirror/state` module instances
+as distinct nominal types — structurally identical, but different classes because they
+came from two separately resolved packages. A second plain `pnpm install` reported
+`Already up to date` and did not fix it; `pnpm dedupe` re-resolved the graph, dropped the
+orphaned `6.6.0`/`6.42.0` entries from `pnpm-lock.yaml`, and the type error disappeared.
 
-**Why step 4 (hash cross-check) didn't catch this:** it verifies that the
-*new* pinned version's tarball hash matches the registry — which it did,
-correctly. It says nothing about whether an *old* version is still
-resolvable elsewhere in the graph. The only check that actually catches this
-class of bug is a real build/typecheck — the same principle as the "run the
-actual build" rule under [Removing a dependency](#removing-a-dependency)
+**Why step 4 (hash cross-check) didn't catch this:** it verifies that the *new* pinned
+version's tarball hash matches the registry — which it did, correctly. It says nothing
+about whether an *old* version is still resolvable elsewhere in the graph. The only check
+that actually catches this class of bug is a real build/typecheck — the same principle
+as the "run the actual build" rule under [Removing a dependency](#removing-a-dependency)
 below, extended here to version bumps rather than only removals.
 
 ## Procedure (Python / uv)
 
-There is **no manual pre-install hash-fetch step here** — this is a deliberate
-difference from the npm/pnpm flow above, not an omission. `uv` resolves the
-dependency graph and writes the resolved version *and* its hashes (sdist +
-every wheel) into `backend/uv.lock` as part of `uv lock`. The verification
-moment isn't "fetch a hash and compare it before installing" —
-it's "the lockfile — visible in the PR diff — already contains
-the hash uv independently derived from PyPI." `uv sync` then verifies
-installed packages against `uv.lock`, the same way pnpm verifies against
-`pnpm-lock.yaml`.
+There is **no manual pre-install hash-fetch step here** — this is a deliberate difference
+from the npm/pnpm flow above, not an omission. `uv` resolves the dependency graph and
+writes the resolved version *and* its hashes (sdist + every wheel) into `backend/uv.lock`
+as part of `uv lock`. The verification moment isn't "fetch a hash and compare it
+before installing" — it's "the lockfile — visible in the PR diff — already contains
+the hash uv independently derived from PyPI." `uv sync` then verifies installed
+packages against `uv.lock`, the same way pnpm verifies against `pnpm-lock.yaml`.
 
 ### 1. Force the version with a constraint
 
-security-driven patches of *transitive* Python dependencies use a version floor in
-`backend/pyproject.toml`:
+security-driven patches of *transitive* Python dependencies
+use a version floor in `backend/pyproject.toml`:
 
 ```toml
 # (request.url.hostname poisoning). starlette is a transitive dep (fastapi,
@@ -303,11 +283,10 @@ security-driven patches of *transitive* Python dependencies use a version floor 
 constraint-dependencies = ["starlette>=1.3.1"]
 ```
 
-Note this is a **floor** (`>=`), not an exact pin — unlike the npm/pnpm
-convention above. uv still resolves to one exact version and locks it; the
-floor just expresses "anything below this has the CVE," letting uv pick the
-lowest version that satisfies both the floor and every other package's
-constraints, rather than forcing a specific patch release.
+Note this is a **floor** (`>=`), not an exact pin — unlike the npm/pnpm convention above.
+uv still resolves to one exact version and locks it; the floor just expresses "anything
+below this has the CVE," letting uv pick the lowest version that satisfies both the floor
+and every other package's constraints, rather than forcing a specific patch release.
 
 ### 2. Re-lock
 
@@ -315,8 +294,8 @@ constraints, rather than forcing a specific patch release.
 cd backend && mise exec -- uv lock
 ```
 
-This re-resolves the graph and rewrites `backend/uv.lock`, including the
-hashes for whatever version the constraint settled on.
+This re-resolves the graph and rewrites `backend/uv.lock`,
+including the hashes for whatever version the constraint settled on.
 
 ### 3. Review the lockfile diff
 
@@ -324,37 +303,34 @@ hashes for whatever version the constraint settled on.
 git diff backend/uv.lock
 ```
 
-is the equivalent checkpoint to step 4 of the npm/pnpm procedure — except here
-the diff itself shows you the hash uv recorded, instead of you fetching a hash
-separately and comparing it to the diff.
+is the equivalent checkpoint to step 4 of the npm/pnpm procedure —
+except here the diff itself shows you the hash uv recorded, instead
+of you fetching a hash separately and comparing it to the diff.
 
 ### 4. Gate on `check.sh`
 
-Both the npm/pnpm and Python/uv flows end the same way: `./scripts/check.sh`
-must pass before the change is considered done (see `docs/quality-gate.md`) —
-except where npm/pnpm's step 5 above applies, in which case a passing
-`check.sh` is necessary but not sufficient; the Python/uv flow has no
-equivalent gap to close.
+Both the npm/pnpm and Python/uv flows end the same way: `./scripts/check.sh` must
+pass before the change is considered done (see `docs/quality-gate.md`) — except
+where npm/pnpm's step 5 above applies, in which case a passing `check.sh` is
+necessary but not sufficient; the Python/uv flow has no equivalent gap to close.
 
 ### Why Python uses floors instead of exact pins
 
 `pyproject.toml` keeps lower-bound ranges (`>=`) for direct dependencies rather
-than exact pins (`==`). This is an intentional design decision, not an
-omission.
+than exact pins (`==`). This is an intentional design decision, not an omission.
 
 npm/pnpm exact pins exist to recover a per-version audit trail in `package.json`
-diffs, because a range-plus-lockfile bump is visible only in `pnpm-lock.yaml`
-(no one-liner change to show the reviewer). `uv.lock` does not have this
-problem: it includes both the resolved version and its hashes, so the PR diff
-already provides the same audit signal that an exact pin in `package.json`
-would add. Pinning `==` in `pyproject.toml` would give a redundant one-liner on
-top of a diff you already have, while breaking `uv lock --upgrade-package`
-(the floor form lets uv move; the exact pin makes it a no-op, requiring a
-`pyproject.toml` edit before every upgrade).
+diffs, because a range-plus-lockfile bump is visible only in `pnpm-lock.yaml` (no
+one-liner change to show the reviewer). `uv.lock` does not have this problem: it
+includes both the resolved version and its hashes, so the PR diff already provides
+the same audit signal that an exact pin in `package.json` would add. Pinning `==`
+in `pyproject.toml` would give a redundant one-liner on top of a diff you already
+have, while breaking `uv lock --upgrade-package` (the floor form lets uv move; the
+exact pin makes it a no-op, requiring a `pyproject.toml` edit before every upgrade).
 
-`constraint-dependencies` in `[tool.uv]` use floors (`>=`) regardless — they
-express security-fix minima for transitive deps and must remain flexible so uv can
-satisfy cross-package constraints.
+`constraint-dependencies` in `[tool.uv]` use floors (`>=`) regardless
+— they express security-fix minima for transitive deps and must
+remain flexible so uv can satisfy cross-package constraints.
 
 ## Worked example (Python / uv)
 
@@ -372,40 +348,36 @@ wheels = [
 ]
 ```
 
-No separate `pip show`/PyPI-API round trip was run by hand — the `hash =`
-fields are uv's own resolution output, committed and reviewable as-is.
+No separate `pip show`/PyPI-API round trip was run by hand — the `hash
+=` fields are uv's own resolution output, committed and reviewable as-is.
 
 ## Removing a dependency
 
-Static analysis (no source imports + no lockfile-declared transitive
-relationship) is a necessary first check but not sufficient — see the
-worked example below.
+Static analysis (no source imports + no lockfile-declared transitive relationship)
+is a necessary first check but not sufficient — see the worked example below.
 
 ### Procedure
 
-1. Grep source for imports (both ecosystems) — confirms nothing in this
-   repo's own code imports it directly.
+1. Grep source for imports (both ecosystems) — confirms
+   nothing in this repo's own code imports it directly.
 2. Grep the lockfile for any *other* package declaring it as their own
    dependency (`pnpm-lock.yaml`: the package name appearing under another
-   package's `dependencies:` block; `uv.lock`: same, under another
-   package's `dependencies = [...]`). This catches declared transitive
-   relationships.
-3. Remove from `package.json`/`pyproject.toml`, re-run `pnpm install` /
-   `uv lock`.
-4. **Run the actual build — not just tests.** `pnpm --filter frontend
-   build` (or `check.sh`'s vite-build step), and the full backend
-   `check.sh` run. Steps 1–2 cannot catch a package whose *compiled
-   output* imports a runtime helper that its own `package.json` never
-   declared as a dependency — the lockfile only records declared
-   relationships, not what published, pre-built code actually references.
-5. If the build breaks, that's ground truth: revert and keep the
-   dependency, rather than trusting the static analysis.
+   package's `dependencies:` block; `uv.lock`: same, under another package's
+   `dependencies = [...]`). This catches declared transitive relationships.
+3. Remove from `package.json`/`pyproject.toml`, re-run `pnpm install` / `uv lock`.
+4. **Run the actual build — not just tests.** `pnpm --filter frontend build` (or
+   `check.sh`'s vite-build step), and the full backend `check.sh` run. Steps 1–2
+   cannot catch a package whose *compiled output* imports a runtime helper that its
+   own `package.json` never declared as a dependency — the lockfile only records
+   declared relationships, not what published, pre-built code actually references.
+5. If the build breaks, that's ground truth: revert and keep
+   the dependency, rather than trusting the static analysis.
 
 ### Worked example
 
-`@babel/runtime` passed steps 1–2 cleanly during a dependency audit — zero
-direct imports, zero lockfile-declared transitive consumers. Removed from
-`frontend/package.json`; `vite build` failed immediately:
+`@babel/runtime` passed steps 1–2 cleanly during a dependency audit
+— zero direct imports, zero lockfile-declared transitive consumers.
+Removed from `frontend/package.json`; `vite build` failed immediately:
 
 ```
 Error: [vite]: Rolldown failed to resolve import "@babel/runtime/helpers/extends"
@@ -413,14 +385,13 @@ from ".../@uiw/codemirror-theme-tokyo-night/esm/index.js"
 ```
 
 `@uiw/codemirror-theme-tokyo-night`'s compiled ESM output imports the Babel
-runtime helper directly, but its own `package.json` never lists
-`@babel/runtime` as a dependency. Restored the entry; verified the build
-passes again.
+runtime helper directly, but its own `package.json` never lists `@babel/runtime`
+as a dependency. Restored the entry; verified the build passes again.
 
 ## Relationship to `verify_provenance.py`
 
-`verify_provenance.py` only parses `pnpm-lock.yaml` — it has no Python/uv
-counterpart in this repo. The table below is npm/pnpm-specific.
+`verify_provenance.py` only parses `pnpm-lock.yaml` — it has no
+Python/uv counterpart in this repo. The table below is npm/pnpm-specific.
 
 | | This procedure | `scripts/verify_provenance.py` |
 |---|---|---|
@@ -429,10 +400,9 @@ counterpart in this repo. The table below is npm/pnpm-specific.
 | When it runs | Manually, during the PR that touches `package.json` | Manually or in CI, as a standing sweep |
 | Catches | Tarball/metadata mismatch at install time, with a person checking it | Forged attestation, missing/broken provenance for already-installed packages |
 
-They're complementary, not redundant: this procedure is the one
-person-in-the-loop check at the moment a *new* dependency enters the tree; the
-script is a broader, automatable check for packages that *publish*
-attestations — a growing but still partial share of the npm ecosystem.
+They're complementary, not redundant: this procedure is the one person-in-the-loop check at
+the moment a *new* dependency enters the tree; the script is a broader, automatable check for
+packages that *publish* attestations — a growing but still partial share of the npm ecosystem.
 
 ## Two-mechanism split
 
@@ -446,21 +416,18 @@ pnpm supports two override locations, and they behave differently:
 **The canonical location for this repo is `pnpm-workspace.yaml`.** The lockfile's
 `overrides:` section mirrors only `pnpm-workspace.yaml`, and pnpm uses that
 section as the staleness checkpoint. Entries in `package.json#pnpm.overrides`
-are processed in some circumstances but do not trigger re-resolution on their
-own — bare `pnpm install` will return "Already up to date" even when they
-conflict with the currently locked versions, making the override silently
-ineffective.
+are processed in some circumstances but do not trigger re-resolution on their own
+— bare `pnpm install` will return "Already up to date" even when they conflict
+with the currently locked versions, making the override silently ineffective.
 
-After editing `pnpm-workspace.yaml`, a plain `mise exec -- pnpm install` is
-sufficient to trigger re-resolution. No `--no-frozen-lockfile` or `pnpm update`
-invocation is needed.
+After editing `pnpm-workspace.yaml`, a plain `mise exec -- pnpm install` is sufficient to
+trigger re-resolution. No `--no-frozen-lockfile` or `pnpm update` invocation is needed.
 
 ### Scoped overrides
 
-When the same package is pulled in at different major versions by different
-consumers (e.g. `@electron/get` requires `undici@^7.x` and `node-gyp` requires
-`undici@^6.x`), use the `parent>dep` scoped syntax to avoid forcing both to a
-version neither expects:
+When the same package is pulled in at different major versions by different consumers
+(e.g. `@electron/get` requires `undici@^7.x` and `node-gyp` requires `undici@^6.x`),
+use the `parent>dep` scoped syntax to avoid forcing both to a version neither expects:
 
 ```yaml
 # pnpm-workspace.yaml
@@ -469,34 +436,29 @@ overrides:
   'node-gyp>undici': '6.27.0'        # 6.x branch
 ```
 
-A single global `undici: '7.28.0'` override would force node-gyp's `^6.x`
-consumer to a major it never declared, risking a runtime breakage at build
-time. Document the two entries separately so a future reviewer doesn't
-"simplify" them into one.
+A single global `undici: '7.28.0'` override would force node-gyp's `^6.x` consumer
+to a major it never declared, risking a runtime breakage at build time. Document
+the two entries separately so a future reviewer doesn't "simplify" them into one.
 
 ### Comment convention for `overrides:`
 
-**Each override and floor carries its security reason inline, in the
-config, as a one-word or short-phrase comment** (`# Path traversal.`,
-`# DoS.`) — no advisory ids, CVSS scores, dates, or narrative anywhere.
-No external table or ledger exists: the config is the sole record, and
-the reason is updated or removed together with the pin it annotates — a
-bumped or dropped pin takes its comment with it.
+**Each override and floor carries its security reason inline, in the config, as a
+one-word or short-phrase comment** (`# Path traversal.`, `# DoS.`) — no advisory
+ids, CVSS scores, dates, or narrative anywhere. No external table or ledger exists:
+the config is the sole record, and the reason is updated or removed together
+with the pin it annotates — a bumped or dropped pin takes its comment with it.
 
-The only comments allowed beyond the reason are the **invariants** —
-constraints that editing this file alone, without reading anything else,
-could silently undo. The previous section's "don't simplify them into
-one" is exactly such an invariant, and so is its inverse. Three apply
-today: the per-major `brace-expansion` split and the two-branch
-`@xmldom/xmldom` split, neither of which may be collapsed; and the
-unified `undici` entry, which may not be re-split, despite `node-gyp`
-declaring `^6.25.0`. Keep each to a line or two, stating the constraint
-and what breaks if it is violated.
+The only comments allowed beyond the reason are the **invariants** — constraints
+that editing this file alone, without reading anything else, could silently undo. The
+previous section's "don't simplify them into one" is exactly such an invariant, and
+so is its inverse. Three apply today: the per-major `brace-expansion` split and the
+two-branch `@xmldom/xmldom` split, neither of which may be collapsed; and the unified
+`undici` entry, which may not be re-split, despite `node-gyp` declaring `^6.25.0`.
+Keep each to a line or two, stating the constraint and what breaks if it is violated.
 
 The same convention applies to `backend/pyproject.toml`'s `[tool.uv]
-constraint-dependencies` floors: one line — "Floor, not a pin" plus the
-short security reason — carrying the "floor, not a pin" invariant and
-the reason locally.
+constraint-dependencies` floors: one line — "Floor, not a pin" plus the short
+security reason — carrying the "floor, not a pin" invariant and the reason locally.
 
 This convention does not extend to `allowBuilds`, higher up in the same file.
 That block's comment documents a hazard you can only hit while editing it —
@@ -506,7 +468,7 @@ deliberately delegates to it for the re-adding procedure. It stays where it is.
 
 ## See also
 
-- `docs/syntax-highlighting.md` — documents the Shiki side of light-theme
-  syntax highlighting (the markdown viewer). `@uiw/codemirror-theme-tokyo-night-day`,
-  the package used as the worked example above, is the equivalent fix for the
-  CodeMirror editor, applied separately in `MarkdownEditor.svelte`.
+- `docs/syntax-highlighting.md` — documents the Shiki side of light-theme syntax
+  highlighting (the markdown viewer). `@uiw/codemirror-theme-tokyo-night-day`,
+  the package used as the worked example above, is the equivalent fix for
+  the CodeMirror editor, applied separately in `MarkdownEditor.svelte`.

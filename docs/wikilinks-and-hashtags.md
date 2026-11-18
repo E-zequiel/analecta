@@ -1,8 +1,8 @@
 # Wikilinks and Hashtags — Analecta
 
-> Explains the `[[wikilink]]` and `#hashtag` grammar, how references are parsed and
-> indexed, how the two tag systems relate to each other, and how both render and
-> behave in the reading view.
+> Explains the `[[wikilink]]` and `#hashtag` grammar, how references
+> are parsed and indexed, how the two tag systems relate to each
+> other, and how both render and behave in the reading view.
 
 ---
 
@@ -14,10 +14,10 @@ Analecta supports two inline linking mechanisms inside an entry's Markdown body:
 - **`#Hashtags`** — inline topic tags, written directly in the article text.
 
 Both are parsed out of the Markdown body and indexed into a single `backlink_refs`
-table, which powers the BACKLINKS/Connections panel and the vault graph. They are
-distinct from **structural tags** — the curated, CRUD-managed tags in the Sidebar's
-TAGS section (`tags`/`entry_tags` tables) — but the two tag concepts (structural tags
-and content hashtags) are unified for counting and lookup; see
+table, which powers the BACKLINKS/Connections panel and the vault graph. They
+are distinct from **structural tags** — the curated, CRUD-managed tags in the
+Sidebar's TAGS section (`tags`/`entry_tags` tables) — but the two tag concepts
+(structural tags and content hashtags) are unified for counting and lookup; see
 [Structural tags vs. content hashtags](#structural-tags-vs-content-hashtags) below.
 
 ## Syntax
@@ -30,12 +30,12 @@ and content hashtags) are unified for counting and lookup; see
 ```
 
 - `Title` is matched against real entry titles, case-insensitively.
-- With `|Alias`, the alias is displayed instead of the title, but the title is still
-  what's resolved against.
-- An empty or whitespace-only alias (`[[Title|]]`, `[[Title|   ]]`) is tolerated and
+- With `|Alias`, the alias is displayed instead of the
+  title, but the title is still what's resolved against.
+- An empty or whitespace-only alias (`[[Title|]]`, `[[Title| ]]`) is tolerated and
   falls back to displaying the title — same as `[[Title]]` with no pipe at all.
-- A wikilink whose title matches no entry is **unresolved** — it still renders, but
-  styled as inert (see [Rendering](#rendering-frontend)).
+- A wikilink whose title matches no entry is **unresolved** — it still
+  renders, but styled as inert (see [Rendering](#rendering-frontend)).
 
 ### Hashtags
 
@@ -45,14 +45,12 @@ and content hashtags) are unified for counting and lookup; see
 ```
 
 - Body: `[A-Za-zÁÉÍÓÚÑÜáéíóúñü][A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9_'~^-]*` — must start
-  with a letter (ASCII or a Spanish accented vowel/`ñ`/`ü`); digits, `_`,
-  `-`, `'`, `~`, `^` may follow. Backtick is deliberately excluded — it's
-  CommonMark's inline-code delimiter, and `delete_tag`'s neutralization
-  mechanism (see below) relies on backticks being categorically outside the
-  hashtag charset.
+  with a letter (ASCII or a Spanish accented vowel/`ñ`/`ü`); digits, `_`, `-`,
+  `'`, `~`, `^` may follow. Backtick is deliberately excluded — it's CommonMark's
+  inline-code delimiter, and `delete_tag`'s neutralization mechanism (see
+  below) relies on backticks being categorically outside the hashtag charset.
 - Must not be preceded by a non-whitespace character — `foo#bar` and a `#fragment`
-  inside a bare URL (`https://example.com/path#section`) are never treated as
-  hashtags.
+  inside a bare URL (`https://example.com/path#section`) are never treated as hashtags.
 - Stored under a normalized identity (see
   [Normalization](#normalization-tag-identity) below), not the raw typed form.
 
@@ -62,87 +60,83 @@ Neither a wikilink nor a hashtag is recognized:
 
 - Inside an inline code span (`` `like this` ``).
 - Inside a fenced code block (`` ``` ``).
-- As the `#`/`##`/... marker of a Markdown heading line (`# My Heading`). A `#tag`
-  appearing *inside* heading text, e.g. `## My favorite #topic`, still resolves
-  normally — only the heading's own leading `#`s are excluded.
+- As the `#`/`##`/... marker of a Markdown heading line (`# My Heading`).
+  A `#tag` appearing *inside* heading text, e.g. `## My favorite #topic`,
+  still resolves normally — only the heading's own leading `#`s are excluded.
 
 ## Parsing & indexing (backend)
 
-`backend/src/analecta/markdown/backlinks.py`'s `parse_refs(markdown)` is the single
-entry point. Per line, it:
+`backend/src/analecta/markdown/backlinks.py`'s
+`parse_refs(markdown)` is the single entry point. Per line, it:
 
-1. Masks inline-code spans (blanks them out, preserving character offsets) so nothing
-   inside backticks is ever matched.
+1. Masks inline-code spans (blanks them out, preserving character
+   offsets) so nothing inside backticks is ever matched.
 2. Tracks whether it's inside a fenced code block and skips those lines entirely.
 3. Tracks the current heading (for context in the BACKLINKS panel). Only the
-   heading line's own `#`/`##`/... marker is excluded — the heading's text is
-   parsed like any other line, tagged with the heading it just opened.
+   heading line's own `#`/`##`/... marker is excluded — the heading's text
+   is parsed like any other line, tagged with the heading it just opened.
 4. Matches `[[wikilinks]]` and `#hashtags` against the remaining text.
 
-It also reads a `linked:` list from the entry's YAML frontmatter, if present, and
-emits one reference per title exactly as if it were a `[[wikilink]]`. This is how the
-manual "connect entries" feature (search-to-connect dialog, Cable icon) participates
-in the same backlink graph as inline wikilinks — a frontmatter-declared connection and
-a typed `[[wikilink]]` are indistinguishable once indexed.
+It also reads a `linked:` list from the entry's YAML frontmatter, if present,
+and emits one reference per title exactly as if it were a `[[wikilink]]`. This is
+how the manual "connect entries" feature (search-to-connect dialog, Cable icon)
+participates in the same backlink graph as inline wikilinks — a frontmatter-declared
+connection and a typed `[[wikilink]]` are indistinguishable once indexed.
 
-Every reference captures: the matched text, whether it's a hashtag, the enclosing
-heading (a ref inside a heading line belongs to that same heading), and up to 60
-characters of surrounding context on each side (used
-for the BACKLINKS panel's preview snippet).
+Every reference captures: the matched text, whether it's a hashtag, the enclosing heading
+(a ref inside a heading line belongs to that same heading), and up to 60 characters
+of surrounding context on each side (used for the BACKLINKS panel's preview snippet).
 
-`VaultIndex.index_backlinks(entry_id)` re-reads the entry's file, calls `parse_refs`,
-and replaces that entry's rows in `backlink_refs`. It runs whenever an entry is saved
-or re-extracted.
+`VaultIndex.index_backlinks(entry_id)` re-reads the entry's
+file, calls `parse_refs`, and replaces that entry's rows in
+`backlink_refs`. It runs whenever an entry is saved or re-extracted.
 
 ### Normalization (tag identity)
 
 A hashtag's storage identity is its raw captured text, `casefold()`-ed — nothing
-else. This is what's written to `backlink_refs.target_text` for hashtags, and what
-`get_entry_ids_by_tag`/`get_graph`/etc. key hashtag lookups on. It's deliberately
-accent- and symbol-*sensitive*: `café` and `cafe` are different tags, `well-being`
-and `well_being` are different tags — only case folds away. This matches the
-identity structural tags already use (`tags.normalized`, also a bare `casefold`),
-so a structural tag and a content hashtag with the exact same spelling always
-unify into one tag; spellings that differ by more than case do not.
+else. This is what's written to `backlink_refs.target_text` for hashtags,
+and what `get_entry_ids_by_tag`/`get_graph`/etc. key hashtag lookups on. It's
+deliberately accent- and symbol-*sensitive*: `café` and `cafe` are different
+tags, `well-being` and `well_being` are different tags — only case folds away.
+This matches the identity structural tags already use (`tags.normalized`, also a
+bare `casefold`), so a structural tag and a content hashtag with the exact same
+spelling always unify into one tag; spellings that differ by more than case do not.
 
-`[[Wikilink]]` resolution is a plain, exact `.lower()` comparison against entry
-titles — no separate normalizer involved.
+`[[Wikilink]]` resolution is a plain, exact `.lower()` comparison
+against entry titles — no separate normalizer involved.
 
-Resolving a `#hashtag` *against an entry title* (the "a hashtag whose text happens
-to match another entry's title" case below) is a different comparison from hashtag
-*identity* itself, and needs its own function: `title_to_hashtag_key()`
+Resolving a `#hashtag` *against an entry title* (the "a hashtag whose text
+happens to match another entry's title" case below) is a different comparison from
+hashtag *identity* itself, and needs its own function: `title_to_hashtag_key()`
 (`backend/src/analecta/markdown/hashtags.py`) folds a title into the same
 `casefold()`-only identity space hashtags use — preserving accents and the
 hashtag charset's symbols exactly like `target_text` does — with one unavoidable
 exception: no valid hashtag can contain a space, so whitespace runs are collapsed
-to a single underscore before casefolding (this is why `#machine_learning` resolves
-to a title of "Machine Learning"). `get_backlinks`, `get_outgoing_links`,
-`get_subgraph`, and `get_graph` all key their title-side hashtag lookup on this
-function.
+to a single underscore before casefolding (this is why `#machine_learning`
+resolves to a title of "Machine Learning"). `get_backlinks`, `get_outgoing_links`,
+`get_subgraph`, and `get_graph` all key their title-side hashtag lookup on this function.
 
 An earlier, more aggressive slugifier (`normalize_tag()`: Unicode NFKD → ASCII →
-lowercase → non-alphanumeric runs collapsed to a single underscore) used to live
-alongside `title_to_hashtag_key()` in the same module, along with its one consumer,
-`append_tags()`, and an unrelated unwired helper, `find_heading_hashtags()`. None of
-the three was called from any route or pipeline, so all three were removed
-rather than kept as untested-in-production dead weight. If a
-manual-tag-entry UI ever needs a guaranteed-valid bare hashtag literal from arbitrary
-input, that slugifier can be reintroduced — but it must never be reused for
-hashtag-to-title resolution: folding `café` and `cafe` (or `Well-Being` and
-`Well_Being`) into the same match is exactly the behavior hashtag identity does *not*
-have.
+lowercase → non-alphanumeric runs collapsed to a single underscore) used to live alongside
+`title_to_hashtag_key()` in the same module, along with its one consumer, `append_tags()`,
+and an unrelated unwired helper, `find_heading_hashtags()`. None of the three was called from
+any route or pipeline, so all three were removed rather than kept as untested-in-production
+dead weight. If a manual-tag-entry UI ever needs a guaranteed-valid bare hashtag
+literal from arbitrary input, that slugifier can be reintroduced — but it must never be
+reused for hashtag-to-title resolution: folding `café` and `cafe` (or `Well-Being` and
+`Well_Being`) into the same match is exactly the behavior hashtag identity does *not* have.
 
 ## Rendering (frontend)
 
-Wikilinks and hashtags render in the reading view via two native `markdown-it` inline
-rules, registered in `frontend/src/lib/markdown/renderer.ts`:
+Wikilinks and hashtags render in the reading view via two native `markdown-it`
+inline rules, registered in `frontend/src/lib/markdown/renderer.ts`:
 
 - `frontend/src/lib/markdown/wikilink.ts`
 - `frontend/src/lib/markdown/hashtag.ts`
 
-Being real tokenizer rules (not regexes run over the raw string), inline-code and
-fenced-block exclusion come for free — those spans are already claimed by
-markdown-it's own code/fence rules before either inline rule ever runs.
+Being real tokenizer rules (not regexes run over the raw string), inline-code
+and fenced-block exclusion come for free — those spans are already claimed
+by markdown-it's own code/fence rules before either inline rule ever runs.
 
 Resolution happens client-side against `entryTitleIndex`
 (`frontend/src/lib/stores/entryTitles.ts`), a `lowercase title → entry id` map fetched
@@ -153,60 +147,55 @@ from `GET /entries/titles` and refreshed whenever an entry is added or changed.
 | Wikilink | `<a class="wikilink" data-entry-id="N">` | `<span class="wikilink-unresolved">` (styled but inert — dashed underline, muted color, no click) |
 | Hashtag | `<a class="hashtag" data-hashtag="{normalized}">#{raw}</a>` | — (hashtags have no unresolved state; they always render as a link) |
 
-CSS lives in `frontend/src/lib/markdown/tokyo-night.css` (`.wikilink`,
-`.wikilink-unresolved`, `.hashtag`).
+CSS lives in `frontend/src/lib/markdown/tokyo-night.css`
+(`.wikilink`, `.wikilink-unresolved`, `.hashtag`).
 
 ## Structural tags vs. content hashtags
 
 Analecta has two ways to attach a tag identity to an entry:
 
-- **Structural tags** — created and managed from the Sidebar's TAGS section (inline
-  create/rename/delete), stored in `tags`/`entry_tags`.
-- **Content hashtags** — `#hashtag` mentions written directly in an entry's body,
-  stored in `backlink_refs` (`is_hashtag = 1`).
+- **Structural tags** — created and managed from the Sidebar's TAGS
+  section (inline create/rename/delete), stored in `tags`/`entry_tags`.
+- **Content hashtags** — `#hashtag` mentions written directly in
+  an entry's body, stored in `backlink_refs` (`is_hashtag = 1`).
 
-They are deliberately separate systems (a structural tag has no required body text;
-a content hashtag needs no Sidebar entry), but share one **`casefold()` identity**
-(see [Normalization](#normalization-tag-identity) above) — `tags.normalized` for
-structural tags, `backlink_refs.target_text` for content hashtags. An entry carrying
-`Python` structurally and `#python` in its body is the same tag for every
-counting/lookup purpose:
+They are deliberately separate systems (a structural tag has no required body text; a
+content hashtag needs no Sidebar entry), but share one **`casefold()` identity** (see
+[Normalization](#normalization-tag-identity) above) — `tags.normalized` for structural
+tags, `backlink_refs.target_text` for content hashtags. An entry carrying `Python`
+structurally and `#python` in its body is the same tag for every counting/lookup purpose:
 
-- `VaultIndex.list_tags()` (Sidebar TAGS grid, tag counts) — a **true union**: every
-  entry that has the tag either structurally or as a content hashtag, deduplicated by
-  entry id.
-- `VaultIndex.get_entry_ids_by_tag(tag)` (clicking into a tag, filtering by tag) —
-  same true-union semantics.
+- `VaultIndex.list_tags()` (Sidebar TAGS grid, tag counts) — a **true union**: every entry
+  that has the tag either structurally or as a content hashtag, deduplicated by entry id.
+- `VaultIndex.get_entry_ids_by_tag(tag)` (clicking into
+  a tag, filtering by tag) — same true-union semantics.
 - `create_tag`/`rename_tag`/`update_tags`/`delete_tag` — all look up by `casefold()`
-  identity, so creating "python" when "Python" already exists resolves to the
-  existing tag instead of creating a case-duplicate. `create_tag`/`rename_tag`/
-  `update_tags` also validate a name against the hashtag charset whenever it would
-  mint a genuinely new identity (see below), so a *new* tag can never be created or
-  renamed into a name that could never be written as a live `#hashtag` — a
-  pre-existing identity that fails the charset (e.g. one that predates this rule) is
-  tolerated rather than retroactively purged.
+  identity, so creating "python" when "Python" already exists resolves to the existing
+  tag instead of creating a case-duplicate. `create_tag`/`rename_tag`/ `update_tags`
+  also validate a name against the hashtag charset whenever it would mint a genuinely new
+  identity (see below), so a *new* tag can never be created or renamed into a name that
+  could never be written as a live `#hashtag` — a pre-existing identity that fails the
+  charset (e.g. one that predates this rule) is tolerated rather than retroactively purged.
 
-When both a structural tag and a content hashtag share an identity, the **structural
-tag's display casing wins** wherever a single name is shown (grid, connection groups).
-Because identity is accent/symbol-*sensitive*, a structural tag like `C++` and a
-hashtag `#c` are never accidentally unified — `"C++".casefold()` and `"c".casefold()`
-are simply different strings.
+When both a structural tag and a content hashtag share an identity, the
+**structural tag's display casing wins** wherever a single name is shown
+(grid, connection groups). Because identity is accent/symbol-*sensitive*, a
+structural tag like `C++` and a hashtag `#c` are never accidentally unified
+— `"C++".casefold()` and `"c".casefold()` are simply different strings.
 
 ### Why `EntryOut.tags` isn't the true union
 
-`GET`/`PATCH` entry responses (`EntryOut`) expose `tags` (structural only) and
-`content_tags` (this entry's own content hashtags) as two separate fields, even
-though every other tag surface above (`list_tags`, `get_entry_ids_by_tag`, the
-graph) treats the two as one union. This split is deliberate, not an oversight:
-the reading view's inline "Add tag…" box (`addTag`/`removeTag` in
-`viewer/[id]/+page.svelte`) does a read-modify-write PATCH straight off
-`entry.tags`, and `update_tags` replaces an entry's entire `entry_tags` set on
-every call — it has no concept of "add one tag," only "here is the entry's whole
-tag list now." If `tags` were the true union, every add/remove would silently
-promote every content-only hashtag already on that entry into a real structural
-`entry_tags` row. Unifying the two fields would first require changing
-`update_tags` to a delta operation instead of full-replace — a real redesign, not
-a small tweak, and not worth doing without a concrete reason to.
+`GET`/`PATCH` entry responses (`EntryOut`) expose `tags` (structural only) and `content_tags`
+(this entry's own content hashtags) as two separate fields, even though every other tag
+surface above (`list_tags`, `get_entry_ids_by_tag`, the graph) treats the two as one
+union. This split is deliberate, not an oversight: the reading view's inline "Add tag…" box
+(`addTag`/`removeTag` in `viewer/[id]/+page.svelte`) does a read-modify-write PATCH straight
+off `entry.tags`, and `update_tags` replaces an entry's entire `entry_tags` set on every
+call — it has no concept of "add one tag," only "here is the entry's whole tag list now."
+If `tags` were the true union, every add/remove would silently promote every content-only
+hashtag already on that entry into a real structural `entry_tags` row. Unifying the two
+fields would first require changing `update_tags` to a delta operation instead of full-replace
+— a real redesign, not a small tweak, and not worth doing without a concrete reason to.
 
 ### Deleting a tag neutralizes literal body text too
 
@@ -219,68 +208,64 @@ deleted tag's identity in backticks (`` `#tag` ``) — inline code is already ex
 from parsing (see `_mask_inline_code` above), so the reference stops being indexed on
 the next re-index. The literal characters are preserved — readers still see `#python`
 in the text, now styled as inline code instead of a live tag — only the markup around
-it changes. This runs even inside heading text (the heading-embedded-hashtag case
-`## My favorite #topic` parses as live, so it must be neutralized too, even though the
-result — inline code nested in a heading — renders unusually). It also applies to a
-tag with no structural row at all (a purely content-hashtag identity shown in the
-Sidebar's TAGS grid) — deleting it neutralizes every occurrence the same way. A
-structural tag whose name has no valid hashtag form (symbols/spaces, e.g. `C++`) never
-touches any body text on delete — see `get_body_hashtag_entry_ids`'s collision-avoidance
-rule above.
+it changes. This runs even inside heading text (the heading-embedded-hashtag case `## My
+favorite #topic` parses as live, so it must be neutralized too, even though the result
+— inline code nested in a heading — renders unusually). It also applies to a tag with
+no structural row at all (a purely content-hashtag identity shown in the Sidebar's TAGS
+grid) — deleting it neutralizes every occurrence the same way. A structural tag whose
+name has no valid hashtag form (symbols/spaces, e.g. `C++`) never touches any body
+text on delete — see `get_body_hashtag_entry_ids`'s collision-avoidance rule above.
 
 ### Renaming a tag migrates literal body text too
 
 The same resurrection risk exists on rename: if a renamed tag also appears as literal
-`#hashtag` text in an entry's body, leaving that text alone would let the old
-(lowercase) identity reappear in `list_tags()` as a separate tag after the rename —
-a previously-unified tag splitting into two. Unlike delete, rename must preserve the
-body text's *continuity* with the tag rather than sever it, so `rename_tag` rewrites
-every live `#old_name` occurrence sharing the renamed identity to `#new_name` in
-place (`rename_hashtag_occurrences`), then re-indexes the affected entries. The
-literal text changes here — unlike the neutralize case, where only the surrounding
-markup changes — because the goal is migration, not severance. This also applies to
-a tag with no structural row at all (a purely content-hashtag identity): renaming it
-rewrites every occurrence the same way, with no structural table involved.
+`#hashtag` text in an entry's body, leaving that text alone would let the old (lowercase)
+identity reappear in `list_tags()` as a separate tag after the rename — a previously-unified
+tag splitting into two. Unlike delete, rename must preserve the body text's *continuity*
+with the tag rather than sever it, so `rename_tag` rewrites every live `#old_name` occurrence
+sharing the renamed identity to `#new_name` in place (`rename_hashtag_occurrences`), then
+re-indexes the affected entries. The literal text changes here — unlike the neutralize case,
+where only the surrounding markup changes — because the goal is migration, not severance.
+This also applies to a tag with no structural row at all (a purely content-hashtag identity):
+renaming it rewrites every occurrence the same way, with no structural table involved.
 
 No *new* tag identity may ever be **minted** — via `create_tag`, `rename_tag`, or
-assigning a tag to an entry through `update_tags` (the Sidebar's `+`/rename inputs and
-the reading view's inline "Add tag…" box both eventually call one of these three) —
-unless the name is a valid bare hashtag token: see the [Syntax](#hashtags) charset
-above (a leading letter, then letters/digits/`_ - ' ~ ^`; no backtick, no spaces, no
-other symbols). This is enforced by `is_valid_hashtag_literal`, which raises
-`InvalidTagNameError` (HTTP `400`) on failure — uniformly across all three paths, so
-the same name gets the same answer regardless of which UI it was typed into.
+assigning a tag to an entry through `update_tags` (the Sidebar's `+`/rename inputs
+and the reading view's inline "Add tag…" box both eventually call one of these three)
+— unless the name is a valid bare hashtag token: see the [Syntax](#hashtags) charset
+above (a leading letter, then letters/digits/`_ - ' ~ ^`; no backtick, no spaces,
+no other symbols). This is enforced by `is_valid_hashtag_literal`, which raises
+`InvalidTagNameError` (HTTP `400`) on failure — uniformly across all three paths,
+so the same name gets the same answer regardless of which UI it was typed into.
 
 The check only fires when the name would actually **mint something new**. A name that
-already exists as a tag identity — structural or content-hashtag, however it got
-there, including one that predates this rule — is tolerated and freely re-associable,
-the same way `create_tag`/`update_tags` already no-op or associate rather than
-duplicate a pre-existing *valid* name; charset validity isn't re-checked on a name
-that isn't being minted. This is what makes a legacy tag like `C++` (impossible to
-create fresh, but real if it already exists — e.g. from before this rule existed)
-not a contradiction: it can be renamed into, removed from an entry, kept on an entry
-that already carries it, or merged into — everything except being *born*, whether
-directly or by another tag being renamed into a brand-new `C++`.
+already exists as a tag identity — structural or content-hashtag, however it got there,
+including one that predates this rule — is tolerated and freely re-associable, the same way
+`create_tag`/`update_tags` already no-op or associate rather than duplicate a pre-existing
+*valid* name; charset validity isn't re-checked on a name that isn't being minted. This
+is what makes a legacy tag like `C++` (impossible to create fresh, but real if it already
+exists — e.g. from before this rule existed) not a contradiction: it can be renamed into,
+removed from an entry, kept on an entry that already carries it, or merged into — everything
+except being *born*, whether directly or by another tag being renamed into a brand-new `C++`.
 
-`rename_tag` has one narrower trigger on top of "mints new": it also validates
-*new_name* whenever *old_name* has literal `#hashtag` occurrences in entry bodies
-that would need migrating — regardless of whether *new_name* already exists.
-Tolerating a pre-existing invalid identity is a policy choice everywhere else in the
-system, but not here: writing an invalid literal like `#C++` into a body would
-mis-parse on the next re-index (`_HASHTAG_RE` stops at `+`), silently splitting the
-body occurrence from the structural identity it was meant to follow — exactly the
-resurrection/split-identity failure this whole validation exists to prevent. So a
-rename that would touch body text is rejected outright if *new_name* isn't a valid
-hashtag literal, even when *new_name* already exists as a tag elsewhere in the vault.
+`rename_tag` has one narrower trigger on top of "mints new": it also validates *new_name*
+whenever *old_name* has literal `#hashtag` occurrences in entry bodies that would need
+migrating — regardless of whether *new_name* already exists. Tolerating a pre-existing invalid
+identity is a policy choice everywhere else in the system, but not here: writing an invalid
+literal like `#C++` into a body would mis-parse on the next re-index (`_HASHTAG_RE` stops
+at `+`), silently splitting the body occurrence from the structural identity it was meant
+to follow — exactly the resurrection/split-identity failure this whole validation exists to
+prevent. So a rename that would touch body text is rejected outright if *new_name* isn't a
+valid hashtag literal, even when *new_name* already exists as a tag elsewhere in the vault.
 
-The error message distinguishes the two triggers: if literal occurrences of *old_name*
-exist in entry bodies, it names how many entries would be affected by the migration;
-otherwise it just reports the name as invalid.
+The error message distinguishes the two triggers: if literal occurrences
+of *old_name* exist in entry bodies, it names how many entries would be
+affected by the migration; otherwise it just reports the name as invalid.
 
 On the frontend, `Sidebar.svelte`'s create/rename inputs surface this validation
-inline — a rejected name keeps the input open and shows the backend's error message
-next to it (with a warning icon) instead of failing silently, the same treatment the
-merge-collision confirm/cancel row gets (see below).
+inline — a rejected name keeps the input open and shows the backend's error
+message next to it (with a warning icon) instead of failing silently, the
+same treatment the merge-collision confirm/cancel row gets (see below).
 
 Renaming a content-only tag (no structural row) into an identity that already exists
 *structurally* merges rather than conflicts — the mirror of the already-allowed
@@ -290,38 +275,36 @@ identity has no `entry_tags` row to reconcile, so there's nothing to conflict.
 ### Merging two structural tags
 
 Renaming a structural tag into a name that already belongs to *another* structural
-tag is a merge — two curated tags collapsing into one — and is irreversible: once
-merged, there's no record of which entries originally carried which tag. Because of
-that, it's blocked by default (`409`, "already exists"); the caller must pass
-`merge: true` explicitly to proceed. The Sidebar's inline rename detects the
-collision client-side (against the already-loaded tag list) and shows a confirm/cancel
-row instead of committing on Enter, mirroring the delete-confirmation UX — a typo into
-an existing tag name must not silently collapse two categories.
+tag is a merge — two curated tags collapsing into one — and is irreversible:
+once merged, there's no record of which entries originally carried which tag.
+Because of that, it's blocked by default (`409`, "already exists"); the caller
+must pass `merge: true` explicitly to proceed. The Sidebar's inline rename detects
+the collision client-side (against the already-loaded tag list) and shows a
+confirm/cancel row instead of committing on Enter, mirroring the delete-confirmation
+UX — a typo into an existing tag name must not silently collapse two categories.
 
-When the merge is confirmed, `rename_tag` reassigns every entry from the old tag's
-`entry_tags` row to the destination's (`INSERT OR IGNORE`, so an entry that already
-carried both tags doesn't collide), deletes the old `tags` row, and rewrites
-`tags_json` with the old name replaced by the destination's name — de-duplicated, so
-an entry that had both ends up listing the destination once, not twice.
+When the merge is confirmed, `rename_tag` reassigns every entry from the old
+tag's `entry_tags` row to the destination's (`INSERT OR IGNORE`, so an entry
+that already carried both tags doesn't collide), deletes the old `tags` row,
+and rewrites `tags_json` with the old name replaced by the destination's name —
+de-duplicated, so an entry that had both ends up listing the destination once, not twice.
 
 **The destination's preexisting display casing always wins**, everywhere the merge
 writes something — the structural row, `tags_json`, and any freshly-migrated body-text
-`#hashtag` occurrences all end up spelled exactly as the destination tag already was,
-not however the new name was typed into the rename input. This matches the
+`#hashtag` occurrences all end up spelled exactly as the destination tag already
+was, not however the new name was typed into the rename input. This matches the
 sticky-first-seen convention used everywhere else in the tag system, and avoids a
-merge silently re-casing an already-established tag vault-wide. A merge target is by
-definition a *pre-existing* identity, so it never trips the "mints new" charset check
-on its own — merging into a legacy symbol-bearing tag like `C++` is tolerated exactly
-like an ordinary rename into one (see above), **unless** *old_name* has literal
-`#hashtag` body occurrences that would need migrating into the invalid literal, in
-which case the merge is rejected for the same data-corruption reason an ordinary
-rename is.
+merge silently re-casing an already-established tag vault-wide. A merge target is
+by definition a *pre-existing* identity, so it never trips the "mints new" charset
+check on its own — merging into a legacy symbol-bearing tag like `C++` is tolerated
+exactly like an ordinary rename into one (see above), **unless** *old_name* has literal
+`#hashtag` body occurrences that would need migrating into the invalid literal, in which
+case the merge is rejected for the same data-corruption reason an ordinary rename is.
 
 The content-only-into-structural case above does **not** require `merge: true` — a
-content-only identity has no structural row to protect, so there's nothing to
-reconcile. The destination-casing rule doesn't apply there either: the body text is
-migrated to whatever name was given to the rename, not the destination's preexisting
-casing.
+content-only identity has no structural row to protect, so there's nothing to reconcile.
+The destination-casing rule doesn't apply there either: the body text is migrated
+to whatever name was given to the rename, not the destination's preexisting casing.
 
 ## BACKLINKS / Connections panel
 
@@ -331,9 +314,8 @@ The right-sidebar panel shown for an entry combines two kinds of connections:
   references, each row carrying a direction icon (inbound vs. outbound). Backed by
   `GET /entries/{id}/backlinks` (incoming) and `GET /entries/{id}/outgoing-links`
   (outgoing) — an outgoing reference only appears if it resolves to a real entry.
-- **Hashtag connections** — other entries that share a tag (structural or content)
-  with the current entry, grouped by tag name. Backed by
-  `GET /entries/{id}/hashtag-connections`.
+- **Hashtag connections** — other entries that share a tag (structural or content) with the
+  current entry, grouped by tag name. Backed by `GET /entries/{id}/hashtag-connections`.
 
 ## Reading-view interactions
 
@@ -346,83 +328,75 @@ In the reading view (`frontend/src/routes/viewer/[id]/+page.svelte`):
 | Middle-click | Adds the linked entry to the right-sidebar Entry Stack, in the background (current reading view stays open) | — |
 | Hover | Status bar (bottom-left) shows a fixed label: `[[Wikilink]]` | Status bar shows a fixed label: `TAGS` |
 
-The hover label is always the same fixed text per element type — it does not show the
-specific destination title or tag name, mirroring how the existing external-link
-hover behavior shows the raw URL (a different kind of "what is this" signal, not a
-per-instance one for internal links).
+The hover label is always the same fixed text per element type — it does
+not show the specific destination title or tag name, mirroring how the
+existing external-link hover behavior shows the raw URL (a different kind
+of "what is this" signal, not a per-instance one for internal links).
 
-An unresolved wikilink (rendered as a bare `<span>`, not an `<a>`) has no target to
-click, right-click, or middle-click through — hover is the only interaction available
-for it, since it still carries the `.wikilink-unresolved` class.
+An unresolved wikilink (rendered as a bare `<span>`, not an `<a>`) has no target
+to click, right-click, or middle-click through — hover is the only interaction
+available for it, since it still carries the `.wikilink-unresolved` class.
 
 ## Vault graph
 
 The vault-wide graph and each entry's local subgraph (`GET /entries/{id}/subgraph`,
 `GET /entries/graph`) represent a tag as a single node regardless of whether it comes
-from a structural tag or a content hashtag — node identity is the same normalized
-string described above (`tag:{normalized}`), so an entry connected to a tag only
-through a hashtag still appears as a neighbor of a structural tag node of the same
-name, and vice versa.
+from a structural tag or a content hashtag — node identity is the same normalized string
+described above (`tag:{normalized}`), so an entry connected to a tag only through a hashtag
+still appears as a neighbor of a structural tag node of the same name, and vice versa.
 
 ### A resolving hashtag always keeps its own tag node too
 
-A `#hashtag` whose text happens to match another entry's title resolves to that
-entry as a wikilink-style connection *and* still keeps its own tag node/edge — the
-two are not mutually exclusive. For example, `#Python` in an entry's body, next to
-an entry titled "Python", produces both `entry → entry:Python` and
-`entry → tag:python` in the graph. This match is computed via
-`title_to_hashtag_key()` (see [Normalization](#normalization-tag-identity) above),
-so it holds for the full hashtag charset, not just plain ASCII words — `#café`
-resolves to a title of "Café", `#well-being` to "Well-Being".
+A `#hashtag` whose text happens to match another entry's title resolves to that entry as a
+wikilink-style connection *and* still keeps its own tag node/edge — the two are not mutually
+exclusive. For example, `#Python` in an entry's body, next to an entry titled "Python",
+produces both `entry → entry:Python` and `entry → tag:python` in the graph. This match is
+computed via `title_to_hashtag_key()` (see [Normalization](#normalization-tag-identity)
+above), so it holds for the full hashtag charset, not just plain ASCII words
+— `#café` resolves to a title of "Café", `#well-being` to "Well-Being".
 
 This has one asymmetry between the two endpoints, by design: in the full vault
 graph, `tag:python` fans out to every other entry carrying that tag anywhere in the
 vault. In a given entry's local subgraph, an *inbound* hashtag that resolves to the
-focus entry's own title still shows its tag node and the referencing entry's edge to
-it, but does **not** fan out to unrelated entries sharing that tag elsewhere, and
-does **not** add a synthetic focus → tag edge — the focus entry never authored that
-hashtag just by sharing its title with it. So a local subgraph can show fewer
+focus entry's own title still shows its tag node and the referencing entry's edge
+to it, but does **not** fan out to unrelated entries sharing that tag elsewhere,
+and does **not** add a synthetic focus → tag edge — the focus entry never authored
+that hashtag just by sharing its title with it. So a local subgraph can show fewer
 tag-based connections for this one case than the vault-wide graph would suggest.
 
 ## Known limitations
 
-- The reading view's `data-hashtag` value (and the TAGS-dashboard header it drives)
-  uses the frontend's `toLowerCase()`, while the backend keys hashtag identity on
-  `casefold()`. For every character the hashtag charset actually allows (ASCII
-  letters, Spanish accented vowels, `ñ`, `ü`, digits, `_ - ' ~ ^`), the two produce
-  identical output, so this is not a practical source of drift — unlike before this
-  charset widened, when the frontend's plain lowercase and the backend's
-  accent-stripping normalizer (since removed, see
-  [Normalization](#normalization-tag-identity) above) genuinely disagreed on
-  accented input.
-- Wikilink title resolution is a separate, unrelated split from the hashtag one
-  above: the backend (`get_backlinks`/`get_outgoing_links`/`get_subgraph`/
-  `get_graph`) matches on Python `.lower()`, the frontend's `entryTitleIndex`
-  (`entryTitles.ts`) independently matches the same titles on JS `.toLowerCase()`
-  — and unlike hashtags, entry titles are arbitrary Unicode, not a restricted
-  charset. An exhaustive per-codepoint comparison (including Greek final-sigma,
-  the standard context-sensitive casing trap) found agreement everywhere except
-  28 codepoints from an extinct historical script and a handful of rare Latin
-  Extended-D letters, present in one runtime's Unicode tables but not yet the
-  other's — not an algorithmic disagreement, and not something a real web-page
-  title will contain. Not a practical source of drift.
-- **Performance, not correctness:** `entries.title` has no index — only `url` is
-  indexed (`UNIQUE`). `get_outgoing_links` and `get_subgraph` each resolve a
-  single entry's references by loading the *entire* `entries` table and
-  rebuilding a title→id lookup from scratch on every call — cost is linear in
-  vault size, not in how many references the entry actually has, and grows
-  without bound as the vault grows. `get_outgoing_links` short-circuits this
-  when the entry has no outgoing references of its own (the common case, since
-  `[[wikilinks]]` are manual authoring, not something extraction produces) —
-  the full scan only runs when there's something to actually resolve.
-  `get_subgraph` has no equivalent short-circuit. `get_graph` also scans every
-  entry on every call, but that cost is inherent rather than wasted work — it
-  builds the whole vault graph, so it genuinely needs every entry. `get_backlinks`
-  is the outlier that stays flat regardless of vault size, because it matches
-  against `backlink_refs.target_text`, which *is* indexed
-  (`idx_backlink_refs_target`) and normalized at write time — the same trick
-  isn't available to the other three without adding an equivalent indexed,
-  normalized representation of `entries.title`.
+- The reading view's `data-hashtag` value (and the TAGS-dashboard header it drives) uses
+  the frontend's `toLowerCase()`, while the backend keys hashtag identity on `casefold()`.
+  For every character the hashtag charset actually allows (ASCII letters, Spanish accented
+  vowels, `ñ`, `ü`, digits, `_ - ' ~ ^`), the two produce identical output, so this is not
+  a practical source of drift — unlike before this charset widened, when the frontend's
+  plain lowercase and the backend's accent-stripping normalizer (since removed, see
+  [Normalization](#normalization-tag-identity) above) genuinely disagreed on accented input.
+- Wikilink title resolution is a separate, unrelated split from the hashtag one above:
+  the backend (`get_backlinks`/`get_outgoing_links`/`get_subgraph`/ `get_graph`)
+  matches on Python `.lower()`, the frontend's `entryTitleIndex` (`entryTitles.ts`)
+  independently matches the same titles on JS `.toLowerCase()` — and unlike hashtags,
+  entry titles are arbitrary Unicode, not a restricted charset. An exhaustive per-codepoint
+  comparison (including Greek final-sigma, the standard context-sensitive casing
+  trap) found agreement everywhere except 28 codepoints from an extinct historical
+  script and a handful of rare Latin Extended-D letters, present in one runtime's
+  Unicode tables but not yet the other's — not an algorithmic disagreement, and not
+  something a real web-page title will contain. Not a practical source of drift.
+- **Performance, not correctness:** `entries.title` has no index — only `url` is indexed
+  (`UNIQUE`). `get_outgoing_links` and `get_subgraph` each resolve a single entry's references
+  by loading the *entire* `entries` table and rebuilding a title→id lookup from scratch on
+  every call — cost is linear in vault size, not in how many references the entry actually
+  has, and grows without bound as the vault grows. `get_outgoing_links` short-circuits this
+  when the entry has no outgoing references of its own (the common case, since `[[wikilinks]]`
+  are manual authoring, not something extraction produces) — the full scan only runs when
+  there's something to actually resolve. `get_subgraph` has no equivalent short-circuit.
+  `get_graph` also scans every entry on every call, but that cost is inherent rather
+  than wasted work — it builds the whole vault graph, so it genuinely needs every entry.
+  `get_backlinks` is the outlier that stays flat regardless of vault size, because it matches
+  against `backlink_refs.target_text`, which *is* indexed (`idx_backlink_refs_target`)
+  and normalized at write time — the same trick isn't available to the other three
+  without adding an equivalent indexed, normalized representation of `entries.title`.
 
 ## See also
 
@@ -433,5 +407,5 @@ tag-based connections for this one case than the vault-wide graph would suggest.
   box (`addTag`/`removeTag`), the other UI surface that mints tags via `update_tags`.
 - `frontend/src/lib/stores/entryTitles.ts` — wikilink title resolution index.
 - `backend/src/analecta/storage/index.py` — `get_backlinks`, `get_outgoing_links`,
-  `get_hashtag_connections`, `list_tags`, `get_entry_ids_by_tag`, `get_graph`,
-  `get_subgraph`, `create_tag`, `rename_tag`, `update_tags`.
+  `get_hashtag_connections`, `list_tags`, `get_entry_ids_by_tag`,
+  `get_graph`, `get_subgraph`, `create_tag`, `rename_tag`, `update_tags`.

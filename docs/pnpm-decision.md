@@ -1,13 +1,14 @@
 # Decision: pnpm as the Node.js Package Manager
 
-**Status:** Accepted  
-**Date:** 2026-05-05
+**Status:** Accepted **Date:** 2026-05-05
 
 ---
 
 ## Problem with npm
 
-npm installs dependencies into a **flat** `node_modules/` tree: the resolver places all packages — direct and transitive — at the same level. This allows any package to `require()` modules it did not declare in its own `package.json` ("phantom dependencies").
+npm installs dependencies into a **flat** `node_modules/` tree: the resolver places
+all packages — direct and transitive — at the same level. This allows any package to
+`require()` modules it did not declare in its own `package.json` ("phantom dependencies").
 
 This is a real supply-chain attack vector:
 
@@ -19,9 +20,12 @@ This is a real supply-chain attack vector:
 
 pnpm resolves this with a **non-flat** `node_modules/` layout:
 
-- Each package gets its own `node_modules/` containing symlinks only to its declared dependencies.
-- Transitive dependencies live in a global content-addressable store (`~/.pnpm-store/`) and are linked without duplication.
-- A package that attempts to access an undeclared dependency gets an error instead of silent access.
+- Each package gets its own `node_modules/` containing
+  symlinks only to its declared dependencies.
+- Transitive dependencies live in a global content-addressable
+  store (`~/.pnpm-store/`) and are linked without duplication.
+- A package that attempts to access an undeclared
+  dependency gets an error instead of silent access.
 
 | Aspect | npm | pnpm |
 |--------|-----|------|
@@ -35,8 +39,8 @@ pnpm resolves this with a **non-flat** `node_modules/` layout:
 
 - **Electron:** works natively with pnpm workspaces; no configuration needed.
 - **SvelteKit:** first-class support; `pnpm create svelte@latest` is the recommended scaffold.
-- **mise:** pnpm is managed as a native tool (`pnpm = "12.8.0"` in `.mise.toml`), with no
-  dependency on `npm install -g` or corepack.
+- **mise:** pnpm is managed as a native tool (`pnpm = "12.8.0"` in
+  `.mise.toml`), with no dependency on `npm install -g` or corepack.
 - **GitHub Actions:** `pnpm/action-setup` is an official, widely-adopted action.
 
 ## Decision
