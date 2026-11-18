@@ -206,3 +206,23 @@ change date and the release that shipped it.
 - **What:** the reading view's CSP `img-src` no longer permits arbitrary
   remote image hosts — local vault assets and inline data only (a6d6ff8).
   Mechanism: `docs/privacy.md`.
+
+
+### 2026-11-18 — sidecar session token + vault flock (unreleased)
+
+- **What:** the Python sidecar now publishes a discovery file
+  (`~/.local/share/analecta/session.json`, mode 0600) holding its loopback
+  port and a per-run high-entropy session token, and every `/api/v1` route
+  requires it (`Authorization: Bearer` or `X-Session-Token`; the SSE route
+  also accepts `?token=` because `EventSource` cannot set headers).
+  Electron receives the token over stdout — never through the on-disk
+  file. Dev runs without Electron opt out explicitly with
+  `ANALECTA_INSECURE_DEV=1`.
+- **What:** writing processes hold an exclusive non-blocking `flock` on
+  `<vault>/.analecta.lock` for their whole lifetime; a second sidecar (or
+  standalone CLI) pointed at the same vault refuses to start instead of
+  racing the first one. Mechanism: `backend/src/analecta/session_security.py`.
+- **Why:** with the CLI for AI bots on the roadmap, loopback HTTP with
+  "any local process" access was about to become the primary attack
+  surface; the token makes the port addressable by the CLI without being
+  addressable by everything else.

@@ -15,8 +15,9 @@
 		setCloseToTray,
 		onWindowMaximized,
 		windowIsMaximized,
+		getSessionToken,
 	} from '#lib/platform';
-	import { port } from '#lib/stores/sidecar';
+	import { port, sessionToken } from '#lib/stores/sidecar';
 	import { entryAddedTick, entryChangedTick, vaultRescannedTick } from '#lib/stores/sse';
 	import {
 		sidebarCollapsed,
@@ -133,6 +134,7 @@
 	}
 
 	onMount(() => {
+		getSessionToken().then((t) => sessionToken.set(t));
 		const timeout = setTimeout(() => {
 			timedOut = true;
 		}, 10_000);
@@ -283,7 +285,10 @@
 		const p = $port;
 		if (p === null) return;
 
-		const source = new EventSource(`http://localhost:${p}/api/v1/system/events`);
+		// EventSource cannot set headers (D5): the token travels as ?token=.
+		const source = new EventSource(
+			`http://localhost:${p}/api/v1/system/events?token=${encodeURIComponent($sessionToken ?? '')}`
+		);
 		source.addEventListener('message', async (ev) => {
 			try {
 				const data = JSON.parse(ev.data) as { type: string };

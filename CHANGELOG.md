@@ -8,6 +8,14 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Security
+
+- The sidecar authenticates every API route with a per-run session
+  token published via a 0600 discovery file, and writing processes hold
+  an exclusive vault `flock` (a second process on the same vault refuses
+  to start). Dev runs opt out with `ANALECTA_INSECURE_DEV=1`. Full
+  writeup: `docs/security-log.md`.
+
 ### Changed
 
 - Deleting an entry now deletes the bot synthesis entries that cite it,

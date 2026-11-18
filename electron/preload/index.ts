@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 const ALLOWED_CHANNELS = new Set([
 	'get-sidecar-port',
+	'get-session-token',
 	'update-vault-scope',
 	'read-file',
 	'write-file',

@@ -22,6 +22,20 @@ export async function getSidecarPort(): Promise<number> {
 	return invoke('get-sidecar-port') as Promise<number>;
 }
 
+let cachedSessionToken: string | null | undefined;
+
+/** Per-run sidecar session token (D5); null in non-Electron/dev runs. */
+export async function getSessionToken(): Promise<string | null> {
+	if (cachedSessionToken === undefined) {
+		// Browser/dev runs have no electronAPI and no token (D5 dev opt-out).
+		cachedSessionToken =
+			typeof window !== 'undefined' && window.electronAPI
+				? (((await invoke('get-session-token')) as string | null) ?? null)
+				: null;
+	}
+	return cachedSessionToken;
+}
+
 export async function updateVaultScope(path: string): Promise<void> {
 	await invoke('update-vault-scope', path);
 }
