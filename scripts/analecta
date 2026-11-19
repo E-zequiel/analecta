@@ -51,6 +51,8 @@ if [ "$dev" = 1 ] || [ ! -x "$bin" ]; then
 		exec "$repo_root/backend/.venv/bin/python" -m analecta "$@"
 	fi
 	echo "error: no way to run the CLI: install mise (https://mise.dev) or uv (https://docs.astral.sh/uv/), or build the packaged sidecar (mise exec -- python scripts/build_sidecar.py)" >&2
+	# 69 = EX_UNAVAILABLE (sysexits.h): the CLI has no usable route. Deliberate
+	# contract — callers may branch on it; do not change silently.
 	exit 69
 fi
 

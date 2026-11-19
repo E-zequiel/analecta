@@ -24,13 +24,19 @@ PACKAGED_BINARY = REPO_ROOT / "binaries" / "analecta-sidecar" / "analecta-sideca
 BASH = shutil.which("bash") or "/bin/bash"
 
 
-def _run_wrapper(*args: str, env_extra: dict[str, str] | None = None):
+def _run_wrapper(
+    *args: str, env_extra: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """Run the wrapper with ``bash -x`` and capture both streams.
 
     The xtrace on stderr records every command before execution, including
-    the final ``exec`` — which is how the routed target is observed.
+    the final ``exec`` — which is how the routed target is observed. The
+    ambient ``ANALECTA_CLI_DEV`` is stripped so tests stay deterministic
+    regardless of the outer environment; *env_extra* wins when it sets it.
     """
-    env = {**os.environ, **(env_extra or {})}
+    env = os.environ.copy()
+    env.pop("ANALECTA_CLI_DEV", None)
+    env.update(env_extra or {})
     return subprocess.run(
         # Absolute bash path: a stripped PATH (fake-PATH tests) must not
         # break resolving the interpreter itself, only the wrapper's tools.
@@ -59,7 +65,10 @@ def test_default_route_dispatches_packaged_binary() -> None:
     proc = _run_wrapper("--help")
     assert proc.returncode == 0
     assert "subcommands of the sidecar binary" in proc.stdout
-    assert str(PACKAGED_BINARY) in proc.stderr
+    # The exec line, not merely the binary path: the xtrace also echoes the
+    # path inside the fallback-branch check, so only the actual dispatch
+    # line distinguishes routes.
+    assert f"+ exec {PACKAGED_BINARY}" in proc.stderr
 
 
 @pytest.mark.parametrize("value", ["1", "true", "yes"])
@@ -71,43 +80,53 @@ def test_dev_flag_routes_to_python_fallback(value: str) -> None:
     assert "python -m analecta" in proc.stderr
 
 
-def _stripped_path(*tools: str) -> str:
+def _stripped_path(base: Path, *tools: str) -> str:
     """PATH exposing only the wrapper's own shell needs plus *tools*.
 
     Simulates machines without mise (and optionally without uv): the wrapper
     needs ``readlink`` and ``dirname`` on PATH; everything else is a builtin.
     Each requested tool is symlinked from wherever it lives on this machine.
+    *base* is the caller's ``tmp_path`` — pytest removes it after the test.
     """
-    tool_dir = tmp_path_factory_dir()
+    tool_dir = base / "fake-path"
+    tool_dir.mkdir()
     for name in ("readlink", "dirname", *tools):
         source = shutil.which(name)
-        assert source is not None, f"{name} must exist to build the fake PATH"
+        if source is None:
+            pytest.skip(f"{name} not available to build the fake PATH")
         os.symlink(source, tool_dir / name)
     return str(tool_dir)
 
 
-def tmp_path_factory_dir():
-    """Return a fresh scratch directory for fake-PATH construction."""
-    import tempfile
-
-    return Path(tempfile.mkdtemp(prefix="analecta-wrapper-path-"))
-
-
-def test_without_mise_routes_to_uv() -> None:
+@pytest.mark.skipif(
+    shutil.which("uv") is None, reason="standalone uv not available on this machine"
+)
+def test_without_mise_routes_to_uv(tmp_path: Path) -> None:
     """No mise but standalone uv on PATH: the dev fallback runs ``uv run``."""
     proc = _run_wrapper(
         "--help",
-        env_extra={"PATH": _stripped_path("uv"), "ANALECTA_CLI_DEV": "1"},
+        env_extra={
+            "PATH": _stripped_path(tmp_path, "uv"),
+            "ANALECTA_CLI_DEV": "1",
+            # Routing-only test: keep uv from syncing the project environment
+            # (network, package stores) — the existing venv is enough.
+            "UV_NO_SYNC": "1",
+        },
     )
     assert proc.returncode == 0
     assert "subcommands of the sidecar binary" in proc.stdout
     assert "+ exec uv run python -m analecta" in proc.stderr
 
 
-def test_without_mise_or_uv_routes_to_existing_venv() -> None:
+@pytest.mark.skipif(
+    not (REPO_ROOT / "backend" / ".venv" / "bin" / "python").exists(),
+    reason="backend/.venv not built on this machine",
+)
+def test_without_mise_or_uv_routes_to_existing_venv(tmp_path: Path) -> None:
     """No mise, no uv, but backend/.venv exists: run its python directly."""
     proc = _run_wrapper(
-        "--help", env_extra={"PATH": _stripped_path(), "ANALECTA_CLI_DEV": "1"}
+        "--help",
+        env_extra={"PATH": _stripped_path(tmp_path), "ANALECTA_CLI_DEV": "1"},
     )
     assert proc.returncode == 0
     assert "subcommands of the sidecar binary" in proc.stdout
