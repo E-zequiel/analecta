@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Analecta CLI wrapper — run the sidecar CLI without `python -m`.
 #
-# Default: executes the packaged sidecar binary (binaries/analecta-sidecar),
-# which doubles as the CLI (owner decision D3) — same binary, same schema.
+# Default: executes the packaged sidecar CLI binary at
+# binaries/analecta-sidecar/analecta-sidecar (owner decision D3) — same
+# binary, same schema.
 # Attached mode (a live app sidecar is discovered via the 0600 session file)
 # and standalone mode behave exactly as documented in the CLI module.
 #
@@ -24,9 +25,20 @@ fi
 # ~/.local/bin/analecta), BASH_SOURCE points at the link, not the script.
 self="$(readlink -f "${BASH_SOURCE[0]}")"
 repo_root="$(cd "$(dirname "$self")/.." && pwd)"
+# Note the doubled name: the --onedir layout nests the executable inside a
+# directory of the same name.
 bin="$repo_root/binaries/analecta-sidecar/analecta-sidecar"
 
-if [ "${ANALECTA_CLI_DEV:-0}" = "1" ] || [ ! -x "$bin" ]; then
+case "${ANALECTA_CLI_DEV:-}" in
+1 | true | yes) dev=1 ;;
+*) dev=0 ;;
+esac
+
+if [ "$dev" = 1 ] || [ ! -x "$bin" ]; then
+	if ! command -v mise >/dev/null 2>&1; then
+		echo "error: dev fallback needs mise on PATH (or build the sidecar: mise exec -- python scripts/build_sidecar.py)" >&2
+		exit 69
+	fi
 	cd "$repo_root/backend"
 	exec mise exec -- uv run python -m analecta "$@"
 fi
