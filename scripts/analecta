@@ -35,12 +35,23 @@ case "${ANALECTA_CLI_DEV:-}" in
 esac
 
 if [ "$dev" = 1 ] || [ ! -x "$bin" ]; then
-	if ! command -v mise >/dev/null 2>&1; then
-		echo "error: dev fallback needs mise on PATH (or build the sidecar: mise exec -- python scripts/build_sidecar.py)" >&2
-		exit 69
-	fi
 	cd "$repo_root/backend"
-	exec mise exec -- uv run python -m analecta "$@"
+	# Dev-tool fallback chain: mise (toolchain manager) → standalone uv →
+	# an existing backend/.venv. All three run the same module; only the
+	# tooling differs. Nothing else is required.
+	if command -v mise >/dev/null 2>&1; then
+		exec mise exec -- uv run python -m analecta "$@"
+	fi
+	if command -v uv >/dev/null 2>&1; then
+		echo "warning: mise not found; running through standalone uv" >&2
+		exec uv run python -m analecta "$@"
+	fi
+	if [ -x "$repo_root/backend/.venv/bin/python" ]; then
+		echo "warning: mise and uv not found; using the existing backend/.venv" >&2
+		exec "$repo_root/backend/.venv/bin/python" -m analecta "$@"
+	fi
+	echo "error: no way to run the CLI: install mise (https://mise.dev) or uv (https://docs.astral.sh/uv/), or build the packaged sidecar (mise exec -- python scripts/build_sidecar.py)" >&2
+	exit 69
 fi
 
 exec "$bin" "$@"
