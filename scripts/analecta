@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Analecta CLI wrapper — run the sidecar CLI without `python -m`.
+#
+# Default: executes the packaged sidecar binary (binaries/analecta-sidecar),
+# which doubles as the CLI (owner decision D3) — same binary, same schema.
+# Attached mode (a live app sidecar is discovered via the 0600 session file)
+# and standalone mode behave exactly as documented in the CLI module.
+#
+# Fallback to live backend code (`mise exec -- uv run python -m analecta`)
+# when the binary is absent or ANALECTA_CLI_DEV=1 — keeps the dev loop on
+# fresh code without rebuilding the PyInstaller bundle.
+#
+# Never runs without a subcommand: a bare invocation starts the sidecar
+# server, and Electron owns that lifecycle — not terminal users.
+set -euo pipefail
+
+if [ $# -eq 0 ]; then
+	echo "usage: analecta <extract|index|log|summary|synthesize> [args...]" >&2
+	echo "error: a subcommand is required; the server form is owned by Electron" >&2
+	exit 64
+fi
+
+# Resolve the wrapper's real path first: invoked through a symlink (e.g.
+# ~/.local/bin/analecta), BASH_SOURCE points at the link, not the script.
+self="$(readlink -f "${BASH_SOURCE[0]}")"
+repo_root="$(cd "$(dirname "$self")/.." && pwd)"
+bin="$repo_root/binaries/analecta-sidecar/analecta-sidecar"
+
+if [ "${ANALECTA_CLI_DEV:-0}" = "1" ] || [ ! -x "$bin" ]; then
+	cd "$repo_root/backend"
+	exec mise exec -- uv run python -m analecta "$@"
+fi
+
+exec "$bin" "$@"
