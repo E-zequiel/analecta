@@ -2,105 +2,90 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
+this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
 ### Added
 
-- The vault root now carries a generated `AGENTS.md` manifest
-  documenting the vault's grammar for external agents: wikilink and
-  hashtag identity rules, `linked:` semantics, the frontmatter fields
-  beyond OKF (with the description-vs-summary distinction and the
-  `summary_basis` freshness rule), the flags contract (bots read,
-  never write), and the single-writer rule. Regenerated on every app
-  launch and CLI vault run; not hand-maintained.
-- New "Synthesis" sidebar section (ReceiptText icon) listing bot synthesis
-  entries; every other section — Library, Unread, Read, Bookmark, Gem —
-  stays captures-only so entries are never double-listed.
-- Bot summaries are now visible in the reading view (below the title)
-  and in list rows.
-- Bots can record a short summary on any entry — CLI `analecta summary
-  <entry> --text --by` or `PATCH /entries/{id}` with `summary` — stored
-  in the entry's frontmatter together with `summary_basis`, a hash of
-  the body that lets any consumer detect when the summary no longer
-  matches the content. Summaries are capped at 500 characters.
-- Bots can create synthesis entries — CLI `analecta synthesize` or
-  `POST /api/v1/synthesis` — first-class entries citing the captured
-  sources they synthesize.
-- The sidecar binary doubles as a CLI for bots and terminal use:
-  `analecta extract <url>` captures a URL, `analecta index` prints an
-  OKF-style index, and `analecta log` prints the update log — all
-  computed on the fly from the vault. Human text by default, `--json`
-  for agents. When the app is running the CLI talks to it through the
-  authenticated loopback; otherwise it opens the vault directly as the
-  single writer (refusing if another process holds the lock).
+- The vault root now carries a generated `AGENTS.md` manifest documenting the vault's
+  grammar for external agents: wikilink and hashtag identity rules, `linked:` semantics,
+  the frontmatter fields beyond OKF (with the description-vs-summary distinction and the
+  `summary_basis` freshness rule), the flags contract (bots read, never write), and the
+  single-writer rule. Regenerated on every app launch and CLI vault run; not hand-maintained.
+- New "Synthesis" sidebar section (ReceiptText icon) listing bot
+  synthesis entries; every other section — Library, Unread, Read,
+  Bookmark, Gem — stays captures-only so entries are never double-listed.
+- Bot summaries are now visible in the reading view (below the title) and in list rows.
+- Bots can record a short summary on any entry — CLI `analecta summary <entry> --text
+  --by` or `PATCH /entries/{id}` with `summary` — stored in the entry's frontmatter
+  together with `summary_basis`, a hash of the body that lets any consumer detect when
+  the summary no longer matches the content. Summaries are capped at 500 characters.
+- Bots can create synthesis entries — CLI `analecta synthesize` or `POST
+  /api/v1/synthesis` — first-class entries citing the captured sources they synthesize.
+- The SYNTHESIS sidebar section now shows an entry counter, like the other sections.
+- The sidecar binary doubles as a CLI for bots and terminal use: `analecta
+  extract <url>` captures a URL, `analecta index` prints an OKF-style index, and
+  `analecta log` prints the update log — all computed on the fly from the vault.
+  Human text by default, `--json` for agents. When the app is running the CLI
+  talks to it through the authenticated loopback; otherwise it opens the vault
+  directly as the single writer (refusing if another process holds the lock).
 
 ### Security
 
-- The sidecar authenticates every API route with a per-run session
-  token published via a 0600 discovery file, and writing processes hold
-  an exclusive vault `flock` (a second process on the same vault refuses
-  to start). Dev runs opt out with `ANALECTA_INSECURE_DEV=1`. Full
-  writeup: `docs/security-log.md`.
+- The sidecar authenticates every API route with a per-run session token published
+  via a 0600 discovery file, and writing processes hold an exclusive vault
+  `flock` (a second process on the same vault refuses to start). Dev runs opt
+  out with `ANALECTA_INSECURE_DEV=1`. Full writeup: `docs/security-log.md`.
 
 ### Changed
 
-- Deleting an entry now deletes the bot synthesis entries that cite it,
-  in the same operation (the reverse is not true: deleting a synthesis
-  never touches its capture).
-- New captures carry Open Knowledge Format provenance in their
-  frontmatter: `type: reference`, `generated` (pipeline version and
-  timestamp), and `sources` (the captured URL, byline, and publish
-  datetime where one exists). Existing vault pages gain the same fields
-  in place on the next launch; page bodies are untouched.
-- The entry read-state storage key is renamed from `status` to
-  `read_state` (SQLite column and Markdown frontmatter). Existing vault
-  files are rewritten in place on the next launch; reading states, the
-  Unread/Read labels, and all behavior are unchanged. The rename keeps
-  `status` free for the Open Knowledge Format vocabulary
-  (draft/stable/deprecated).
+- Library, Unread, Read, Bookmark and Gem counters (sidebar and Collecta dashboard)
+  now exclude synthesis entries, matching what those sections actually list.
+- Deleting an entry now deletes the bot synthesis entries that cite it, in the same
+  operation (the reverse is not true: deleting a synthesis never touches its capture).
+- New captures carry Open Knowledge Format provenance in their frontmatter: `type:
+  reference`, `generated` (pipeline version and timestamp), and `sources` (the
+  captured URL, byline, and publish datetime where one exists). Existing vault
+  pages gain the same fields in place on the next launch; page bodies are untouched.
+- The entry read-state storage key is renamed from `status` to `read_state` (SQLite column
+  and Markdown frontmatter). Existing vault files are rewritten in place on the next
+  launch; reading states, the Unread/Read labels, and all behavior are unchanged. The rename
+  keeps `status` free for the Open Knowledge Format vocabulary (draft/stable/deprecated).
 
 ## [0.6.1] - 2026-10-27
 
 ### Security
 
-- Electron 45.0.0-beta.5 → 45.0.0: pulls the fix for the eMudhra
-  intermediate certificate authority compromise (CVE-2026-115570) that
-  could let a man-in-the-middle impersonate trusted servers on the
-  app's auto-update channel (electron-updater → GitHub Releases). The
-  reading view and the Python sidecar are not affected — they use
-  separate certificate stores.
+- Electron 45.0.0-beta.5 → 45.0.0: pulls the fix for the eMudhra intermediate certificate
+  authority compromise (CVE-2026-115570) that could let a man-in-the-middle impersonate
+  trusted servers on the app's auto-update channel (electron-updater → GitHub Releases). The
+  reading view and the Python sidecar are not affected — they use separate certificate stores.
 ## [0.6.0] - 2026-10-22
 
 ### Fixed
 
-- The archived badge in the expanded tag views (Collecta tag page) used the
-  native `title` attribute for its hover hint — inconsistent with the
-  app-wide custom tooltip; it now uses the same tooltip action as every
-  other badge and control.
+- The archived badge in the expanded tag views (Collecta tag page) used the native
+  `title` attribute for its hover hint — inconsistent with the app-wide custom
+  tooltip; it now uses the same tooltip action as every other badge and control.
 
 ### Changed
 
-- Vault graph: more visible node motion and wider cluster separation
-  (forceAtlas2 retune: repulsion `scalingRatio` 15 → 45 — edge attraction
-  does not scale with it, so this is what separates node from node inside
-  each cluster —, center `gravity` 0.0575 → 0.02 uniformly across the
-  per-component, joint, and live-simulation passes, live-simulation speed
-  `slowDown` overridden to 3 for larger graphs (5 below 40 nodes) where
-  the inherited 1 + log(n) damped per-tick drift ~7x, and the motion
-  horizon made wall-clock based (60 s) instead of frame-counted;
-  equilibrium settings are shared between the initial layout and the
-  live simulation).
+- Vault graph: more visible node motion and wider cluster separation (forceAtlas2
+  retune: repulsion `scalingRatio` 15 → 45 — edge attraction does not scale with it,
+  so this is what separates node from node inside each cluster —, center `gravity`
+  0.0575 → 0.02 uniformly across the per-component, joint, and live-simulation
+  passes, live-simulation speed `slowDown` overridden to 3 for larger graphs
+  (5 below 40 nodes) where the inherited 1 + log(n) damped per-tick drift ~7x,
+  and the motion horizon made wall-clock based (60 s) instead of frame-counted;
+  equilibrium settings are shared between the initial layout and the live simulation).
 
 ### Added
 
-- Settings: new About section showing the app version and a manual
-  "Check for updates" button with inline feedback (update available → the
-  usual update banner appears; up to date, dev build, and failure states
-  are reported in place).
+- Settings: new About section showing the app version and a manual "Check for
+  updates" button with inline feedback (update available → the usual update banner
+  appears; up to date, dev build, and failure states are reported in place).
 
 ## [0.5.4] - 2026-09-29
 
@@ -111,35 +96,29 @@ and this project adheres to
 ### Fixed
 
 - `backend/src/analecta/extraction/article.py`: readability-lxml's
-  `remove_unlikely_candidates()` matches an element's `class`/`id` string
-  against a boilerplate-pattern regex via plain substring search, not
-  word-bounded — an auto-generated TOC-anchor heading `id` (e.g.
-  `heading-part-4-the-extraction-step`) containing `extra` (from
-  "extraction") was enough to get the whole heading dropped as boilerplate
-  before scoring ever ran, independent of the class-based heading checks
-  `_strip_heading_classes()` already covered. Heading `id` is never
-  consumed downstream (Markdown headings carry no id), so
-  `_strip_heading_classes()` now drops it unconditionally after its own
-  permalink-anchor-unwrap logic is done reading it.
-- `backend/src/analecta/extraction/article.py`: readability-lxml's
-  `score_node()` gives every `<ul>`/`<ol>`/`<li>` a flat `-3` base content
-  score. A CMS that wraps each list item's own text in a `<p>`
-  (`<li><p>text</p></li>`, or `<li><p>label</p><ul>nested</ul></li>` for a
-  labeled sub-list) makes that `<p>` the parent/grandparent of a
-  `score_paragraphs()` candidate, so the enclosing `<ul>`/`<ol>` only
-  survives if enough accumulated paragraph score clears the `-3` floor. A
-  short or sparse list — few items, or items that are themselves just a
-  one-line label over a nested sub-list — rarely does, and `sanitize()`'s
-  `weight + content_score < 0` check then silently dropped the *entire*
-  list, at any nesting depth, even when the content was substantial and
-  clearly not boilerplate. New `_rescue_list_item_paragraphs()` unwraps
-  each `<li>`'s own `<p>` wrapper before readability runs, at every list
-  depth — this removes the `<li>` from `score_paragraphs()`'s candidacy
-  sweep entirely (a `<p>`'s score only ever propagates to its parent and
-  grandparent, never further, so a list's own items never usefully
-  contributed to its *parent's* candidacy either way) while leaving the
-  `<ul>`/`<ol>`/`<li>` structure itself untouched, so markdownify still
-  renders proper indented (sub-)bullets.
+  `remove_unlikely_candidates()` matches an element's `class`/`id` string against
+  a boilerplate-pattern regex via plain substring search, not word-bounded — an
+  auto-generated TOC-anchor heading `id` (e.g. `heading-part-4-the-extraction-step`)
+  containing `extra` (from "extraction") was enough to get the whole heading dropped
+  as boilerplate before scoring ever ran, independent of the class-based heading
+  checks `_strip_heading_classes()` already covered. Heading `id` is never consumed
+  downstream (Markdown headings carry no id), so `_strip_heading_classes()` now drops
+  it unconditionally after its own permalink-anchor-unwrap logic is done reading it.
+- `backend/src/analecta/extraction/article.py`: readability-lxml's `score_node()` gives every
+  `<ul>`/`<ol>`/`<li>` a flat `-3` base content score. A CMS that wraps each list item's
+  own text in a `<p>` (`<li><p>text</p></li>`, or `<li><p>label</p><ul>nested</ul></li>`
+  for a labeled sub-list) makes that `<p>` the parent/grandparent of a `score_paragraphs()`
+  candidate, so the enclosing `<ul>`/`<ol>` only survives if enough accumulated paragraph
+  score clears the `-3` floor. A short or sparse list — few items, or items that
+  are themselves just a one-line label over a nested sub-list — rarely does, and
+  `sanitize()`'s `weight + content_score < 0` check then silently dropped the *entire*
+  list, at any nesting depth, even when the content was substantial and clearly not
+  boilerplate. New `_rescue_list_item_paragraphs()` unwraps each `<li>`'s own `<p>`
+  wrapper before readability runs, at every list depth — this removes the `<li>` from
+  `score_paragraphs()`'s candidacy sweep entirely (a `<p>`'s score only ever propagates
+  to its parent and grandparent, never further, so a list's own items never usefully
+  contributed to its *parent's* candidacy either way) while leaving the `<ul>`/`<ol>`/`<li>`
+  structure itself untouched, so markdownify still renders proper indented (sub-)bullets.
 
 ## [0.5.2] - 2026-08-13
 
@@ -153,284 +132,244 @@ and this project adheres to
 
 ### Fixed
 
-- In-app auto-update: `latest-linux.yml` — the file `electron-updater` needs
-  to discover new releases — was generated on every build but never uploaded
-  as a release asset, so update checks failed silently. It is now uploaded
-  alongside the installers.
+- In-app auto-update: `latest-linux.yml` — the file `electron-updater` needs to discover
+  new releases — was generated on every build but never uploaded as a release asset,
+  so update checks failed silently. It is now uploaded alongside the installers.
 
 ## [0.5.0] - 2026-07-31
 
 ### Added
 
-- Settings → Vault Graph has a new "Auto-animate on load / drag" toggle for the
-  vault graph's live layout animation. The preference persists across sessions
-  and is on by default, except on first launch when the OS reports
-  `prefers-reduced-motion: reduce`, in which case it starts off.
-- The vault graph in Collecta has its own pause/resume button: it stops or
-  restarts the animation for the current session regardless of the Settings
-  preference, and switches itself from Pause to Play whenever the animation
-  runs its course on its own — not just when clicked.
-- The reading view's right-click context menu has a new "Copy Analecta deep
-  link" item, between "Open in browser" and "Show in system explorer" — copies
-  the same `analecta://open?id=...` link the toolbar button already produced,
-  without needing to open the entry first.
+- Settings → Vault Graph has a new "Auto-animate on load / drag" toggle
+  for the vault graph's live layout animation. The preference persists
+  across sessions and is on by default, except on first launch when the OS
+  reports `prefers-reduced-motion: reduce`, in which case it starts off.
+- The vault graph in Collecta has its own pause/resume button: it stops
+  or restarts the animation for the current session regardless of the
+  Settings preference, and switches itself from Pause to Play whenever
+  the animation runs its course on its own — not just when clicked.
+- The reading view's right-click context menu has a new "Copy Analecta
+  deep link" item, between "Open in browser" and "Show in system
+  explorer" — copies the same `analecta://open?id=...` link the toolbar
+  button already produced, without needing to open the entry first.
 
 ### Changed
 
 - The reading-view toolbar button that copies an entry's `analecta://` deep
   link is now labeled "Copy Analecta deep link" instead of "Copy URL" — the
-  button's behavior is unchanged, only the label now says what it actually
-  copies.
-- In the LIBRARY, UNREAD, READ, BOOKMARK, GEM, ARCHIVE, and TAGS dashboards,
-  clicking a list entry now opens its reading view directly instead of the
-  local graph. The local graph is now reached via a dedicated button on the
-  row (graph-network icon) — previously that button ("View") opened the
-  reading view, and clicking the row opened the graph.
+  button's behavior is unchanged, only the label now says what it actually copies.
+- In the LIBRARY, UNREAD, READ, BOOKMARK, GEM, ARCHIVE, and TAGS dashboards, clicking a
+  list entry now opens its reading view directly instead of the local graph. The local
+  graph is now reached via a dedicated button on the row (graph-network icon) — previously
+  that button ("View") opened the reading view, and clicking the row opened the graph.
 - The local graph panel in any dashboard can now be exited back to the plain
-  list view: re-clicking the same dashboard in the left sidebar closes it, and
-  a new button (scroll-text icon, top-right of the graph panel) does the same.
-  Previously the only way out was switching to a different dashboard.
-- The vault graph on the Collecta dashboard now starts each connected cluster
-  already spread out to fill the available space, instead of clumped together,
-  before continuing its usual live-settling motion from that point. Node size
-  also now scales with how many connections a node has — entries and tags
-  share the same size range, so a well-connected tag reads as prominent as a
-  well-connected entry — with the least-connected nodes noticeably smaller and
-  the difference between low and high connectivity now more pronounced.
-- In the LIBRARY, UNREAD, READ, BOOKMARK, GEM, and ARCHIVE dashboards, opening
-  a row's local graph panel narrows the list column; while it's open, that
-  row's source-type badge and local-graph button now sit together in the row's
-  bottom-right corner instead of staying centered against the full row, freeing
-  horizontal room for the title and tags in the narrower column. Row layout is
-  unchanged whenever no local graph panel is open.
-- The dark theme's cyan (`gem` badges, backlink labels, `h4` headings, and
-  graph node fill) is now a lighter, softer shade (`#8dd5fe`, up from
-  `#7dcfff`). Code-block syntax highlighting is unaffected and keeps the
-  original Tokyo Night cyan.
+  list view: re-clicking the same dashboard in the left sidebar closes it,
+  and a new button (scroll-text icon, top-right of the graph panel) does the
+  same. Previously the only way out was switching to a different dashboard.
+- The vault graph on the Collecta dashboard now starts each connected cluster already
+  spread out to fill the available space, instead of clumped together, before continuing
+  its usual live-settling motion from that point. Node size also now scales with how many
+  connections a node has — entries and tags share the same size range, so a well-connected
+  tag reads as prominent as a well-connected entry — with the least-connected nodes
+  noticeably smaller and the difference between low and high connectivity now more pronounced.
+- In the LIBRARY, UNREAD, READ, BOOKMARK, GEM, and ARCHIVE dashboards, opening a row's
+  local graph panel narrows the list column; while it's open, that row's source-type badge
+  and local-graph button now sit together in the row's bottom-right corner instead of
+  staying centered against the full row, freeing horizontal room for the title and tags
+  in the narrower column. Row layout is unchanged whenever no local graph panel is open.
+- The dark theme's cyan (`gem` badges, backlink labels, `h4` headings, and graph node
+  fill) is now a lighter, softer shade (`#8dd5fe`, up from `#7dcfff`). Code-block
+  syntax highlighting is unaffected and keeps the original Tokyo Night cyan.
 - Settings → Accent color: the "Cyan" option has been replaced by "Magenta" (a
-  Tokyo Night violet/purple). Selecting Cyan as the accent color made hover
-  states on links and other cyan-tinted UI indistinguishable from their resting
-  state, because the accent color and the fixed cyan syntax color became
-  identical.
-- Italic text (`*em*`) in the reading view is no longer rendered in cyan — it
-  now matches the body text color, distinguished only by the italic style.
+  Tokyo Night violet/purple). Selecting Cyan as the accent color made hover states
+  on links and other cyan-tinted UI indistinguishable from their resting state,
+  because the accent color and the fixed cyan syntax color became identical.
+- Italic text (`*em*`) in the reading view is no longer rendered in cyan —
+  it now matches the body text color, distinguished only by the italic style.
 - Tag nodes in the local graph, the vault graph, and grouped Backlinks entries
   are now colored magenta instead of green. The selected/focused node in both
   graphs (and, in the vault graph, search-matched nodes) is now colored green
   instead of the accent color — previously, picking "Magenta" as the accent
   color made a selected tag node indistinguishable from an ordinary one.
-- Connected-entry titles in the right sidebar's BACKLINKS panel are no longer
-  cyan — they now use the same muted-to-bright hover treatment as the "recently
-  viewed" stack panel in the same sidebar (dim at rest, brightening on hover),
-  instead of a flat, fixed color.
+- Connected-entry titles in the right sidebar's BACKLINKS panel are no longer cyan — they
+  now use the same muted-to-bright hover treatment as the "recently viewed" stack panel
+  in the same sidebar (dim at rest, brightening on hover), instead of a flat, fixed color.
 - Text sizing across both sidebars now shares the same three font-size tokens
   instead of scattered hardcoded values. Most visibly, connected-entry titles
   in the right sidebar's BACKLINKS panel grow from 12px to match the row-title
   size used everywhere else a list shows an entry's title (~13.94px). The
-  smallest token, used for counts like a tag's entry count or a backlinks
-  group's count, is also bumped up slightly (12.24px, up from 11.9px) for
-  legibility.
-- The same font-size scaling now extends to Settings, the first-run setup
-  screen, the reading-view toolbar's document title, the inline dashboard
-  search filter, and the Collecta dashboard's card counts and
-  section-navigation buttons — text in these areas now grows and shrinks with
-  the "UI font size" setting instead of staying a fixed size regardless of it.
-  The Settings slider's min/max labels and the "saved" checkmark are also
-  slightly larger (12.24px, up from 11px) for legibility, matching the smallest
-  sidebar token.
-- Settings and first-run form inputs/buttons, the reading-view toolbar's
-  document title, and the inline dashboard search filter now share the same
-  font-size token as the sidebars' empty-state text, instead of each carrying
-  their own near-identical value — consolidating onto an existing token rather
-  than introducing new ones. Right-click context menu items (entry menu and tag
-  menu) now share the row-title token too. Both of the tokens involved grow
-  slightly — the row-title tier to 13.94px (up from 13.26px), the
-  empty-state/secondary-text tier to 13.09px (up from 12.75px) — which also
-  makes both sidebars' row titles, entry status indicators, the "recently
-  viewed" panel's titles, and every empty-state/status message across the app
-  marginally larger. Settings' "Rescan vault"/"Localize images" result text
-  moves from the field-label tier to the same tier as loading/empty-state text,
-  matching its actual role.
+  smallest token, used for counts like a tag's entry count or a backlinks group's
+  count, is also bumped up slightly (12.24px, up from 11.9px) for legibility.
+- The same font-size scaling now extends to Settings, the first-run setup screen, the
+  reading-view toolbar's document title, the inline dashboard search filter, and the Collecta
+  dashboard's card counts and section-navigation buttons — text in these areas now grows
+  and shrinks with the "UI font size" setting instead of staying a fixed size regardless
+  of it. The Settings slider's min/max labels and the "saved" checkmark are also slightly
+  larger (12.24px, up from 11px) for legibility, matching the smallest sidebar token.
+- Settings and first-run form inputs/buttons, the reading-view toolbar's document title,
+  and the inline dashboard search filter now share the same font-size token as the
+  sidebars' empty-state text, instead of each carrying their own near-identical value
+  — consolidating onto an existing token rather than introducing new ones. Right-click
+  context menu items (entry menu and tag menu) now share the row-title token too.
+  Both of the tokens involved grow slightly — the row-title tier to 13.94px (up from
+  13.26px), the empty-state/secondary-text tier to 13.09px (up from 12.75px) — which
+  also makes both sidebars' row titles, entry status indicators, the "recently viewed"
+  panel's titles, and every empty-state/status message across the app marginally
+  larger. Settings' "Rescan vault"/"Localize images" result text moves from the
+  field-label tier to the same tier as loading/empty-state text, matching its actual role.
 - Tables and footnotes in the reading view now scale with the "Reading font
   size" setting instead of staying a fixed size regardless of it, matching how
   headings and code blocks already behave. Table text also grows from 13px to
   85% of body size (~15.3px at the default reading size), footnote text from
-  12px to 80% (~14.4px), and the footnote back-reference arrow now nearly
-  matches its surrounding footnote text instead of reading slightly smaller
-  than it.
+  12px to 80% (~14.4px), and the footnote back-reference arrow now nearly matches
+  its surrounding footnote text instead of reading slightly smaller than it.
 - The vault graph's node labels, and the local graph's node labels/tag
   captions/"No connections" empty state, now scale with the "UI font size"
-  setting instead of staying a fixed size regardless of it. The local graph's
-  empty state also now shares the same font-size token as the identical "No
-  connections." message in the right sidebar's BACKLINKS panel.
-- Loading and empty-state text ("Loading…", "No entries.", "No tags yet.", the
-  sidecar boot screen, search results) now reads at one consistent size across
-  every screen that shows it, instead of 3-4 slightly different sizes depending
-  on which screen it appeared on — the most visible change is the global search
-  dialog's status text, which is now somewhat smaller to match the rest. Error
-  messages (Settings, first-run, the reading view, the editor) are likewise
-  consolidated onto one size, deliberately kept a size above loading/empty-state
-  text so an error never reads as less important than a "Loading…" message.
-  Dashboard row titles in the LIBRARY, UNREAD, READ, BOOKMARK, GEM, and ARCHIVE
-  dashboards now match the row-title size already used in the TAGS and Collecta
-  dashboards, instead of being about 8% larger than they were. The first-run
-  setup screen's title is now the same size as the Settings page title. The
-  "Keyboard shortcuts" heading now reads the same size whether it's opened as
-  its own dialog (`Ctrl+/`) or viewed embedded in Settings. The vault graph's
-  own "Loading…"/"No connections yet." message now matches the same
-  loading/empty-state size used everywhere else. Its title ("Vault Graph"),
-  node/edge count readout, search field, and match-count badge now scale with
-  the "UI font size" setting instead of staying fixed, and grow (11px to
-  12.24–13.94px depending on the element) to match the sizes already used by
-  their equivalents elsewhere in the app — section headers, secondary readouts,
-  text inputs, and count badges, respectively — instead of being noticeably
-  smaller than all of them.
-- The "Keyboard shortcuts" panel's section labels ("Navigation", "Tabs",
-  "Reader") and key-cap chips (e.g. `Ctrl+B`) grow from 10.54px to 12.24px, in
-  both the standalone dialog (`Ctrl+/`) and the copy embedded in Settings — the
-  section labels now match the identical-looking group headers in the right
-  sidebar's BACKLINKS panel, and the key-cap chips grow along with them since
-  the two were sized identically to begin with. The shortcut description text
-  moves onto the same font-size token, with no visible change.
-- Tag chips in the TAGS dashboard and Collecta's tag view are now small
-  rectangular badges (`border-radius: 3.75px`, matching the inline-code chip)
-  instead of rounded pills, matching the Keyboard Shortcuts panel's key-cap
-  style — bordered in `--terminal` at rest, with tighter padding. Hover now
-  highlights the border in the accent color instead of a dimmer accent variant;
-  the active/expanded chip is marked with a darker accent border, a small drop
-  shadow, and accent-colored text, instead of only a plain accent-colored
-  border. Resting chip text now uses the dimmer `--fg-dark` tone instead of
-  full-brightness `--fg`, and the chip's background moved from `--bg-highlight`
-  (used elsewhere in the app exclusively for hover states) to the page
-  background — at rest the chip is now defined by its border alone, with no
-  fill. The entry-count badge is smaller and square instead of a rounded pill.
-- Inline code spans (single backtick) in the reading view and editor preview no
-  longer use `--bg-highlight` for their background — the same color used
-  everywhere else in the app exclusively for hover/active states, which made a
-  code span read as an interactive element rather than a piece of formatted
-  text. The background is now a solid accent-tinted chip (50% `--accent` mixed
-  over `--bg-alt`) with dark (`--bg-dark`) text for contrast, and horizontal
-  padding/corner radius are tightened further (down to 3.75px, from 5px).
+  setting instead of staying a fixed size regardless of it. The local
+  graph's empty state also now shares the same font-size token as the
+  identical "No connections." message in the right sidebar's BACKLINKS panel.
+- Loading and empty-state text ("Loading…", "No entries.", "No tags yet.", the sidecar boot
+  screen, search results) now reads at one consistent size across every screen that shows it,
+  instead of 3-4 slightly different sizes depending on which screen it appeared on — the most
+  visible change is the global search dialog's status text, which is now somewhat smaller
+  to match the rest. Error messages (Settings, first-run, the reading view, the editor) are
+  likewise consolidated onto one size, deliberately kept a size above loading/empty-state
+  text so an error never reads as less important than a "Loading…" message. Dashboard row
+  titles in the LIBRARY, UNREAD, READ, BOOKMARK, GEM, and ARCHIVE dashboards now match the
+  row-title size already used in the TAGS and Collecta dashboards, instead of being about
+  8% larger than they were. The first-run setup screen's title is now the same size as the
+  Settings page title. The "Keyboard shortcuts" heading now reads the same size whether it's
+  opened as its own dialog (`Ctrl+/`) or viewed embedded in Settings. The vault graph's own
+  "Loading…"/"No connections yet." message now matches the same loading/empty-state size
+  used everywhere else. Its title ("Vault Graph"), node/edge count readout, search field, and
+  match-count badge now scale with the "UI font size" setting instead of staying fixed, and
+  grow (11px to 12.24–13.94px depending on the element) to match the sizes already used by
+  their equivalents elsewhere in the app — section headers, secondary readouts, text inputs,
+  and count badges, respectively — instead of being noticeably smaller than all of them.
+- The "Keyboard shortcuts" panel's section labels ("Navigation", "Tabs", "Reader") and
+  key-cap chips (e.g. `Ctrl+B`) grow from 10.54px to 12.24px, in both the standalone
+  dialog (`Ctrl+/`) and the copy embedded in Settings — the section labels now match the
+  identical-looking group headers in the right sidebar's BACKLINKS panel, and the key-cap
+  chips grow along with them since the two were sized identically to begin with. The
+  shortcut description text moves onto the same font-size token, with no visible change.
+- Tag chips in the TAGS dashboard and Collecta's tag view are now small rectangular badges
+  (`border-radius: 3.75px`, matching the inline-code chip) instead of rounded pills, matching
+  the Keyboard Shortcuts panel's key-cap style — bordered in `--terminal` at rest, with
+  tighter padding. Hover now highlights the border in the accent color instead of a dimmer
+  accent variant; the active/expanded chip is marked with a darker accent border, a small
+  drop shadow, and accent-colored text, instead of only a plain accent-colored border. Resting
+  chip text now uses the dimmer `--fg-dark` tone instead of full-brightness `--fg`, and
+  the chip's background moved from `--bg-highlight` (used elsewhere in the app exclusively
+  for hover states) to the page background — at rest the chip is now defined by its border
+  alone, with no fill. The entry-count badge is smaller and square instead of a rounded pill.
+- Inline code spans (single backtick) in the reading view and editor preview no longer
+  use `--bg-highlight` for their background — the same color used everywhere else in the
+  app exclusively for hover/active states, which made a code span read as an interactive
+  element rather than a piece of formatted text. The background is now a solid accent-tinted
+  chip (50% `--accent` mixed over `--bg-alt`) with dark (`--bg-dark`) text for contrast,
+  and horizontal padding/corner radius are tightened further (down to 3.75px, from 5px).
 
 ### Fixed
 
-- A link whose visible text is an inline code span (e.g. `` [`code`](url) ``)
-  now turns cyan on hover like any other link — previously only the underline
-  showed, because the code span's own fixed text color overrode the link's
-  hover color.
-- The right sidebar's BACKLINKS panel now has the same spacing above its first
-  hashtag group or "Direct" section as the left sidebar has above its first
-  tag — `.bl-rich-scroll` (grouped connections) was missing the top padding its
-  sibling `.bl-list` (single-tag view) already had.
-- Opening the editor from the reading view now lands the cursor near where you
-  were reading instead of always jumping to the top of the article — the
-  reading view's scroll position (as a fraction of the article's length)
+- A link whose visible text is an inline code span (e.g. `` [`code`](url) ``) now
+  turns cyan on hover like any other link — previously only the underline showed,
+  because the code span's own fixed text color overrode the link's hover color.
+- The right sidebar's BACKLINKS panel now has the same spacing above its
+  first hashtag group or "Direct" section as the left sidebar has above
+  its first tag — `.bl-rich-scroll` (grouped connections) was missing
+  the top padding its sibling `.bl-list` (single-tag view) already had.
+- Opening the editor from the reading view now lands the cursor near where
+  you were reading instead of always jumping to the top of the article —
+  the reading view's scroll position (as a fraction of the article's length)
   carries over and is mapped onto the nearest line in the source Markdown.
-- The source-type badge (`article`, `youtube`, etc.) on each row in the
-  LIBRARY, UNREAD, READ, BOOKMARK, GEM, and ARCHIVE dashboards is now
-  vertically centered against the full row, matching the local-graph button
-  beside it — it previously sat pinned near the top of the row, level with the
-  title, whenever the row's date/status/tag line gave it extra height.
-- The dek/subtitle sentence beneath an article's title is no longer silently
-  dropped from Substack extraction. Substack renders two `<h1>` elements on a
-  post page — the publication name in the navbar, then the actual headline —
-  and the dek-rescue mechanism introduced in 0.4.0 was always anchoring on the
-  first, wrong one; it also only recognized a dek shaped as a `<p>`, while
-  Substack renders its subtitle as `<h3 class="subtitle">`. Both are now
-  handled: the rescue anchors on whichever `<h1>` actually matches the
-  extracted title, and a subtitle-classed heading is accepted as a dek shape
-  alongside `<p>`.
-- Fenced code blocks in the reading view and editor preview now scale with the
-  user's chosen reading-view font size instead of rendering at a fixed, smaller
-  size regardless of that setting.
-- Inline code spans (single backtick) in the reading view and editor preview no
-  longer sit visibly low against the surrounding text's line — a missing
-  `vertical-align` let the padded, backgrounded span default to baseline
-  alignment instead. Tightened the span's horizontal padding and corner radius
-  to match.
-- A connected entry's title in the right sidebar's BACKLINKS panel — under a
-  hashtag group, under Direct, or listing a tag's entries — now shows the full
-  title on hover as a tooltip, instead of the truncated, ellipsized text being
-  the only cue to what it says.
-- Several UI containers that hold text now grow along with it instead of
-  clipping or overlapping once the "UI font size" setting is raised. The
-  toolbar and the reading view's metadata bar (status badge, URL, date) had a
-  fixed pixel height with no room to grow; the
-  LIBRARY/UNREAD/READ/BOOKMARK/GEM/ARCHIVE dashboards' compact row layout
-  reserved a fixed gutter for the source-type badge next to the title, with no
-  fallback if the badge outgrew it; and the "Keyboard shortcuts" panel — both
-  the `Ctrl+/` dialog and its copy embedded in Settings — was the only dialog
-  in the app without a safety-net maximum width, so its two-column layout
-  could force the box wider than intended. None of these are visible at the
-  default font size.
-- A few more text-truncating containers now scale their own width/max-width
-  along with the "UI font size" setting instead of truncating at the same fixed
-  pixel point regardless of it: the toolbar's active-document-title area, the
-  global search dialog (`Ctrl+K`), the Collecta dashboard's "Last opened" entry
-  link, and the reading view's "search to connect" dialog. These already had
-  ellipsis truncation as a fallback, so nothing was breaking — they'll now
-  simply have more room before truncating at larger font sizes.
-- The remaining fixed-pixel container sizes in the app now scale with the "UI
-  font size" setting: the left sidebar's tag-list scroll region and "Add entry
-  by URL" dialog, the global search dialog's results list, every right-click
-  context menu's minimum width, the TAGS dashboard's tag-chip count
-  badge/edit field/context menu, the local-graph column's width in every
-  dashboard, and the reading view's tag-editing dialog and its autocomplete
-  suggestion list. All were already scrollable, wrapping, or otherwise
-  non-breaking at a fixed size — this is a consistency pass, not a fix for a
-  clipping bug.
-- A fenced code block's background in the reading view and editor preview is
-  now visibly distinct from the surrounding article in both themes, instead of
-  blending into the page. Shiki's built-in Tokyo Night theme happens to use the
-  exact same hex for its editor background as this project's `--bg`, so the
-  generated CSS was reusing that variable verbatim for the code block's own
-  fill — which meant the block had no background of its own, only its 1px
-  border to mark its edges (barely visible in light theme, and in dark theme
-  left the block indistinguishable from the page at a glance even though the
-  border itself read fine). The block now gets its own surface color in both
-  themes (`--bg-dark` in dark, `--bg-alt` in light) via
-  `frontend/scripts/gen-shiki-css.mjs`, regenerated into `shiki-classes.css`.
-- In the TAGS dashboard, opening a local graph panel used to leave the selected
-  tag's entry list stacked below the tag-chip grid in the same narrowed left
-  column, often pushed out of view and requiring a scroll to reach. The entry
-  list now renders in its own full-width strip below the local graph instead,
-  with a fixed height and independent scrolling, leaving the left column
-  dedicated to the tag grid alone.
+- The source-type badge (`article`, `youtube`, etc.) on each row in the LIBRARY, UNREAD,
+  READ, BOOKMARK, GEM, and ARCHIVE dashboards is now vertically centered against the full row,
+  matching the local-graph button beside it — it previously sat pinned near the top of the
+  row, level with the title, whenever the row's date/status/tag line gave it extra height.
+- The dek/subtitle sentence beneath an article's title is no longer silently dropped from
+  Substack extraction. Substack renders two `<h1>` elements on a post page — the publication
+  name in the navbar, then the actual headline — and the dek-rescue mechanism introduced
+  in 0.4.0 was always anchoring on the first, wrong one; it also only recognized a dek
+  shaped as a `<p>`, while Substack renders its subtitle as `<h3 class="subtitle">`. Both
+  are now handled: the rescue anchors on whichever `<h1>` actually matches the extracted
+  title, and a subtitle-classed heading is accepted as a dek shape alongside `<p>`.
+- Fenced code blocks in the reading view and editor preview now
+  scale with the user's chosen reading-view font size instead of
+  rendering at a fixed, smaller size regardless of that setting.
+- Inline code spans (single backtick) in the reading view and editor preview
+  no longer sit visibly low against the surrounding text's line — a missing
+  `vertical-align` let the padded, backgrounded span default to baseline alignment
+  instead. Tightened the span's horizontal padding and corner radius to match.
+- A connected entry's title in the right sidebar's BACKLINKS panel — under a hashtag
+  group, under Direct, or listing a tag's entries — now shows the full title on hover as
+  a tooltip, instead of the truncated, ellipsized text being the only cue to what it says.
+- Several UI containers that hold text now grow along with it instead of clipping or
+  overlapping once the "UI font size" setting is raised. The toolbar and the reading
+  view's metadata bar (status badge, URL, date) had a fixed pixel height with no
+  room to grow; the LIBRARY/UNREAD/READ/BOOKMARK/GEM/ARCHIVE dashboards' compact row
+  layout reserved a fixed gutter for the source-type badge next to the title, with
+  no fallback if the badge outgrew it; and the "Keyboard shortcuts" panel — both
+  the `Ctrl+/` dialog and its copy embedded in Settings — was the only dialog in
+  the app without a safety-net maximum width, so its two-column layout could force
+  the box wider than intended. None of these are visible at the default font size.
+- A few more text-truncating containers now scale their own width/max-width along with the
+  "UI font size" setting instead of truncating at the same fixed pixel point regardless
+  of it: the toolbar's active-document-title area, the global search dialog (`Ctrl+K`),
+  the Collecta dashboard's "Last opened" entry link, and the reading view's "search to
+  connect" dialog. These already had ellipsis truncation as a fallback, so nothing was
+  breaking — they'll now simply have more room before truncating at larger font sizes.
+- The remaining fixed-pixel container sizes in the app now scale with the "UI font size"
+  setting: the left sidebar's tag-list scroll region and "Add entry by URL" dialog, the
+  global search dialog's results list, every right-click context menu's minimum width,
+  the TAGS dashboard's tag-chip count badge/edit field/context menu, the local-graph
+  column's width in every dashboard, and the reading view's tag-editing dialog and its
+  autocomplete suggestion list. All were already scrollable, wrapping, or otherwise
+  non-breaking at a fixed size — this is a consistency pass, not a fix for a clipping bug.
+- A fenced code block's background in the reading view and editor preview is now visibly
+  distinct from the surrounding article in both themes, instead of blending into the page.
+  Shiki's built-in Tokyo Night theme happens to use the exact same hex for its editor
+  background as this project's `--bg`, so the generated CSS was reusing that variable verbatim
+  for the code block's own fill — which meant the block had no background of its own, only
+  its 1px border to mark its edges (barely visible in light theme, and in dark theme left the
+  block indistinguishable from the page at a glance even though the border itself read fine).
+  The block now gets its own surface color in both themes (`--bg-dark` in dark, `--bg-alt`
+  in light) via `frontend/scripts/gen-shiki-css.mjs`, regenerated into `shiki-classes.css`.
+- In the TAGS dashboard, opening a local graph panel used to leave the selected tag's
+  entry list stacked below the tag-chip grid in the same narrowed left column, often
+  pushed out of view and requiring a scroll to reach. The entry list now renders in
+  its own full-width strip below the local graph instead, with a fixed height and
+  independent scrolling, leaving the left column dedicated to the tag grid alone.
 
 ## [0.4.0] - 2026-07-28
 
 ### Added
 
-- X/Twitter extraction — paste a tweet URL (`Ctrl+L`) to capture it as clean
-  Markdown, via X's syndication endpoint with an official-oEmbed fallback for
-  endpoint drift. No headless-browser rendering involved. Pulls in the tweet's
-  full reply chain all the way up to the conversation's root, regardless of how
-  many times authorship changes along the way. Video and animated-GIF media link
-  out to X rather than being downloaded (X doesn't serve real `.gif` files).
-  Tweet hashtags render as plain links and are kept out of Analecta's own
-  tag/backlink system. A tweet's own line breaks are preserved as hard breaks in
-  the saved Markdown, matching how they appear on x.com. Every tweet block — the
-  main tweet, each entry in a reply chain, and any quoted tweet — opens with a
-  bold, profile-linked author name directly followed by the tweet's text on the
-  next line, so it's clear at a glance whose words follow. Consecutive tweets in
-  a reply chain are separated by a `---` rule. A long-form "Note Tweet" gets a
-  visible truncation marker instead of silently cutting off mid-sentence — X's
-  public syndication/oEmbed endpoints don't expose a Note Tweet's full text, only
-  a legacy-length preview.
+- X/Twitter extraction — paste a tweet URL (`Ctrl+L`) to capture it as clean Markdown,
+  via X's syndication endpoint with an official-oEmbed fallback for endpoint drift. No
+  headless-browser rendering involved. Pulls in the tweet's full reply chain all the way
+  up to the conversation's root, regardless of how many times authorship changes along
+  the way. Video and animated-GIF media link out to X rather than being downloaded (X
+  doesn't serve real `.gif` files). Tweet hashtags render as plain links and are kept
+  out of Analecta's own tag/backlink system. A tweet's own line breaks are preserved
+  as hard breaks in the saved Markdown, matching how they appear on x.com. Every tweet
+  block — the main tweet, each entry in a reply chain, and any quoted tweet — opens
+  with a bold, profile-linked author name directly followed by the tweet's text on the
+  next line, so it's clear at a glance whose words follow. Consecutive tweets in a reply
+  chain are separated by a `---` rule. A long-form "Note Tweet" gets a visible truncation
+  marker instead of silently cutting off mid-sentence — X's public syndication/oEmbed
+  endpoints don't expose a Note Tweet's full text, only a legacy-length preview.
 - Article extraction now resolves classic Twitter/X widget embeds (a
-  `blockquote.twitter-tweet` or an equivalent iframe) found inside third-party
-  articles into fully rendered tweet content — author, text, and any photo —
-  instead of the embed being silently dropped or garbled. Falls back to the
-  embed's own static text (or a bare link to the tweet) if the tweet can no
-  longer be fetched. Runs unconditionally, independent of headless-browser
-  rendering — no opt-out currently exists. See `docs/privacy.md` for the exposure
-  this adds: reading such an article now contacts X's syndication endpoint for
-  each embedded tweet, not only when a tweet URL is pasted directly.
-- Every extracted entry now records a `low_confidence` flag in its frontmatter,
-  set when extraction likely missed JavaScript-rendered content (thin extracted
-  text, or a page whose raw HTML is mostly `<script>` tags). Diagnostic only —
-  nothing acts on it automatically; check an entry's frontmatter directly if its
-  capture looks thin.
+  `blockquote.twitter-tweet` or an equivalent iframe) found inside third-party articles into
+  fully rendered tweet content — author, text, and any photo — instead of the embed being
+  silently dropped or garbled. Falls back to the embed's own static text (or a bare link
+  to the tweet) if the tweet can no longer be fetched. Runs unconditionally, independent
+  of headless-browser rendering — no opt-out currently exists. See `docs/privacy.md`
+  for the exposure this adds: reading such an article now contacts X's syndication
+  endpoint for each embedded tweet, not only when a tweet URL is pasted directly.
+- Every extracted entry now records a `low_confidence` flag in its frontmatter, set
+  when extraction likely missed JavaScript-rendered content (thin extracted text, or
+  a page whose raw HTML is mostly `<script>` tags). Diagnostic only — nothing acts on
+  it automatically; check an entry's frontmatter directly if its capture looks thin.
 
 ### Removed
 
@@ -442,50 +381,45 @@ and this project adheres to
 
 ### Security
 
-- Extraction requests no longer identify Analecta or its maintainer — requests
-  present as a generic current-Chrome-on-Linux identity with a coherent header
-  set — see `docs/security-log.md`.
-- Every URL the extraction pipeline fetches (submitted URL, redirects, discovered
-  remote image URLs) is resolved and validated before the request goes out —
-  `http(s)`-only, rejection of non-public resolved addresses, and a direct
-  connection to the validated address so the check and the connection cannot
-  diverge — see `docs/security-log.md`.
-- A failed remote-image download gets one retry, then a local placeholder instead
-  of a preserved remote URL; a "Localize remote images" maintenance action
-  backfills older entries — see `docs/security-log.md`.
+- Extraction requests no longer identify Analecta or its maintainer
+  — requests present as a generic current-Chrome-on-Linux identity
+  with a coherent header set — see `docs/security-log.md`.
+- Every URL the extraction pipeline fetches (submitted URL, redirects, discovered remote
+  image URLs) is resolved and validated before the request goes out — `http(s)`-only,
+  rejection of non-public resolved addresses, and a direct connection to the validated
+  address so the check and the connection cannot diverge — see `docs/security-log.md`.
+- A failed remote-image download gets one retry, then a local placeholder
+  instead of a preserved remote URL; a "Localize remote images"
+  maintenance action backfills older entries — see `docs/security-log.md`.
 - The reading view's Content Security Policy only loads local vault assets and
   inline data, closing the last path by which a remote image could silently
   re-fetch — no arbitrary remote image hosts — see `docs/security-log.md`.
 
 ### Fixed
 
-- Packaged Linux builds now show the correct taskbar/alt-tab label and icon on
-  Wayland compositors — the app previously broadcast `analecta-electron` as its
-  window identity instead of `analecta`.
-- Images with root-relative (`/foo.svg`) or protocol-relative
-  (`//cdn.example.com/foo.svg`) `src` URLs are now resolved against the source
-  article's URL before download, instead of leaking a broken path into the saved
-  Markdown.
-- Extracted articles now record the post-redirect URL as their canonical source
-  URL instead of the originally requested one, so a domain or scheme change
-  mid-redirect (e.g. `http://` → `https://`, or a moved Substack post) no longer
-  causes the image-resolution fix above to resolve relative asset paths against
-  the wrong host.
-- Article headings are no longer silently dropped on sites (e.g. MDN) that wrap
-  the entire heading text in a self-referencing permalink link — previously
-  treated as a link-only heading and discarded during extraction.
-- The article's opening content — paragraphs, and any list, table, or other block
-  content interleaved among them (e.g. MDN's "properties can be categorized in
-  two types" list on the CSS Inheritance page) — is no longer silently dropped on
-  reference-doc sites (e.g. MDN) that place the title and intro text in a
-  separate sibling from the rest of the body content — previously treated as a
-  low-value fragment and discarded in favor of the higher-scoring body section;
-  an earlier version of this fix reunited only the paragraphs, leaving an
-  interleaved list orphaned and dropped along with the rest of the fragment.
-- Very short code examples (e.g. a single one-line CSS declaration, on MDN) are
-  no longer silently dropped from the direct-fetch extraction pass — previously
-  discarded by a generic content-density heuristic that treats short, imageless
-  wrapper elements as decorative cruft.
+- Packaged Linux builds now show the correct taskbar/alt-tab label
+  and icon on Wayland compositors — the app previously broadcast
+  `analecta-electron` as its window identity instead of `analecta`.
+- Images with root-relative (`/foo.svg`) or protocol-relative (`//cdn.example.com/foo.svg`)
+  `src` URLs are now resolved against the source article's URL before
+  download, instead of leaking a broken path into the saved Markdown.
+- Extracted articles now record the post-redirect URL as their canonical source URL
+  instead of the originally requested one, so a domain or scheme change mid-redirect
+  (e.g. `http://` → `https://`, or a moved Substack post) no longer causes the
+  image-resolution fix above to resolve relative asset paths against the wrong host.
+- Article headings are no longer silently dropped on sites (e.g. MDN)
+  that wrap the entire heading text in a self-referencing permalink link —
+  previously treated as a link-only heading and discarded during extraction.
+- The article's opening content — paragraphs, and any list, table, or other block content
+  interleaved among them (e.g. MDN's "properties can be categorized in two types" list on
+  the CSS Inheritance page) — is no longer silently dropped on reference-doc sites (e.g.
+  MDN) that place the title and intro text in a separate sibling from the rest of the
+  body content — previously treated as a low-value fragment and discarded in favor of the
+  higher-scoring body section; an earlier version of this fix reunited only the paragraphs,
+  leaving an interleaved list orphaned and dropped along with the rest of the fragment.
+- Very short code examples (e.g. a single one-line CSS declaration, on MDN) are no longer
+  silently dropped from the direct-fetch extraction pass — previously discarded by a generic
+  content-density heuristic that treats short, imageless wrapper elements as decorative cruft.
 - Tables using `rowspan`/`colspan` to avoid repeating a value across grouped rows
   (e.g. MDN's cascade precedence table) no longer come out of the direct-fetch
   extraction pass with values shifted into the wrong column — the Markdown
@@ -493,54 +427,48 @@ and this project adheres to
   collapsed into the leftmost columns instead of the ones they belonged to.
 - Small reference tables that are almost entirely link text (e.g. an MDN
   "Specifications" table linking to a single spec) are no longer silently dropped
-  entirely from the direct-fetch extraction pass — previously caught by the same
-  link-density heuristic already mitigated for lists, but not for tables.
-- Links inside reference-doc content (e.g. an MDN "Specifications" table) no
-  longer get corrupted or broken apart when they contain an internal line break —
-  the direct-fetch extraction pass previously left this as a literal newline in
-  the Markdown, which downstream renderers treat as the start of a new block
-  (heading, list item, etc.), splitting the link in two.
-- The dek/standfirst sentence beneath an article's title (e.g. milkroad.com,
-  socket.dev), and a hero image accompanying it, are no longer silently dropped
-  from the direct-fetch extraction pass on sites that place the title and dek in
-  a header section structurally separate from the rest of the body content —
-  previously discarded entirely along with the lower-scoring section it lived in,
-  surviving only as unused page metadata.
-- Code blocks on sites that mark the language with a plain `lang=""` attribute
-  instead of a `language-*` class (e.g. socket.dev's blog, which uses Chakra UI's
-  `<Code>` component) now keep their syntax highlighting in the direct-fetch
-  extraction pass, instead of coming out as an unlabeled code fence. Added `json`
-  to the reading-view syntax highlighter's language list, and a fenced code block
-  whose language isn't in that list (a gap in the list itself, or a non-code
-  `lang=""` value picked up by the fix above) now renders as plain, unhighlighted
-  text instead of failing to render at all.
-- Code blocks on Pandoc-generated static sites (e.g. arthurrump.com), which mark
-  the language as a bare sibling class (`class="sourceCode html"`) rather than a
-  `language-*`-prefixed one, now keep their syntax highlighting in the
+  entirely from the direct-fetch extraction pass — previously caught by the
+  same link-density heuristic already mitigated for lists, but not for tables.
+- Links inside reference-doc content (e.g. an MDN "Specifications" table)
+  no longer get corrupted or broken apart when they contain an internal
+  line break — the direct-fetch extraction pass previously left this as a
+  literal newline in the Markdown, which downstream renderers treat as the
+  start of a new block (heading, list item, etc.), splitting the link in two.
+- The dek/standfirst sentence beneath an article's title (e.g. milkroad.com, socket.dev),
+  and a hero image accompanying it, are no longer silently dropped from the direct-fetch
+  extraction pass on sites that place the title and dek in a header section structurally
+  separate from the rest of the body content — previously discarded entirely along
+  with the lower-scoring section it lived in, surviving only as unused page metadata.
+- Code blocks on sites that mark the language with a plain `lang=""` attribute instead
+  of a `language-*` class (e.g. socket.dev's blog, which uses Chakra UI's `<Code>`
+  component) now keep their syntax highlighting in the direct-fetch extraction pass,
+  instead of coming out as an unlabeled code fence. Added `json` to the reading-view
+  syntax highlighter's language list, and a fenced code block whose language isn't in
+  that list (a gap in the list itself, or a non-code `lang=""` value picked up by the fix
+  above) now renders as plain, unhighlighted text instead of failing to render at all.
+- Code blocks on Pandoc-generated static sites (e.g. arthurrump.com), which
+  mark the language as a bare sibling class (`class="sourceCode html"`) rather
+  than a `language-*`-prefixed one, now keep their syntax highlighting in the
   direct-fetch extraction pass instead of coming out as an unlabeled code fence.
-- The hero image rescue added for header-split pages (e.g. socket.dev) no longer
-  misses the image on articles whose `<title>` tag is SEO-truncated with a
-  trailing ellipsis — the truncated title's similarity to the hero image's full,
-  untruncated `alt` text could fall just short of the matching threshold even
-  though the image was right there.
-- A labeled list item's own short nested list (e.g. socket.dev's "Execution
-  telemetry path:" and "Result exfiltration path:", each holding a single API
-  path) is no longer silently dropped from the direct-fetch extraction pass — a
-  sibling list long enough to clear the same content-length threshold (a 4-item
-  "Payload delivery paths:" list on the same page) was unaffected, only the short
-  ones vanished.
-- A short bold caption label directly above an image (e.g. system76.com's
-  "See-through" and "Nearly opaque" photo labels) is no longer silently dropped
-  from the direct-fetch extraction pass — the same content-length threshold as
-  above, this time hitting the label's own wrapper element. The first label in a
-  section usually survived by accident (grouped with the section's heading and
-  intro text), masking that every subsequent standalone label on the same page
-  was affected.
-- The footnote beneath an MDN "Formal syntax" block (e.g. "This syntax reflects
-  the latest standard as per …") is no longer silently dropped from the
-  direct-fetch extraction pass, while the syntax diagram right above it survived
-  untouched — the same link-density heuristic already mitigated for lists and
-  tables, this time hitting the footnote's `<footer>` wrapper.
+- The hero image rescue added for header-split pages (e.g. socket.dev) no longer misses
+  the image on articles whose `<title>` tag is SEO-truncated with a trailing ellipsis
+  — the truncated title's similarity to the hero image's full, untruncated `alt` text
+  could fall just short of the matching threshold even though the image was right there.
+- A labeled list item's own short nested list (e.g. socket.dev's "Execution telemetry
+  path:" and "Result exfiltration path:", each holding a single API path) is no
+  longer silently dropped from the direct-fetch extraction pass — a sibling list
+  long enough to clear the same content-length threshold (a 4-item "Payload delivery
+  paths:" list on the same page) was unaffected, only the short ones vanished.
+- A short bold caption label directly above an image (e.g. system76.com's "See-through"
+  and "Nearly opaque" photo labels) is no longer silently dropped from the
+  direct-fetch extraction pass — the same content-length threshold as above,
+  this time hitting the label's own wrapper element. The first label in a section
+  usually survived by accident (grouped with the section's heading and intro text),
+  masking that every subsequent standalone label on the same page was affected.
+- The footnote beneath an MDN "Formal syntax" block (e.g. "This syntax reflects the latest
+  standard as per …") is no longer silently dropped from the direct-fetch extraction pass,
+  while the syntax diagram right above it survived untouched — the same link-density heuristic
+  already mitigated for lists and tables, this time hitting the footnote's `<footer>` wrapper.
 
 ## [0.3.1] - 2026-07-13
 
@@ -548,61 +476,56 @@ Initial public release.
 
 ### Added
 
-- Web extraction — paste a URL (`Ctrl+L`) to capture articles, YouTube transcripts,
-  and Substack posts as clean Markdown, using trafilatura and readability-lxml for
-  content extraction, markdownify for the Markdown conversion,
+- Web extraction — paste a URL (`Ctrl+L`) to capture articles, YouTube
+  transcripts, and Substack posts as clean Markdown, using trafilatura and
+  readability-lxml for content extraction, markdownify for the Markdown conversion,
   youtube-transcript-api for transcripts, and defuddle as a rendered-page fallback.
 - Native Markdown reading view — every captured entry renders as clean, formatted
   Markdown via markdown-it, with Shiki for syntax-highlighted code blocks.
-- Local vault — every entry saved as a Markdown file in a user-controlled
-  directory, compatible with Logseq and other PKM tools.
-- Reading library — status-based organisation: Unread, Read, Bookmark, Gem,
-  Archive.
+- Local vault — every entry saved as a Markdown file in a
+  user-controlled directory, compatible with Logseq and other PKM tools.
+- Reading library — status-based organisation: Unread, Read, Bookmark, Gem, Archive.
 - Full-text search across titles and content powered by SQLite FTS5 (`Ctrl+K`).
-- Tag list, automatic bidirectional Linked Mentions, clickable `[[wikilink]]`
-  rendering, and clickable `#hashtag` navigation to the TAGS dashboard across the
-  vault. Hashtags and tag names accept Spanish-accented letters (`áéíóúñü`) and
-  symbols (`_ - ' ~ ^`) in addition to ASCII. Tag identity is unified vault-wide
-  and case-insensitive — `Python`, `python`, and `#PYTHON` all count as the same
-  tag, while preserving whichever casing was curated first for display — but
-  accent- and symbol-sensitive: `café` and `cafe` are different tags. A `#hashtag`
-  that happens to match another entry's title resolves to it in the backlinks panel
-  and vault graph across the full charset, so `#café` correctly connects to a
-  "Café" entry and `#well-being` to a "Well-Being" entry, not just plain-ASCII
-  titles. Creating or renaming a tag anywhere — the sidebar, the TAGS dashboard, or
-  the reading view's inline "Add tag…" box — enforces the same hashtag charset, so
-  every newly minted tag stays writable as an inline `#hashtag`, with one
-  consistent, clearly visible error message for invalid names; a tag name that
-  already exists (however it got there) is always usable and re-assignable
-  regardless of charset. A newly created tag shows up on the TAGS dashboard
-  immediately instead of requiring a rescan. Renaming a tag into another existing
-  tag's name merges the two, with an explicit confirmation step since the merge
-  can't be undone. Right-clicking a wikilink opens the context menu for the linked
-  entry; middle-clicking a wikilink adds the linked entry to the right-sidebar
-  entry stack without leaving the current reading view; hovering a wikilink or
-  hashtag shows a type label (`[[Wikilink]]`/`TAGS`) in the status bar. A wikilink
-  with an empty or whitespace-only alias (`[[Title|]]`) is fully indexed for the
-  backlinks panel and vault graph, matching how it already rendered in the reading
-  view.
-- Vault reconciliation — files edited outside Analecta (another editor, a sync
-  tool) are automatically re-derived for tags, links, and search content the next
-  time the sidecar starts, plus a manual "Rescan vault" action (`Ctrl+R`, also
-  available in Settings) for edits made while the app is already running; an open
-  reading view for the edited entry refreshes in place.
+- Tag list, automatic bidirectional Linked Mentions, clickable `[[wikilink]]` rendering, and
+  clickable `#hashtag` navigation to the TAGS dashboard across the vault. Hashtags and tag
+  names accept Spanish-accented letters (`áéíóúñü`) and symbols (`_ - ' ~ ^`) in addition to
+  ASCII. Tag identity is unified vault-wide and case-insensitive — `Python`, `python`, and
+  `#PYTHON` all count as the same tag, while preserving whichever casing was curated first
+  for display — but accent- and symbol-sensitive: `café` and `cafe` are different tags. A
+  `#hashtag` that happens to match another entry's title resolves to it in the backlinks panel
+  and vault graph across the full charset, so `#café` correctly connects to a "Café" entry
+  and `#well-being` to a "Well-Being" entry, not just plain-ASCII titles. Creating or renaming
+  a tag anywhere — the sidebar, the TAGS dashboard, or the reading view's inline "Add tag…"
+  box — enforces the same hashtag charset, so every newly minted tag stays writable as an
+  inline `#hashtag`, with one consistent, clearly visible error message for invalid names;
+  a tag name that already exists (however it got there) is always usable and re-assignable
+  regardless of charset. A newly created tag shows up on the TAGS dashboard immediately
+  instead of requiring a rescan. Renaming a tag into another existing tag's name merges the
+  two, with an explicit confirmation step since the merge can't be undone. Right-clicking a
+  wikilink opens the context menu for the linked entry; middle-clicking a wikilink adds the
+  linked entry to the right-sidebar entry stack without leaving the current reading view;
+  hovering a wikilink or hashtag shows a type label (`[[Wikilink]]`/`TAGS`) in the status
+  bar. A wikilink with an empty or whitespace-only alias (`[[Title|]]`) is fully indexed for
+  the backlinks panel and vault graph, matching how it already rendered in the reading view.
+- Vault reconciliation — files edited outside Analecta (another editor, a
+  sync tool) are automatically re-derived for tags, links, and search content
+  the next time the sidecar starts, plus a manual "Rescan vault" action
+  (`Ctrl+R`, also available in Settings) for edits made while the app is
+  already running; an open reading view for the edited entry refreshes in place.
 - Manually connect related entries via a search-to-connect dialog.
-- Vault-wide knowledge graph, built with Sigma.js and graphology, and per-entry
-  subgraph, built with d3-force.
+- Vault-wide knowledge graph, built with Sigma.js and
+  graphology, and per-entry subgraph, built with d3-force.
 - Built-in Markdown editor with CodeMirror 6 and Tokyo Night theme.
 - Multi-tab reading with scroll position persistence across sessions.
 - System tray integration (configurable close-to-tray behavior, off by default).
 - Clipboard-to-URL capture via `Ctrl+L`.
 - Auto-updates via electron-updater.
-- Native Linux packaging — `.deb`, `.rpm`, `.AppImage` — with correct application
-  identity and icons, including taskbar/alt-tab icon support on Wayland
-  compositors, built with electron-builder.
-- Release integrity verification — SHA256SUMS checksums for all packaged
-  installers, plus a Sigstore build provenance attestation (attaches automatically
-  once the repository goes public).
+- Native Linux packaging — `.deb`, `.rpm`, `.AppImage` — with correct
+  application identity and icons, including taskbar/alt-tab icon
+  support on Wayland compositors, built with electron-builder.
+- Release integrity verification — SHA256SUMS checksums for all
+  packaged installers, plus a Sigstore build provenance attestation
+  (attaches automatically once the repository goes public).
 
 [Unreleased]: https://github.com/E-zequiel/analecta/compare/v0.6.1...HEAD
 [0.6.1]: https://github.com/E-zequiel/analecta/releases/tag/v0.6.1

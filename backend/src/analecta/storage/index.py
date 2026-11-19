@@ -513,32 +513,43 @@ class VaultIndex:
     def get_counts(self) -> dict[str, int]:
         """Return entry counts for all dashboard sections in one aggregated query.
 
+        Counters mirror each Sidebar section's list filter: ``library``,
+        ``unread``, ``read``, ``bookmark`` and ``gem`` are captures-only —
+        they exclude archived entries and synthesis entries
+        (``source_type`` ``synthesis``). ``synthesis`` counts every
+        synthesis entry with no archive exclusion, matching its own
+        section list. ``archive`` counts every archived entry, synthesis
+        included.
+
         Returns:
             Dict with keys ``library``, ``unread``, ``read``, ``bookmark``,
-            ``gem``, ``archive`` mapping to their current entry counts.
+            ``gem``, ``synthesis``, ``archive`` mapping to their current
+            entry counts.
         """
         row = self._conn.execute(
             """
             SELECT
                 SUM(CASE WHEN NOT EXISTS (
                     SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
-                ) THEN 1 ELSE 0 END) AS library,
+                ) AND source_type != 'synthesis' THEN 1 ELSE 0 END) AS library,
                 SUM(CASE WHEN read_state = 'unread' AND NOT EXISTS (
                     SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
-                ) THEN 1 ELSE 0 END) AS unread,
+                ) AND source_type != 'synthesis' THEN 1 ELSE 0 END) AS unread,
                 SUM(CASE WHEN read_state = 'read' AND NOT EXISTS (
                     SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
-                ) THEN 1 ELSE 0 END) AS read_count,
+                ) AND source_type != 'synthesis' THEN 1 ELSE 0 END) AS read_count,
                 SUM(CASE WHEN EXISTS (
                     SELECT 1 FROM json_each(flags_json) WHERE value = 'bookmark'
                 ) AND NOT EXISTS (
                     SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
-                ) THEN 1 ELSE 0 END) AS bookmark,
+                ) AND source_type != 'synthesis' THEN 1 ELSE 0 END) AS bookmark,
                 SUM(CASE WHEN EXISTS (
                     SELECT 1 FROM json_each(flags_json) WHERE value = 'gem'
                 ) AND NOT EXISTS (
                     SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
-                ) THEN 1 ELSE 0 END) AS gem,
+                ) AND source_type != 'synthesis' THEN 1 ELSE 0 END) AS gem,
+                SUM(CASE WHEN source_type = 'synthesis' THEN 1 ELSE 0 END)
+                    AS synthesis,
                 SUM(CASE WHEN EXISTS (
                     SELECT 1 FROM json_each(flags_json) WHERE value = 'archive'
                 ) THEN 1 ELSE 0 END) AS archive
@@ -551,6 +562,7 @@ class VaultIndex:
             "read": row["read_count"] or 0,
             "bookmark": row["bookmark"] or 0,
             "gem": row["gem"] or 0,
+            "synthesis": row["synthesis"] or 0,
             "archive": row["archive"] or 0,
         }
 
