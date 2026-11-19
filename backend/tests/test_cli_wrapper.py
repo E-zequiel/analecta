@@ -12,6 +12,7 @@ anything. Three behaviors are pinned:
 """
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -20,6 +21,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = REPO_ROOT / "scripts" / "analecta"
 PACKAGED_BINARY = REPO_ROOT / "binaries" / "analecta-sidecar" / "analecta-sidecar"
+BASH = shutil.which("bash") or "/bin/bash"
 
 
 def _run_wrapper(*args: str, env_extra: dict[str, str] | None = None):
@@ -30,7 +32,9 @@ def _run_wrapper(*args: str, env_extra: dict[str, str] | None = None):
     """
     env = {**os.environ, **(env_extra or {})}
     return subprocess.run(
-        ["bash", "-x", str(WRAPPER), *args],
+        # Absolute bash path: a stripped PATH (fake-PATH tests) must not
+        # break resolving the interpreter itself, only the wrapper's tools.
+        [BASH, "-x", str(WRAPPER), *args],
         capture_output=True,
         text=True,
         env=env,
@@ -65,3 +69,46 @@ def test_dev_flag_routes_to_python_fallback(value: str) -> None:
     assert proc.returncode == 0
     assert "subcommands of the sidecar binary" in proc.stdout
     assert "python -m analecta" in proc.stderr
+
+
+def _stripped_path(*tools: str) -> str:
+    """PATH exposing only the wrapper's own shell needs plus *tools*.
+
+    Simulates machines without mise (and optionally without uv): the wrapper
+    needs ``readlink`` and ``dirname`` on PATH; everything else is a builtin.
+    Each requested tool is symlinked from wherever it lives on this machine.
+    """
+    tool_dir = tmp_path_factory_dir()
+    for name in ("readlink", "dirname", *tools):
+        source = shutil.which(name)
+        assert source is not None, f"{name} must exist to build the fake PATH"
+        os.symlink(source, tool_dir / name)
+    return str(tool_dir)
+
+
+def tmp_path_factory_dir():
+    """Return a fresh scratch directory for fake-PATH construction."""
+    import tempfile
+
+    return Path(tempfile.mkdtemp(prefix="analecta-wrapper-path-"))
+
+
+def test_without_mise_routes_to_uv() -> None:
+    """No mise but standalone uv on PATH: the dev fallback runs ``uv run``."""
+    proc = _run_wrapper(
+        "--help",
+        env_extra={"PATH": _stripped_path("uv"), "ANALECTA_CLI_DEV": "1"},
+    )
+    assert proc.returncode == 0
+    assert "subcommands of the sidecar binary" in proc.stdout
+    assert "+ exec uv run python -m analecta" in proc.stderr
+
+
+def test_without_mise_or_uv_routes_to_existing_venv() -> None:
+    """No mise, no uv, but backend/.venv exists: run its python directly."""
+    proc = _run_wrapper(
+        "--help", env_extra={"PATH": _stripped_path(), "ANALECTA_CLI_DEV": "1"}
+    )
+    assert proc.returncode == 0
+    assert "subcommands of the sidecar binary" in proc.stdout
+    assert ".venv/bin/python -m analecta" in proc.stderr
