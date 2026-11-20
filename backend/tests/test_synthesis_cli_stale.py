@@ -28,6 +28,7 @@ bodies after synthesis or by hand-writing legacy (sources[]-without-
 sources_basis) synthesis pages. No network calls.
 """
 
+import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -558,3 +559,169 @@ def test_stale_with_empty_string_creation_values_is_rejected(
         assert "--stale" in captured.err
         assert flag in captured.err
         assert captured.out == ""
+
+
+# ---------------------------------------------------------------------------
+# T5 S16: missing/unreadable synthesis page is stale, fail-safe
+# ---------------------------------------------------------------------------
+
+
+def test_stale_report_missing_synthesis_page_is_stale_not_fresh(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S16: a synthesis whose own page file is deleted is reported stale —
+    naming the synthesis's own page resource — with no traceback, exit 1.
+
+    Fail-safe parity with S2c verifiability: an unverifiable page is not
+    "fresh". Today the report classifies it fresh (an unreadable page's
+    frontmatter yields no stale sources) — that is the demonstrated red.
+    """
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura huérfana", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis sin página", "Cuerpo.", [capture.id])
+    synth = _sole_synthesis(vault_dir)
+    Path(synth.file_path).unlink()
+
+    code = run(["synthesize", "--stale"], vault_path=vault_dir)
+    captured = capsys.readouterr()
+
+    assert code == 1
+    named = [ln for ln in _stale_lines(captured.out) if "Síntesis sin página" in ln]
+    assert named, f"missing-page synthesis not named on a stale line: {captured.out!r}"
+    # The synthesis's OWN page resource is named, not a cited source's.
+    assert any(_resource_of(synth) in ln for ln in named)
+    # Fail-safe: never a traceback.
+    assert "Traceback" not in captured.out + captured.err
+
+
+def test_index_marks_synthesis_with_missing_page_stale(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str], standalone_only: None
+) -> None:
+    """S16 companion: ``analecta index`` marks a synthesis whose page file
+    is deleted with the same `` — STALE`` line shape, exit 0, no traceback.
+    Today no marker appears (the missing page classifies fresh) — red."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura sin página", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis borrada", "Cuerpo.", [capture.id])
+    synth = _sole_synthesis(vault_dir)
+    Path(synth.file_path).unlink()
+
+    code = run(["index"], vault_path=vault_dir)
+    out = capsys.readouterr().out
+
+    assert code == 0
+    expected = f"- [{synth.title}]({_resource_of(synth)}) — STALE"
+    lines = out.splitlines()
+    assert expected in lines
+    synth_section = out.split("# Synthesis", 1)[1]
+    assert expected in synth_section.splitlines()
+    assert "Traceback" not in out
+
+
+# ---------------------------------------------------------------------------
+# T5 S20: ``index --json`` synthesis items carry a ``stale`` boolean
+# ---------------------------------------------------------------------------
+
+
+def test_index_json_synthesis_items_carry_stale_field(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str], standalone_only: None
+) -> None:
+    """S20: ``index --json`` synthesis items carry a boolean ``stale`` field
+    (true for the drifted synthesis, false for the fresh one); capture
+    items are unchanged — no ``stale`` key. Today no item carries the
+    field: red."""
+    index = _open_index(vault_dir)
+    try:
+        fresh_src = _capture(vault_dir, index, "Captura fresca json", "Cuerpo A.")
+        stale_src = _capture(vault_dir, index, "Captura rancia json", "Cuerpo B.")
+    finally:
+        index.close()
+    assert fresh_src.id is not None
+    assert stale_src.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis json fresca", "Cuerpo.", [fresh_src.id])
+    _synthesize_via_cli(vault_dir, "Síntesis json rancia", "Cuerpo.", [stale_src.id])
+    _edit_body(Path(stale_src.file_path), "Cuerpo B.", "Cuerpo B editado.")
+    # Drain the setup's own output so only the invocation under test is
+    # observed (the setup legitimately prints its creation lines).
+    capsys.readouterr()
+
+    code = run(["index", "--json"], vault_path=vault_dir)
+    out = capsys.readouterr().out
+
+    assert code == 0
+    data = json.loads(out)
+    synths = {d["path"]: d for d in data if d["type"] == "synthesis"}
+    assert synths, f"no synthesis items in index --json: {out!r}"
+    index = _open_index(vault_dir)
+    try:
+        recs = [r for r in index.list_entries() if r.source_type == "synthesis"]
+    finally:
+        index.close()
+    stale_record = next(r for r in recs if r.title == "Síntesis json rancia")
+    fresh_record = next(r for r in recs if r.title == "Síntesis json fresca")
+    for item in synths.values():
+        assert "stale" in item, f"synthesis item lacks 'stale': {item!r}"
+        assert isinstance(item["stale"], bool)
+    assert synths[_resource_of(stale_record)]["stale"] is True
+    assert synths[_resource_of(fresh_record)]["stale"] is False
+    # Captures and other items are unchanged: no ``stale`` key.
+    for item in data:
+        if item["type"] != "synthesis":
+            assert "stale" not in item
+
+
+# ---------------------------------------------------------------------------
+# T5 S22: creation-path missing-args wording mentions --update
+# ---------------------------------------------------------------------------
+
+
+def test_creation_missing_args_message_names_update_alternative(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S22 (R2-readability-4): the creation-path missing-args message says
+    ``required unless --stale or --update`` — the old ``required unless
+    --stale`` text understated the contract (``--update`` is a third way
+    to invoke ``synthesize``). No test pinned the old wording positively;
+    this pins the new one and is red at HEAD."""
+    code = run(["synthesize"], vault_path=vault_dir)
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "required unless --stale or --update" in captured.err
+    assert captured.out == ""
+
+
+def test_stale_report_invalid_utf8_page_is_stale_no_traceback(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S16 unreadable variant: a synthesis page holding bytes that are not
+    valid UTF-8 (hand-edit/sync artifact) is reported stale — its own page
+    resource named — with no traceback, on both surfaces. read_text raises
+    UnicodeDecodeError, which is a ValueError, not an OSError: the OSError
+    guards alone do not cover it."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura binaria", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis binaria", "Cuerpo.", [capture.id])
+    synth = _sole_synthesis(vault_dir)
+    Path(synth.file_path).write_bytes(b"---\ntitle: 'S'\n---\n\n\xff\xfe not utf-8\n")
+    for argv in (["synthesize", "--stale"], ["index"]):
+        code = run(argv, vault_path=vault_dir)
+        captured = capsys.readouterr()
+        assert code == 1 if "--stale" in argv else code == 0
+        assert "Traceback" not in captured.out + captured.err
+        if "--stale" in argv:
+            assert any(_resource_of(synth) in ln for ln in _stale_lines(captured.out))
+        else:
+            assert f"- [{synth.title}]({_resource_of(synth)}) — STALE" in captured.out

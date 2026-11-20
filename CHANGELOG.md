@@ -51,6 +51,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   (re-record it against the new body) and refreshes the entry's
   `updated_at`. `--title` and `--json` are rejected alongside `--update`,
   and `--stale` wins over it.
+- Synthesis staleness hardening: frontmatter-supplied source paths that
+  escape the vault's `pages/` directory are treated as stale and never
+  read; a synthesis whose own page is missing, unreadable or corrupt is
+  reported stale (both `--stale` and the `index` marking) instead of
+  crashing or reporting fresh — including pages holding invalid UTF-8;
+  `--update` exits 3 when the vault lock is held (same as `--stale`)
+  and rejects a `--source` that is not a capture; `index --json`
+  synthesis items now carry a `stale` boolean field; the missing-args
+  error now reads "required unless --stale or --update"; regeneration
+  publishes the page through an atomic rename and lands its three
+  database mutations in one transaction.
 
 ### Security
 

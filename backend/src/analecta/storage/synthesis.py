@@ -10,6 +10,7 @@ four capture origins are untouched).
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +28,12 @@ if TYPE_CHECKING:
 
 def _now() -> str:
     return datetime.now(tz=UTC).isoformat()
+
+
+MISSING_BASIS = ""
+"""Basis recorded for a cited capture whose page is unreadable at
+synthesis or update time. It never matches a real body hash, so the
+source is reported stale as soon as its page exists and can be read."""
 
 
 def create_synthesis_entry(
@@ -106,7 +113,7 @@ def update_synthesis_entry(
     source_entries: list[EntryRecord],
     generated_by: str | None = None,
 ) -> None:
-    """Regenerate an existing synthesis in place (S5, okf-cli).
+    """Regenerate an existing synthesis in place.
 
     Keeps the page path, URL slug, database row id, and title; refreshes
     the body, ``sources[]`` and ``sources_basis[]`` (rewritten together,
@@ -117,16 +124,26 @@ def update_synthesis_entry(
     re-derived from the rewritten page. The recorded summary is fully
     cleared — frontmatter keys and mirrored DB columns — so a new body
     never lingers with a stale summary, and the DB row's ``updated_at``
-    is bumped to now (S12/S13, okf-cli).
+    is bumped to now.
+
+    The page is rewritten atomically: the new markdown is written to a
+    temporary file in the page's directory and published with a single
+    ``os.replace``, so a reader never observes a half-written page. The
+    three derived-state mutations (summary clearing with its
+    ``updated_at`` bump, FTS content, backlink refs) then land in one
+    database transaction. The rename→commit gap is the remaining
+    non-atomic step: a crash between them leaves FTS/backlinks derived
+    from the previous page revision, which
+    :meth:`VaultIndex.reconcile_stale_entries` re-derives from the page.
 
     When the page's frontmatter parses as a dict it is preserved as the
     base of the rewrite, even if its ``type`` was hand-edited away from
-    ``synthesis`` — the DB row already proved the entry is a synthesis
-    (S11); only unparseable frontmatter rebuilds from DB defaults.
-    Canonical keys (``title``/``url``/``source_type``/``created_at``/
-    ``tags``/``read_state``/``generated``/``sources[]``/``sources_basis``)
-    are normalized from the DB row and new values (a hand-edited
-    non-``synthesis`` ``type`` survives via ``setdefault`` — S11), so any
+    ``synthesis`` — the DB row already proved the entry is a synthesis;
+    only unparseable frontmatter rebuilds from DB defaults. Canonical
+    keys (``title``/``url``/``source_type``/``created_at``/``tags``/
+    ``read_state``/``generated``/``sources[]``/``sources_basis``) are
+    normalized from the DB row and new values (a hand-edited
+    non-``synthesis`` ``type`` survives via ``setdefault``), so any
     extra keys the page carried (e.g. ``status``, custom keys) survive
     the rewrite.
 
@@ -141,10 +158,10 @@ def update_synthesis_entry(
     """
     now = _now()
     page_path = Path(record.file_path)
-    # S11: any parseable frontmatter dict is preserved as the rewrite
-    # base, even with a hand-edited ``type`` — the DB row already proved
-    # the entry is a synthesis. Only unparseable frontmatter rebuilds
-    # from DB defaults.
+    # Any parseable frontmatter dict is preserved as the rewrite base,
+    # even with a hand-edited ``type`` — the DB row already proved the
+    # entry is a synthesis. Only unparseable frontmatter rebuilds from
+    # DB defaults.
     existing = _page_frontmatter(record)
     data: dict[str, object] = dict(existing) if existing is not None else {}
     data.setdefault("type", "synthesis")
@@ -165,18 +182,23 @@ def update_synthesis_entry(
     elif "by" not in generated:
         generated["by"] = ""
     data["sources"], data["sources_basis"] = _sources_frontmatter(source_entries)
-    # S12: the recorded summary never survives a body rewrite — drop the
+    # The recorded summary never survives a body rewrite — drop the
     # frontmatter keys and null the mirrored DB columns.
     data.pop("summary", None)
     data.pop("summary_basis", None)
     frontmatter = f"---\n{yaml.dump(data, allow_unicode=True, sort_keys=False)}---\n"
     markdown = f"{frontmatter}\n{body}\n"
-    page_path.write_text(markdown, encoding="utf-8")
+    # Publish the complete new page through a sibling temp file + atomic
+    # rename; a crash mid-write never leaves a truncated page behind.
+    tmp_path = page_path.with_name(f".{page_path.name}.{os.getpid()}.tmp")
+    try:
+        tmp_path.write_text(markdown, encoding="utf-8")
+        os.replace(tmp_path, page_path)
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        raise
     assert record.id is not None
-    # S13: the DB row's ``updated_at`` is bumped alongside the clearing.
-    index.clear_summary(record.id)
-    index.update_fts_content(record.id, record.title, markdown)
-    index.index_backlinks(record.id)
+    index.clear_summary_and_reindex(record.id, record.title, markdown)
 
 
 def _sources_frontmatter(
@@ -189,7 +211,7 @@ def _sources_frontmatter(
     ``sources_basis[]`` entry whose ``basis`` is the capture's current
     post-frontmatter body hash (D9 convention) at synthesis/update time.
     The two lists share *source_entries* order and are always rewritten
-    together (T1 advisor note).
+    together, so no cited source is ever left without a verifiable basis.
 
     Args:
         source_entries: Cited capture entries, in citation order.
@@ -212,8 +234,8 @@ def _capture_basis(entry: EntryRecord) -> str:
     """Body hash (D9 convention) of a cited capture page as stored on disk."""
     try:
         text = Path(entry.file_path).read_text(encoding="utf-8")
-    except OSError:
-        return ""
+    except OSError, UnicodeDecodeError:
+        return MISSING_BASIS
     return body_sha16(text)
 
 
@@ -224,11 +246,11 @@ def _page_frontmatter(record: EntryRecord) -> dict[str, object] | None:
     page qualifies (e.g. :func:`_synthesis_frontmatter` keeps returning
     ``None`` for non-synthesis pages), while the update path takes the
     raw dict so a hand-edited ``type`` never discards the page's extra
-    keys (S11, okf-cli).
+    keys.
     """
     try:
         text = Path(record.file_path).read_text(encoding="utf-8")
-    except OSError:
+    except OSError, UnicodeDecodeError:
         return None
     m = FM_BLOCK.match(text)
     if not m:
@@ -265,21 +287,33 @@ def _synthesis_source_resources(synth: EntryRecord) -> list[str]:
     ]
 
 
-def _resource_path(record: EntryRecord, resource: str) -> Path:
-    """Resolve a vault-relative ``/pages/<file>.md`` resource to a path."""
+def _resource_path(record: EntryRecord, resource: str) -> Path | None:
+    """Resolve a vault-relative ``/pages/<file>.md`` resource to a path.
+
+    Returns ``None`` when the resolved path escapes the vault's
+    ``pages/`` directory (frontmatter-supplied ``..`` segments). Callers
+    treat such a resource as stale and must never read the file it
+    points at — it lies outside the vault.
+    """
     pages_dir = Path(record.file_path).parent
     vault_root = pages_dir.parent if pages_dir.name == "pages" else pages_dir
-    return vault_root / resource.lstrip("/")
+    resolved = (vault_root / resource.lstrip("/")).resolve()
+    if not resolved.is_relative_to(pages_dir.resolve()):
+        return None
+    return resolved
 
 
 def synthesis_stale_sources(record: EntryRecord) -> list[str]:
-    """Return the cited sources of *record* that are stale (S2, okf-cli).
+    """Return the cited sources of *record* that are stale.
 
     A cited source is stale when its page no longer exists, when its current
     post-frontmatter body hash differs from the ``basis`` recorded in the
     synthesis page's ``sources_basis`` frontmatter (the single source of
-    truth; never the database), or — per the amended S2c rules — when it
-    lacks a matching ``sources_basis`` entry:
+    truth; never the database), when the resource resolves outside the
+    vault's ``pages/`` directory (stale on the resource string alone; the
+    outside file is never read), or when it lacks a matching
+    ``sources_basis`` entry (legacy or hand-edited frontmatter —
+    unverifiable):
 
     - A nonempty ``sources[]`` with an absent or empty ``sources_basis``
       (legacy or hand-edited frontmatter) is stale wholesale: every cited
@@ -288,6 +322,11 @@ def synthesis_stale_sources(record: EntryRecord) -> list[str]:
       is reported stale; an entry *with* a matching basis keeps the usual
       hash-drift / missing-file decision. A synthesis with no sources at
       all is fresh (nothing to verify).
+
+    ``sources_basis`` entries whose resource does not appear in
+    ``sources[]`` are verified too (hash drift and missing file make
+    them stale): the check runs over the whole ``sources_basis`` list,
+    a superset of the citations in ``sources[]``.
 
     Args:
         record: The synthesis entry record to inspect.
@@ -329,9 +368,15 @@ def synthesis_stale_sources(record: EntryRecord) -> list[str]:
 
     def _check(resource: str, basis: str) -> None:
         checked.add(resource)
+        path = _resource_path(record, resource)
+        if path is None:
+            # Escapes pages/ containment: stale on the resource string
+            # alone, without reading the file outside the vault.
+            stale.append(resource)
+            return
         try:
-            text = _resource_path(record, resource).read_text(encoding="utf-8")
-        except OSError:
+            text = path.read_text(encoding="utf-8")
+        except OSError, UnicodeDecodeError:
             stale.append(resource)
             return
         if body_sha16(text) != basis:
@@ -362,6 +407,32 @@ def synthesis_stale_sources(record: EntryRecord) -> list[str]:
             continue
         _check(resource, basis)
     return list(dict.fromkeys(stale))
+
+
+def synthesis_staleness(record: EntryRecord) -> list[str]:
+    """Classify a synthesis's staleness, including its own page's health.
+
+    :func:`synthesis_stale_sources` only verifies the cited sources, so a
+    synthesis whose own page is missing, unreadable, or unparseable would
+    silently classify as fresh there. This is the full classification
+    shared by every staleness surface (the ``synthesize --stale`` report
+    and ``index`` marking): when the synthesis's own page cannot be read
+    and parsed, the synthesis is unverifiable and therefore stale, named
+    by its own page resource (``/pages/<file>.md``); otherwise the
+    cited-source verdict of :func:`synthesis_stale_sources` applies.
+
+    Args:
+        record: The synthesis entry record to inspect.
+
+    Returns:
+        The stale resources to report, in frontmatter order. Empty list
+        means fresh.
+    """
+    if not record.file_path:
+        return []
+    if _page_frontmatter(record) is None:
+        return [f"/pages/{Path(record.file_path).name}"]
+    return synthesis_stale_sources(record)
 
 
 def find_citing_syntheses(index: VaultIndex, entry: EntryRecord) -> list[EntryRecord]:

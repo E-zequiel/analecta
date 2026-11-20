@@ -484,3 +484,58 @@ def test_duplicate_basis_entries_last_wins_without_double_report(
         },
     )
     assert synthesis_stale_sources(record) == []
+
+
+# ---------------------------------------------------------------------------
+# T5 S15: ``..``-escaping resources are stale without reading the file
+# ---------------------------------------------------------------------------
+
+
+def test_resource_escaping_pages_dir_is_stale_without_reading_it(
+    env: tuple[VaultIndex, VaultManager],
+) -> None:
+    """S15: a cited ``resource`` carrying ``..`` segments that escapes the
+    vault's ``pages/`` directory is reported stale, and its file is never
+    read.
+
+    Design of the red: both target files exist and are well-formed pages
+    whose post-frontmatter body hash exactly matches the ``basis`` recorded
+    in ``sources_basis`` — if the implementation read and hashed them, they
+    would verify fresh. Asserting staleness therefore proves containment:
+    the escape is rejected on the resource string alone, with no read of
+    the file outside ``pages/`` (the deeper escape resolves outside the
+    vault root entirely). A mid-crash atomicity test is out of scope here;
+    this pins the containment decision of ``synthesis_stale_sources``.
+    """
+    index, vault = env
+    outside_dir = vault.pages_path.parent / "outside"
+    deep_dir = vault.pages_path.parent.parent / "outside-deep"
+    outside_dir.mkdir(parents=True)
+    deep_dir.mkdir(parents=True)
+    shallow_file = outside_dir / "secret.md"
+    deep_file = deep_dir / "secret.md"
+    shallow_resource = "/pages/../outside/secret.md"
+    deep_resource = "/pages/../../outside-deep/secret.md"
+    for path in (shallow_file, deep_file):
+        path.write_text(
+            "---\ntitle: 'Secret'\n---\n\nCuerpo secreto fuera de pages/.\n",
+            encoding="utf-8",
+        )
+    record = _write_synthesis_page(
+        vault,
+        index,
+        "Síntesis escape",
+        {
+            "type": "synthesis",
+            "generated": {"by": "bot/x", "at": _now()},
+            "sources": [
+                {"resource": shallow_resource},
+                {"resource": deep_resource},
+            ],
+            "sources_basis": [
+                {"resource": shallow_resource, "basis": _basis(shallow_file)},
+                {"resource": deep_resource, "basis": _basis(deep_file)},
+            ],
+        },
+    )
+    assert synthesis_stale_sources(record) == [shallow_resource, deep_resource]

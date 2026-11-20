@@ -54,6 +54,7 @@ import pytest
 import yaml
 
 from analecta.cli import run
+from analecta.session_security import VaultLock
 from analecta.storage.index import EntryRecord, VaultIndex
 from analecta.storage.vault import VaultManager
 
@@ -889,3 +890,313 @@ def test_update_pins_extra_keys_and_created_at_when_type_canonical(
     # created_at is unchanged, frontmatter-side and DB-side.
     assert data["created_at"] == original_created
     assert synth2.created_at == synth.created_at
+
+
+# ---------------------------------------------------------------------------
+# T5 S17: ``--update`` with a held vault lock exits 3 (S9 symmetry)
+# ---------------------------------------------------------------------------
+
+
+def test_update_when_vault_locked_exits_three_and_leaves_vault_unchanged(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S17: ``--update`` with a held vault lock exits 3 — the same distinct
+    lock-failure code as ``--stale`` (S9) — with the lock error on stderr
+    and the vault untouched. Exit 1 stays reserved for bad refs; today the
+    lock failure masquerades as exit 1 (L8 R3-005): red.
+
+    The lock is held by a real ``VaultLock`` acquired inside the test
+    (same process, same pattern as ``test_stale_report_when_vault_locked_exits_three``).
+    """
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura candado", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis candado", "Cuerpo.", [capture.id])
+    _drain(capsys)
+    before = _vault_snapshot(vault_dir)
+    synth = _sole_synthesis(vault_dir)
+    assert synth.id is not None
+
+    holder = VaultLock(vault_dir).acquire()
+    assert holder is not None
+    try:
+        code = run(
+            [
+                "synthesize",
+                "--update",
+                str(synth.id),
+                "--body",
+                "Cuerpo que no debe escribirse.",
+                "--source",
+                str(capture.id),
+                "--by",
+                "bot/y",
+            ],
+            vault_path=vault_dir,
+        )
+        captured = capsys.readouterr()
+    finally:
+        VaultLock(vault_dir).release(holder)
+
+    assert code == 3
+    # The lock error goes to stderr, naming the conflict; no output on stdout.
+    assert "error" in captured.err
+    assert "locked" in captured.err
+    assert captured.out == ""
+    _assert_vault_unchanged(vault_dir, before)
+
+
+# ---------------------------------------------------------------------------
+# T5 S18: ``--source`` resolving to a synthesis is rejected
+# ---------------------------------------------------------------------------
+
+
+def test_update_rejects_synthesis_source_and_leaves_vault_unchanged(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S18: a ``--source`` resolving to another synthesis (not a capture)
+    is rejected explicitly — the error names the ref and says the source
+    must be a capture — with a non-zero exit and an unchanged vault
+    (self-citation closes R3-002). Today the synthesis source is accepted
+    and the update runs (exit 0): red.
+
+    The spec pins ``non-zero`` only (S18); the exact code is left to the
+    implementation (the S6 convention would be 1).
+    """
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura origen", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis fuente", "Cuerpo A.", [capture.id])
+    _synthesize_via_cli(vault_dir, "Síntesis objetivo", "Cuerpo B.", [capture.id])
+    _drain(capsys)
+    before = _vault_snapshot(vault_dir)
+    index = _open_index(vault_dir)
+    try:
+        synths = [r for r in index.list_entries() if r.source_type == "synthesis"]
+    finally:
+        index.close()
+    target = next(r for r in synths if r.title == "Síntesis objetivo")
+    other = next(r for r in synths if r.title == "Síntesis fuente")
+    assert target.id is not None
+    assert other.id is not None
+
+    code = run(
+        [
+            "synthesize",
+            "--update",
+            str(target.id),
+            "--body",
+            "Cuerpo que no debe escribirse.",
+            "--source",
+            str(other.id),
+            "--by",
+            "bot/y",
+        ],
+        vault_path=vault_dir,
+    )
+    captured = capsys.readouterr()
+
+    assert code != 0
+    # The rejected ref is named, and the message says why: a source must
+    # be a capture, not a synthesis.
+    assert str(other.id) in captured.err
+    assert "capture" in captured.err
+    assert captured.out == ""
+    _assert_vault_unchanged(vault_dir, before)
+
+
+# ---------------------------------------------------------------------------
+# T5 S19: atomic rename pin — no temp leftovers, complete published bytes
+# ---------------------------------------------------------------------------
+
+
+def test_update_leaves_no_temp_files_and_page_bytes_are_the_rename_result(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S19 pin: regeneration writes the page through a temp file + atomic
+    ``os.replace``, so after a successful ``--update`` the pages directory
+    holds no leftover temp files (only the synthesis page and the cited
+    capture pages) and the page's on-disk bytes are the complete rewritten
+    content — the canonical frontmatter serialization followed by the new
+    body, i.e. exactly what the rename published.
+
+    Honestly assertable atomicity, stated: a mid-write crash test is out of
+    scope; what is pinned here is the on-disk end state — (a) no temp
+    leftovers of any name in ``pages/``, and (b) the published bytes are a
+    single complete rewrite (canonical frontmatter + new body), not a
+    truncated or interleaved file. The rename→commit crash window is
+    documented in the spec (reconcile re-derives FTS/backlinks). Green pin:
+    today's ``write_text`` also satisfies both halves.
+    """
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura atómica", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis atómica", "Cuerpo viejo.", [capture.id])
+    _drain(capsys)
+    synth = _sole_synthesis(vault_dir)
+    assert synth.id is not None
+    new_body = "Cuerpo nuevo de la síntesis."
+
+    code = run(
+        [
+            "synthesize",
+            "--update",
+            str(synth.id),
+            "--body",
+            new_body,
+            "--source",
+            str(capture.id),
+            "--by",
+            "bot/y",
+        ],
+        vault_path=vault_dir,
+    )
+    out = capsys.readouterr()
+    assert code == 0, out
+
+    page = Path(synth.file_path)
+    # (a) No leftover temp files: pages/ holds exactly the synthesis page
+    # and the capture page, nothing else (any name, any suffix).
+    assert {p.name for p in (vault_dir / "pages").iterdir()} == {
+        page.name,
+        Path(capture.file_path).name,
+    }
+    # (b) The published bytes are the complete canonical rewrite: the
+    # parsed frontmatter re-serialized exactly as the writer emits it,
+    # followed by the new body.
+    data = _frontmatter(page)
+    expected = (
+        f"---\n{yaml.dump(data, allow_unicode=True, sort_keys=False)}---\n"
+        f"\n{new_body}\n"
+    )
+    assert page.read_bytes() == expected.encode("utf-8")
+
+
+# ---------------------------------------------------------------------------
+# T5 S21: pins — unknown --source ref (R3-003), corrupt-frontmatter
+# rebuild branch (R3-004)
+# ---------------------------------------------------------------------------
+
+
+def test_update_unknown_source_ref_exits_one_naming_ref_vault_unchanged(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S21 pin (R3-003): ``--update <valid-ref> --source <unknown-ref>``
+    exits 1 with a ``source not found`` error naming the ref, and the
+    vault is unchanged. No test covered this path before (the T3 advisor
+    flagged it as R3-003); the mechanism already exists at HEAD, so this
+    is a green pin, not a red."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura fantasma", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis fantasma", "Cuerpo.", [capture.id])
+    _drain(capsys)
+    before = _vault_snapshot(vault_dir)
+    synth = _sole_synthesis(vault_dir)
+    assert synth.id is not None
+
+    code = run(
+        [
+            "synthesize",
+            "--update",
+            str(synth.id),
+            "--body",
+            "Cuerpo que no debe escribirse.",
+            "--source",
+            "424242",
+        ],
+        vault_path=vault_dir,
+    )
+    captured = capsys.readouterr()
+
+    assert code == 1
+    # The error names the unresolved source ref and says ``source not found``.
+    assert "source not found" in captured.err
+    assert "424242" in captured.err
+    assert captured.out == ""
+    _assert_vault_unchanged(vault_dir, before)
+
+
+def test_update_rebuilds_canonical_frontmatter_when_yaml_is_corrupt(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S21 pin (R3-004): ``--update`` on a synthesis whose page frontmatter
+    is unparseable YAML still succeeds — the canonical keys are rebuilt
+    from the DB row (``type``/``title``/``url``/``source_type``/
+    ``created_at``/``tags``/``read_state``/``generated``/``sources[]``/
+    ``sources_basis``) — and any extra keys the corrupt page carried are
+    lost BY DESIGN (only parseable frontmatter is preserved, S11). Today's
+    behavior; pinned so the rebuild branch cannot regress."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura corrupta", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis corrupta", "Cuerpo viejo.", [capture.id])
+    _drain(capsys)
+    synth = _sole_synthesis(vault_dir)
+    assert synth.id is not None
+    page = Path(synth.file_path)
+    created_at = synth.created_at
+    # Corrupt the frontmatter beyond parsing (unclosed flow sequence), with
+    # an extra key that cannot survive the rebuild.
+    page.write_text(
+        "---\ncustom_key: x\nbroken: [unclosed\n---\n\nCuerpo viejo de la síntesis.\n",
+        encoding="utf-8",
+    )
+
+    code = run(
+        [
+            "synthesize",
+            "--update",
+            str(synth.id),
+            "--body",
+            "Cuerpo nuevo de la síntesis.",
+            "--source",
+            str(capture.id),
+            "--by",
+            "bot/y",
+        ],
+        vault_path=vault_dir,
+    )
+    out = capsys.readouterr()
+    assert code == 0, out
+
+    # Same row, same path.
+    synth2 = _sole_synthesis(vault_dir)
+    assert synth2.id == synth.id
+    assert synth2.file_path == synth.file_path
+    data = _frontmatter(page)
+    # Canonical keys rebuilt from the DB row / new values.
+    assert data["type"] == "synthesis"
+    assert data["title"] == synth.title
+    assert data["url"] == synth.url
+    assert data["source_type"] == "synthesis"
+    assert data["created_at"] == created_at
+    assert data["tags"] == []
+    assert data["read_state"] == "unread"
+    assert data["sources"] == [
+        {"resource": _resource_of(capture), "title": capture.title}
+    ]
+    assert data["sources_basis"] == [
+        {"resource": _resource_of(capture), "basis": _basis(Path(capture.file_path))}
+    ]
+    assert data["generated"]["by"] == "bot/y"
+    # Extras are lost by design when frontmatter is unparseable.
+    assert "custom_key" not in data
+    assert "broken" not in data
+    # The body is refreshed.
+    assert "Cuerpo nuevo de la síntesis." in page.read_text(encoding="utf-8")
