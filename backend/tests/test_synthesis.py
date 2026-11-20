@@ -283,3 +283,38 @@ def test_deleting_synthesis_leaves_capture_alone(
     assert Path(capture_after.file_path).exists() or capture_after.file_path.startswith(
         "/vault/"
     )
+
+
+def test_cascade_deletes_multi_source_synthesis(
+    env: tuple[VaultIndex, VaultManager],
+) -> None:
+    """S7 regression (okf-cli): D13 cascade survives the T1 change.
+
+    After T1, a synthesis also carries ``sources_basis`` in its frontmatter;
+    deleting one cited capture of a multi-source synthesis must still delete
+    the synthesis (and only it), leaving the other capture intact.
+    """
+    from analecta.storage.synthesis import delete_syntheses_for_entry
+
+    index, vault = env
+    a = _capture(index, n=1)
+    b = _capture(index, n=2)
+    synth_id = create_synthesis_entry(
+        index,
+        vault,
+        title="Síntesis multifuente",
+        body="Cita a [[Capture 1]] y a [[Capture 2]].",
+        source_entries=[a, b],
+        generated_by="bot/x",
+    )
+    synth_record = index.get_entry(synth_id)
+    assert synth_record is not None
+    synth_page = Path(synth_record.file_path)
+    assert synth_page.exists()
+    assert b.id is not None
+
+    delete_syntheses_for_entry(index, a)
+
+    assert index.get_entry(synth_id) is None
+    assert not synth_page.exists()
+    assert index.get_entry(b.id) is not None

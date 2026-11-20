@@ -9,6 +9,7 @@ Owner decisions D2/D9:
 - Deep synthesis is a first-class entry (T3) reachable from the CLI.
 """
 
+import hashlib
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -287,3 +288,125 @@ def test_cli_synthesize_creates_entry(tmp_path: Path) -> None:
         assert synths[0].url.startswith("analecta://synthesis/")
     finally:
         index2.close()
+
+
+# ---------------------------------------------------------------------------
+# T1/S1: ``sources_basis`` recording at synthesis creation (CLI surface)
+# ---------------------------------------------------------------------------
+
+
+def _post_frontmatter_body_bytes(path: Path) -> bytes:
+    """Post-frontmatter body bytes exactly as stored on disk (S1 identity).
+
+    Mirrors the D9 hash convention: everything after the closing ``---``
+    of the frontmatter block, no normalization.
+    """
+    data = path.read_bytes()
+    assert data.startswith(b"---\n")
+    end = data.index(b"\n---\n") + len(b"\n---\n")
+    return data[end:]
+
+
+def _basis(path: Path) -> str:
+    """sha256[:16] UTF-8 hexdigest of the on-disk post-frontmatter body."""
+    return hashlib.sha256(_post_frontmatter_body_bytes(path)).hexdigest()[:16]
+
+
+def test_cli_synthesize_records_sources_basis(tmp_path: Path) -> None:
+    from analecta.cli import run
+
+    vault = VaultManager(tmp_path / "vault")
+    vault.ensure_dirs()
+    index = VaultIndex(tmp_path / "vault" / "analecta.db")
+    try:
+        entry = _page_for(vault, "Basis Source", "Cuerpo citado con acento: ñandú.")
+        entry.id = index.add_entry(entry)
+        assert entry.id is not None
+        eid = entry.id
+    finally:
+        index.close()
+
+    code = run(
+        [
+            "synthesize",
+            "--title",
+            "Síntesis con basis",
+            "--body",
+            "Cuerpo de la síntesis.",
+            "--source",
+            str(eid),
+            "--by",
+            "bot/gpt",
+            "--json",
+        ],
+        vault_path=tmp_path / "vault",
+    )
+    assert code == 0
+
+    index2 = VaultIndex(tmp_path / "vault" / "analecta.db")
+    try:
+        (synth,) = [r for r in index2.list_entries() if r.source_type == "synthesis"]
+    finally:
+        index2.close()
+
+    text = Path(synth.file_path).read_text(encoding="utf-8")
+    data = yaml.safe_load(text.split("---\n", 2)[1])
+    capture_page = Path(entry.file_path)
+    assert data.get("sources_basis") == [
+        {"resource": f"/pages/{capture_page.name}", "basis": _basis(capture_page)}
+    ]
+
+
+def test_cli_synthesize_records_sources_basis_for_each_source(
+    tmp_path: Path,
+) -> None:
+    from analecta.cli import run
+
+    vault = VaultManager(tmp_path / "vault")
+    vault.ensure_dirs()
+    index = VaultIndex(tmp_path / "vault" / "analecta.db")
+    try:
+        a = _page_for(vault, "Basis A", "Cuerpo distinto de A.")
+        a.id = index.add_entry(a)
+        b = _page_for(vault, "Basis B", "Cuerpo distinto de B, con ñ.")
+        b.id = index.add_entry(b)
+        assert a.id is not None
+        assert b.id is not None
+    finally:
+        index.close()
+
+    code = run(
+        [
+            "synthesize",
+            "--title",
+            "Síntesis dos fuentes",
+            "--body",
+            "Cuerpo.",
+            "--source",
+            str(b.id),
+            "--source",
+            str(a.id),
+            "--by",
+            "bot/gpt",
+            "--json",
+        ],
+        vault_path=tmp_path / "vault",
+    )
+    assert code == 0
+
+    index2 = VaultIndex(tmp_path / "vault" / "analecta.db")
+    try:
+        (synth,) = [r for r in index2.list_entries() if r.source_type == "synthesis"]
+    finally:
+        index2.close()
+
+    text = Path(synth.file_path).read_text(encoding="utf-8")
+    data = yaml.safe_load(text.split("---\n", 2)[1])
+    page_a = Path(a.file_path)
+    page_b = Path(b.file_path)
+    # One {resource, basis} per cited capture, in --source order; each basis
+    # is the hash of its own capture's body bytes (pairing is per-resource).
+    assert data.get("sources_basis") == [
+        {"resource": f"/pages/{page_b.name}", "basis": _basis(page_b)},
+        {"resource": f"/pages/{page_a.name}", "basis": _basis(page_a)},
+    ]
