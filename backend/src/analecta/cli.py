@@ -126,13 +126,82 @@ def build_index_output(index: Any, as_json: bool = False) -> str:
     ]
     if as_json:
         return json.dumps(items, ensure_ascii=False, indent=2)
+    stale_paths = _stale_synthesis_paths(records)
     captures = [i for i in items if i["type"] == "reference"]
     synths = [i for i in items if i["type"] == "synthesis"]
     lines: list[str] = ["# Library"]
     lines += [f"- [{i['title']}]({i['path']})" for i in captures]
     lines += ["", "# Synthesis"]
-    lines += [f"- [{i['title']}]({i['path']})" for i in synths]
+    lines += [
+        f"- [{i['title']}]({i['path']})"
+        + (" — STALE" if i["path"] in stale_paths else "")
+        for i in synths
+    ]
     return "\n".join(lines)
+
+
+def _stale_synthesis_paths(records: list[Any]) -> set[str]:
+    """Resources (``/pages/<file>.md``) of stale synthesis records (S4).
+
+    Args:
+        records: Index records (``VaultIndex`` or ``_AttachedIndex`` shape).
+
+    Returns:
+        The page paths whose synthesis is stale per
+        ``synthesis_stale_sources``; fresh or unreadable pages are absent.
+    """
+    from analecta.storage.synthesis import synthesis_stale_sources
+
+    stale: set[str] = set()
+    for r in records:
+        if getattr(r, "source_type", None) != "synthesis" or not r.file_path:
+            continue
+        if synthesis_stale_sources(r):
+            stale.add(_page_path(r.file_path))
+    return stale
+
+
+def _run_stale_report(vault_path: Path) -> int:
+    """Report every synthesis's staleness (S3, okf-cli).
+
+    Args:
+        vault_path: Root directory of the local vault.
+
+    Returns:
+        1 when at least one synthesis is stale, 0 otherwise.
+    """
+    from analecta.session_security import VaultLock
+    from analecta.storage.index import VaultIndex
+    from analecta.storage.synthesis import synthesis_stale_sources
+
+    lock = VaultLock(vault_path)
+    fd = lock.acquire()
+    if fd is None:
+        print("error: vault is locked by another Analecta process", file=sys.stderr)
+        return 1
+    try:
+        index = VaultIndex(vault_path / "analecta.db")
+        try:
+            lines: list[str] = []
+            stale_count = 0
+            fresh_count = 0
+            for rec in index.list_entries():
+                if rec.source_type != "synthesis":
+                    continue
+                stale = synthesis_stale_sources(rec)
+                if stale:
+                    stale_count += 1
+                    lines.append(f"stale: {rec.title} — {', '.join(stale)}")
+                else:
+                    fresh_count += 1
+                    lines.append(f"fresh: {rec.title}")
+            lines.append(f"{stale_count} stale, {fresh_count} fresh")
+            print("\n".join(lines))
+        finally:
+            index.close()
+    finally:
+        lock.release(fd)
+    return 1 if stale_count else 0
 
 
 def build_log_output(index: Any, as_json: bool = False) -> str:
@@ -272,17 +341,23 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
     p_sum.add_argument("--text", required=True, help="summary text (<= 500 chars)")
     p_sum.add_argument("--by", required=True, help="OKF actor id of the bot")
 
-    p_syn = sub.add_parser("synthesize", help="create a first-class synthesis entry")
-    p_syn.add_argument("--title", required=True)
-    p_syn.add_argument("--body", required=True, help="markdown body")
+    p_syn = sub.add_parser(
+        "synthesize", help="create a synthesis entry or report staleness"
+    )
+    p_syn.add_argument(
+        "--stale",
+        action="store_true",
+        help="report stale syntheses instead of creating one",
+    )
+    p_syn.add_argument("--title")
+    p_syn.add_argument("--body", help="markdown body")
     p_syn.add_argument(
         "--source",
         action="append",
-        required=True,
         dest="sources",
         help="source entry id or URL (repeatable)",
     )
-    p_syn.add_argument("--by", required=True, help="OKF actor id of the bot")
+    p_syn.add_argument("--by", help="OKF actor id of the bot")
     p_syn.add_argument("--json", action="store_true", dest="as_json")
 
     args = parser.parse_args(argv)
@@ -372,12 +447,31 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
         return 0
 
     if args.command == "synthesize":
+        vp = vault_path if vault_path is not None else load_config().vault_path
+        if args.stale:
+            return _run_stale_report(vp)
+        missing = [
+            flag
+            for flag, value in (
+                ("--title", args.title),
+                ("--body", args.body),
+                ("--by", args.by),
+            )
+            if value is None
+        ]
+        if not args.sources:
+            missing.append("--source")
+        if missing:
+            print(
+                f"error: {', '.join(missing)} required unless --stale",
+                file=sys.stderr,
+            )
+            return 2
         from analecta.session_security import VaultLock
         from analecta.storage.index import VaultIndex
         from analecta.storage.synthesis import create_synthesis_entry
         from analecta.storage.vault import VaultManager
 
-        vp = vault_path if vault_path is not None else load_config().vault_path
         lock = VaultLock(vp)
         fd = lock.acquire()
         if fd is None:
