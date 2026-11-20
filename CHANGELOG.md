@@ -34,6 +34,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   Human text by default, `--json` for agents. When the app is running the CLI
   talks to it through the authenticated loopback; otherwise it opens the vault
   directly as the single writer (refusing if another process holds the lock).
+- `analecta synthesize --stale` now reports synthesis staleness instead of
+  creating an entry: each stale synthesis is named with the exact source that
+  drifted (body edits, missing source files, or syntheses without a recorded
+  basis), fresh ones are confirmed, and the command exits 1 when anything is
+  stale. `analecta index` marks stale synthesis entries with `— STALE` in its
+  listing.
 
 ### Security
 
