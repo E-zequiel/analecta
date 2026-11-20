@@ -640,23 +640,27 @@ class VaultIndex:
         )
         self._conn.commit()
 
-    @_synchronized
-    def clear_summary(self, entry_id: int) -> None:
-        """Null the mirrored summary columns (frontmatter stays the record).
-
-        Used when the page itself no longer carries a summary (e.g. an
-        in-place synthesis regeneration rewrites the body, S12 okf-cli).
-        The row's ``updated_at`` is bumped to now in the same statement,
-        mirroring :meth:`update_summary` (S13 okf-cli).
-
-        Args:
-            entry_id: Target row id.
-        """
+    def _clear_summary(self, entry_id: int) -> None:
+        """Null the mirrored summary columns (no commit; caller commits)."""
         self._conn.execute(
             "UPDATE entries SET summary = NULL, summary_basis = NULL, updated_at = ?"
             " WHERE id = ?",
             (_now(), entry_id),
         )
+
+    @_synchronized
+    def clear_summary(self, entry_id: int) -> None:
+        """Null the mirrored summary columns (frontmatter stays the record).
+
+        Used when the page itself no longer carries a summary (e.g. an
+        in-place synthesis regeneration rewrites the body). The row's
+        ``updated_at`` is bumped to now in the same statement, mirroring
+        :meth:`update_summary`.
+
+        Args:
+            entry_id: Target row id.
+        """
+        self._clear_summary(entry_id)
         self._conn.commit()
 
     @_synchronized
@@ -761,6 +765,14 @@ class VaultIndex:
         self._conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
         self._conn.commit()
 
+    def _update_fts_content(self, entry_id: int, title: str, content: str) -> None:
+        """Replace the FTS5 row for an entry (no commit; caller commits)."""
+        self._conn.execute("DELETE FROM entries_fts WHERE rowid = ?", (entry_id,))
+        self._conn.execute(
+            "INSERT INTO entries_fts (rowid, title, content) VALUES (?, ?, ?)",
+            (entry_id, title, content),
+        )
+
     @_synchronized
     def update_fts_content(self, entry_id: int, title: str, content: str) -> None:
         """Replace the FTS5 row for an entry with updated title and body.
@@ -772,11 +784,7 @@ class VaultIndex:
             title: Article title.
             content: Plain-text article body for full-text indexing.
         """
-        self._conn.execute("DELETE FROM entries_fts WHERE rowid = ?", (entry_id,))
-        self._conn.execute(
-            "INSERT INTO entries_fts (rowid, title, content) VALUES (?, ?, ?)",
-            (entry_id, title, content),
-        )
+        self._update_fts_content(entry_id, title, content)
         self._conn.commit()
 
     @_synchronized
@@ -1274,6 +1282,11 @@ class VaultIndex:
         Args:
             source_id: ID of the entry whose file to re-parse.
         """
+        self._index_backlinks(source_id)
+        self._conn.commit()
+
+    def _index_backlinks(self, source_id: int) -> None:
+        """Re-index outgoing backlink refs (no commit; caller commits)."""
         from analecta.markdown.backlinks import parse_refs
 
         entry = self.get_entry(source_id)
@@ -1310,6 +1323,32 @@ class VaultIndex:
         self._conn.execute(
             "UPDATE entries SET indexed_mtime = ? WHERE id = ?", (mtime, source_id)
         )
+
+    @_synchronized
+    def clear_summary_and_reindex(
+        self, entry_id: int, title: str, content: str
+    ) -> None:
+        """Clear a summary and refresh FTS + backlinks in one transaction.
+
+        Used by in-place synthesis regeneration: the page has already been
+        rewritten on disk, and the three derived-state mutations — summary
+        clearing (with its ``updated_at`` bump), FTS content replacement,
+        and backlink re-indexing — must become visible together, never as
+        a mix of pre- and post-rewrite state.
+
+        The page rename itself is not part of this transaction: a crash
+        after the rename but before the commit leaves FTS/backlinks
+        derived from the previous page revision, which the next
+        :meth:`reconcile_stale_entries` pass re-derives from the page.
+
+        Args:
+            entry_id: Target row id.
+            title: Entry title for the FTS row.
+            content: New full markdown content for FTS indexing.
+        """
+        self._clear_summary(entry_id)
+        self._update_fts_content(entry_id, title, content)
+        self._index_backlinks(entry_id)
         self._conn.commit()
 
     @_synchronized
@@ -1376,7 +1415,13 @@ class VaultIndex:
             if not force and not is_stale:
                 continue
             entry_id = row["id"]
-            markdown = file_path.read_text(encoding="utf-8")
+            try:
+                markdown = file_path.read_text(encoding="utf-8")
+            except OSError, UnicodeDecodeError:
+                # An unreadable page (missing, unwritable, or invalid
+                # UTF-8) cannot be re-derived; leave the indexed row as
+                # it is instead of crashing the whole reconcile.
+                continue
             entry = self.get_entry(entry_id)
             if entry is None:
                 continue

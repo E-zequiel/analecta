@@ -10,7 +10,7 @@ Connection modes:
 - **standalone**: no live sidecar — open the configured vault directly as
   the single writer under flock; fails fast when another process owns it.
 
-Output: human text by default, ``--json`` for bots (S3/S8).
+Output: human text by default, ``--json`` for bots.
 """
 
 from __future__ import annotations
@@ -103,7 +103,7 @@ def _page_path(record_file_path: str) -> str:
 
 
 def build_index_output(index: Any, as_json: bool = False) -> str:
-    """Build the OKF-style index (spec §8) from the index, on the fly (D6).
+    """Build the OKF-style vault index from the index, on the fly (D6).
 
     Args:
         index: ``VaultIndex`` (standalone mode).
@@ -111,7 +111,10 @@ def build_index_output(index: Any, as_json: bool = False) -> str:
 
     Returns:
         Markdown sections (``# Library`` / ``# Synthesis``) or a JSON array
-        of ``{title, type, read_state, created_at, path}``.
+        of ``{title, type, read_state, created_at, path}`` — synthesis
+        items additionally carry a boolean ``stale`` field (captures do
+        not). Staleness is classified by reading every synthesis page on
+        disk, in both output modes.
     """
     records: list[Any] = index.list_entries()
     items = [
@@ -124,9 +127,17 @@ def build_index_output(index: Any, as_json: bool = False) -> str:
         }
         for r in records
     ]
-    if as_json:
-        return json.dumps(items, ensure_ascii=False, indent=2)
+    # Staleness classification reads the synthesis pages (I/O); computed
+    # up front so the JSON contract and the human marker share one verdict.
     stale_paths = _stale_synthesis_paths(records)
+    if as_json:
+        payload = [
+            {**item, "stale": item["path"] in stale_paths}
+            if item["type"] == "synthesis"
+            else item
+            for item in items
+        ]
+        return json.dumps(payload, ensure_ascii=False, indent=2)
     captures = [i for i in items if i["type"] == "reference"]
     synths = [i for i in items if i["type"] == "synthesis"]
     lines: list[str] = ["# Library"]
@@ -140,29 +151,41 @@ def build_index_output(index: Any, as_json: bool = False) -> str:
     return "\n".join(lines)
 
 
+def _reject_conflicting_flags(flag: str, conflicting: list[str]) -> None:
+    """Print the flag-conflict error shared by ``--stale`` and ``--update``.
+
+    Args:
+        flag: The subcommand flag whose extras are rejected.
+        conflicting: The conflicting flag names, in rejection order.
+    """
+    print(f"error: {flag} does not support {' '.join(conflicting)}", file=sys.stderr)
+
+
 def _stale_synthesis_paths(records: list[Any]) -> set[str]:
-    """Resources (``/pages/<file>.md``) of stale synthesis records (S4).
+    """Resources (``/pages/<file>.md``) of stale synthesis records.
 
     Args:
         records: Index records (``VaultIndex`` or ``_AttachedIndex`` shape).
 
     Returns:
         The page paths whose synthesis is stale per
-        ``synthesis_stale_sources``; fresh or unreadable pages are absent.
+        ``synthesis_staleness`` — drifted citations, or a synthesis whose
+        own page is missing/unreadable/unparseable. Only fresh syntheses
+        are absent.
     """
-    from analecta.storage.synthesis import synthesis_stale_sources
+    from analecta.storage.synthesis import synthesis_staleness
 
     stale: set[str] = set()
     for r in records:
         if getattr(r, "source_type", None) != "synthesis" or not r.file_path:
             continue
-        if synthesis_stale_sources(r):
+        if synthesis_staleness(r):
             stale.add(_page_path(r.file_path))
     return stale
 
 
 def _run_stale_report(vault_path: Path) -> int:
-    """Report every synthesis's staleness (S3, okf-cli).
+    """Report every synthesis's staleness.
 
     Args:
         vault_path: Root directory of the local vault.
@@ -173,7 +196,7 @@ def _run_stale_report(vault_path: Path) -> int:
     """
     from analecta.session_security import VaultLock
     from analecta.storage.index import VaultIndex
-    from analecta.storage.synthesis import synthesis_stale_sources
+    from analecta.storage.synthesis import synthesis_staleness
 
     lock = VaultLock(vault_path)
     fd = lock.acquire()
@@ -189,7 +212,7 @@ def _run_stale_report(vault_path: Path) -> int:
             for rec in index.list_entries():
                 if rec.source_type != "synthesis" or not rec.file_path:
                     continue
-                stale = synthesis_stale_sources(rec)
+                stale = synthesis_staleness(rec)
                 if stale:
                     stale_count += 1
                     lines.append(f"stale: {rec.title} — {', '.join(stale)}")
@@ -208,20 +231,24 @@ def _run_stale_report(vault_path: Path) -> int:
 def _run_synthesis_update(
     vp: Path, *, update_ref: str, body: str, sources: list[str], by: str | None
 ) -> int:
-    """Regenerate an existing synthesis in place (S5, okf-cli).
+    """Regenerate an existing synthesis in place.
 
     Args:
         vp: Root directory of the local vault.
         update_ref: Synthesis entry id or exact URL.
         body: New markdown body.
         sources: Source entry refs (id or exact URL) forming the new
-            citation set, in the requested order.
+            citation set, in the requested order. Each must resolve to a
+            capture entry — a synthesis cannot be cited (its basis would
+            be pinned one step behind the regeneration itself).
         by: OKF actor id recorded in ``generated.by``; ``None`` keeps
             the previous actor.
 
     Returns:
-        0 on success, 1 when the ref is unknown, is not a synthesis, or
-        the vault lock is held. Usage errors are rejected by the caller.
+        0 on success, 1 when the ref is unknown, is not a synthesis, a
+        source ref is unknown, or a source ref resolves to a synthesis;
+        3 when the vault lock is held. Usage errors are rejected by the
+        caller.
     """
     from analecta.session_security import VaultLock
     from analecta.storage.index import VaultIndex
@@ -231,7 +258,7 @@ def _run_synthesis_update(
     fd = lock.acquire()
     if fd is None:
         print("error: vault is locked by another Analecta process", file=sys.stderr)
-        return 1
+        return 3
     try:
         index = VaultIndex(vp / "analecta.db")
         try:
@@ -251,6 +278,12 @@ def _run_synthesis_update(
                 if rec is None:
                     print(f"error: source not found: {ref}", file=sys.stderr)
                     return 1
+                if rec.source_type == "synthesis":
+                    print(
+                        f"error: source must be a capture, not a synthesis: {ref}",
+                        file=sys.stderr,
+                    )
+                    return 1
                 source_records.append(rec)
             update_synthesis_entry(
                 index,
@@ -265,14 +298,19 @@ def _run_synthesis_update(
             index.close()
     finally:
         lock.release(fd)
-    assert updated is not None
+    if updated is None:
+        print(
+            f"error: synthesis row disappeared during update: {update_ref}",
+            file=sys.stderr,
+        )
+        return 1
     print(f"synthesis updated: {updated.title}")
     print(f"file:  {updated.file_path}")
     return 0
 
 
 def build_log_output(index: Any, as_json: bool = False) -> str:
-    """Build the chronological log (spec §9) from the index, on the fly (D6).
+    """Build the chronological vault update log from the index, on the fly (D6).
 
     Args:
         index: ``VaultIndex`` (standalone mode).
@@ -387,8 +425,8 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
 
     Returns:
         0 on success, 1 on failure, 2 on usage errors, 3 when a
-        ``synthesize --stale`` run cannot start because the vault lock is
-        held.
+        ``synthesize --stale`` or ``synthesize --update`` run cannot start
+        because the vault lock is held.
     """
     import argparse
 
@@ -541,28 +579,22 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
             if args.update is not None:
                 conflicting.append("--update")
             if conflicting:
-                print(
-                    f"error: --stale does not support {' '.join(conflicting)}",
-                    file=sys.stderr,
-                )
+                _reject_conflicting_flags("--stale", conflicting)
                 return 2
             return _run_stale_report(vp)
         if args.update is not None:
-            # --update precedes the generic missing-args check (L6): its
-            # usage errors are --update-specific. --title is rejected
-            # because an in-place update never refreshes the title (the
-            # slug — hence the URL and the file path — derives from it);
-            # --json stays report-only, like for --stale.
+            # --update precedes the generic missing-args check: its usage
+            # errors are --update-specific. --title is rejected because an
+            # in-place update never refreshes the title (the slug — hence
+            # the URL and the file path — derives from it); --json stays
+            # report-only, like for --stale.
             update_conflicts: list[str] = []
             if args.title is not None:
                 update_conflicts.append("--title")
             if args.as_json:
                 update_conflicts.append("--json")
             if update_conflicts:
-                print(
-                    f"error: --update does not support {' '.join(update_conflicts)}",
-                    file=sys.stderr,
-                )
+                _reject_conflicting_flags("--update", update_conflicts)
                 return 2
             missing = [
                 flag for flag, value in (("--body", args.body),) if value is None
@@ -595,7 +627,7 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
             missing.append("--source")
         if missing:
             print(
-                f"error: {', '.join(missing)} required unless --stale",
+                f"error: {', '.join(missing)} required unless --stale or --update",
                 file=sys.stderr,
             )
             return 2
