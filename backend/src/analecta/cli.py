@@ -168,7 +168,8 @@ def _run_stale_report(vault_path: Path) -> int:
         vault_path: Root directory of the local vault.
 
     Returns:
-        1 when at least one synthesis is stale, 0 otherwise.
+        1 when at least one synthesis is stale, 0 otherwise; 3 when the
+        vault lock is held (distinct from 1, which means stale exists).
     """
     from analecta.session_security import VaultLock
     from analecta.storage.index import VaultIndex
@@ -178,7 +179,7 @@ def _run_stale_report(vault_path: Path) -> int:
     fd = lock.acquire()
     if fd is None:
         print("error: vault is locked by another Analecta process", file=sys.stderr)
-        return 1
+        return 3
     try:
         index = VaultIndex(vault_path / "analecta.db")
         try:
@@ -319,7 +320,9 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
             vault.
 
     Returns:
-        0 on success, 1 on failure, 2 on usage errors.
+        0 on success, 1 on failure, 2 on usage errors, 3 when a
+        ``synthesize --stale`` run cannot start because the vault lock is
+        held.
     """
     import argparse
 
@@ -449,8 +452,25 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
     if args.command == "synthesize":
         vp = vault_path if vault_path is not None else load_config().vault_path
         if args.stale:
+            # A flag the user passed explicitly conflicts even when its
+            # value is an empty string (falsy); only absence counts as no
+            # conflict, so str flags test `is not None`, not truthiness.
+            conflicting: list[str] = []
             if args.as_json:
-                print("error: --stale does not support --json", file=sys.stderr)
+                conflicting.append("--json")
+            if args.title is not None:
+                conflicting.append("--title")
+            if args.body is not None:
+                conflicting.append("--body")
+            if args.by is not None:
+                conflicting.append("--by")
+            if args.sources:
+                conflicting.append("--source")
+            if conflicting:
+                print(
+                    f"error: --stale does not support {' '.join(conflicting)}",
+                    file=sys.stderr,
+                )
                 return 2
             return _run_stale_report(vp)
         missing = [

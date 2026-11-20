@@ -37,6 +37,7 @@ import yaml
 from pytest_mock import MockerFixture
 
 from analecta.cli import run
+from analecta.session_security import VaultLock
 from analecta.storage.index import EntryRecord, VaultIndex
 from analecta.storage.vault import VaultManager
 
@@ -408,3 +409,152 @@ def test_index_marks_legacy_stale_synthesis(
     assert expected in lines
     synth_section = out.split("# Synthesis", 1)[1]
     assert expected in synth_section.splitlines()
+
+
+# ---------------------------------------------------------------------------
+# T2b S9: ``--stale`` with the vault lock held → distinct exit code 3
+# ---------------------------------------------------------------------------
+
+
+def test_stale_report_when_vault_locked_exits_three(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S9: a held lock is reported on stderr and exits 3, never 1.
+
+    Exit 1 is reserved for ``at least one synthesis is stale``; a lock
+    failure must not masquerade as that result. The lock is held by a
+    real ``VaultLock`` acquired inside the test (same-process second
+    open + ``LOCK_EX|LOCK_NB`` fails, per ``test_vault_lock_second_writer_fails``).
+    """
+    holder = VaultLock(vault_dir).acquire()
+    assert holder is not None
+    try:
+        code = run(["synthesize", "--stale"], vault_path=vault_dir)
+        captured = capsys.readouterr()
+    finally:
+        VaultLock(vault_dir).release(holder)
+
+    assert code == 3
+    # The lock error goes to stderr, naming the conflict.
+    assert "error" in captured.err
+    assert "locked" in captured.err
+    # No staleness report is produced on stdout.
+    assert captured.out == ""
+
+
+# ---------------------------------------------------------------------------
+# T2b S10: ``--stale`` with --json / creation args rejected explicitly
+# ---------------------------------------------------------------------------
+
+
+def _sole_stale_synthesis(vault_dir: Path, capture_title: str) -> EntryRecord:
+    """Create one synthesis via the CLI and drift its source; return the capture."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, capture_title, "Cuerpo original íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis condicional", "Cuerpo.", [capture.id])
+    _edit_body(Path(capture.file_path), "Cuerpo original íntegro.", "Cuerpo editado.")
+    return capture
+
+
+def test_stale_with_json_is_rejected_explicitly(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S10: ``--stale --json`` is an explicit rejection, not a silent ignore.
+
+    Today ``--json`` is silently ignored (the human report is printed and
+    the staleness exit code is returned); it must instead fail with an
+    error naming the conflict, print no report, and create nothing.
+    """
+    _sole_stale_synthesis(vault_dir, "Captura json")
+    # Drain the setup's own output so only the invocation under test is
+    # observed (the setup legitimately prints its creation lines).
+    capsys.readouterr()
+
+    code = run(["synthesize", "--stale", "--json"], vault_path=vault_dir)
+    captured = capsys.readouterr()
+
+    assert code != 0
+    # The error names the conflicting flags...
+    assert "--stale" in captured.err
+    assert "--json" in captured.err
+    # ...goes to stderr, and no report is printed on stdout.
+    assert captured.out == ""
+    # Nothing was created: still exactly the one synthesis.
+    index = _open_index(vault_dir)
+    try:
+        synths = [r for r in index.list_entries() if r.source_type == "synthesis"]
+    finally:
+        index.close()
+    assert len(synths) == 1
+
+
+def test_stale_with_creation_args_is_rejected_explicitly(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S10 companion: ``--stale`` plus creation arguments is rejected too.
+
+    A complete creation argument set alongside ``--stale`` must not be
+    silently ignored (today the report runs and the creation args are
+    dropped on the floor); it must fail naming the conflict, print no
+    report, and create no synthesis.
+    """
+    capture = _sole_stale_synthesis(vault_dir, "Captura creación")
+    source_id = capture.id
+    assert source_id is not None
+    # Drain the setup's own output so only the invocation under test is
+    # observed (the setup legitimately prints its creation lines).
+    capsys.readouterr()
+
+    code = run(
+        [
+            "synthesize",
+            "--stale",
+            "--title",
+            "Síntesis fantasma",
+            "--body",
+            "Cuerpo fantasma.",
+            "--by",
+            "bot/x",
+            "--source",
+            str(source_id),
+        ],
+        vault_path=vault_dir,
+    )
+    captured = capsys.readouterr()
+
+    assert code != 0
+    # The error names the conflicting flags...
+    assert "--stale" in captured.err
+    assert "--title" in captured.err
+    # ...goes to stderr, and no report is printed on stdout.
+    assert captured.out == ""
+    # No creation happened: no second synthesis, no ghost page.
+    index = _open_index(vault_dir)
+    try:
+        synths = [r for r in index.list_entries() if r.source_type == "synthesis"]
+    finally:
+        index.close()
+    assert len(synths) == 1
+    assert "Síntesis fantasma" not in captured.out
+
+
+def test_stale_with_empty_string_creation_values_is_rejected(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S10 edge: empty-string values are still passed creation arguments.
+
+    ``--title ''`` is truthiness-falsy, so the conflict check must not
+    rely on truthiness: the invocation must be rejected with exit 2,
+    never run the report with a success exit.
+    """
+    for flag in ("--title", "--body", "--by"):
+        code = run(["synthesize", "--stale", flag, ""], vault_path=vault_dir)
+        captured = capsys.readouterr()
+        assert code == 2, f"--stale {flag} '' exited {code}: {captured.out!r}"
+        assert "--stale" in captured.err
+        assert flag in captured.err
+        assert captured.out == ""
