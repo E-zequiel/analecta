@@ -641,6 +641,25 @@ class VaultIndex:
         self._conn.commit()
 
     @_synchronized
+    def clear_summary(self, entry_id: int) -> None:
+        """Null the mirrored summary columns (frontmatter stays the record).
+
+        Used when the page itself no longer carries a summary (e.g. an
+        in-place synthesis regeneration rewrites the body, S12 okf-cli).
+        The row's ``updated_at`` is bumped to now in the same statement,
+        mirroring :meth:`update_summary` (S13 okf-cli).
+
+        Args:
+            entry_id: Target row id.
+        """
+        self._conn.execute(
+            "UPDATE entries SET summary = NULL, summary_basis = NULL, updated_at = ?"
+            " WHERE id = ?",
+            (_now(), entry_id),
+        )
+        self._conn.commit()
+
+    @_synchronized
     def update_flags(self, entry_id: int, flags: list[str]) -> None:
         """Replace an entry's flags list.
 

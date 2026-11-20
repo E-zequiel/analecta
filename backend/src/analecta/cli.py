@@ -187,7 +187,7 @@ def _run_stale_report(vault_path: Path) -> int:
             stale_count = 0
             fresh_count = 0
             for rec in index.list_entries():
-                if rec.source_type != "synthesis":
+                if rec.source_type != "synthesis" or not rec.file_path:
                     continue
                 stale = synthesis_stale_sources(rec)
                 if stale:
@@ -203,6 +203,72 @@ def _run_stale_report(vault_path: Path) -> int:
     finally:
         lock.release(fd)
     return 1 if stale_count else 0
+
+
+def _run_synthesis_update(
+    vp: Path, *, update_ref: str, body: str, sources: list[str], by: str | None
+) -> int:
+    """Regenerate an existing synthesis in place (S5, okf-cli).
+
+    Args:
+        vp: Root directory of the local vault.
+        update_ref: Synthesis entry id or exact URL.
+        body: New markdown body.
+        sources: Source entry refs (id or exact URL) forming the new
+            citation set, in the requested order.
+        by: OKF actor id recorded in ``generated.by``; ``None`` keeps
+            the previous actor.
+
+    Returns:
+        0 on success, 1 when the ref is unknown, is not a synthesis, or
+        the vault lock is held. Usage errors are rejected by the caller.
+    """
+    from analecta.session_security import VaultLock
+    from analecta.storage.index import VaultIndex
+    from analecta.storage.synthesis import update_synthesis_entry
+
+    lock = VaultLock(vp)
+    fd = lock.acquire()
+    if fd is None:
+        print("error: vault is locked by another Analecta process", file=sys.stderr)
+        return 1
+    try:
+        index = VaultIndex(vp / "analecta.db")
+        try:
+            record = _resolve_entry(index, update_ref)
+            if record is None:
+                print(f"error: entry not found: {update_ref}", file=sys.stderr)
+                return 1
+            if record.source_type != "synthesis":
+                print(
+                    f"error: not a synthesis: {update_ref} ({record.title})",
+                    file=sys.stderr,
+                )
+                return 1
+            source_records = []
+            for ref in sources:
+                rec = _resolve_entry(index, ref)
+                if rec is None:
+                    print(f"error: source not found: {ref}", file=sys.stderr)
+                    return 1
+                source_records.append(rec)
+            update_synthesis_entry(
+                index,
+                record,
+                body=body,
+                source_entries=source_records,
+                generated_by=by,
+            )
+            updated = index.get_entry(record.id)
+            write_vault_manifest(vp)
+        finally:
+            index.close()
+    finally:
+        lock.release(fd)
+    assert updated is not None
+    print(f"synthesis updated: {updated.title}")
+    print(f"file:  {updated.file_path}")
+    return 0
 
 
 def build_log_output(index: Any, as_json: bool = False) -> str:
@@ -345,12 +411,18 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
     p_sum.add_argument("--by", required=True, help="OKF actor id of the bot")
 
     p_syn = sub.add_parser(
-        "synthesize", help="create a synthesis entry or report staleness"
+        "synthesize",
+        help="create a synthesis entry, update one in place, or report staleness",
     )
     p_syn.add_argument(
         "--stale",
         action="store_true",
-        help="report stale syntheses instead of creating one",
+        help="report stale syntheses instead of creating or updating one",
+    )
+    p_syn.add_argument(
+        "--update",
+        metavar="REF",
+        help="update the synthesis with this id or exact URL in place",
     )
     p_syn.add_argument("--title")
     p_syn.add_argument("--body", help="markdown body")
@@ -466,6 +538,8 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
                 conflicting.append("--by")
             if args.sources:
                 conflicting.append("--source")
+            if args.update is not None:
+                conflicting.append("--update")
             if conflicting:
                 print(
                     f"error: --stale does not support {' '.join(conflicting)}",
@@ -473,6 +547,41 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
                 )
                 return 2
             return _run_stale_report(vp)
+        if args.update is not None:
+            # --update precedes the generic missing-args check (L6): its
+            # usage errors are --update-specific. --title is rejected
+            # because an in-place update never refreshes the title (the
+            # slug — hence the URL and the file path — derives from it);
+            # --json stays report-only, like for --stale.
+            update_conflicts: list[str] = []
+            if args.title is not None:
+                update_conflicts.append("--title")
+            if args.as_json:
+                update_conflicts.append("--json")
+            if update_conflicts:
+                print(
+                    f"error: --update does not support {' '.join(update_conflicts)}",
+                    file=sys.stderr,
+                )
+                return 2
+            missing = [
+                flag for flag, value in (("--body", args.body),) if value is None
+            ]
+            if not args.sources:
+                missing.append("--source")
+            if missing:
+                print(
+                    f"error: --update requires {', '.join(missing)}",
+                    file=sys.stderr,
+                )
+                return 2
+            return _run_synthesis_update(
+                vp,
+                update_ref=args.update,
+                body=args.body,
+                sources=args.sources,
+                by=args.by,
+            )
         missing = [
             flag
             for flag, value in (

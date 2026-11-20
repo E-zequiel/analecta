@@ -67,17 +67,7 @@ def create_synthesis_entry(
     slug = re.sub(r"^\d{4}-\d{2}-\d{2}-", "", page_path.stem)
     url = f"analecta://synthesis/{slug}"
 
-    sources = [
-        {"resource": f"/pages/{Path(e.file_path).name}", "title": e.title}
-        for e in source_entries
-    ]
-    sources_basis = [
-        {
-            "resource": f"/pages/{Path(e.file_path).name}",
-            "basis": _capture_basis(e),
-        }
-        for e in source_entries
-    ]
+    sources, sources_basis = _sources_frontmatter(source_entries)
     data: dict[str, object] = {
         "type": "synthesis",
         "title": title,
@@ -108,6 +98,116 @@ def create_synthesis_entry(
     return eid
 
 
+def update_synthesis_entry(
+    index: VaultIndex,
+    record: EntryRecord,
+    *,
+    body: str,
+    source_entries: list[EntryRecord],
+    generated_by: str | None = None,
+) -> None:
+    """Regenerate an existing synthesis in place (S5, okf-cli).
+
+    Keeps the page path, URL slug, database row id, and title; refreshes
+    the body, ``sources[]`` and ``sources_basis[]`` (rewritten together,
+    in *source_entries* order, each basis being the cited capture's
+    current body hash, D9 convention), and ``generated`` metadata:
+    ``generated.at`` is bumped to now and ``generated.by`` is replaced
+    only when *generated_by* is given. FTS content and backlink refs are
+    re-derived from the rewritten page. The recorded summary is fully
+    cleared — frontmatter keys and mirrored DB columns — so a new body
+    never lingers with a stale summary, and the DB row's ``updated_at``
+    is bumped to now (S12/S13, okf-cli).
+
+    When the page's frontmatter parses as a dict it is preserved as the
+    base of the rewrite, even if its ``type`` was hand-edited away from
+    ``synthesis`` — the DB row already proved the entry is a synthesis
+    (S11); only unparseable frontmatter rebuilds from DB defaults.
+    Canonical keys (``title``/``url``/``source_type``/``created_at``/
+    ``tags``/``read_state``/``generated``/``sources[]``/``sources_basis``)
+    are normalized from the DB row and new values (a hand-edited
+    non-``synthesis`` ``type`` survives via ``setdefault`` — S11), so any
+    extra keys the page carried (e.g. ``status``, custom keys) survive
+    the rewrite.
+
+    Args:
+        index: Vault index singleton (single writer).
+        record: The synthesis row to regenerate; its ``file_path`` is
+            rewritten at the same path.
+        body: New markdown body of the synthesis.
+        source_entries: New citation set, in the requested order.
+        generated_by: OKF actor id to record in ``generated.by``;
+            ``None`` keeps the existing actor.
+    """
+    now = _now()
+    page_path = Path(record.file_path)
+    # S11: any parseable frontmatter dict is preserved as the rewrite
+    # base, even with a hand-edited ``type`` — the DB row already proved
+    # the entry is a synthesis. Only unparseable frontmatter rebuilds
+    # from DB defaults.
+    existing = _page_frontmatter(record)
+    data: dict[str, object] = dict(existing) if existing is not None else {}
+    data.setdefault("type", "synthesis")
+    data["title"] = record.title
+    data["url"] = record.url
+    data["source_type"] = "synthesis"
+    if not isinstance(data.get("created_at"), str):
+        data["created_at"] = record.created_at
+    data.setdefault("tags", [])
+    data.setdefault("read_state", record.read_state)
+    generated = data.get("generated")
+    if not isinstance(generated, dict):
+        generated = {}
+        data["generated"] = generated
+    generated["at"] = now
+    if generated_by is not None:
+        generated["by"] = generated_by
+    elif "by" not in generated:
+        generated["by"] = ""
+    data["sources"], data["sources_basis"] = _sources_frontmatter(source_entries)
+    # S12: the recorded summary never survives a body rewrite — drop the
+    # frontmatter keys and null the mirrored DB columns.
+    data.pop("summary", None)
+    data.pop("summary_basis", None)
+    frontmatter = f"---\n{yaml.dump(data, allow_unicode=True, sort_keys=False)}---\n"
+    markdown = f"{frontmatter}\n{body}\n"
+    page_path.write_text(markdown, encoding="utf-8")
+    assert record.id is not None
+    # S13: the DB row's ``updated_at`` is bumped alongside the clearing.
+    index.clear_summary(record.id)
+    index.update_fts_content(record.id, record.title, markdown)
+    index.index_backlinks(record.id)
+
+
+def _sources_frontmatter(
+    source_entries: list[EntryRecord],
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Build the ``sources[]`` / ``sources_basis[]`` frontmatter lists.
+
+    Each cited capture contributes one ``sources[]`` entry (its
+    vault-relative page resource and title) and one index-aligned
+    ``sources_basis[]`` entry whose ``basis`` is the capture's current
+    post-frontmatter body hash (D9 convention) at synthesis/update time.
+    The two lists share *source_entries* order and are always rewritten
+    together (T1 advisor note).
+
+    Args:
+        source_entries: Cited capture entries, in citation order.
+
+    Returns:
+        The ``(sources, sources_basis)`` frontmatter lists.
+    """
+    sources = [
+        {"resource": f"/pages/{Path(e.file_path).name}", "title": e.title}
+        for e in source_entries
+    ]
+    sources_basis = [
+        {"resource": f"/pages/{Path(e.file_path).name}", "basis": _capture_basis(e)}
+        for e in source_entries
+    ]
+    return sources, sources_basis
+
+
 def _capture_basis(entry: EntryRecord) -> str:
     """Body hash (D9 convention) of a cited capture page as stored on disk."""
     try:
@@ -117,8 +217,15 @@ def _capture_basis(entry: EntryRecord) -> str:
     return body_sha16(text)
 
 
-def _synthesis_frontmatter(record: EntryRecord) -> dict[str, object] | None:
-    """Parse the frontmatter of a synthesis page, ``None`` if not one."""
+def _page_frontmatter(record: EntryRecord) -> dict[str, object] | None:
+    """Parse a page's frontmatter dict, ``None`` if unparseable or not a dict.
+
+    Deliberately does not inspect ``type``: callers decide whether the
+    page qualifies (e.g. :func:`_synthesis_frontmatter` keeps returning
+    ``None`` for non-synthesis pages), while the update path takes the
+    raw dict so a hand-edited ``type`` never discards the page's extra
+    keys (S11, okf-cli).
+    """
     try:
         text = Path(record.file_path).read_text(encoding="utf-8")
     except OSError:
@@ -130,7 +237,15 @@ def _synthesis_frontmatter(record: EntryRecord) -> dict[str, object] | None:
         data: object = yaml.safe_load(m.group(2))
     except yaml.YAMLError:
         return None
-    if not isinstance(data, dict) or data.get("type") != "synthesis":
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def _synthesis_frontmatter(record: EntryRecord) -> dict[str, object] | None:
+    """Parse the frontmatter of a synthesis page, ``None`` if not one."""
+    data = _page_frontmatter(record)
+    if data is None or data.get("type") != "synthesis":
         return None
     return data
 
