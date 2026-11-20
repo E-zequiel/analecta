@@ -11,13 +11,16 @@
   "devDependencies": {
     "@types/node": "26.6.6",
     "defuddle": "0.19.6",
-    "eslint": "10.14.0",
+    "eslint": "10.15.0",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-svelte": "3.24.1",
     "prettier": "3.8.3",
     "prettier-plugin-svelte": "4.1.1",
-    "socket": "1.14.1",
-    "typescript-eslint": "8.72.1"
+    "socket": "1.15.0",
+    "typescript-eslint": "8.73.0"
   },
-  "packageManager": "pnpm@12.20.0+sha512-bMx0mXzO9OZ5mXiOGNv7+lg+KoSWaGaNtHB7aoMGZi9HFW5lAjKphb0+wkz5NkwaoVTTflHteqxiwc0eOvyAww=="
+  "packageManager": "pnpm@12.20.0+sha512-bMx0mXzO9OZ5mXiOGNv7+lg+KoSWaGaNtHB7aoMGZi9HFW5lAjKphb0+wkz5NkwaoVTTflHteqxiwc0eOvyAww==",
+  "dependencies": {
+    "pnpm": "12.21.0"
+  }
 }
