@@ -24,6 +24,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the summary no longer matches the content. Summaries are capped at 500 characters.
 - Bots can create synthesis entries — CLI `analecta synthesize` or `POST
   /api/v1/synthesis` — first-class entries citing the captured sources they synthesize.
+  Synthesis frontmatter now also records `sources_basis`, a per-source body hash that
+  lets any consumer detect when a synthesis no longer matches the captures it cites
+  (missing source files and syntheses without a recorded basis count as stale).
 - The SYNTHESIS sidebar section now shows an entry counter, like the other sections.
 - The sidecar binary doubles as a CLI for bots and terminal use: `analecta
   extract <url>` captures a URL, `analecta index` prints an OKF-style index, and

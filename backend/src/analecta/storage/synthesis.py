@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from analecta.markdown.frontmatter import FM_BLOCK
+from analecta.markdown.frontmatter import FM_BLOCK, body_sha16
 from analecta.storage.index import EntryRecord
 from analecta.storage.vault import VaultManager
 
@@ -71,6 +71,13 @@ def create_synthesis_entry(
         {"resource": f"/pages/{Path(e.file_path).name}", "title": e.title}
         for e in source_entries
     ]
+    sources_basis = [
+        {
+            "resource": f"/pages/{Path(e.file_path).name}",
+            "basis": _capture_basis(e),
+        }
+        for e in source_entries
+    ]
     data: dict[str, object] = {
         "type": "synthesis",
         "title": title,
@@ -81,6 +88,7 @@ def create_synthesis_entry(
         "read_state": "unread",
         "generated": {"by": generated_by, "at": created},
         "sources": sources,
+        "sources_basis": sources_basis,
     }
     frontmatter = f"---\n{yaml.dump(data, allow_unicode=True, sort_keys=False)}---\n"
     markdown = f"{frontmatter}\n{body}\n"
@@ -100,20 +108,37 @@ def create_synthesis_entry(
     return eid
 
 
-def _synthesis_source_resources(synth: EntryRecord) -> list[str]:
-    """Return the ``sources[].resource`` list of a synthesis page."""
+def _capture_basis(entry: EntryRecord) -> str:
+    """Body hash (D9 convention) of a cited capture page as stored on disk."""
     try:
-        text = Path(synth.file_path).read_text(encoding="utf-8")
+        text = Path(entry.file_path).read_text(encoding="utf-8")
     except OSError:
-        return []
+        return ""
+    return body_sha16(text)
+
+
+def _synthesis_frontmatter(record: EntryRecord) -> dict[str, object] | None:
+    """Parse the frontmatter of a synthesis page, ``None`` if not one."""
+    try:
+        text = Path(record.file_path).read_text(encoding="utf-8")
+    except OSError:
+        return None
     m = FM_BLOCK.match(text)
     if not m:
-        return []
+        return None
     try:
         data: object = yaml.safe_load(m.group(2))
     except yaml.YAMLError:
-        return []
+        return None
     if not isinstance(data, dict) or data.get("type") != "synthesis":
+        return None
+    return data
+
+
+def _synthesis_source_resources(synth: EntryRecord) -> list[str]:
+    """Return the ``sources[].resource`` list of a synthesis page."""
+    data = _synthesis_frontmatter(synth)
+    if data is None:
         return []
     sources = data.get("sources", [])
     if not isinstance(sources, list):
@@ -123,6 +148,105 @@ def _synthesis_source_resources(synth: EntryRecord) -> list[str]:
         for s in sources
         if isinstance(s, dict) and isinstance(s.get("resource"), str)
     ]
+
+
+def _resource_path(record: EntryRecord, resource: str) -> Path:
+    """Resolve a vault-relative ``/pages/<file>.md`` resource to a path."""
+    pages_dir = Path(record.file_path).parent
+    vault_root = pages_dir.parent if pages_dir.name == "pages" else pages_dir
+    return vault_root / resource.lstrip("/")
+
+
+def synthesis_stale_sources(record: EntryRecord) -> list[str]:
+    """Return the cited sources of *record* that are stale (S2, okf-cli).
+
+    A cited source is stale when its page no longer exists, when its current
+    post-frontmatter body hash differs from the ``basis`` recorded in the
+    synthesis page's ``sources_basis`` frontmatter (the single source of
+    truth; never the database), or — per the amended S2c rules — when it
+    lacks a matching ``sources_basis`` entry:
+
+    - A nonempty ``sources[]`` with an absent or empty ``sources_basis``
+      (legacy or hand-edited frontmatter) is stale wholesale: every cited
+      resource is returned, since none is verifiable.
+    - A ``sources[]`` entry without a matching ``sources_basis`` resource
+      is reported stale; an entry *with* a matching basis keeps the usual
+      hash-drift / missing-file decision. A synthesis with no sources at
+      all is fresh (nothing to verify).
+
+    Args:
+        record: The synthesis entry record to inspect.
+
+    Returns:
+        The ``sources[].resource`` strings that are stale, in frontmatter
+        order, without duplicates. Empty list means fresh. Non-synthesis
+        records or unreadable frontmatter yield an empty list.
+    """
+    data = _synthesis_frontmatter(record)
+    if data is None:
+        return []
+    sources = data.get("sources", [])
+    if not isinstance(sources, list):
+        return []
+    source_resources = [
+        s["resource"]
+        for s in sources
+        if isinstance(s, dict) and isinstance(s.get("resource"), str)
+    ]
+    if not source_resources:
+        return []
+    basis_entries = data.get("sources_basis", [])
+    if not isinstance(basis_entries, list):
+        basis_entries = []
+    basis_map: dict[str, str] = {}
+    for item in basis_entries:
+        if not isinstance(item, dict):
+            continue
+        resource = item.get("resource")
+        basis = item.get("basis")
+        if isinstance(resource, str) and isinstance(basis, str):
+            basis_map[resource] = basis
+    if not basis_map:
+        # Legacy/hand-edited frontmatter: cited but unverifiable wholesale.
+        return list(dict.fromkeys(source_resources))
+    stale: list[str] = []
+    checked: set[str] = set()
+
+    def _check(resource: str, basis: str) -> None:
+        checked.add(resource)
+        try:
+            text = _resource_path(record, resource).read_text(encoding="utf-8")
+        except OSError:
+            stale.append(resource)
+            return
+        if body_sha16(text) != basis:
+            stale.append(resource)
+
+    # Pairing-driven check: every cited source is decided by its matching
+    # basis entry (hash drift / missing file) or reported as uncovered.
+    for resource in source_resources:
+        if resource in checked:
+            continue
+        basis = basis_map.get(resource)
+        if basis is None:
+            checked.add(resource)
+            stale.append(resource)
+        else:
+            _check(resource, basis)
+    # Basis entries outside sources[] keep their original staleness check.
+    for item in basis_entries:
+        if not isinstance(item, dict):
+            continue
+        resource = item.get("resource")
+        basis = item.get("basis")
+        if (
+            not isinstance(resource, str)
+            or not isinstance(basis, str)
+            or resource in checked
+        ):
+            continue
+        _check(resource, basis)
+    return list(dict.fromkeys(stale))
 
 
 def find_citing_syntheses(index: VaultIndex, entry: EntryRecord) -> list[EntryRecord]:
