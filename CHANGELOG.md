@@ -39,7 +39,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   drifted (body edits, missing source files, or syntheses without a recorded
   basis), fresh ones are confirmed, and the command exits 1 when anything is
   stale. `analecta index` marks stale synthesis entries with `— STALE` in its
-  listing.
+  listing. The combination `--stale --json` is rejected with an error instead
+  of silently printing the human report.
 
 ### Security
 

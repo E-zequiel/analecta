@@ -449,6 +449,9 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
     if args.command == "synthesize":
         vp = vault_path if vault_path is not None else load_config().vault_path
         if args.stale:
+            if args.as_json:
+                print("error: --stale does not support --json", file=sys.stderr)
+                return 2
             return _run_stale_report(vp)
         missing = [
             flag
