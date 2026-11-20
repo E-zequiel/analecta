@@ -60,7 +60,32 @@ are computed on the fly by `analecta index` and `analecta log`.
 | `summary_basis` | `sha256[:16]` of the post-frontmatter body bytes
   (UTF-8, as stored). Freshness rule (D9): recompute the hash over the
   current body; if it differs, the `summary` is stale — regenerate, don't
-  trust. |
+  trust. A synthesis regeneration clears `summary`/`summary_basis`
+  entirely: summaries must be re-recorded against the new body. |
+| `generated` | Producer block `{by, at}`: the OKF actor id of the bot
+  that produced the entry (`<producer>/<version>` or `process:<id>`) and
+  the production timestamp. `by: ""` is the documented unknown-actor
+  sentinel (actor not recorded at production time). |
+| `sources_basis` | Synthesis entries only: one `{resource, basis}` per
+  cited capture, `basis` = `sha256[:16]` of that capture's
+  post-frontmatter body at synthesis time. A synthesis is stale when a
+  cited source's current body hash differs, its file is missing, or a
+  cited `sources[]` entry has no matching `sources_basis` record
+  (unverifiable). `analecta synthesize --stale` reports stale
+  syntheses; `analecta index` marks them. |
+
+## Synthesis update convention
+
+- `analecta synthesize --update <ref>` regenerates a synthesis **in
+  place**: the page path, slug, URL, database row id, and title never
+  change (the title derives the slug, so `--title` is rejected as a
+  conflict). The body, `sources[]`, and `sources_basis[]` are rewritten
+  together in `--source` order; `generated.at` is bumped and
+  `generated.by` is replaced only when `--by` is given.
+- Creation and update both carry a valid `generated.by`; when a page's
+  frontmatter lacked the key, update records the `""` sentinel.
+- Regeneration clears `summary`/`summary_basis` (see the table above)
+  and refreshes the entry's `updated_at`.
 
 `description` is the **publisher's** meta description captured from the
 source; `summary` is **bot-generated** analysis. Never confuse or merge

@@ -43,6 +43,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   even with empty-string values) is rejected with an explicit error instead
   of being silently ignored, and a held vault lock exits 3 so it can never
   be confused with the staleness exit code (1).
+- `analecta synthesize --update <ref>` regenerates a synthesis in place:
+  the page path, slug, URL, database row id and title never change, while
+  the body, `sources[]` and `sources_basis` are rewritten together in
+  `--source` order; `generated.at` is bumped and `generated.by` is replaced
+  only when `--by` is given. Regeneration clears any recorded summary
+  (re-record it against the new body) and refreshes the entry's
+  `updated_at`. `--title` and `--json` are rejected alongside `--update`,
+  and `--stale` wins over it.
 
 ### Security
 
