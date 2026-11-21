@@ -23,8 +23,9 @@ With --include-pnpm, the pnpm toolchain itself is bumped as one atomic
 change across the three manifests that pin it (package.json packageManager
 with the sha512 recomputed from the registry's dist.integrity,
 pnpm-workspace.yaml configDependencies, .mise.toml tools.pnpm) and then
-verified with the NEW pnpm (a root `pnpm install`, switched onto the new
-version by the just-bumped configDependencies); a failed verification
+verified with the NEW pnpm (a root `pnpm install` invoked through
+`mise exec`, whose fresh resolution re-reads the just-bumped .mise.toml
+and auto-installs + executes the new pin); a failed verification
 rolls the whole bump back, records the failure in the PR body, and the
 run exits 1. Without the flag the toolchain is never touched.
 """
@@ -1124,9 +1125,11 @@ def _update_pnpm_toolchain(cooldown: int, errors: list[str]) -> _ToolchainBump |
     flag-gated step re-scans for a pnpm update and applies it as ONE atomic
     change across _TOOLCHAIN_MANIFESTS, with the packageManager pin's sha512
     recomputed from the registry's dist.integrity for the new version. It
-    then verifies with the NEW pnpm: a root `pnpm install`, switched onto
-    the new version by the just-bumped configDependencies (no argv version
-    needed — obs #136), run only AFTER all three manifests already carry
+    then verifies with the NEW pnpm: a root `pnpm install` invoked through
+    `mise exec`, whose fresh resolution re-reads the just-bumped .mise.toml
+    and auto-installs + executes the new pin (pnpm does NOT self-switch
+    from configDependencies — real-case probe, feature doc Log L13; mise
+    is the mechanism), run only AFTER all three manifests already carry
     the new pin (L7 ordering-based observable, L8 strict ordering: nothing
     install-typed runs at the repo root pre-bump). A failed verification
     rolls the three manifests — and pnpm-lock.yaml, which the install may
@@ -1135,10 +1138,13 @@ def _update_pnpm_toolchain(cooldown: int, errors: list[str]) -> _ToolchainBump |
     the run (S2: exit 1).
 
     Unlike _apply_node_package, the verification install deliberately does
-    NOT pass --ignore-scripts: its whole point is to surface the mirrored
-    ERR_PNPM_IGNORED_BUILDS class of failure that --ignore-scripts would
-    hide — the same failure the incident's CI hit, which is what this
-    verification exists to catch before a bump is trusted.
+    NOT pass --ignore-scripts: it must run the new toolchain's real install
+    path unfiltered, so nothing that would fail at install time hides
+    behind a filtered run. (The incident's ERR_PNPM_IGNORED_BUILDS arose
+    from pnpm as a regular devDependency lifecycle script; via
+    configDependencies that class cannot fire — what this verification
+    exists to catch is the new pnpm failing end-to-end before a bump is
+    trusted.)
 
     Args:
         cooldown: minimum release age in days, same gate as every other
@@ -1227,7 +1233,10 @@ def _update_pnpm_toolchain(cooldown: int, errors: list[str]) -> _ToolchainBump |
         )
         return None
 
-    verify = _run(["pnpm", "install", "--no-frozen-lockfile"], cwd=REPO_ROOT)
+    verify = _run(
+        ["mise", "exec", "--", "pnpm", "install", "--no-frozen-lockfile"],
+        cwd=REPO_ROOT,
+    )
     if verify.returncode == 0:
         print(f"    [ok] verified with the new pnpm {latest}")
         return _ToolchainBump(current, latest, True, "")

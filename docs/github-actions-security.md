@@ -429,11 +429,11 @@ run at all in this job, for any package, which is what a job whose output feeds 
 privileged pusher should do — and costs nothing, since nothing `check.sh` exercises
 (type-checking, lint, Vite build) launches Electron or needs its downloaded binary.
 
-One path deliberately breaks script-free: the maintainer-only `--include-pnpm`
-toolchain bump's verification install omits `--ignore-scripts` — it must be able
-to fail with the mirrored `ERR_PNPM_IGNORED_BUILDS` class (an unapproved pnpm
-`install.js`), which is the property that verifies the three-manifest toolchain bump
-(`docs/dependency-verification.md`). The flag never runs in the scheduled `deps-update.yml`
+One path deliberately breaks script-free: the maintainer-only `--include-pnpm` toolchain
+bump's verification install omits `--ignore-scripts` — it must run the new toolchain's
+real install path unfiltered, so nothing that would fail at install time hides behind a
+filtered run (the verification executes the new pnpm via a fresh `mise exec` resolution; see
+`docs/dependency-verification.md`). The flag never runs in the scheduled `deps-update.yml`
 job, so the upload-artifact/privileged-pusher rationale above is unaffected; the socket-audit
 ordering discipline below applies to a local flagged run like it does to a manual `pnpm add`.
 
