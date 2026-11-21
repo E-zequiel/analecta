@@ -1030,8 +1030,11 @@ def _bump_package_manager(path: Path, new_pin: str) -> bool:
         True if exactly one packageManager field was rewritten.
     """
     text = path.read_text()
+    pattern = r'("packageManager":\s*")pnpm@[^"]*(")'
+    if len(re.findall(pattern, text)) != 1:
+        return False
     new_text, n = re.subn(
-        r'("packageManager":\s*")pnpm@[^"]*(")',
+        pattern,
         rf"\g<1>{new_pin}\g<2>",
         text,
         count=1,
@@ -1049,16 +1052,22 @@ def _bump_workspace_config_dependency(path: Path, version: str) -> bool:
     untouched; re-serializing with a YAML dumper would reflow the whole
     file. The match is anchored at the `configDependencies:` block header
     and stays inside its contiguous indented lines, so a `pnpm:` key
-    anywhere else in the file can never be mistaken for the pin.
+    anywhere else in the file can never be mistaken for the pin. The
+    block is required to be a flat scalar map: an intermediate line
+    containing a key colon (a nested map, e.g. `other:` with a nested
+    `pnpm:`) breaks the match — aborting beats guessing which `pnpm:` is
+    the pin.
 
     Returns:
         True if exactly one configDependencies pnpm pin was rewritten.
     """
     text = path.read_text()
     pattern = (
-        r"(?m)(^configDependencies:[^\n]*\n(?:[ \t]+[^\n]*\n)*?"
+        r"(?m)(^configDependencies:[^\n]*\n(?:[ \t]+[^\n:]*\n)*?"
         r"[ \t]+pnpm:[ \t]*)[^\n#]*"
     )
+    if len(re.findall(pattern, text)) != 1:
+        return False
     new_text, n = re.subn(
         pattern,
         rf"\g<1>{version}",
@@ -1074,16 +1083,30 @@ def _bump_workspace_config_dependency(path: Path, version: str) -> bool:
 def _bump_mise_pnpm(path: Path, version: str) -> bool:
     """Rewrite the pnpm pin in .mise.toml's [tools] table.
 
-    The repo's .mise.toml carries exactly one `pnpm =` key; the line-anchored
-    match keeps the column alignment of the surrounding keys untouched.
+    The repo's .mise.toml carries exactly one `pnpm =` key; the match is
+    anchored inside the `[tools]` table (lines up to the next
+    `[`-starting line), so a same-named key in an earlier table (e.g.
+    `[env]`) is never mistaken for the pin, and keeps the column
+    alignment of the surrounding keys untouched. A second `pnpm =`
+    candidate aborts instead of rewriting the first.
 
     Returns:
         True if exactly one pnpm pin was rewritten.
     """
     text = path.read_text()
+    if len(re.findall(r"(?m)^[ \t]*pnpm[ \t]*=", text)) != 1:
+        # A `pnpm =` key anywhere outside the [tools] table (e.g. [env])
+        # breaks the one-key assumption — abort, never guess.
+        return False
+    pattern = (
+        r"(?m)(\[tools\]\n(?:(?!\[)[^\n]*\n)*?)"
+        r'([ \t]*pnpm[ \t]*=[ \t]*")[^"\n]*(")'
+    )
+    if len(re.findall(pattern, text)) != 1:
+        return False
     new_text, n = re.subn(
-        r'(?m)^([ \t]*pnpm[ \t]*=[ \t]*")[^"\n]*(")',
-        rf"\g<1>{version}\g<2>",
+        pattern,
+        rf"\g<1>\g<2>{version}\g<3>",
         text,
         count=1,
     )

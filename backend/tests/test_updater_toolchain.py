@@ -37,6 +37,7 @@ import re
 import subprocess
 import sys
 import tomllib
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -315,6 +316,26 @@ def _pnpm_scan_json(workspace: str) -> str:
     )
 
 
+def _combined_scan_json(workspace: str) -> str:
+    """Build a scan payload with pnpm plus one ordinary eligible update.
+
+    Mirrors the combined-run composition the L11 pin drives: the SAME
+    `pnpm outdated --json` scan that feeds the flag path also reports an
+    ordinary devDependency (typescript-eslint, 8.73.0 -> 8.74.0) so the
+    flagged run exercises both the generic apply path and the toolchain
+    bump.
+    """
+    doc: dict[str, Any] = json.loads(_pnpm_scan_json(workspace))
+    doc[workspace]["typescript-eslint"] = {
+        "current": "8.73.0",
+        "wanted": "8.74.0",
+        "latest": "8.74.0",
+        "dependencyType": "devDependencies",
+        "dependentPackages": [workspace],
+    }
+    return json.dumps(doc)
+
+
 def _make_repo_with_toolchain(tmp_path: Path) -> Path:
     """Extend the incident repo with the other two toolchain manifests.
 
@@ -400,8 +421,20 @@ def _toolchain_fakes(
     tmp_path: Path,
     *,
     verify_ok: bool = True,
+    scan_json: str | None = None,
+    ordinary_registry: dict[str, Any] | None = None,
+    add_leaves_range: bool = False,
 ) -> tuple[Path, list[list[str]], list[tuple[Path, tuple[Any, Any, Any]]]]:
     """Wire the repo with a pnpm-only scan plus fakes for the bump path.
+
+    The three keyword-only knobs default to the pnpm-only composition the
+    existing tests pin; the combined-run test (L11 decision 3) turns them
+    on: *scan_json* replaces the pnpm-only scan payload, *ordinary_registry*
+    is the registry document returned for non-pnpm names (the ordinary
+    candidate's release-date data), and *add_leaves_range* makes the fake
+    `pnpm add` leave a range specifier in package.json — the observed
+    --save-exact behavior — so the ordinary apply path drives its own
+    exact-pin resync install at the repo root through the real code path.
 
     Returns (root, run_calls, install_states): *run_calls* records every
     _run argv; *install_states* records, at the moment each install-typed
@@ -411,7 +444,7 @@ def _toolchain_fakes(
     L8: any pre-bump root install is a failure, not tolerated by default).
     """
     root = _make_repo_with_toolchain(tmp_path)
-    outdated_json = _pnpm_scan_json("analecta")
+    outdated_json = scan_json if scan_json is not None else _pnpm_scan_json("analecta")
     run_calls: list[list[str]] = []
     install_states: list[tuple[Path, tuple[Any, Any, Any]]] = []
 
@@ -419,6 +452,26 @@ def _toolchain_fakes(
         run_calls.append(list(cmd))
         if "outdated" in cmd:
             return subprocess.CompletedProcess(cmd, 1, stdout=outdated_json, stderr="")
+        if cmd[:2] == ["pnpm", "add"]:
+            if add_leaves_range:
+                # Real pnpm's --save-exact does not reliably strip the range
+                # operator when rewriting an existing specifier (observed;
+                # see _ensure_exact_specifier's docstring) — reproduce that
+                # on-disk effect so _ensure_exact_specifier finds a range,
+                # rewrites it to the exact pin, and issues its lockfile
+                # resync install at the repo root.
+                name, version = cmd[2].rsplit("@", 1)
+                pkg_path = root / "package.json"
+                text = pkg_path.read_text()
+                _ = pkg_path.write_text(
+                    re.sub(
+                        rf'("{re.escape(name)}":\s*")[^"]*(")',
+                        rf"\g<1>^{version}\g<2>",
+                        text,
+                        count=1,
+                    )
+                )
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         if _is_install_typed(cmd):
             install_states.append((cwd, _toolchain_pins(root)))
             if verify_ok:
@@ -445,6 +498,8 @@ def _toolchain_fakes(
     ) -> dict[str, Any] | None:
         if name == "pnpm":
             return dict(registry_doc)
+        if ordinary_registry is not None:
+            return dict(ordinary_registry)
         return None
 
     def fake_fetch_json(
@@ -926,3 +981,212 @@ class TestAdvisorRegressionPins:
         assert "**Excluded" not in node_section_b
         assert "_No updates applied._" in node_section_b
         assert add_calls == []
+
+
+# ---------------------------------------------------------------------------
+# T2 addendum (L11) — anchoring regression tests for the three manifest
+# rewriters, and the combined flag+ordinary-update run pin.
+#
+# Anchoring (advisor advisories A2/B1/A3 from L10, owner-ratified in L11):
+# each rewriter must rewrite ONLY the canonical pin; a same-named key it
+# must not touch — an `[env] pnpm = ...` key in .mise.toml (B1), a nested
+# configDependencies -> other -> pnpm map (A2), or a shape it does not
+# recognize (A3 and friends) — must make it return False with the file
+# byte-identical. Tests 1-2 are RED at HEAD: the current regexes misfire
+# onto those keys and would report a verified bump with the canonical pin
+# left stale.
+#
+# Combined run (L11 decision 3): the L8 strict rule binds the TOOLCHAIN
+# STEP — the ordinary apply path's own install-typed cwd-root calls (e.g.
+# _ensure_exact_specifier's lockfile resync install) may legitimately run
+# pre-bump and must not abort the toolchain bump.
+# ---------------------------------------------------------------------------
+
+
+class TestRewriterAnchoring:
+    """Each manifest rewriter anchors on the canonical pin's exact location.
+
+    A same-named key in a sibling/earlier/nested position must never be
+    rewritten: a misfire reports a verified bump while the canonical pin
+    stays stale (advisor B1/A2/A3, L10; owner-ratified RED-pin fix, L11).
+    Byte-identity of the untouched file is asserted alongside the boolean —
+    a rewriter that "rejects" but mutates is still broken.
+    """
+
+    def test_mise_rewriter_rejects_a_second_pnpm_key_outside_tools(
+        self, tmp_path: Path
+    ) -> None:
+        """B1: an `[env] pnpm = "9.0.0"` key BEFORE the [tools] table must be
+        ignored — the rewriter pins [tools] pnpm only. RED at HEAD: the
+        line-anchored regex rewrites the first `pnpm =` line it sees (the
+        [env] key) and reports success with the canonical pin stale.
+        """
+        text = '[env]\npnpm = "9.0.0"\n\n[tools]\npnpm   = "12.20.0"\n'
+        path = tmp_path / ".mise.toml"
+        _ = path.write_text(text)
+
+        assert deps_update._bump_mise_pnpm(path, _NEW_PIN) is False
+        assert path.read_text() == text
+
+    def test_workspace_rewriter_rejects_nested_pnpm_key(self, tmp_path: Path) -> None:
+        """A2: a pnpm key nested under configDependencies -> other is not
+        the toolchain pin. RED at HEAD: the lazy indented-lines group walks
+        down into the nested map and rewrites `other.pnpm` instead of
+        rejecting the shape.
+        """
+        text = "configDependencies:\n  other:\n    pnpm: 1.2.3\n  pnpm: 12.20.0\n"
+        path = tmp_path / "pnpm-workspace.yaml"
+        _ = path.write_text(text)
+
+        assert deps_update._bump_workspace_config_dependency(path, _NEW_PIN) is False
+        assert path.read_text() == text
+
+    def test_earlier_block_pnpm_key_is_ignored(self, tmp_path: Path) -> None:
+        """A same-named key in an earlier block (allowBuilds.pnpm) is not
+        the pin: the flat configDependencies pin is rewritten and the
+        earlier block's `pnpm: true` survives untouched.
+        """
+        text = (
+            f"allowBuilds:\n  pnpm: true\n\nconfigDependencies:\n  pnpm: {_OLD_PIN}\n"
+        )
+        path = tmp_path / "pnpm-workspace.yaml"
+        _ = path.write_text(text)
+
+        assert deps_update._bump_workspace_config_dependency(path, _NEW_PIN) is True
+        after = path.read_text()
+        assert "pnpm: true" in after
+        assert f"pnpm: {_NEW_PIN}" in after
+        assert f"pnpm: {_OLD_PIN}" not in after
+
+    @pytest.mark.parametrize(
+        ("rewriter", "manifest_text", "new_value"),
+        [
+            pytest.param(
+                deps_update._bump_mise_pnpm,
+                "[tools]\npnpm = '12.20.0'\n",
+                _NEW_PIN,
+                id="mise-single-quoted-value",
+            ),
+            pytest.param(
+                deps_update._bump_package_manager,
+                '{\n  "packageManager": "yarn@4.0.0"\n}\n',
+                f"pnpm@{_NEW_PIN}+{_NEW_SHA}",
+                id="non-pnpm-package-manager",
+            ),
+            pytest.param(
+                deps_update._bump_workspace_config_dependency,
+                "configDependencies:\noverrides:\n  pnpm: 12.20.0\n",
+                _NEW_PIN,
+                id="discontiguous-config-dependencies",
+            ),
+        ],
+    )
+    def test_unrecognized_shapes_abort_without_touching_the_file(
+        self,
+        tmp_path: Path,
+        rewriter: Callable[[Path, str], bool],
+        manifest_text: str,
+        new_value: str,
+    ) -> None:
+        """A shape the rewriter does not recognize (A3: a hand-quoted YAML
+        value; a non-pnpm packageManager; a configDependencies block that
+        does not directly contain the pin) aborts with False and leaves the
+        file byte-identical — no rewrite is better than a wrong rewrite.
+        """
+        path = tmp_path / "manifest"
+        _ = path.write_text(manifest_text)
+
+        assert rewriter(path, new_value) is False
+        assert path.read_text() == manifest_text
+
+
+class TestCombinedFlagAndOrdinaryRun:
+    """A flagged --include-pnpm run whose scan ALSO carries an ordinary
+    eligible update (L11 decision 3): the L8 strict rule binds the
+    TOOLCHAIN STEP — the ordinary apply path's own install-typed cwd-root
+    calls (the exact-pin resync install) may legitimately run pre-bump and
+    must not abort the toolchain bump.
+    """
+
+    def test_pre_bump_ordinary_install_does_not_abort_the_toolchain_bump(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The ordinary path's pre-bump root install (its exact-pin resync,
+        driven through the real code path: the fake `pnpm add` leaves a
+        range specifier so _ensure_exact_specifier rewrites to the exact
+        pin and issues its `pnpm install` at the repo root) does not abort
+        the toolchain bump: all three manifests end bumped, the toolchain
+        step's verification installs ran post-bump (pins snapshot = new,
+        L7), and the run succeeds.
+        """
+        root, _run_calls, install_states = _toolchain_fakes(
+            monkeypatch,
+            tmp_path,
+            scan_json=_combined_scan_json("analecta"),
+            ordinary_registry={"time": {"8.74.0": _old_release().isoformat()}},
+            add_leaves_range=True,
+        )
+        pr_body_file = tmp_path / "pr-body.md"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "deps_update.py",
+                "--include-pnpm",
+                "--pr-body-file",
+                str(pr_body_file),
+            ],
+        )
+
+        exit_code: int | str | None = None
+        try:
+            deps_update.main()
+        except SystemExit as exc:
+            exit_code = exc.code
+
+        # (i) The composition is really exercised: an install-typed
+        # cwd-root invocation ran while the manifests still carried the old
+        # pin. The toolchain step runs LAST in main, so any pre-bump root
+        # install is by construction the ordinary path's (the exact-pin
+        # resync). If none exists, the fixture failed to trigger the
+        # resync and the assertions below are vacuous.
+        root_installs = [(cwd, pins) for cwd, pins in install_states if cwd == root]
+        pre_bump = [
+            pins for _cwd, pins in root_installs if _NEW_PIN not in str(pins[0])
+        ]
+        assert pre_bump != [], (
+            "no install-typed cwd-root invocation ran with pre-bump pins —"
+            " the ordinary path's exact-pin resync install never fired, so"
+            " this test is not exercising the combined-run composition"
+        )
+
+        # (ii) The run succeeds despite that pre-bump ordinary install.
+        assert exit_code is None
+
+        # (iii) All three manifests end bumped — the pre-bump ordinary
+        # install did not abort the toolchain bump.
+        pkg_manager, config_dep, mise_pnpm = _toolchain_pins(root)
+        assert _NEW_PIN in str(pkg_manager)
+        assert config_dep == _NEW_PIN
+        assert mise_pnpm == _NEW_PIN
+
+        # (iv) The toolchain step's verification installs ran post-bump:
+        # at least one install-typed root invocation saw all three pins
+        # already at the new pin (L7 ordering observable; nothing runs
+        # after the toolchain step, so these are its verification installs).
+        post_bump = [
+            pins
+            for _cwd, pins in root_installs
+            if _NEW_PIN in str(pins[0]) and pins[1] == _NEW_PIN and pins[2] == _NEW_PIN
+        ]
+        assert post_bump != []
+
+        # (v) The ordinary update applied too: the exact-pin rewrite left
+        # typescript-eslint at its exact new pin and the PR body reports it
+        # as an applied row (the S3 boundary still holds — no pnpm row).
+        pkg: dict[str, Any] = json.loads((root / "package.json").read_text())
+        assert pkg["devDependencies"]["typescript-eslint"] == "8.74.0"
+        body = pr_body_file.read_text()
+        node_section = body.split("### Node / pnpm", 1)[1]
+        assert "| `typescript-eslint` | `analecta` |" in node_section
+        assert "| `pnpm` |" not in node_section
