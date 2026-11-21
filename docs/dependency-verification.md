@@ -41,6 +41,15 @@ PR with a clean integrity hash and a passing `check.sh`, yet be functionally unt
 — treat those two lines in the PR body as unverified beyond the pnpm integrity check
 until manually exercised (see step 5 below for what "manually exercised" means).
 
+**The toolchain itself is outside the updater's reach.** The generic update path excludes
+pnpm unconditionally — the scheduled bot never moves it (issue #162). A pnpm bump
+happens only via the maintainer-run `--include-pnpm` flag, which updates all three
+hand-synced toolchain manifests atomically (`packageManager` + sha512 recomputed from the
+registry's `dist.integrity`, `configDependencies` in `pnpm-workspace.yaml`, `tools.pnpm`
+in `.mise.toml`), then verifies with the new pnpm via a root install — the install
+an old pnpm fails with the mirrored `ERR_PNPM_IGNORED_BUILDS`. Verification failure
+rolls every touched file (the three manifests plus `pnpm-lock.yaml`) back and exits 1.
+
 ## Procedure (npm / pnpm)
 
 ### 1. Pre-install — fetch the published hash

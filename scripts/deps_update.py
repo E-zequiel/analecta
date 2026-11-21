@@ -17,6 +17,16 @@ succeeded anywhere in the run.
 
 Usage (from repo root):
     python scripts/deps_update.py [--cooldown DAYS] [--pr-body-file PATH] [--verify]
+                                  [--include-pnpm]
+
+With --include-pnpm, the pnpm toolchain itself is bumped as one atomic
+change across the three manifests that pin it (package.json packageManager
+with the sha512 recomputed from the registry's dist.integrity,
+pnpm-workspace.yaml configDependencies, .mise.toml tools.pnpm) and then
+verified with the NEW pnpm (a root `pnpm install`, switched onto the new
+version by the just-bumped configDependencies); a failed verification
+rolls the whole bump back, records the failure in the PR body, and the
+run exits 1. Without the flag the toolchain is never touched.
 """
 
 from __future__ import annotations
@@ -32,7 +42,7 @@ import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 REPO_ROOT = Path(__file__).parent.parent
 COOLDOWN_DAYS = 4
@@ -65,6 +75,21 @@ _TOOLCHAIN_EXCLUSIONS: list[str] = []
 type Updated = tuple[str, str, str, datetime]  # (name, old, new, release_dt)
 type Skipped = tuple[str, str, datetime]  # (name, new, release_dt)
 type Blocked = tuple[str, str, str]  # (name, new, reason)
+
+
+class _ToolchainBump(NamedTuple):
+    """Outcome of one --include-pnpm toolchain bump attempt.
+
+    *reason* is empty on a verified bump; on a failed one it carries the
+    verification failure detail for the PR body's dedicated toolchain
+    section (the bump itself was rolled back before returning).
+    """
+
+    old: str
+    new: str
+    verified: bool
+    reason: str
+
 
 # ---------------------------------------------------------------------------
 # Shared utilities
@@ -981,6 +1006,221 @@ def _verify_node(
 
 
 # ---------------------------------------------------------------------------
+# pnpm toolchain bump (--include-pnpm)
+# ---------------------------------------------------------------------------
+
+# The three manifests that pin the pnpm toolchain, kept in sync by hand (see
+# the comment above pnpm-workspace.yaml's configDependencies). A toolchain
+# bump updates all three as ONE change — none left stale — and rolls all of
+# them back together if the verification fails, so no partial state is ever
+# left on disk.
+_TOOLCHAIN_MANIFESTS = ("package.json", "pnpm-workspace.yaml", ".mise.toml")
+
+
+def _bump_package_manager(path: Path, new_pin: str) -> bool:
+    """Rewrite package.json's packageManager value to *new_pin*.
+
+    *new_pin* carries the sha512 recomputed from the registry's
+    dist.integrity for the new version (pnpm@<version>+<sha512>) — never a
+    sha copied from the old pin. A targeted in-place rewrite keeps the
+    file's formatting (key order, indentation) untouched; re-serializing
+    with json.dump would reflow the whole file.
+
+    Returns:
+        True if exactly one packageManager field was rewritten.
+    """
+    text = path.read_text()
+    new_text, n = re.subn(
+        r'("packageManager":\s*")pnpm@[^"]*(")',
+        rf"\g<1>{new_pin}\g<2>",
+        text,
+        count=1,
+    )
+    if n != 1:
+        return False
+    _ = path.write_text(new_text)
+    return True
+
+
+def _bump_workspace_config_dependency(path: Path, version: str) -> bool:
+    """Rewrite pnpm's pin under configDependencies in pnpm-workspace.yaml.
+
+    A targeted in-place rewrite keeps the file's comments and quoting
+    untouched; re-serializing with a YAML dumper would reflow the whole
+    file. The match is anchored at the `configDependencies:` block header
+    and stays inside its contiguous indented lines, so a `pnpm:` key
+    anywhere else in the file can never be mistaken for the pin.
+
+    Returns:
+        True if exactly one configDependencies pnpm pin was rewritten.
+    """
+    text = path.read_text()
+    pattern = (
+        r"(?m)(^configDependencies:[^\n]*\n(?:[ \t]+[^\n]*\n)*?"
+        r"[ \t]+pnpm:[ \t]*)[^\n#]*"
+    )
+    new_text, n = re.subn(
+        pattern,
+        rf"\g<1>{version}",
+        text,
+        count=1,
+    )
+    if n != 1:
+        return False
+    _ = path.write_text(new_text)
+    return True
+
+
+def _bump_mise_pnpm(path: Path, version: str) -> bool:
+    """Rewrite the pnpm pin in .mise.toml's [tools] table.
+
+    The repo's .mise.toml carries exactly one `pnpm =` key; the line-anchored
+    match keeps the column alignment of the surrounding keys untouched.
+
+    Returns:
+        True if exactly one pnpm pin was rewritten.
+    """
+    text = path.read_text()
+    new_text, n = re.subn(
+        r'(?m)^([ \t]*pnpm[ \t]*=[ \t]*")[^"\n]*(")',
+        rf"\g<1>{version}\g<2>",
+        text,
+        count=1,
+    )
+    if n != 1:
+        return False
+    _ = path.write_text(new_text)
+    return True
+
+
+def _update_pnpm_toolchain(cooldown: int, errors: list[str]) -> _ToolchainBump | None:
+    """Bump the pnpm toolchain itself behind --include-pnpm (S2).
+
+    The workspace scans in main's loop exclude the package manager outright
+    (S1 — the scheduled path never moves the toolchain); this deliberate,
+    flag-gated step re-scans for a pnpm update and applies it as ONE atomic
+    change across _TOOLCHAIN_MANIFESTS, with the packageManager pin's sha512
+    recomputed from the registry's dist.integrity for the new version. It
+    then verifies with the NEW pnpm: a root `pnpm install`, switched onto
+    the new version by the just-bumped configDependencies (no argv version
+    needed — obs #136), run only AFTER all three manifests already carry
+    the new pin (L7 ordering-based observable, L8 strict ordering: nothing
+    install-typed runs at the repo root pre-bump). A failed verification
+    rolls the three manifests — and pnpm-lock.yaml, which the install may
+    have resynced — back to their pre-bump bytes, records the failure for
+    the PR body, and returns a failed _ToolchainBump so the caller fails
+    the run (S2: exit 1).
+
+    Unlike _apply_node_package, the verification install deliberately does
+    NOT pass --ignore-scripts: its whole point is to surface the mirrored
+    ERR_PNPM_IGNORED_BUILDS class of failure that --ignore-scripts would
+    hide — the same failure the incident's CI hit, which is what this
+    verification exists to catch before a bump is trusted.
+
+    Args:
+        cooldown: minimum release age in days, same gate as every other
+            update in this updater.
+        errors: caller-owned list mutated in place (see update_python).
+
+    Returns:
+        None when there is nothing to bump (no pnpm update in the scan,
+        cooldown skip, or a failure already recorded in *errors*); a
+        _ToolchainBump describing the attempt otherwise.
+    """
+    print("\n=== pnpm toolchain (--include-pnpm) ===")
+
+    result = _run(["pnpm", "outdated", "--json"], cwd=REPO_ROOT)
+    if result.returncode not in {0, 1}:
+        _record_error(
+            errors,
+            f"pnpm toolchain scan failed (exit {result.returncode}):"
+            f" {result.stderr.strip()}",
+        )
+        return None
+    raw = result.stdout.strip()
+    try:
+        outdated = _parse_pnpm_outdated(raw) if raw else {}
+    except json.JSONDecodeError:
+        _record_error(
+            errors,
+            "pnpm toolchain scan: could not parse pnpm outdated output",
+        )
+        return None
+    info = outdated.get("pnpm")
+    if info is None:
+        return None
+    current = cast(str, info.get("current", ""))
+    latest = cast(str, info.get("latest", ""))
+    if not latest or latest == current:
+        return None
+    print(f"  pnpm: {current} -> {latest}")
+
+    data = _npm_registry_data("pnpm")
+    if data is None:
+        _record_error(
+            errors, "pnpm toolchain: npm registry fetch failed — bump skipped"
+        )
+        return None
+    release_dt = _npm_release_date(data, latest)
+    if release_dt is None:
+        print("    [warn] release date unavailable, skipping")
+        return None
+    if not _age_ok(release_dt, cooldown):
+        days_old = (datetime.now(UTC) - release_dt).days
+        print(f"    [skip] {days_old}d old (cooldown: {cooldown}d)")
+        return None
+    versions = cast(dict[str, Any], data.get("versions", {}))
+    version_meta = cast(dict[str, Any], versions.get(latest, {}))
+    dist = cast(dict[str, Any], version_meta.get("dist", {}))
+    integrity = cast(str, dist.get("integrity", ""))
+    if not integrity:
+        _record_error(
+            errors,
+            f"pnpm toolchain: registry reported no dist.integrity for"
+            f" pnpm@{latest} — bump skipped",
+        )
+        return None
+
+    # Snapshot the three manifests plus pnpm-lock.yaml: the verification
+    # install may resync the lockfile's configDependencies section, so a
+    # rollback must undo that too and leave no trace of the failed bump.
+    paths = [
+        *(REPO_ROOT / name for name in _TOOLCHAIN_MANIFESTS),
+        REPO_ROOT / "pnpm-lock.yaml",
+    ]
+    snapshot = {path: path.read_bytes() for path in paths}
+
+    new_pin = f"pnpm@{latest}+{integrity}"
+    if not (
+        _bump_package_manager(REPO_ROOT / "package.json", new_pin)
+        and _bump_workspace_config_dependency(REPO_ROOT / "pnpm-workspace.yaml", latest)
+        and _bump_mise_pnpm(REPO_ROOT / ".mise.toml", latest)
+    ):
+        _restore_snapshot(snapshot)
+        _record_error(
+            errors,
+            "pnpm toolchain: could not rewrite all three manifests — bump"
+            " aborted, nothing left half-applied",
+        )
+        return None
+
+    verify = _run(["pnpm", "install", "--no-frozen-lockfile"], cwd=REPO_ROOT)
+    if verify.returncode == 0:
+        print(f"    [ok] verified with the new pnpm {latest}")
+        return _ToolchainBump(current, latest, True, "")
+
+    # pnpm reports install failures on stderr or stdout depending on class.
+    detail = verify.stderr.strip() or verify.stdout.strip()
+    _restore_snapshot(snapshot)
+    _record_error(
+        errors,
+        f"pnpm toolchain: verification with pnpm {latest} failed — bump"
+        f" rolled back: {detail}",
+    )
+    return _ToolchainBump(current, latest, False, detail)
+
+
+# ---------------------------------------------------------------------------
 # PR body
 # ---------------------------------------------------------------------------
 
@@ -1000,6 +1240,7 @@ def _pr_body(
     nd_blocked_ws: list[str],
     cooldown: int,
     nd_excluded: list[str] | None = None,
+    toolchain: _ToolchainBump | None = None,
 ) -> str:
     nd_excluded = nd_excluded if nd_excluded is not None else []
     today = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -1112,6 +1353,34 @@ def _pr_body(
             " re-run the updater once the underlying incompatibility is resolved"
             " upstream.",
         ]
+    if toolchain is not None:
+        # S5: on the flag path the toolchain bump lives in its own dedicated
+        # top-level section (never a row in the Node table) — the old -> new
+        # transition, the three manifests the atomic bump touched, and the
+        # verification outcome naming the version that verified (or failed
+        # and rolled back). It closes the body, after the run footer, so the
+        # section's text is exactly its own observables.
+        lines.append("### pnpm toolchain")
+        lines.append("")
+        lines.append(f"`pnpm` {toolchain.old} -> {toolchain.new}")
+        lines.append("")
+        lines.append(
+            "Bumped atomically: `package.json` (`packageManager`),"
+            " `pnpm-workspace.yaml` (`configDependencies`), `.mise.toml`"
+            " (`tools.pnpm`)."
+        )
+        lines.append("")
+        if toolchain.verified:
+            lines.append(
+                f"Verified: root `pnpm install` with the new pnpm"
+                f" {toolchain.new} succeeded."
+            )
+        else:
+            lines.append(
+                f"Verification with pnpm {toolchain.new} failed — bump rolled"
+                f" back: {_sanitize_reason(toolchain.reason)}"
+            )
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -1146,10 +1415,23 @@ def main() -> None:
             "exclude only the package(s) that broke it instead of reverting everything"
         ),
     )
+    _ = parser.add_argument(
+        "--include-pnpm",
+        action="store_true",
+        default=False,
+        help=(
+            "also bump the pnpm toolchain itself: packageManager in package.json, "
+            "configDependencies in pnpm-workspace.yaml, and tools.pnpm in .mise.toml "
+            "updated atomically, then verified with the NEW pnpm via a root pnpm "
+            "install; on verification failure the bump is rolled back and the run "
+            "exits 1. Without this flag the toolchain is never touched"
+        ),
+    )
     args = parser.parse_args()
     cooldown: int = cast(int, args.cooldown)
     pr_body_file: Path | None = cast(Path | None, args.pr_body_file)
     verify: bool = cast(bool, args.verify)
+    include_pnpm: bool = cast(bool, args.include_pnpm)
 
     backend = REPO_ROOT / "backend"
     uv_lock_path = backend / "uv.lock"
@@ -1280,6 +1562,36 @@ def main() -> None:
         nd_errors.append(msg)
         nd_error_ws.append(None)
 
+    # The pnpm toolchain bump (--include-pnpm) runs last, after the ordinary
+    # paths above have done their jobs: it is a deliberate, separate process,
+    # never part of a scheduled dependency run (S1).
+    toolchain: _ToolchainBump | None = None
+    tc_errors: list[str] = []
+    if include_pnpm:
+        tc_snap: dict[Path, bytes] = {
+            path: path.read_bytes()
+            for path in (
+                *(REPO_ROOT / name for name in _TOOLCHAIN_MANIFESTS),
+                pnpm_lock_path,
+            )
+        }
+        tc_result = _guard(
+            "update_pnpm_toolchain",
+            tc_errors,
+            tc_snap,
+            lambda: _update_pnpm_toolchain(cooldown, tc_errors),
+        )
+        if tc_result is not None:
+            toolchain = tc_result
+        elif tc_errors:
+            # No bump record (scan, registry, rewrite, or crash failure): the
+            # dedicated toolchain section has nothing to render, so the errors
+            # surface through the Node section's usual Errors line.
+            for msg in tc_errors:
+                nd_verify_errors.append(msg)
+                nd_errors.append(msg)
+                nd_error_ws.append(None)
+
     total_up = len(py_up) + len(nd_up)
     total_sk = len(py_sk) + len(nd_sk)
     total_blocked = len(py_blocked) + len(nd_blocked)
@@ -1303,8 +1615,13 @@ def main() -> None:
             nd_blocked_ws=nd_blocked_ws,
             cooldown=cooldown,
             # The same toolchain entry can be excluded once per workspace —
-            # render it once, in first-seen order.
-            nd_excluded=list(dict.fromkeys(_TOOLCHAIN_EXCLUSIONS)),
+            # render it once, in first-seen order. On the --include-pnpm path
+            # the note is suppressed: the bump is reported in its own toolchain
+            # section, and "never applied by this updater" would contradict it.
+            nd_excluded=(
+                [] if include_pnpm else list(dict.fromkeys(_TOOLCHAIN_EXCLUSIONS))
+            ),
+            toolchain=toolchain,
         )
         _ = _TOOLCHAIN_EXCLUSIONS.clear()
         _ = pr_body_file.write_text(body)
@@ -1312,6 +1629,11 @@ def main() -> None:
 
     had_error = bool(py_errors) or bool(nd_errors_tagged) or bool(nd_verify_errors)
     if had_error and total_up == 0:
+        sys.exit(1)
+    if tc_errors:
+        # S2: a toolchain bump that failed its verification (and was rolled
+        # back) — or whose setup failed before it could verify — fails the
+        # whole run, unconditionally.
         sys.exit(1)
 
 
