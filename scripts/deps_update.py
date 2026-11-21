@@ -43,6 +43,21 @@ _WORKSPACE_DIR = {
     "analecta": ".",
 }
 
+# The package manager itself, reported by `pnpm outdated` among a
+# workspace's ordinary devDependencies (analecta#162: pnpm@12.21.0 landed
+# as a root dependency on a generated PR branch). The generic Node update
+# path must never apply the toolchain it drives — a toolchain bump is a
+# deliberate, separate process, never a scheduled dependency run.
+_TOOLCHAIN_PACKAGES = frozenset({"pnpm"})
+
+# Names excluded from the generic Node apply path during the current run,
+# collected here by update_node and drained by main for the PR body's
+# "excluded" note. Module-level rather than a return-value/out-param change
+# because update_node's 4-argument signature and 2-tuple return are part of
+# its contract with every call site; main clears this list at the start of
+# each run and drains it before rendering the PR body.
+_TOOLCHAIN_EXCLUSIONS: list[str] = []
+
 # ---------------------------------------------------------------------------
 # Types
 # ---------------------------------------------------------------------------
@@ -708,6 +723,13 @@ def update_node(
     kept version-aligned across root/frontend/electron) isn't fetched from
     the npm registry once per workspace for identical data.
 
+    Scan entries for the package manager itself (_TOOLCHAIN_PACKAGES) are
+    excluded from this path entirely — never fetched from the registry,
+    never applied, never reported as updated. Each exclusion is recorded in
+    _TOOLCHAIN_EXCLUSIONS (drained by main for the PR body's "excluded"
+    note), because the signature and 2-tuple return here are fixed contract
+    for every call site.
+
     *errors* is a caller-owned list mutated in place rather than built
     locally and returned — see update_python's docstring for why.
     """
@@ -752,6 +774,11 @@ def update_node(
         current: str = cast(str, info.get("current", ""))
         latest: str = cast(str, info.get("latest", ""))
         if not latest or latest == current:
+            continue
+        if name in _TOOLCHAIN_PACKAGES:
+            print(f"  {name}: {current} -> {latest}")
+            print("    [excluded] package manager toolchain — never applied")
+            _TOOLCHAIN_EXCLUSIONS.append(name)
             continue
         print(f"  {name}: {current} -> {latest}")
 
@@ -972,7 +999,9 @@ def _pr_body(
     nd_ws: list[str],
     nd_blocked_ws: list[str],
     cooldown: int,
+    nd_excluded: list[str] | None = None,
 ) -> str:
+    nd_excluded = nd_excluded if nd_excluded is not None else []
     today = datetime.now(UTC).strftime("%Y-%m-%d")
     lines = [
         "## Dependency update",
@@ -990,6 +1019,7 @@ def _pr_body(
         workspaces: list[str] | None = None,
         error_workspaces: list[str | None] | None = None,
         blocked_workspaces: list[str] | None = None,
+        excluded: list[str] | None = None,
     ) -> None:
         lines.append(f"### {title}")
         if up:
@@ -1031,6 +1061,13 @@ def _pr_body(
                 f"**Blocked — broke `check.sh`, excluded from this update:**"
                 f" {'; '.join(items)}"
             )
+        if excluded:
+            lines.append("")
+            names = ", ".join(f"`{n}`" for n in excluded)
+            lines.append(
+                "**Excluded — package manager toolchain, never applied by"
+                f" this updater:** {names}"
+            )
         if errors:
             lines.append("")
             err_ws_col: list[str | None] = (
@@ -1060,6 +1097,7 @@ def _pr_body(
         workspaces=nd_ws,
         error_workspaces=nd_error_ws,
         blocked_workspaces=nd_blocked_ws,
+        excluded=nd_excluded or None,
     )
 
     lines += [
@@ -1143,6 +1181,9 @@ def main() -> None:
     nd_up_tagged: list[tuple[str, Updated]] = []
     nd_errors_tagged: list[tuple[str, str]] = []
     registry_cache: dict[str, dict[str, Any]] = {}
+    # Exclusions from any previous run in this process must not leak into
+    # this one's PR body.
+    _ = _TOOLCHAIN_EXCLUSIONS.clear()
     for workspace in _WORKSPACE_DIR:
         ws_errors: list[str] = []
         # A fresh snapshot per iteration, not the single global node_snap:
@@ -1261,7 +1302,11 @@ def main() -> None:
             nd_ws=nd_ws,
             nd_blocked_ws=nd_blocked_ws,
             cooldown=cooldown,
+            # The same toolchain entry can be excluded once per workspace —
+            # render it once, in first-seen order.
+            nd_excluded=list(dict.fromkeys(_TOOLCHAIN_EXCLUSIONS)),
         )
+        _ = _TOOLCHAIN_EXCLUSIONS.clear()
         _ = pr_body_file.write_text(body)
         print(f"    PR body written to {pr_body_file}")
 
