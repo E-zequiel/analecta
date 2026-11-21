@@ -429,6 +429,14 @@ run at all in this job, for any package, which is what a job whose output feeds 
 privileged pusher should do — and costs nothing, since nothing `check.sh` exercises
 (type-checking, lint, Vite build) launches Electron or needs its downloaded binary.
 
+One path deliberately breaks script-free: the maintainer-only `--include-pnpm`
+toolchain bump's verification install omits `--ignore-scripts` — it must be able
+to fail with the mirrored `ERR_PNPM_IGNORED_BUILDS` class (an unapproved pnpm
+`install.js`), which is the property that verifies the three-manifest toolchain bump
+(`docs/dependency-verification.md`). The flag never runs in the scheduled `deps-update.yml`
+job, so the upload-artifact/privileged-pusher rationale above is unaffected; the socket-audit
+ordering discipline below applies to a local flagged run like it does to a manual `pnpm add`.
+
 **Local limitation — manual runs only:** a developer running `pnpm add <pkg>@<latest>
 --save-exact` by hand (not via `deps_update.py`) does not get this protection automatically.
 Any package granted a `true` entry in `allowBuilds` may run its lifecycle script before
@@ -794,14 +802,17 @@ This split means that even if a package that cleared the 4-day cooldown contains
 malicious payload, it cannot access or exfiltrate the repository write token. The blast
 radius of a compromise in the `update` job is limited to the runner instance itself.
 
-### Local: advisory workflow (`deps_update.py` is `--ignore-scripts`-only; a manual `pnpm add` is not)
+### Local: advisory workflow (`deps_update.py` is `--ignore-scripts`-only except its `--include-pnpm` verification; a manual `pnpm add` is not)
 
 `scripts/deps_update.py` itself needs no ordering discipline here — every `pnpm
 add`/`install`/`dedupe` call it makes passes `--ignore-scripts` (Control 9's script-free
-note above), so no lifecycle script ever runs on that path. The ordering risk is a developer
-running `pnpm add <pkg>@<latest> --save-exact` by hand, outside the script: that command
-has no `--ignore-scripts` guard, so a package holding a `true` entry in `allowBuilds`
-can run its lifecycle script before `socket-audit.sh` gets a chance to scan the result.
+note above), so no lifecycle script ever runs on that path — with one deliberate
+exception: the `--include-pnpm` verification install (see Control 9), which a
+maintainer runs locally. Sequence a flagged run with `socket-audit.sh` the same way
+as a manual `pnpm add`. The remaining ordering risk is a developer running `pnpm
+add <pkg>@<latest> --save-exact` by hand, outside the script: that command has no
+`--ignore-scripts` guard, so a package holding a `true` entry in `allowBuilds` can
+run its lifecycle script before `socket-audit.sh` gets a chance to scan the result.
 
 The compensating control is sequencing discipline:
 
