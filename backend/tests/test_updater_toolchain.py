@@ -758,6 +758,32 @@ class TestIncludePnpmToolchainBump:
         assert config_dep == _OLD_PIN
         assert mise_pnpm == _OLD_PIN
 
+    def test_verification_runs_through_a_fresh_mise_resolution(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """L14: the verification invokes pnpm via `mise exec` so the fresh
+        resolution re-reads the just-bumped .mise.toml, auto-installs the
+        new pin and executes the NEW pnpm. The direct invocation would run
+        the caller's OLD binary: pnpm does not self-switch from
+        configDependencies (real-case probe, Log L13), so the direct form
+        verifies resolvability only, not the new toolchain.
+        """
+        _root, run_calls, _states = _toolchain_fakes(monkeypatch, tmp_path)
+        monkeypatch.setattr(sys, "argv", ["deps_update.py", "--include-pnpm"])
+
+        try:
+            deps_update.main()
+        except SystemExit:
+            pass
+
+        verify_calls = [cmd for cmd in run_calls if "install" in cmd]
+        assert verify_calls, "the --include-pnpm path never ran an install"
+        for cmd in verify_calls:
+            assert cmd[:3] == ["mise", "exec", "--"], (
+                f"the verification must run via a fresh mise resolution,"
+                f" not directly with the caller's old pnpm binary: {cmd!r}"
+            )
+
 
 class TestFlagPathPrBodyRendersToolchainSection:
     """S5: on the flag path the PR body renders the toolchain bump in its

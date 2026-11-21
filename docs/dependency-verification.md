@@ -46,8 +46,10 @@ pnpm unconditionally — the scheduled bot never moves it (issue #162). A pnpm b
 happens only via the maintainer-run `--include-pnpm` flag, which updates all three
 hand-synced toolchain manifests atomically (`packageManager` + sha512 recomputed from the
 registry's `dist.integrity`, `configDependencies` in `pnpm-workspace.yaml`, `tools.pnpm`
-in `.mise.toml`), then verifies with the new pnpm via a root install — the install
-an old pnpm fails with the mirrored `ERR_PNPM_IGNORED_BUILDS`. Verification failure
+in `.mise.toml`), then verifies with the new pnpm via a root install invoked through
+`mise exec` — the fresh resolution re-reads the just-bumped `.mise.toml`, auto-installs
+the new pin and executes it (pnpm does not self-switch from `configDependencies`,
+so a direct install would still run the caller's old binary). Verification failure
 rolls every touched file (the three manifests plus `pnpm-lock.yaml`) back and exits 1.
 
 ## Procedure (npm / pnpm)
