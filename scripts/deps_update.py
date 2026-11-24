@@ -40,7 +40,7 @@ import sys
 import tomllib
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, NamedTuple, cast
@@ -83,13 +83,17 @@ class _ToolchainBump(NamedTuple):
 
     *reason* is empty on a verified bump; on a failed one it carries the
     verification failure detail for the PR body's dedicated toolchain
-    section (the bump itself was rolled back before returning).
+    section (the bump itself was rolled back before returning); on a
+    skipped one (*skipped*) it carries the skip trace the PR body renders —
+    a pnpm update the scan reported but the step did not apply must not be
+    silent in the durable artifact (S7).
     """
 
     old: str
     new: str
     verified: bool
     reason: str
+    skipped: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +184,25 @@ def _restore_snapshot(snapshot: dict[Path, bytes]) -> None:
     """Write every path in *snapshot* back to its captured bytes."""
     for path, data in snapshot.items():
         _ = path.write_bytes(data)
+
+
+def _capture_snapshot(
+    paths: Iterable[Path], label: str, errors: list[str]
+) -> dict[Path, bytes] | None:
+    """Read *paths*' current bytes as a rollback snapshot.
+
+    A missing or unreadable file at snapshot time (S6) is a recorded error
+    routed through the run's error list — `::error::` on the console, the
+    PR body if one is generated — never an unhandled OSError traceback out
+    of main: returns None instead of raising, and the caller skips whatever
+    the snapshot was taken for (or, for the pre-run snapshot, fails the
+    run with exit 1).
+    """
+    try:
+        return {path: path.read_bytes() for path in paths}
+    except OSError as exc:
+        _record_error(errors, f"{label} — {exc}")
+        return None
 
 
 def _guard[T](
@@ -1017,6 +1040,14 @@ def _verify_node(
 # left on disk.
 _TOOLCHAIN_MANIFESTS = ("package.json", "pnpm-workspace.yaml", ".mise.toml")
 
+# S9 (R1-002): registry-sourced values are validated before use — a
+# malformed shape must fail closed (recorded error, no manifest write),
+# never be interpolated verbatim into the manifests.
+_SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\Z")
+_SRI_SHA512_RE = re.compile(
+    r"^sha512-(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?\Z"
+)
+
 
 def _bump_package_manager(path: Path, new_pin: str) -> bool:
     """Rewrite package.json's packageManager value to *new_pin*.
@@ -1152,9 +1183,11 @@ def _update_pnpm_toolchain(cooldown: int, errors: list[str]) -> _ToolchainBump |
         errors: caller-owned list mutated in place (see update_python).
 
     Returns:
-        None when there is nothing to bump (no pnpm update in the scan,
-        cooldown skip, or a failure already recorded in *errors*); a
-        _ToolchainBump describing the attempt otherwise.
+        None when a failure was already recorded in *errors* (scan, registry
+        fetch, malformed registry shape, rewrite); a skipped _ToolchainBump
+        when the step legitimately did not apply a reported pnpm update (no
+        pnpm update in the scan, no newer version, unavailable release
+        date, cooldown); a _ToolchainBump describing the attempt otherwise.
     """
     print("\n=== pnpm toolchain (--include-pnpm) ===")
 
@@ -1177,10 +1210,35 @@ def _update_pnpm_toolchain(cooldown: int, errors: list[str]) -> _ToolchainBump |
         return None
     info = outdated.get("pnpm")
     if info is None:
-        return None
+        # S7: the flag ran and found nothing to do — say so in the durable
+        # artifact instead of leaving the run's body silent about it.
+        return _ToolchainBump(
+            "",
+            "",
+            verified=False,
+            reason="No pnpm update reported by the scan — toolchain unchanged",
+            skipped=True,
+        )
     current = cast(str, info.get("current", ""))
     latest = cast(str, info.get("latest", ""))
     if not latest or latest == current:
+        return _ToolchainBump(
+            current,
+            latest,
+            verified=False,
+            reason=(
+                f"`pnpm` {current} is already the version the scan reports —"
+                " nothing to bump"
+            ),
+            skipped=True,
+        )
+    if _SEMVER_RE.match(latest) is None:
+        # S9: fail closed before any fetch, write, or verification.
+        _record_error(
+            errors,
+            f"pnpm toolchain: scan reported a version for pnpm that is not"
+            f" semver-shaped ({latest!r}) — bump skipped",
+        )
         return None
     print(f"  pnpm: {current} -> {latest}")
 
@@ -1193,11 +1251,31 @@ def _update_pnpm_toolchain(cooldown: int, errors: list[str]) -> _ToolchainBump |
     release_dt = _npm_release_date(data, latest)
     if release_dt is None:
         print("    [warn] release date unavailable, skipping")
-        return None
+        return _ToolchainBump(
+            current,
+            latest,
+            verified=False,
+            reason=(
+                f"`pnpm` {latest} reported by the scan but not applied — its"
+                " release date is unavailable, so the cooldown could not be"
+                " evaluated"
+            ),
+            skipped=True,
+        )
     if not _age_ok(release_dt, cooldown):
         days_old = (datetime.now(UTC) - release_dt).days
         print(f"    [skip] {days_old}d old (cooldown: {cooldown}d)")
-        return None
+        return _ToolchainBump(
+            current,
+            latest,
+            verified=False,
+            reason=(
+                f"`pnpm` {latest} reported by the scan but not applied —"
+                f" released {days_old}d ago, inside the {cooldown}-day"
+                " cooldown"
+            ),
+            skipped=True,
+        )
     versions = cast(dict[str, Any], data.get("versions", {}))
     version_meta = cast(dict[str, Any], versions.get(latest, {}))
     dist = cast(dict[str, Any], version_meta.get("dist", {}))
@@ -1207,6 +1285,16 @@ def _update_pnpm_toolchain(cooldown: int, errors: list[str]) -> _ToolchainBump |
             errors,
             f"pnpm toolchain: registry reported no dist.integrity for"
             f" pnpm@{latest} — bump skipped",
+        )
+        return None
+    if _SRI_SHA512_RE.match(integrity) is None:
+        # S9: a value that is not a sha512-base64 SRI never reaches the
+        # manifests — fail closed instead of writing it verbatim.
+        _record_error(
+            errors,
+            f"pnpm toolchain: registry reported a malformed dist.integrity"
+            f" for pnpm@{latest} ({integrity!r}) — not a sha512-base64 SRI;"
+            " bump skipped",
         )
         return None
 
@@ -1241,8 +1329,15 @@ def _update_pnpm_toolchain(cooldown: int, errors: list[str]) -> _ToolchainBump |
         print(f"    [ok] verified with the new pnpm {latest}")
         return _ToolchainBump(current, latest, True, "")
 
-    # pnpm reports install failures on stderr or stdout depending on class.
-    detail = verify.stderr.strip() or verify.stdout.strip()
+    # pnpm reports install failures on stderr or stdout depending on class;
+    # a process that failed having written nothing to either (S8) still gets
+    # a non-empty default reason, so neither the recorded error nor the
+    # PR-body failure line dangles on a bare label.
+    detail = (
+        verify.stderr.strip()
+        or verify.stdout.strip()
+        or "the verification process wrote no output"
+    )
     _restore_snapshot(snapshot)
     _record_error(
         errors,
@@ -1394,24 +1489,33 @@ def _pr_body(
         # section's text is exactly its own observables.
         lines.append("### pnpm toolchain")
         lines.append("")
-        lines.append(f"`pnpm` {toolchain.old} -> {toolchain.new}")
-        lines.append("")
-        lines.append(
-            "Bumped atomically: `package.json` (`packageManager`),"
-            " `pnpm-workspace.yaml` (`configDependencies`), `.mise.toml`"
-            " (`tools.pnpm`)."
-        )
-        lines.append("")
-        if toolchain.verified:
-            lines.append(
-                f"Verified: root `pnpm install` with the new pnpm"
-                f" {toolchain.new} succeeded."
-            )
+        if toolchain.skipped:
+            # S7: a legitimate skip (no eligible update, cooldown, …) is
+            # recorded in the durable artifact, not only on the console.
+            lines.append(_sanitize_reason(toolchain.reason))
         else:
             lines.append(
-                f"Verification with pnpm {toolchain.new} failed — bump rolled"
-                f" back: {_sanitize_reason(toolchain.reason)}"
+                f"`pnpm` {_sanitize_reason(toolchain.old)} ->"
+                f" {_sanitize_reason(toolchain.new)}"
             )
+            lines.append("")
+            lines.append(
+                "Bumped atomically: `package.json` (`packageManager`),"
+                " `pnpm-workspace.yaml` (`configDependencies`), `.mise.toml`"
+                " (`tools.pnpm`)."
+            )
+            lines.append("")
+            if toolchain.verified:
+                lines.append(
+                    f"Verified: root `pnpm install` with the new pnpm"
+                    f" {_sanitize_reason(toolchain.new)} succeeded."
+                )
+            else:
+                lines.append(
+                    f"Verification with pnpm {_sanitize_reason(toolchain.new)}"
+                    f" failed — bump rolled back:"
+                    f" {_sanitize_reason(toolchain.reason)}"
+                )
         lines.append("")
     return "\n".join(lines)
 
@@ -1475,13 +1579,45 @@ def main() -> None:
     # passed. --verify's own meaning (whether _verify_python/_verify_node's
     # check.sh bisection runs at all) is gated separately, below, on the
     # `verify` flag itself — never on these snapshots being present.
-    uv_snap: bytes = uv_lock_path.read_bytes()
-    node_snap: dict[Path, bytes] = {
-        p: p.read_bytes()
-        for p in (
+    #
+    # S6: a missing or unreadable manifest/lockfile at this pre-guard
+    # snapshot time is a recorded error with exit 1 — never an unhandled
+    # OSError traceback out of main.
+    pre_snap_errors: list[str] = []
+    pre_snap = _capture_snapshot(
+        (
+            uv_lock_path,
             pnpm_lock_path,
             *(REPO_ROOT / d / "package.json" for d in _WORKSPACE_DIR.values()),
-        )
+        ),
+        "pre-run snapshot of the manifests/lockfiles failed",
+        pre_snap_errors,
+    )
+    if pre_snap is None:
+        # Nothing has run and nothing was written; surface the failure the
+        # way any other recorded failure surfaces — the PR body (if one is
+        # being generated) and exit 1.
+        if pr_body_file:
+            body = _pr_body(
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                nd_errors=list(pre_snap_errors),
+                nd_error_ws=[None] * len(pre_snap_errors),
+                nd_ws=[],
+                nd_blocked_ws=[],
+                cooldown=cooldown,
+            )
+            _ = pr_body_file.write_text(body)
+            print(f"    PR body written to {pr_body_file}")
+        sys.exit(1)
+    uv_snap: bytes = pre_snap[uv_lock_path]
+    node_snap: dict[Path, bytes] = {
+        p: data for p, data in pre_snap.items() if p != uv_lock_path
     }
 
     py_errors: list[str] = []
@@ -1600,18 +1736,25 @@ def main() -> None:
     toolchain: _ToolchainBump | None = None
     tc_errors: list[str] = []
     if include_pnpm:
-        tc_snap: dict[Path, bytes] = {
-            path: path.read_bytes()
-            for path in (
+        # S6: the same missing/unreadable-file rule as the pre-run snapshot
+        # — a recorded error, not a traceback.
+        tc_snap = _capture_snapshot(
+            (
                 *(REPO_ROOT / name for name in _TOOLCHAIN_MANIFESTS),
                 pnpm_lock_path,
-            )
-        }
-        tc_result = _guard(
-            "update_pnpm_toolchain",
+            ),
+            "pnpm toolchain: snapshot of the manifests before the bump failed",
             tc_errors,
-            tc_snap,
-            lambda: _update_pnpm_toolchain(cooldown, tc_errors),
+        )
+        tc_result: _ToolchainBump | None = (
+            _guard(
+                "update_pnpm_toolchain",
+                tc_errors,
+                tc_snap,
+                lambda: _update_pnpm_toolchain(cooldown, tc_errors),
+            )
+            if tc_snap is not None
+            else None
         )
         if tc_result is not None:
             toolchain = tc_result
