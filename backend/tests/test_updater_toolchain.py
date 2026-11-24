@@ -1426,6 +1426,10 @@ class TestSnapshotFailureOfAMissingOrUnreadableManifestIsRecorded:
         hasattr(os, "geteuid") and os.geteuid() == 0,
         reason="an unreadable-file probe is meaningless when running as root",
     )
+    @pytest.mark.skipif(
+        not hasattr(os, "geteuid"),
+        reason="chmod(0o000) only prevents reads on POSIX permission systems",
+    )
     def test_unreadable_manifest_is_a_recorded_error_with_exit_1(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1498,6 +1502,42 @@ class TestSkippedToolchainUpdateIsRecordedInThePrBody:
         assert traces, (
             "the PR body is silent about the pnpm update the scan reported"
             f" but the toolchain step did not apply; body:\n{body}"
+        )
+
+    def test_skip_trace_presents_the_package_name_in_backticks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The cooldown skip trace renders the package name wrapped in
+        backticks (`pnpm` 12.21.0 reported…), the way the step authors it —
+        not with the authored backticks eaten by sanitization ('pnpm'
+        12.21.0 reported…). The trace is the durable artifact's own record
+        of the reported-but-not-applied update; it is not subprocess
+        stderr, so its own markup survives rendering.
+        """
+        registry_doc: dict[str, Any] = {
+            "time": {_NEW_PIN: datetime.now(UTC).isoformat()},
+            "versions": {_NEW_PIN: {"dist": {"integrity": _NEW_SHA}}},
+        }
+        _root, _run_calls = _wire_flag_run(monkeypatch, tmp_path, registry=registry_doc)
+        pr_body_file = tmp_path / "pr-body.md"
+
+        exit_code, raised = _run_main(
+            monkeypatch,
+            ["--include-pnpm", "--pr-body-file", str(pr_body_file)],
+        )
+
+        # Still a legitimate skip, not a failure (same trigger as the S7
+        # test above): the run succeeds and the section carries the trace.
+        assert raised is None
+        assert exit_code is None or exit_code == 0
+        body = pr_body_file.read_text()
+        assert "### pnpm toolchain" in body
+        section = body.split("### pnpm toolchain", 1)[1]
+        trace_lines = [line for line in section.splitlines() if line.strip()]
+        assert trace_lines, f"the toolchain section is empty; body:\n{body}"
+        assert any("`pnpm`" in line for line in trace_lines), (
+            "the skip trace does not present the package name wrapped in"
+            f" backticks; toolchain section lines: {trace_lines!r}"
         )
 
 
@@ -1651,6 +1691,37 @@ class TestMalformedRegistryValuesFailClosed:
             scan_json=_scan_json_with_pnpm_version("analecta", version),
             registry=registry_doc,
         )
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
+
+        # Fails closed: nothing was written to any toolchain file...
+        _assert_toolchain_files_unchanged(root, before)
+        # ...and the failure is recorded and drives the failing exit.
+        assert raised is None
+        assert exit_code == 1
+
+    @pytest.mark.parametrize(
+        "bad_integrity",
+        ["sha512-AAAA", "sha512-AAAAAA==", "sha512-" + "A" * 48],
+        ids=["short-unpadded", "short-padded", "48-char-unpadded"],
+    )
+    def test_integrity_with_valid_base64_shape_but_wrong_length_fails_closed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        bad_integrity: str,
+    ) -> None:
+        """An integrity value that is base64-shaped but not the 88-data-char
+        sha512 form must fail closed like any other malformed SRI: the
+        base64 shape alone is not the sha512 contract, and a short value
+        that slips through is written verbatim into the packageManager pin.
+        """
+        registry_doc: dict[str, Any] = {
+            "time": {_NEW_PIN: _old_release().isoformat()},
+            "versions": {_NEW_PIN: {"dist": {"integrity": bad_integrity}}},
+        }
+        root, _run_calls = _wire_flag_run(monkeypatch, tmp_path, registry=registry_doc)
         before = _snapshot_toolchain_files(root)
 
         exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
@@ -1838,3 +1909,233 @@ class TestToolchainErrorsSurfaceInThePrBodyAndFailTheRun:
         _assert_toolchain_files_unchanged(root, before)
         body = pr_body_file.read_text()
         assert "SCAN-PROBE-STDERR-4f2a" in body
+
+
+# ---------------------------------------------------------------------------
+# T3 follow-up pass (FINAL pool pass) — Agent A, independent authorship;
+# HEAD (post-commit on fix/deps-updater-toolchain-polish) is the
+# pre-change state. Symptoms A-D from the prior advisor read; one test per
+# mechanism.
+# ---------------------------------------------------------------------------
+
+
+def _wire_generic_scan(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    scan_doc: dict[str, Any],
+) -> tuple[Path, list[list[str]]]:
+    """Wire a generic-path (no --include-pnpm) main()-level run whose scan
+    reports the packages in *scan_doc* (package -> info, workspace
+    "analecta" -> ".").
+
+    Unlike _scan_and_fakes (the incident fixture with hardcoded values),
+    the registry fake here derives its release-date document from the scan
+    payload itself: each reported package's `latest` value — exactly as
+    the scan reported it, however malformed — is the key the registry's
+    time map answers for, so a malformed scan-reported version or name
+    reaches the apply path the way a buggy or tampered upstream surface
+    would. Everything else mirrors _scan_and_fakes: the fake `pnpm add`
+    reproduces pnpm's on-disk effect (rewrite the existing specifier, or
+    insert the package into devDependencies, and append a lockfile
+    importer); install/dedupe succeed untouched.
+
+    Returns (root, add_calls).
+    """
+    root = _make_repo(tmp_path)
+    monkeypatch.setattr(deps_update, "REPO_ROOT", root)
+    monkeypatch.setattr(deps_update, "_WORKSPACE_DIR", {"analecta": "."})
+
+    pkg_path = root / "package.json"
+    lock_path = root / "pnpm-lock.yaml"
+    add_calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if cmd[:2] == ["pnpm", "outdated"]:
+            return subprocess.CompletedProcess(
+                cmd, 1, stdout=json.dumps({"analecta": scan_doc}), stderr=""
+            )
+        if cmd[:2] == ["pnpm", "add"]:
+            add_calls.append(list(cmd))
+            name, version = cmd[2].rsplit("@", 1)
+            text = pkg_path.read_text()
+            if f'"{name}":' in text:
+                # Existing specifier: real pnpm add rewrites it in place.
+                text = re.sub(
+                    rf'("{re.escape(name)}":\s*")[^"]*(")',
+                    rf"\g<1>{version}\g<2>",
+                    text,
+                    count=1,
+                )
+            else:
+                # New dependency: real pnpm add --save-exact inserts it.
+                marker = '    "typescript-eslint": "8.73.0"\n'
+                text = text.replace(
+                    marker,
+                    f'    "typescript-eslint": "8.73.0",\n    "{name}": "{version}"\n',
+                )
+            pkg_path.write_text(text)
+            lock = lock_path.read_text()
+            lock += f"  extra-importer-{name}:\n    specifier: {version}\n"
+            lock_path.write_text(lock)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        # pnpm install (lockfile resync) / pnpm dedupe: succeed untouched.
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    def fake_registry_data(
+        name: str, cache: dict[str, dict[str, Any]] | None = None
+    ) -> dict[str, Any] | None:
+        entry = scan_doc.get(name)
+        if entry is None:
+            raise AssertionError(f"unexpected registry fetch: {name}")
+        return {"time": {entry["latest"]: _old_release().isoformat()}}
+
+    def fake_run_check(repo_root: Path, scope: str) -> bool:
+        return True
+
+    def fake_update_python(
+        cooldown: int, errors: list[str]
+    ) -> tuple[list[object], list[object]]:
+        return [], []
+
+    monkeypatch.setattr(deps_update, "REPO_ROOT", root)
+    monkeypatch.setattr(deps_update, "_WORKSPACE_DIR", {"analecta": "."})
+    monkeypatch.setattr(deps_update, "_run", fake_run)
+    monkeypatch.setattr(deps_update, "_npm_registry_data", fake_registry_data)
+    monkeypatch.setattr(deps_update, "_run_check", fake_run_check)
+    monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+    return root, add_calls
+
+
+class TestGenericPathScanReportedValuesAreShapeValidated:
+    """The generic update path (the scheduled-bot path, no --include-pnpm)
+    validates the shape of scan-reported package values before use: a
+    version that is not ASCII semver, or a name carrying manifest-foreign
+    content, must never be written verbatim into the manifests nor
+    rendered raw into the PR body's applied/skipped rows.
+    """
+
+    @pytest.mark.parametrize(
+        "bad_version",
+        # non-ASCII decimal digits pass a Unicode-\d semver check
+        # (U+0668.U+0667 U+0664.U+0660).
+        ["8.74.0\n", "\u0668.\u0667\u0664.\u0660"],
+        ids=["trailing-newline", "arabic-indic-digits"],
+    )
+    def test_scan_reported_non_semver_version_fails_closed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        bad_version: str,
+    ) -> None:
+        """A scan-reported version that is not ASCII semver must fail
+        closed: recorded error, exit 1, manifests byte-identical. At HEAD
+        the value is applied verbatim instead — `pnpm add` writes it, the
+        exact-pin resync rewrites it into package.json, and the PR body
+        renders it in the applied row.
+        """
+        scan_doc = {
+            "typescript-eslint": {
+                "current": "8.73.0",
+                "wanted": bad_version,
+                "latest": bad_version,
+                "dependencyType": "devDependencies",
+                "dependentPackages": ["analecta"],
+            }
+        }
+        root, _add_calls = _wire_generic_scan(monkeypatch, tmp_path, scan_doc)
+        pr_body_file = tmp_path / "pr-body.md"
+        before = {
+            name: (root / name).read_bytes()
+            for name in ("package.json", "pnpm-lock.yaml")
+        }
+
+        exit_code, raised = _run_main(
+            monkeypatch, ["--pr-body-file", str(pr_body_file)]
+        )
+
+        # Fail closed: manifests byte-identical...
+        for name, data in before.items():
+            assert (root / name).read_bytes() == data, f"{name} changed during the run"
+        # ...the failure is recorded in the durable artifact...
+        node_section = pr_body_file.read_text().split("### Node / pnpm", 1)[1]
+        assert "**Errors" in node_section
+        # ...and it drives the failing exit.
+        assert raised is None
+        assert exit_code == 1
+
+    @pytest.mark.parametrize(
+        "bad_name",
+        ["typescript-eslint`x", "typescript-eslint\n(injected)"],
+        ids=["backtick-in-name", "newline-in-name"],
+    )
+    def test_scan_reported_name_is_not_carried_raw_into_the_pr_body(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        bad_name: str,
+    ) -> None:
+        """A scan-reported NAME carrying manifest-foreign content (a
+        backtick or a newline) must never reach the durable artifact raw:
+        the applied/skipped rows render scan values verbatim at HEAD, so
+        the body would carry the unsanitized string (breaking out of its
+        table cell or forging markup). Whether the fix rejects the value
+        or sanitizes the rendering, the raw string must be absent.
+        """
+        scan_doc = {
+            bad_name: {
+                "current": "8.73.0",
+                "wanted": "8.74.0",
+                "latest": "8.74.0",
+                "dependencyType": "devDependencies",
+                "dependentPackages": ["analecta"],
+            }
+        }
+        _root, _add_calls = _wire_generic_scan(monkeypatch, tmp_path, scan_doc)
+        pr_body_file = tmp_path / "pr-body.md"
+
+        _exit_code, raised = _run_main(
+            monkeypatch, ["--pr-body-file", str(pr_body_file)]
+        )
+
+        assert raised is None
+        body = pr_body_file.read_text()
+        assert bad_name not in body, (
+            "the PR body carries the scan-reported name raw, with its"
+            f" manifest-foreign content unsanitized; body:\n{body}"
+        )
+
+
+class TestPreRunSnapshotFailureRendersInThePrBody:
+    """The S6 pre-run-snapshot-failure branch (a missing/unreadable
+    manifest or lockfile before anything runs) renders the recorded error
+    into the generated PR body's Node-section Errors line when
+    --pr-body-file is passed. Coverage of a branch that already works —
+    expected GREEN at HEAD (T3-native-R3-001: no prior test passed
+    --pr-body-file on this branch).
+    """
+
+    def test_missing_lockfile_error_is_rendered_in_the_node_section(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With pnpm-lock.yaml missing at pre-run snapshot time, the body
+        the branch writes carries the recorded snapshot error (the label
+        and the failing path) in the Node section's Errors line.
+        """
+        scans = {"analecta": "{}"}
+        root, _add_calls = _wire_pnpm_scan(
+            monkeypatch, tmp_path, {"analecta": "."}, scans
+        )
+        (root / "pnpm-lock.yaml").unlink()
+        pr_body_file = tmp_path / "pr-body.md"
+
+        exit_code, raised = _run_main(
+            monkeypatch, ["--pr-body-file", str(pr_body_file)]
+        )
+
+        assert raised is None
+        assert exit_code == 1
+        body = pr_body_file.read_text()
+        node_section = body.split("### Node / pnpm", 1)[1]
+        assert "**Errors" in node_section
+        assert "pre-run snapshot" in node_section
+        assert "pnpm-lock.yaml" in node_section

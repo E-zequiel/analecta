@@ -69,6 +69,15 @@ _TOOLCHAIN_PACKAGES = frozenset({"pnpm"})
 # each run and drains it before rendering the PR body.
 _TOOLCHAIN_EXCLUSIONS: list[str] = []
 
+# Scan-reported package values that failed shape validation in update_node
+# (a name that is not a valid npm name, a version that is not ASCII semver),
+# classified through the per-package blocked machinery: (workspace, blocked)
+# pairs accumulated here and drained by main into the PR body's Blocked
+# section. Module-level for the same reason as _TOOLCHAIN_EXCLUSIONS:
+# update_node's 4-argument signature and 2-tuple return are fixed contract
+# for every call site.
+_SCAN_SHAPE_BLOCKS: list[tuple[str, Blocked]] = []
+
 # ---------------------------------------------------------------------------
 # Types
 # ---------------------------------------------------------------------------
@@ -829,6 +838,41 @@ def update_node(
             print("    [excluded] package manager toolchain — never applied")
             _TOOLCHAIN_EXCLUSIONS.append(name)
             continue
+        # Scan-reported values are shape-validated before anything
+        # downstream sees them (T3-advisor-2): a name that is not a valid
+        # npm name or a version that is not ASCII semver never reaches the
+        # registry fetch, the apply path (`pnpm add`, the exact-pin
+        # rewrite, the lockfile), or the PR body raw. The package fails
+        # closed FOR THIS PACKAGE through the per-package blocked
+        # machinery — recorded error, Blocked row in the PR body — and the
+        # run continues with the other packages.
+        shape_reason = ""
+        if _NPM_NAME_RE.match(name) is None:
+            shape_reason = "scan-reported package name is not a valid npm name"
+        elif _SEMVER_RE.match(latest) is None:
+            shape_reason = f"scan-reported version {latest!r} is not ASCII semver"
+        if shape_reason:
+            print(f"  {name}: {current} -> {latest}")
+            print(f"    [blocked] {shape_reason} — never applied")
+            _record_error(
+                errors,
+                f"{name}: {shape_reason} — package blocked, never applied",
+            )
+            # The row's cells are sanitized at storage (same convention as
+            # the verify-bisection blocked paths' _sanitize_reason(reason)):
+            # the raw scan-reported value must never reach the committed
+            # PR body, whatever its markdown-structural content.
+            _SCAN_SHAPE_BLOCKS.append(
+                (
+                    workspace,
+                    (
+                        _sanitize_reason(name),
+                        _sanitize_reason(latest),
+                        _sanitize_reason(shape_reason),
+                    ),
+                )
+            )
+            continue
         print(f"  {name}: {current} -> {latest}")
 
         fetch_attempted += 1
@@ -1042,11 +1086,22 @@ _TOOLCHAIN_MANIFESTS = ("package.json", "pnpm-workspace.yaml", ".mise.toml")
 
 # S9 (R1-002): registry-sourced values are validated before use — a
 # malformed shape must fail closed (recorded error, no manifest write),
-# never be interpolated verbatim into the manifests.
-_SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\Z")
-_SRI_SHA512_RE = re.compile(
-    r"^sha512-(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?\Z"
+# never be interpolated verbatim into the manifests. The semver shape is
+# ASCII-only — [0-9], not \d, so Unicode decimal digits never pass
+# (T3-native-R1-001). The SRI shape additionally requires the canonical
+# ==-padded sha512 form at sha512 scale (T3-advisor-1): a real sha512
+# digest is exactly 86 base64 data chars + "==" — 64 bytes ≡ 1 (mod 3),
+# so the padding is always exactly "==" — while a bare base64 shape
+# alone accepts any length ("sha512-AAAA", "sha512-AAAAAA==", a 48-char
+# unpadded fragment) and would be written verbatim into the pin.
+_SEMVER_RE = re.compile(
+    r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\Z"
 )
+_SRI_SHA512_RE = re.compile(r"^sha512-(?:[A-Za-z0-9+/]{4}){10,}[A-Za-z0-9+/]{2}==\Z")
+
+# The generic path validates scan-reported NAMES too (T3-advisor-2): npm
+# names are ASCII lowercase [a-z0-9._-], optionally in @scope/ form.
+_NPM_NAME_RE = re.compile(r"^(?:@[a-z0-9._-]+/)?[a-z0-9._-]+\Z")
 
 
 def _bump_package_manager(path: Path, new_pin: str) -> bool:
@@ -1226,9 +1281,12 @@ def _update_pnpm_toolchain(cooldown: int, errors: list[str]) -> _ToolchainBump |
             current,
             latest,
             verified=False,
+            # Skip-trace values are sanitized FIRST; the step's own markup
+            # (the name's backticks) is authored around the sanitized
+            # result and must survive the PR-body rendering (T3-advisor-3).
             reason=(
-                f"`pnpm` {current} is already the version the scan reports —"
-                " nothing to bump"
+                f"`pnpm` {_sanitize_reason(current)} is already the version"
+                " the scan reports — nothing to bump"
             ),
             skipped=True,
         )
@@ -1256,9 +1314,9 @@ def _update_pnpm_toolchain(cooldown: int, errors: list[str]) -> _ToolchainBump |
             latest,
             verified=False,
             reason=(
-                f"`pnpm` {latest} reported by the scan but not applied — its"
-                " release date is unavailable, so the cooldown could not be"
-                " evaluated"
+                f"`pnpm` {_sanitize_reason(latest)} reported by the scan but"
+                " not applied — its release date is unavailable, so the"
+                " cooldown could not be evaluated"
             ),
             skipped=True,
         )
@@ -1270,9 +1328,9 @@ def _update_pnpm_toolchain(cooldown: int, errors: list[str]) -> _ToolchainBump |
             latest,
             verified=False,
             reason=(
-                f"`pnpm` {latest} reported by the scan but not applied —"
-                f" released {days_old}d ago, inside the {cooldown}-day"
-                " cooldown"
+                f"`pnpm` {_sanitize_reason(latest)} reported by the scan but"
+                f" not applied — released {days_old}d ago, inside the"
+                f" {cooldown}-day cooldown"
             ),
             skipped=True,
         )
@@ -1492,7 +1550,11 @@ def _pr_body(
         if toolchain.skipped:
             # S7: a legitimate skip (no eligible update, cooldown, …) is
             # recorded in the durable artifact, not only on the console.
-            lines.append(_sanitize_reason(toolchain.reason))
+            # The reason is authored by this file, with every scan-reported
+            # value already sanitized before interpolation — sanitizing it
+            # again here would eat the step's own authored markup (the
+            # package name's backticks, T3-advisor-3).
+            lines.append(toolchain.reason)
         else:
             lines.append(
                 f"`pnpm` {_sanitize_reason(toolchain.old)} ->"
@@ -1631,9 +1693,10 @@ def main() -> None:
     nd_up_tagged: list[tuple[str, Updated]] = []
     nd_errors_tagged: list[tuple[str, str]] = []
     registry_cache: dict[str, dict[str, Any]] = {}
-    # Exclusions from any previous run in this process must not leak into
-    # this one's PR body.
+    # Exclusions and shape-blocks from any previous run in this process
+    # must not leak into this one's PR body.
     _ = _TOOLCHAIN_EXCLUSIONS.clear()
+    _ = _SCAN_SHAPE_BLOCKS.clear()
     for workspace in _WORKSPACE_DIR:
         ws_errors: list[str] = []
         # A fresh snapshot per iteration, not the single global node_snap:
@@ -1720,6 +1783,10 @@ def main() -> None:
             on_restore=_verify_node_resync_hook,
         )
         nd_up_tagged = nd_survivors_tagged
+    # Shape-invalid scan-reported values were never applied, so they are
+    # never verification subjects — they only surface through the
+    # per-package blocked machinery's PR-body Blocked section.
+    nd_blocked_tagged += _SCAN_SHAPE_BLOCKS
     nd_up = [u for _, u in nd_up_tagged]
     nd_ws = [w for w, _ in nd_up_tagged]
     nd_blocked = [b for _, b in nd_blocked_tagged]
