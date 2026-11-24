@@ -32,7 +32,9 @@ the manifests the way real pnpm did — inserting pnpm@12.21.0 into
 devDependencies and touching pnpm-lock.yaml.
 """
 
+import copy
 import json
+import os
 import re
 import subprocess
 import sys
@@ -284,7 +286,7 @@ class TestPrBodyNeverReportsPnpmAsApplied:
 # T2 — S2 (--include-pnpm toolchain bump), S4 (--help), and the advisor's
 # three durable T1 regression pins (P1/P2/P3, folded in per L6).
 #
-# RED status at HEAD (pre-T2): `--include-pnpm` does not exist yet, so
+# Was RED pre-T2 (before `--include-pnpm` existed):
 # argparse rejects it with SystemExit(2) before any updater logic runs. The
 # S2 tests catch that SystemExit and put their assertions on the missing
 # mechanism itself (manifest states, subprocess invocations, PR body), so
@@ -1018,7 +1020,8 @@ class TestAdvisorRegressionPins:
 # must not touch — an `[env] pnpm = ...` key in .mise.toml (B1), a nested
 # configDependencies -> other -> pnpm map (A2), or a shape it does not
 # recognize (A3 and friends) — must make it return False with the file
-# byte-identical. Tests 1-2 are RED at HEAD: the current regexes misfire
+# byte-identical. Tests 1-2 were RED when authored (pre-a8e3e2a): the
+# then-current regexes misfire
 # onto those keys and would report a verified bump with the canonical pin
 # left stale.
 #
@@ -1043,7 +1046,8 @@ class TestRewriterAnchoring:
         self, tmp_path: Path
     ) -> None:
         """B1: an `[env] pnpm = "9.0.0"` key BEFORE the [tools] table must be
-        ignored — the rewriter pins [tools] pnpm only. RED at HEAD: the
+        ignored — the rewriter pins [tools] pnpm only. Was RED when authored
+        (pre-a8e3e2a): the
         line-anchored regex rewrites the first `pnpm =` line it sees (the
         [env] key) and reports success with the canonical pin stale.
         """
@@ -1056,7 +1060,8 @@ class TestRewriterAnchoring:
 
     def test_workspace_rewriter_rejects_nested_pnpm_key(self, tmp_path: Path) -> None:
         """A2: a pnpm key nested under configDependencies -> other is not
-        the toolchain pin. RED at HEAD: the lazy indented-lines group walks
+        the toolchain pin. Was RED when authored (pre-a8e3e2a): the lazy
+        indented-lines group walks
         down into the nested map and rewrites `other.pnpm` instead of
         rejecting the shape.
         """
@@ -1216,3 +1221,620 @@ class TestCombinedFlagAndOrdinaryRun:
         node_section = body.split("### Node / pnpm", 1)[1]
         assert "| `typescript-eslint` | `analecta` |" in node_section
         assert "| `pnpm` |" not in node_section
+
+
+# ---------------------------------------------------------------------------
+# T3 — polish pass (Agent A, independent authorship; HEAD is the
+# pre-change state). Group 1: the S6-S9 contracts from the review findings
+# (R3-004/005/006 + R1-002) — each red at HEAD on the mechanism its spec
+# names. Group 2: coverage pins for the toolchain step's input-failure,
+# composite-abort and error-surfacing paths (R3-001/002/003), which exist
+# and work at HEAD — expected green.
+# ---------------------------------------------------------------------------
+
+_TOOLCHAIN_FILES = (
+    "package.json",
+    "pnpm-workspace.yaml",
+    ".mise.toml",
+    "pnpm-lock.yaml",
+)
+
+# Sentinel for _wire_flag_run(registry=...): the registry is unreachable
+# (network failure) — both registry fakes return None.
+_REGISTRY_UNAVAILABLE: object = object()
+
+
+def _snapshot_toolchain_files(root: Path) -> dict[str, bytes]:
+    """Byte-snapshot every toolchain manifest/lockfile that exists on disk."""
+    return {
+        name: (root / name).read_bytes()
+        for name in _TOOLCHAIN_FILES
+        if (root / name).exists()
+    }
+
+
+def _assert_toolchain_files_unchanged(root: Path, before: dict[str, bytes]) -> None:
+    """Every snapshotted toolchain file is byte-identical after the run."""
+    for name, data in before.items():
+        assert (root / name).read_bytes() == data, f"{name} changed during the run"
+
+
+def _run_main(
+    monkeypatch: pytest.MonkeyPatch, argv: list[str]
+) -> tuple[int | str | None, Exception | None]:
+    """Run deps_update.main() under *argv*.
+
+    Returns (exit_code, raised): *exit_code* is the SystemExit code (None
+    when main returned normally == exit 0), *raised* any unhandled
+    exception that propagated out of main — S6's observable is that no
+    traceback ever escapes.
+    """
+    monkeypatch.setattr(sys, "argv", ["deps_update.py", *argv])
+    exit_code: int | str | None = None
+    raised: Exception | None = None
+    try:
+        deps_update.main()
+    except SystemExit as exc:
+        exit_code = exc.code
+    except Exception as exc:  # the S6 observable: raw escapes surface here
+        raised = exc
+    return exit_code, raised
+
+
+def _scan_json_with_pnpm_version(workspace: str, version: str) -> str:
+    """`pnpm outdated --json` payload whose pnpm entry targets *version*."""
+    doc: dict[str, Any] = json.loads(_pnpm_scan_json(workspace))
+    doc[workspace]["pnpm"]["wanted"] = version
+    doc[workspace]["pnpm"]["latest"] = version
+    return json.dumps(doc)
+
+
+def _wire_flag_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    outdated: tuple[int, str, str] | None = None,
+    scan_json: str | None = None,
+    registry: Any = None,
+    verify: tuple[int, str, str] | None = None,
+    override_manifests: dict[str, str] | None = None,
+) -> tuple[Path, list[list[str]]]:
+    """Wire main()-level fakes for a --include-pnpm run (T3 tests).
+
+    Same conventions as _toolchain_fakes, with the knobs the T3 scenarios
+    need: *outdated* is (exit_code, stdout, stderr) for the scan
+    subprocess; *scan_json* overrides the scan payload; *registry* is the
+    registry document returned by both registry fakes (None = the default
+    eligible-pnpm document; _REGISTRY_UNAVAILABLE = the fetch fails);
+    *verify* is (exit_code, stdout, stderr) for install-typed invocations
+    (None = the verification succeeds silently); *override_manifests*
+    rewrites toolchain files after the standard repo is materialized.
+
+    Returns (root, run_calls).
+    """
+    root = _make_repo_with_toolchain(tmp_path)
+    if override_manifests:
+        for name, text in override_manifests.items():
+            (root / name).write_text(text)
+
+    if outdated is not None:
+        outdated_exit, outdated_stdout, outdated_stderr = outdated
+    else:
+        outdated_exit = 1
+        outdated_stdout = (
+            scan_json if scan_json is not None else _pnpm_scan_json("analecta")
+        )
+        outdated_stderr = ""
+    run_calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        run_calls.append(list(cmd))
+        if "outdated" in cmd:
+            return subprocess.CompletedProcess(
+                cmd, outdated_exit, stdout=outdated_stdout, stderr=outdated_stderr
+            )
+        if _is_install_typed(cmd):
+            if verify is None:
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            verify_exit, verify_stdout, verify_stderr = verify
+            return subprocess.CompletedProcess(
+                cmd, verify_exit, stdout=verify_stdout, stderr=verify_stderr
+            )
+        # Any other pnpm call (dedupe, resync, …) succeeds untouched.
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    doc: dict[str, Any] = (
+        registry
+        if isinstance(registry, dict)
+        else {
+            "time": {_NEW_PIN: _old_release().isoformat()},
+            "versions": {_NEW_PIN: {"dist": {"integrity": _NEW_SHA}}},
+        }
+    )
+
+    def fake_registry_data(
+        name: str, cache: dict[str, dict[str, Any]] | None = None
+    ) -> dict[str, Any] | None:
+        if registry is _REGISTRY_UNAVAILABLE:
+            return None
+        copied: dict[str, Any] = copy.deepcopy(doc)
+        return copied
+
+    def fake_fetch_json(
+        url: str, *, headers: dict[str, str] | None = None
+    ) -> dict[str, Any] | None:
+        if registry is _REGISTRY_UNAVAILABLE:
+            return None
+        if "registry.npmjs.org/pnpm" not in url:
+            return None
+        tail = url.rstrip("/").rsplit("/", 1)[-1]
+        if tail == "pnpm":
+            return copy.deepcopy(doc)
+        version_doc = doc.get("versions", {}).get(tail)
+        return copy.deepcopy(version_doc) if version_doc is not None else None
+
+    def fake_run_check(repo_root: Path, scope: str) -> bool:
+        return True
+
+    def fake_update_python(
+        cooldown: int, errors: list[str]
+    ) -> tuple[list[object], list[object]]:
+        return [], []
+
+    monkeypatch.setattr(deps_update, "REPO_ROOT", root)
+    monkeypatch.setattr(deps_update, "_WORKSPACE_DIR", {"analecta": "."})
+    monkeypatch.setattr(deps_update, "_run", fake_run)
+    monkeypatch.setattr(deps_update, "_npm_registry_data", fake_registry_data)
+    monkeypatch.setattr(deps_update, "_fetch_json", fake_fetch_json)
+    monkeypatch.setattr(deps_update, "_run_check", fake_run_check)
+    monkeypatch.setattr(deps_update, "update_python", fake_update_python)
+    return root, run_calls
+
+
+class TestSnapshotFailureOfAMissingOrUnreadableManifestIsRecorded:
+    """S6 (R3-004): a missing or unreadable toolchain manifest/lockfile at
+    pre-guard snapshot time is a recorded failure with exit code 1 — never
+    an unhandled traceback propagating out of main.
+    """
+
+    @pytest.mark.parametrize(
+        "missing",
+        ["package.json", "pnpm-workspace.yaml", ".mise.toml", "pnpm-lock.yaml"],
+    )
+    def test_missing_manifest_is_a_recorded_error_with_exit_1(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
+    ) -> None:
+        """Deleting one toolchain file must not crash the run: main records
+        the error and exits 1, and no remaining file is touched.
+        """
+        root, _run_calls = _wire_flag_run(monkeypatch, tmp_path)
+        (root / missing).unlink()
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
+
+        assert raised is None, (
+            f"main() died on an unhandled {type(raised).__name__} when"
+            f" {missing} was missing at snapshot time, instead of recording"
+            f" the error: {raised!r}"
+        )
+        assert exit_code == 1
+        _assert_toolchain_files_unchanged(root, before)
+        assert not (root / missing).exists()
+
+    @pytest.mark.skipif(
+        hasattr(os, "geteuid") and os.geteuid() == 0,
+        reason="an unreadable-file probe is meaningless when running as root",
+    )
+    def test_unreadable_manifest_is_a_recorded_error_with_exit_1(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A manifest that exists but cannot be read (mode 000) is the same
+        recorded failure, not a traceback.
+        """
+        root, _run_calls = _wire_flag_run(monkeypatch, tmp_path)
+        before = _snapshot_toolchain_files(root)
+        mise_path = root / ".mise.toml"
+        mise_path.chmod(0o000)
+        try:
+            exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
+        finally:
+            mise_path.chmod(0o644)
+
+        assert raised is None, (
+            f"main() died on an unhandled {type(raised).__name__} when"
+            f" .mise.toml was unreadable at snapshot time, instead of"
+            f" recording the error: {raised!r}"
+        )
+        assert exit_code == 1
+        _assert_toolchain_files_unchanged(root, before)
+
+
+class TestSkippedToolchainUpdateIsRecordedInThePrBody:
+    """S7 (R3-005): a legitimate toolchain skip on the --include-pnpm path
+    (cooldown not elapsed) is recorded in the PR body — the durable
+    artifact is not silent about a pnpm update the scan reported but the
+    step did not apply.
+    """
+
+    def test_cooldown_skip_is_traced_in_the_pr_body(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the new pnpm's release date inside the cooldown window, the
+        step skips; the run succeeds, the manifests stay at the old pin,
+        and the PR body carries a trace of the reported-but-not-applied
+        update. Heading lines ("### Node / pnpm") and applied-bump rows
+        ("| `pnpm` |") are not a skip record; wording is otherwise free.
+        """
+        registry_doc: dict[str, Any] = {
+            "time": {_NEW_PIN: datetime.now(UTC).isoformat()},
+            "versions": {_NEW_PIN: {"dist": {"integrity": _NEW_SHA}}},
+        }
+        root, _run_calls = _wire_flag_run(monkeypatch, tmp_path, registry=registry_doc)
+        pr_body_file = tmp_path / "pr-body.md"
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(
+            monkeypatch,
+            ["--include-pnpm", "--pr-body-file", str(pr_body_file)],
+        )
+
+        # The trigger is a legitimate skip, not a failure: the run
+        # succeeds and the manifests stay untouched at the old pin.
+        assert raised is None
+        assert exit_code is None or exit_code == 0
+        _assert_toolchain_files_unchanged(root, before)
+
+        # The mechanism: the PR body is not silent about the pnpm update
+        # the scan reported.
+        body = pr_body_file.read_text()
+        traces = [
+            line
+            for line in body.splitlines()
+            if "pnpm" in line.lower()
+            and not line.lstrip().startswith("#")
+            and "| `pnpm` |" not in line
+        ]
+        assert traces, (
+            "the PR body is silent about the pnpm update the scan reported"
+            f" but the toolchain step did not apply; body:\n{body}"
+        )
+
+
+class TestSilentVerificationFailureCarriesADefaultReason:
+    """S8 (R3-006): when the verification process fails having written
+    nothing to stdout or stderr, the failure rendering in the PR body
+    carries a non-empty default reason instead of dangling empty.
+    """
+
+    def test_empty_output_verification_failure_is_not_dangling(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A verification process that fails silently (empty stdout AND
+        stderr, exit 1) still produces a failure line with reason text:
+        the line does not dangle on a bare label or trailing colon.
+        """
+        _root, _run_calls = _wire_flag_run(monkeypatch, tmp_path, verify=(1, "", ""))
+        pr_body_file = tmp_path / "pr-body.md"
+
+        exit_code, raised = _run_main(
+            monkeypatch,
+            ["--include-pnpm", "--pr-body-file", str(pr_body_file)],
+        )
+
+        assert raised is None
+        assert exit_code == 1
+        body = pr_body_file.read_text()
+        fail_lines = [
+            line
+            for line in body.splitlines()
+            if re.search(r"fail", line, re.IGNORECASE) is not None
+        ]
+        assert fail_lines, "the PR body never mentions the verification failure"
+        for line in fail_lines:
+            clean = line.strip().strip("*`- ").rstrip()
+            assert not clean.endswith(":"), (
+                f"verification-failure line dangles with an empty reason: {line!r}"
+            )
+            words = [
+                w
+                for w in re.findall(r"[A-Za-z]{3,}", clean)
+                if w.lower()
+                not in {
+                    "verification",
+                    "verify",
+                    "verified",
+                    "fail",
+                    "failed",
+                    "failure",
+                    "toolchain",
+                    "pnpm",
+                    "install",
+                    "exit",
+                    "code",
+                    "mise",
+                    "exec",
+                }
+            ]
+            assert words, f"verification-failure line carries no reason text: {line!r}"
+
+
+class TestMalformedRegistryValuesFailClosed:
+    """S9 (R1-002): registry-sourced values are validated before use — a
+    version without semver shape or a dist.integrity that is not a
+    sha512-base64 SRI string fails closed: recorded error, exit 1, and
+    every toolchain manifest byte-identical to before the run.
+    """
+
+    @pytest.mark.parametrize(
+        "bad_integrity",
+        ["sha256-AAAA", "not-an-sri-value!!", "sha512-cG5twQ"],
+    )
+    def test_malformed_integrity_fails_closed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        bad_integrity: str,
+    ) -> None:
+        """A dist.integrity that is not a sha512-base64 SRI string is
+        rejected: nothing is written to any manifest and the run exits 1.
+        """
+        registry_doc: dict[str, Any] = {
+            "time": {_NEW_PIN: _old_release().isoformat()},
+            "versions": {_NEW_PIN: {"dist": {"integrity": bad_integrity}}},
+        }
+        root, _run_calls = _wire_flag_run(monkeypatch, tmp_path, registry=registry_doc)
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
+
+        # Fails closed: nothing was written to any toolchain file...
+        _assert_toolchain_files_unchanged(root, before)
+        # ...and the failure is recorded and drives the failing exit.
+        assert raised is None
+        assert exit_code == 1
+
+    def test_malformed_version_fails_closed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A scan-reported target version without semver shape (no patch
+        component: "12.21") is rejected before any manifest is rewritten.
+        """
+        registry_doc: dict[str, Any] = {
+            "time": {"12.21": _old_release().isoformat()},
+            "versions": {"12.21": {"dist": {"integrity": _NEW_SHA}}},
+        }
+        root, _run_calls = _wire_flag_run(
+            monkeypatch,
+            tmp_path,
+            scan_json=_scan_json_with_pnpm_version("analecta", "12.21"),
+            registry=registry_doc,
+        )
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
+
+        _assert_toolchain_files_unchanged(root, before)
+        assert raised is None
+        assert exit_code == 1
+
+    @pytest.mark.parametrize(
+        ("version", "integrity"),
+        [
+            (_NEW_PIN + "\n", _NEW_SHA),
+            (_NEW_PIN, _NEW_SHA + "\n"),
+        ],
+        ids=["newline-suffixed-version", "newline-suffixed-integrity"],
+    )
+    def test_newline_suffixed_registry_value_fails_closed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        version: str,
+        integrity: str,
+    ) -> None:
+        """A registry-sourced value carrying a trailing newline is still
+        malformed for pinning: the payload parses fine as JSON (the value
+        is an ordinary string), but whether the version string itself or
+        the dist.integrity SRI carries the newline, the run fails closed —
+        recorded error, exit 1, every toolchain manifest byte-identical
+        to before the run. Otherwise the newline survives into the
+        packageManager pin and package.json stops parsing as JSON.
+        """
+        registry_doc: dict[str, Any] = {
+            "time": {version: _old_release().isoformat()},
+            "versions": {version: {"dist": {"integrity": integrity}}},
+        }
+        root, _run_calls = _wire_flag_run(
+            monkeypatch,
+            tmp_path,
+            scan_json=_scan_json_with_pnpm_version("analecta", version),
+            registry=registry_doc,
+        )
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
+
+        # Fails closed: nothing was written to any toolchain file...
+        _assert_toolchain_files_unchanged(root, before)
+        # ...and the failure is recorded and drives the failing exit.
+        assert raised is None
+        assert exit_code == 1
+
+
+class TestToolchainInputFailurePathsAreRecorded:
+    """R3-001 coverage: the toolchain step's input-failure paths — a scan
+    subprocess exiting with a code other than 0 or 1, unparseable scan
+    output, a failed registry fetch, and a registry response without
+    dist.integrity — record the failure, leave every toolchain file
+    untouched, and drive the failing exit.
+    """
+
+    def test_scan_exits_with_a_code_other_than_0_or_1(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root, run_calls = _wire_flag_run(
+            monkeypatch, tmp_path, outdated=(2, "", "pnpm outdated crashed")
+        )
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
+
+        assert raised is None
+        assert exit_code == 1
+        _assert_toolchain_files_unchanged(root, before)
+        # Closedness: the step aborted before any install-typed
+        # invocation (no verification ran against a failed scan).
+        assert not [cmd for cmd in run_calls if _is_install_typed(cmd)]
+
+    def test_unparseable_scan_output_is_a_recorded_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root, run_calls = _wire_flag_run(
+            monkeypatch,
+            tmp_path,
+            outdated=(1, "this is not json at all {{", ""),
+        )
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
+
+        assert raised is None
+        assert exit_code == 1
+        _assert_toolchain_files_unchanged(root, before)
+        assert not [cmd for cmd in run_calls if _is_install_typed(cmd)]
+
+    def test_registry_fetch_failure_is_a_recorded_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root, run_calls = _wire_flag_run(
+            monkeypatch, tmp_path, registry=_REGISTRY_UNAVAILABLE
+        )
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
+
+        assert raised is None
+        assert exit_code == 1
+        _assert_toolchain_files_unchanged(root, before)
+        assert not [cmd for cmd in run_calls if _is_install_typed(cmd)]
+
+    @pytest.mark.parametrize(
+        "shape",
+        ["dist-without-integrity", "entry-without-dist"],
+    )
+    def test_registry_response_without_dist_integrity_is_a_recorded_error(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        shape: str,
+    ) -> None:
+        registry_doc: dict[str, Any] = {
+            "time": {_NEW_PIN: _old_release().isoformat()},
+            "versions": {_NEW_PIN: {}},
+        }
+        if shape == "dist-without-integrity":
+            registry_doc["versions"][_NEW_PIN] = {"dist": {}}
+        root, run_calls = _wire_flag_run(monkeypatch, tmp_path, registry=registry_doc)
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
+
+        assert raised is None
+        assert exit_code == 1
+        _assert_toolchain_files_unchanged(root, before)
+        assert not [cmd for cmd in run_calls if _is_install_typed(cmd)]
+
+
+class TestCompositeApplyFailureRestoresEveryTouchedFile:
+    """R3-002 coverage: when one manifest rewriter reports failure after
+    another already applied, the snapshot rollback restores every touched
+    file to its pre-run bytes and the failure is recorded (exit 1).
+    """
+
+    def test_rewriter_failure_leaves_nothing_half_applied(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The first manifest rewriter the step invokes applies genuinely
+        and a later one reports failure: the snapshot rollback restores
+        every touched file to its pre-run bytes and the failure is
+        recorded (exit 1) — no verification ever ran.
+
+        The composite precondition is forced order-independently: each
+        rewriter is wrapped so the FIRST invocation runs the real rewriter
+        and every later invocation returns False. Whatever the apply
+        order, exactly one rewriter has applied before the failure, so the
+        rollback is exercised against a real partial apply — not a trivial
+        abort before anything was written.
+        """
+        root, run_calls = _wire_flag_run(monkeypatch, tmp_path)
+        before = _snapshot_toolchain_files(root)
+
+        rewriters: dict[str, Callable[[Path, str], bool]] = {
+            "package.json": deps_update._bump_package_manager,
+            "pnpm-workspace.yaml": deps_update._bump_workspace_config_dependency,
+            ".mise.toml": deps_update._bump_mise_pnpm,
+        }
+        invocation_index = {"n": 0}
+        first_apply_results: list[bool] = []
+
+        def wrap(
+            original: Callable[[Path, str], bool],
+        ) -> Callable[[Path, str], bool]:
+            def recorder(path: Path, new_value: str) -> bool:
+                if invocation_index["n"] == 0:
+                    invocation_index["n"] += 1
+                    result = original(path, new_value)
+                    first_apply_results.append(result)
+                    return result
+                invocation_index["n"] += 1
+                return False
+
+            recorder.__name__ = original.__name__
+            return recorder
+
+        for original in rewriters.values():
+            monkeypatch.setattr(deps_update, original.__name__, wrap(original))
+
+        exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
+
+        # The composite precondition really held: the first invoked
+        # rewriter applied genuinely before the later one failed.
+        assert invocation_index["n"] >= 2
+        assert first_apply_results == [True]
+        assert raised is None
+        assert exit_code == 1
+        _assert_toolchain_files_unchanged(root, before)
+        assert not [cmd for cmd in run_calls if _is_install_typed(cmd)]
+
+
+class TestToolchainErrorsSurfaceInThePrBodyAndFailTheRun:
+    """R3-003 coverage: toolchain errors are rerouted into the run's error
+    list — they render in the durable artifact (the PR body) and drive the
+    failing exit.
+    """
+
+    def test_scan_failure_error_is_surfaced_and_drives_failing_exit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The failed scan subprocess's stderr reaches the PR body (the
+        reroute into the run's error list) and the run exits 1.
+        """
+        root, _run_calls = _wire_flag_run(
+            monkeypatch,
+            tmp_path,
+            outdated=(2, "", "SCAN-PROBE-STDERR-4f2a"),
+        )
+        pr_body_file = tmp_path / "pr-body.md"
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(
+            monkeypatch,
+            ["--include-pnpm", "--pr-body-file", str(pr_body_file)],
+        )
+
+        assert raised is None
+        assert exit_code == 1
+        _assert_toolchain_files_unchanged(root, before)
+        body = pr_body_file.read_text()
+        assert "SCAN-PROBE-STDERR-4f2a" in body
