@@ -1393,19 +1393,60 @@ def _wire_flag_run(
 
 class TestSnapshotFailureOfAMissingOrUnreadableManifestIsRecorded:
     """S6 (R3-004): a missing or unreadable toolchain manifest/lockfile at
-    pre-guard snapshot time is a recorded failure with exit code 1 — never
-    an unhandled traceback propagating out of main.
+    snapshot time is a recorded failure with exit code 1 — never an
+    unhandled traceback propagating out of main.
+
+    The missing-file matrix is split by WHICH snapshot branch aborts the
+    run (pre-delivery review R3-snapshot-test-param): package.json and
+    pnpm-lock.yaml are members of main()'s unconditional pre-run
+    snapshot, so their absence aborts at the pre-run branch;
+    pnpm-workspace.yaml and .mise.toml are only read by the
+    --include-pnpm toolchain step's own snapshot, so their absence
+    survives the pre-run snapshot and aborts at the toolchain branch —
+    the branch this class's S6 rule was ratified for.
     """
 
     @pytest.mark.parametrize(
         "missing",
-        ["package.json", "pnpm-workspace.yaml", ".mise.toml", "pnpm-lock.yaml"],
+        ["package.json", "pnpm-lock.yaml"],
+        ids=["pre-run-snapshot-abort-package-json", "pre-run-snapshot-abort-pnpm-lock"],
     )
-    def test_missing_manifest_is_a_recorded_error_with_exit_1(
+    def test_missing_pre_run_snapshot_file_is_a_recorded_error_with_exit_1(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
     ) -> None:
-        """Deleting one toolchain file must not crash the run: main records
-        the error and exits 1, and no remaining file is touched.
+        """Deleting a file captured by main()'s unconditional pre-run
+        snapshot (package.json, pnpm-lock.yaml) must not crash the run:
+        main records the error and exits 1 at the pre-run branch, and no
+        remaining file is touched.
+        """
+        root, _run_calls = _wire_flag_run(monkeypatch, tmp_path)
+        (root / missing).unlink()
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
+
+        assert raised is None, (
+            f"main() died on an unhandled {type(raised).__name__} when"
+            f" {missing} was missing at pre-run snapshot time, instead of"
+            f" recording the error: {raised!r}"
+        )
+        assert exit_code == 1
+        _assert_toolchain_files_unchanged(root, before)
+        assert not (root / missing).exists()
+
+    @pytest.mark.parametrize(
+        "missing",
+        ["pnpm-workspace.yaml", ".mise.toml"],
+        ids=["toolchain-snapshot-abort-workspace", "toolchain-snapshot-abort-mise"],
+    )
+    def test_missing_toolchain_snapshot_file_is_a_recorded_error_with_exit_1(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
+    ) -> None:
+        """Deleting a file only read by the --include-pnpm toolchain
+        step's snapshot (pnpm-workspace.yaml, .mise.toml) must not crash
+        the run: the pre-run snapshot succeeds, the toolchain snapshot
+        branch records the error and exits 1, and no remaining file is
+        touched.
         """
         root, _run_calls = _wire_flag_run(monkeypatch, tmp_path)
         (root / missing).unlink()
@@ -2148,6 +2189,143 @@ class TestGenericPathScanReportedValuesAreShapeValidated:
         # The blocked-packages guidance paragraph is part of the same
         # observable body (final-pass review R3-prbody-untested-wording).
         assert "Blocked packages were excluded automatically" in node_section
+
+
+class TestGenericPathNonStringScanValuesFailClosed:
+    """The generic update path's shape gates call `_SEMVER_RE.match(latest)`
+    / `_NPM_NAME_RE.match(name)` directly, so a scan JSON carrying a
+    NON-STRING value for one of those keys (null, a number, a list) makes
+    `re.match` raise TypeError out of main — an unhandled traceback, not
+    the recorded-error/fail-closed contract (pre-delivery review
+    R3-scan-type-gate). The contract pinned here: for every non-string
+    shape the scan surface can carry, the run records the error, exits 1,
+    and leaves the manifests byte-identical — it never raises.
+
+    A note on coverage: a package NAME can never be non-string here. Scan
+    entries are the values of the `pnpm outdated --json` document, and
+    their names are that document's object keys — JSON object keys are
+    always strings after parsing (even a Python `None` key is serialized
+    as the string `"null"`). So the reachable non-string shapes are the
+    VERSION's (`latest`): null, number, list — one parameter per shape.
+
+    Pinned at the two levels where the symptom lives:
+
+    - update_node (the gate itself): a non-string version must block the
+      package per-package exactly like any other malformed value — error
+      recorded, nothing applied, no exception out of the gate. At HEAD
+      the re.match TypeError escapes update_node instead.
+    - main (the run): the end-to-end fail-closed contract — recorded
+      error, exit 1, manifests byte-identical, nothing raised. At HEAD
+      the TypeError is contained by the workspace crash guard, which
+      records it and exits 1 (so number/list already hold there); the
+      null shape is silently dropped (`not latest` short-circuits)
+      instead of recorded, which fails the contract.
+    """
+
+    @pytest.mark.parametrize(
+        "bad_latest",
+        [None, 8.74, ["8.74.0"]],
+        ids=["null-version", "numeric-version", "list-version"],
+    )
+    def test_update_node_blocks_a_non_string_version_per_package(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        bad_latest: Any,
+    ) -> None:
+        """Gate-level mechanism: a non-string scan-reported version meets
+        the shape gate and blocks the package — error recorded, no pnpm
+        add, nothing applied — never a re.match TypeError out of
+        update_node.
+        """
+        scan_doc = {
+            "typescript-eslint": {
+                "current": "8.73.0",
+                "wanted": "8.74.0",
+                "latest": bad_latest,
+                "dependencyType": "devDependencies",
+                "dependentPackages": ["analecta"],
+            }
+        }
+        _root, add_calls = _wire_generic_scan(monkeypatch, tmp_path, scan_doc)
+
+        raised: Exception | None = None
+        errors: list[str] = []
+        result: tuple[list[deps_update.Updated], list[deps_update.Skipped]] | None = (
+            None
+        )
+        try:
+            result = deps_update.update_node(10, "analecta", errors)
+        except Exception as exc:  # the mechanism: no exception may escape
+            raised = exc
+
+        assert raised is None, (
+            f"update_node died on an unhandled {type(raised).__name__} for"
+            f" a non-string scan-reported version ({bad_latest!r}):"
+            f" {raised!r} — the shape gate must block the package and"
+            " record the error, not crash the workspace's update"
+        )
+        assert result is not None
+        updated, skipped = result
+        assert updated == []
+        assert skipped == []
+        assert errors, (
+            f"the non-string version ({bad_latest!r}) was not recorded as"
+            " an error — a shape the gate cannot validate must fail"
+            " closed, not be silently dropped"
+        )
+        assert add_calls == []
+
+    @pytest.mark.parametrize(
+        "bad_latest",
+        [None, 8.74, ["8.74.0"]],
+        ids=["null-version", "numeric-version", "list-version"],
+    )
+    def test_main_run_fails_closed_on_a_non_string_version(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        bad_latest: Any,
+    ) -> None:
+        """End-to-end contract: a run whose scan reports a non-string
+        version records the error, exits 1, and leaves the manifests
+        byte-identical — never a raised exception escaping main().
+        """
+        scan_doc = {
+            "typescript-eslint": {
+                "current": "8.73.0",
+                "wanted": "8.74.0",
+                "latest": bad_latest,
+                "dependencyType": "devDependencies",
+                "dependentPackages": ["analecta"],
+            }
+        }
+        root, _add_calls = _wire_generic_scan(monkeypatch, tmp_path, scan_doc)
+        pr_body_file = tmp_path / "pr-body.md"
+        before = {
+            name: (root / name).read_bytes()
+            for name in ("package.json", "pnpm-lock.yaml")
+        }
+
+        exit_code, raised = _run_main(
+            monkeypatch, ["--pr-body-file", str(pr_body_file)]
+        )
+
+        # The mechanism: no traceback out of main — the non-string value
+        # fails closed, like any other malformed scan-reported value.
+        assert raised is None, (
+            f"main() died on an unhandled {type(raised).__name__} for a"
+            f" non-string scan-reported version ({bad_latest!r}):"
+            f" {raised!r} — the shape gate must record the error and fail"
+            " closed, not crash the run"
+        )
+        assert exit_code == 1
+        # Fail closed: manifests byte-identical...
+        for name, data in before.items():
+            assert (root / name).read_bytes() == data, f"{name} changed during the run"
+        # ...and the failure is recorded in the durable artifact.
+        node_section = pr_body_file.read_text().split("### Node / pnpm", 1)[1]
+        assert "**Errors" in node_section
 
 
 class TestPreRunSnapshotFailureRendersInThePrBody:
