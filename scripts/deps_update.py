@@ -830,33 +830,65 @@ def update_node(
     items = sorted(outdated.items())
     for i, (name, info) in enumerate(items):
         current: str = cast(str, info.get("current", ""))
-        latest: str = cast(str, info.get("latest", ""))
-        if not latest or latest == current:
-            continue
-        if name in _TOOLCHAIN_PACKAGES:
-            print(f"  {name}: {current} -> {latest}")
-            print("    [excluded] package manager toolchain — never applied")
-            _TOOLCHAIN_EXCLUSIONS.append(name)
-            continue
-        # Scan-reported values are shape-validated before anything
-        # downstream sees them (T3-advisor-2): a name that is not a valid
-        # npm name or a version that is not ASCII semver never reaches the
+        latest_raw: object = info.get("latest", "")
+        # Scan-reported values are validated before anything downstream
+        # sees them (T3-advisor-2): a name that is not a valid npm name
+        # or a version that is not ASCII semver never reaches the
         # registry fetch, the apply path (`pnpm add`, the exact-pin
         # rewrite, the lockfile), or the PR body raw. The package fails
         # closed FOR THIS PACKAGE through the per-package blocked
         # machinery — recorded error, Blocked row in the PR body — and the
         # run continues with the other packages.
+        #
+        # The type gate comes first (pre-delivery review
+        # R3-scan-type-gate): the scan JSON can carry a non-string value
+        # for the latest key (null, number, list). `not latest` below
+        # would silently drop a null version and the regex gates would
+        # raise TypeError on the rest — a non-string value flows through
+        # the same fail-closed blocked-per-package path as any other
+        # malformed value. (A non-string NAME is unreachable from
+        # `pnpm outdated --json` — object keys are always strings after
+        # parsing — so only the version needs the type gate; the name's
+        # content is still shape-checked below.)
+        latest = ""
         shape_reason = ""
-        if _NPM_NAME_RE.match(name) is None:
-            shape_reason = "scan-reported package name is not a valid npm name"
-        elif _SEMVER_RE.match(latest) is None:
-            shape_reason = f"scan-reported version {latest!r} is not ASCII semver"
+        if not isinstance(latest_raw, str):
+            shape_reason = f"scan-reported version {latest_raw!r} is not a string"
+        else:
+            latest = latest_raw
+        if not shape_reason:
+            if not latest or latest == current:
+                continue
+            if name in _TOOLCHAIN_PACKAGES:
+                print(f"  {name}: {current} -> {latest}")
+                print("    [excluded] package manager toolchain — never applied")
+                _TOOLCHAIN_EXCLUSIONS.append(name)
+                continue
+            if _NPM_NAME_RE.match(name) is None:
+                shape_reason = "scan-reported package name is not a valid npm name"
+            elif _SEMVER_RE.match(latest) is None:
+                shape_reason = f"scan-reported version {latest!r} is not ASCII semver"
         if shape_reason:
-            print(f"  {name}: {current} -> {latest}")
+            print(f"  {name}: {current} -> {latest_raw}")
             print(f"    [blocked] {shape_reason} — never applied")
+            # Text surfaces take the value's string form; a non-string
+            # scan value (caught by the type gate above) renders as its
+            # repr — matching the shape reason's {latest!r} style. The
+            # name needs no coercion (JSON object keys are always str).
+            latest_text = (
+                latest_raw if isinstance(latest_raw, str) else repr(latest_raw)
+            )
             _record_error(
                 errors,
-                f"{name}: {shape_reason} — package blocked, never applied",
+                # Sanitize at storage (final-pass-native R1-raw-name),
+                # same convention as the blocked-row cells below: the
+                # raw scan-reported name — and the raw version repr
+                # embedded in the version branch's reason — must never
+                # sit in the shared errors list unsanitized, deferring
+                # body safety to the render path.
+                _sanitize_reason(
+                    f"{name}: {shape_reason} — package blocked, never applied"
+                ),
             )
             # The row's cells are sanitized at storage (same convention as
             # the verify-bisection blocked paths' _sanitize_reason(reason)):
@@ -867,7 +899,7 @@ def update_node(
                     workspace,
                     (
                         _sanitize_reason(name),
-                        _sanitize_reason(latest),
+                        _sanitize_reason(latest_text),
                         _sanitize_reason(shape_reason),
                     ),
                 )
