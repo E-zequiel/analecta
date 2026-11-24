@@ -1451,8 +1451,11 @@ class TestSnapshotFailureOfAMissingOrUnreadableManifestIsRecorded:
         root, _run_calls = _wire_flag_run(monkeypatch, tmp_path)
         (root / missing).unlink()
         before = _snapshot_toolchain_files(root)
+        pr_body_file = tmp_path / "pr-body.md"
 
-        exit_code, raised = _run_main(monkeypatch, ["--include-pnpm"])
+        exit_code, raised = _run_main(
+            monkeypatch, ["--include-pnpm", "--pr-body-file", str(pr_body_file)]
+        )
 
         assert raised is None, (
             f"main() died on an unhandled {type(raised).__name__} when"
@@ -1460,6 +1463,12 @@ class TestSnapshotFailureOfAMissingOrUnreadableManifestIsRecorded:
             f" the error: {raised!r}"
         )
         assert exit_code == 1
+        # Branch attribution (L24 pool): the error text must identify the
+        # TOOLCHAIN snapshot branch, not the pre-run one.
+        assert (
+            "pnpm toolchain: snapshot of the manifests before the bump failed"
+            in pr_body_file.read_text()
+        )
         _assert_toolchain_files_unchanged(root, before)
         assert not (root / missing).exists()
 
@@ -2148,15 +2157,14 @@ class TestGenericPathScanReportedValuesAreShapeValidated:
     def test_shape_block_error_is_rendered_sanitized_in_the_errors_line(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The shape-block per-package error message interpolates the
-        scan-reported name raw into the errors list (_record_error at the
-        gate), so the body's Errors line is the one place the hostile
-        string could resurface after the Blocked rows' storage-time
-        sanitization. Pin the whole chain: the error IS rendered (the
-        mechanism is exercised, not silently dropped) AND its name cell is
-        the sanitized form — backticks rewritten, no manifest-foreign
-        content (final-pass native review R1-raw-name/R3-001: the render
-        guarantee was implicit and untested on this path).
+        """The shape-block per-package error message is sanitized at
+        storage (R1-001 hardening: the _record_error f-string wraps the
+        whole message in _sanitize_reason at the gate), so the body's
+        Errors line can only ever carry the sanitized form. Pin the whole
+        chain: the error IS rendered (the mechanism is exercised, not
+        silently dropped) AND its name cell is the sanitized form —
+        backticks rewritten, no manifest-foreign content (final-pass
+        native review R1-raw-name/R3-001).
         """
         bad_name = "typescript-eslint`x"
         scan_doc = {
