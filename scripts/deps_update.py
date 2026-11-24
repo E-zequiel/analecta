@@ -1088,12 +1088,15 @@ _TOOLCHAIN_MANIFESTS = ("package.json", "pnpm-workspace.yaml", ".mise.toml")
 # malformed shape must fail closed (recorded error, no manifest write),
 # never be interpolated verbatim into the manifests. The semver shape is
 # ASCII-only — [0-9], not \d, so Unicode decimal digits never pass
-# (T3-native-R1-001). The SRI shape additionally requires the canonical
-# ==-padded sha512 form at sha512 scale (T3-advisor-1): a real sha512
-# digest is exactly 86 base64 data chars + "==" — 64 bytes ≡ 1 (mod 3),
-# so the padding is always exactly "==" — while a bare base64 shape
-# alone accepts any length ("sha512-AAAA", "sha512-AAAAAA==", a 48-char
-# unpadded fragment) and would be written verbatim into the pin.
+# (T3-native-R1-001). The SRI shape additionally requires canonical
+# ==-padded base64 at sha512 scale (T3-advisor-1): the padding is always
+# exactly "==" — 64 bytes ≡ 1 (mod 3) — and a bare base64 shape alone
+# accepts any length ("sha512-AAAA", "sha512-AAAAAA==", a 48-char
+# unpadded fragment) that would be written verbatim into the pin. The
+# exact 86-data-char sha512 length is deliberately NOT enforced here
+# (owner-ratified residual): a padded wrong-length fake that slips past
+# this gate still fails closed at the mise verification install
+# (rollback + exit 1, no corruption).
 _SEMVER_RE = re.compile(
     r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\Z"
 )
@@ -1535,8 +1538,9 @@ def _pr_body(
         lines += [
             "",
             "Blocked packages were excluded automatically, not reverted wholesale —"
-            " re-run the updater once the underlying incompatibility is resolved"
-            " upstream.",
+            " for upstream-incompatible updates, re-run the updater once the"
+            " incompatibility is resolved upstream; shape-invalid scan-reported"
+            " values never become eligible, whatever the run count.",
         ]
     if toolchain is not None:
         # S5: on the flag path the toolchain bump lives in its own dedicated
