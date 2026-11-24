@@ -2142,11 +2142,12 @@ class TestGenericPathScanReportedValuesAreShapeValidated:
         )
         assert bad_name not in node_section
         # _sanitize_reason rewrites authored backticks to single quotes;
-        # the rendered error must carry the sanitized name verbatim.
-        assert (
-            "typescript-eslint'x: scan-reported package name is not a"
-            " valid npm name" in node_section
-        )
+        # the rendered error must carry the sanitized name (the render
+        # guarantee — not the incidental _record_error phrasing).
+        assert "typescript-eslint'x" in node_section
+        # The blocked-packages guidance paragraph is part of the same
+        # observable body (final-pass review R3-prbody-untested-wording).
+        assert "Blocked packages were excluded automatically" in node_section
 
 
 class TestPreRunSnapshotFailureRendersInThePrBody:
