@@ -2104,6 +2104,50 @@ class TestGenericPathScanReportedValuesAreShapeValidated:
             f" manifest-foreign content unsanitized; body:\n{body}"
         )
 
+    def test_shape_block_error_is_rendered_sanitized_in_the_errors_line(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The shape-block per-package error message interpolates the
+        scan-reported name raw into the errors list (_record_error at the
+        gate), so the body's Errors line is the one place the hostile
+        string could resurface after the Blocked rows' storage-time
+        sanitization. Pin the whole chain: the error IS rendered (the
+        mechanism is exercised, not silently dropped) AND its name cell is
+        the sanitized form — backticks rewritten, no manifest-foreign
+        content (final-pass native review R1-raw-name/R3-001: the render
+        guarantee was implicit and untested on this path).
+        """
+        bad_name = "typescript-eslint`x"
+        scan_doc = {
+            bad_name: {
+                "current": "8.73.0",
+                "wanted": "8.74.0",
+                "latest": "8.74.0",
+                "dependencyType": "devDependencies",
+                "dependentPackages": ["analecta"],
+            }
+        }
+        _root, _add_calls = _wire_generic_scan(monkeypatch, tmp_path, scan_doc)
+        pr_body_file = tmp_path / "pr-body.md"
+
+        _exit_code, raised = _run_main(
+            monkeypatch, ["--pr-body-file", str(pr_body_file)]
+        )
+
+        assert raised is None
+        node_section = pr_body_file.read_text().split("### Node / pnpm", 1)[1]
+        assert "**Errors" in node_section, (
+            f"the shape-block error was not rendered in the Node section's"
+            f" Errors line; node section:\n{node_section}"
+        )
+        assert bad_name not in node_section
+        # _sanitize_reason rewrites authored backticks to single quotes;
+        # the rendered error must carry the sanitized name verbatim.
+        assert (
+            "typescript-eslint'x: scan-reported package name is not a"
+            " valid npm name" in node_section
+        )
+
 
 class TestPreRunSnapshotFailureRendersInThePrBody:
     """The S6 pre-run-snapshot-failure branch (a missing/unreadable
