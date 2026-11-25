@@ -2336,6 +2336,162 @@ class TestGenericPathNonStringScanValuesFailClosed:
         assert "**Errors" in node_section
 
 
+class TestGenericPathNonStringCurrentValueFailsClosed:
+    """Follow-up pass (native review R1-001): the non-string shape gate
+    hardened only the scan-reported `latest` value. The sibling `current`
+    field — read from the same scan document — relies on a runtime-no-op
+    `cast(str, ...)` at HEAD, so a scan payload whose `current` is not a
+    string flows ungated: it reaches the equality check, the console
+    lines, and the PR body's applied-row "Old" cell raw, instead of the
+    fail-closed blocked-per-package contract the `latest` gate
+    established.
+
+    The reachable non-string shapes for `current` are the same as for
+    `latest` minus the list the prior pass pinned as its own contract:
+    the scan entry is parsed JSON, so `current` can be null or a number
+    (a version misserialized without quotes). Name cannot be non-string
+    (JSON object keys are always strings), and `wanted`/`latest` already
+    meet the ASCII-semver gate. One parameter per shape here.
+
+    Pinned at the two levels where the symptom lives, same pattern as
+    the `latest` class (TestGenericPathNonStringScanValuesFailClosed):
+
+    - update_node (the gate itself): a non-string current must block the
+      package per-package exactly like any other malformed value — error
+      recorded, nothing applied, no exception out of the gate. At HEAD
+      the cast passes the raw value through instead.
+    - main (the run): the end-to-end fail-closed contract — recorded
+      error, exit 1, manifests byte-identical, nothing raised, and the
+      PR body must NOT carry the raw non-string value in any row cell.
+    """
+
+    @pytest.mark.parametrize(
+        "bad_current",
+        [5, None],
+        ids=["numeric-current", "null-current"],
+    )
+    def test_update_node_blocks_a_non_string_current_per_package(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        bad_current: Any,
+    ) -> None:
+        """Gate-level mechanism: a non-string scan-reported `current`
+        meets a fail-closed gate like every other malformed scan value —
+        error recorded, no pnpm add, nothing applied — never flowing past
+        a no-op cast into the apply path.
+        """
+        scan_doc = {
+            "typescript-eslint": {
+                "current": bad_current,
+                "wanted": "8.74.0",
+                "latest": "8.74.0",
+                "dependencyType": "devDependencies",
+                "dependentPackages": ["analecta"],
+            }
+        }
+        _root, add_calls = _wire_generic_scan(monkeypatch, tmp_path, scan_doc)
+
+        raised: Exception | None = None
+        errors: list[str] = []
+        result: tuple[list[deps_update.Updated], list[deps_update.Skipped]] | None = (
+            None
+        )
+        try:
+            result = deps_update.update_node(10, "analecta", errors)
+        except Exception as exc:  # the mechanism: no exception may escape
+            raised = exc
+
+        assert raised is None, (
+            f"update_node died on an unhandled {type(raised).__name__} for"
+            f" a non-string scan-reported current ({bad_current!r}):"
+            f" {raised!r} — the sibling of the `latest` shape gate must"
+            " block the package and record the error, not crash or pass"
+            " the value through"
+        )
+        assert result is not None
+        updated, skipped = result
+        assert updated == [], (
+            f"a non-string scan-reported current ({bad_current!r}) was"
+            f" APPLIED instead of blocked: updated={updated!r} — the"
+            " fail-closed contract requires the package to be blocked"
+        )
+        assert skipped == [], (
+            f"a non-string scan-reported current ({bad_current!r}) landed"
+            f" in skipped={skipped!r} without a recorded error — a shape"
+            " the gate cannot validate must be blocked with a recorded"
+            " error, not silently dropped"
+        )
+        assert errors, (
+            f"the non-string current ({bad_current!r}) was not recorded as"
+            " an error — a shape the gate cannot validate must fail"
+            " closed with a recorded error, not be silently dropped"
+        )
+        assert add_calls == []
+
+    @pytest.mark.parametrize(
+        "bad_current",
+        [5, None],
+        ids=["numeric-current", "null-current"],
+    )
+    def test_main_run_fails_closed_on_a_non_string_current(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        bad_current: Any,
+    ) -> None:
+        """End-to-end contract: a run whose scan reports a non-string
+        `current` records the error, exits 1, leaves the manifests
+        byte-identical — never a raised exception escaping main() — and
+        the PR body never carries the raw non-string value.
+        """
+        scan_doc = {
+            "typescript-eslint": {
+                "current": bad_current,
+                "wanted": "8.74.0",
+                "latest": "8.74.0",
+                "dependencyType": "devDependencies",
+                "dependentPackages": ["analecta"],
+            }
+        }
+        root, _add_calls = _wire_generic_scan(monkeypatch, tmp_path, scan_doc)
+        pr_body_file = tmp_path / "pr-body.md"
+        before = {
+            name: (root / name).read_bytes()
+            for name in ("package.json", "pnpm-lock.yaml")
+        }
+
+        exit_code, raised = _run_main(
+            monkeypatch, ["--pr-body-file", str(pr_body_file)]
+        )
+
+        # The mechanism: no traceback out of main — the non-string value
+        # fails closed, like any other malformed scan-reported value.
+        assert raised is None, (
+            f"main() died on an unhandled {type(raised).__name__} for a"
+            f" non-string scan-reported current ({bad_current!r}):"
+            f" {raised!r} — the sibling of the `latest` shape gate must"
+            " record the error and fail closed, not crash the run"
+        )
+        assert exit_code == 1
+        # Fail closed: manifests byte-identical...
+        for name, data in before.items():
+            assert (root / name).read_bytes() == data, f"{name} changed during the run"
+        # ...the failure is recorded in the durable artifact...
+        node_section = pr_body_file.read_text().split("### Node / pnpm", 1)[1]
+        assert "**Errors" in node_section
+        # ...and the raw non-string value never reaches it: neither its
+        # Python string form (what an f-string renders) nor its JSON form
+        # may appear in any row cell of the Node section.
+        for raw_form in (str(bad_current), json.dumps(bad_current)):
+            assert raw_form not in node_section, (
+                f"the PR body carries the scan-reported non-string current"
+                f" ({bad_current!r}) raw as {raw_form!r} instead of the"
+                " fail-closed blocked-package error; node section:\n"
+                f"{node_section}"
+            )
+
+
 class TestPreRunSnapshotFailureRendersInThePrBody:
     """The S6 pre-run-snapshot-failure branch (a missing/unreadable
     manifest or lockfile before anything runs) renders the recorded error
