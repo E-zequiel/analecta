@@ -1289,6 +1289,51 @@ def _scan_json_with_pnpm_version(workspace: str, version: str) -> str:
     return json.dumps(doc)
 
 
+def _scan_json_with_pnpm_bad_version(workspace: str, bad_latest: Any) -> str:
+    """`pnpm outdated --json` payload whose pnpm entry reports *bad_latest*.
+
+    Same shape as _scan_json_with_pnpm_version, but for the non-string
+    values the scan surface can carry (a number, null): the malformed
+    value lands in BOTH version keys, exactly as a buggy or tampered
+    upstream scan would report it.
+    """
+    doc: dict[str, Any] = json.loads(_pnpm_scan_json(workspace))
+    doc[workspace]["pnpm"]["wanted"] = bad_latest
+    doc[workspace]["pnpm"]["latest"] = bad_latest
+    return json.dumps(doc)
+
+
+def _intercept_registry_fetches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[tuple[str, str]]:
+    """Wrap the registry fakes _wire_flag_run installed with call recorders.
+
+    Must be called AFTER _wire_flag_run: the wrappers capture the fakes it
+    installed and delegate to them unchanged. Returns a list that appends
+    one ("data", name) / ("fetch", url) tuple per registry lookup, so a
+    test can assert a run performed NO registry fetch at all.
+    """
+    fetches: list[tuple[str, str]] = []
+    orig_data = deps_update._npm_registry_data
+    orig_fetch = deps_update._fetch_json
+
+    def counting_data(
+        name: str, cache: dict[str, dict[str, Any]] | None = None
+    ) -> dict[str, Any] | None:
+        fetches.append(("data", name))
+        return orig_data(name, cache)
+
+    def counting_fetch(
+        url: str, *, headers: dict[str, str] | None = None
+    ) -> dict[str, Any] | None:
+        fetches.append(("fetch", url))
+        return orig_fetch(url, headers=headers)
+
+    monkeypatch.setattr(deps_update, "_npm_registry_data", counting_data)
+    monkeypatch.setattr(deps_update, "_fetch_json", counting_fetch)
+    return fetches
+
+
 def _wire_flag_run(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -2367,7 +2412,11 @@ class TestGenericPathNonStringCurrentValueFailsClosed:
 
     @pytest.mark.parametrize(
         "bad_current",
-        [5, None],
+        # Distinctive digits (R3-002): the raw numeric form must stay
+        # collision-free against legitimate section content — a short
+        # form like "5" false-fails on any future version or count
+        # carrying that digit.
+        [508534.6721, None],
         ids=["numeric-current", "null-current"],
     )
     def test_update_node_blocks_a_non_string_current_per_package(
@@ -2431,7 +2480,9 @@ class TestGenericPathNonStringCurrentValueFailsClosed:
 
     @pytest.mark.parametrize(
         "bad_current",
-        [5, None],
+        # Distinctive digits (R3-002), same fixture family as the
+        # gate-level test above.
+        [508534.6721, None],
         ids=["numeric-current", "null-current"],
     )
     def test_main_run_fails_closed_on_a_non_string_current(
@@ -2480,15 +2531,316 @@ class TestGenericPathNonStringCurrentValueFailsClosed:
         # ...the failure is recorded in the durable artifact...
         node_section = pr_body_file.read_text().split("### Node / pnpm", 1)[1]
         assert "**Errors" in node_section
-        # ...and the raw non-string value never reaches it: neither its
-        # Python string form (what an f-string renders) nor its JSON form
-        # may appear in any row cell of the Node section.
+        # ...and the raw non-string value never reaches the durable
+        # artifact's cells (R3-002 scoping): neither its Python string
+        # form (what an f-string renders) nor its JSON form may appear in
+        # any table row or in the Errors line — where scan-reported
+        # values actually land. (A whole-section substring check for a
+        # short numeric form like "5" would false-fail on legitimate
+        # future content — a version carrying that digit, a count — so
+        # the absence is pinned on the row/error-line cells; the
+        # distinctive numeric fixture keeps even the broader check true.)
+        cell_lines = [
+            line
+            for line in node_section.splitlines()
+            if line.startswith("|") or line.startswith("**Errors")
+        ]
+        assert cell_lines, (
+            "no table rows or Errors line rendered in the Node section;\n"
+            f"{node_section}"
+        )
         for raw_form in (str(bad_current), json.dumps(bad_current)):
-            assert raw_form not in node_section, (
-                f"the PR body carries the scan-reported non-string current"
-                f" ({bad_current!r}) raw as {raw_form!r} instead of the"
-                " fail-closed blocked-package error; node section:\n"
-                f"{node_section}"
+            for line in cell_lines:
+                assert raw_form not in line, (
+                    f"the PR body carries the scan-reported non-string"
+                    f" current ({bad_current!r}) raw as {raw_form!r} in a"
+                    f" table row or the Errors line: {line!r}"
+                )
+
+
+class TestToolchainPathNonStringScanValuesFailClosed:
+    """The toolchain path (`_update_pnpm_toolchain`, --include-pnpm) reads
+    the scan-reported `current`/`latest` through runtime-no-op `cast(str,
+    ...)` calls with NO type gate (pool advisory A1). A scan reporting a
+    non-string `latest` therefore does not meet the clean S9-style shape
+    error ("scan-reported version ... is not a string", fail-closed
+    before any fetch/write) that the generic path
+    (TestGenericPathNonStringScanValuesFailClosed) and the toolchain's own
+    semver/SRI gates establish. The contract pinned here: a non-string
+    scan-reported version in the toolchain path produces that same clean,
+    gated fail-closed treatment — a recorded shape error (NOT a _guard
+    crash containment), exit 1, the three manifests and the lockfile
+    byte-identical, no registry fetch, no `pnpm add`, no verification
+    install.
+
+    Reachable shapes mirror the generic gate's analysis: a package NAME
+    is unreachable (JSON object keys are always strings after parsing);
+    `latest` can be null, a number, or — equally parseable by any JSON
+    reader — a container (array, object). `latest` is the value the gate
+    must cover because the bump fires off it — a null additionally short-
+    circuits the `not latest` skip branch (silently dropped instead of
+    recorded), a truthy number reaches `_SEMVER_RE.match` and raises
+    TypeError out of the step. One parameter per shape.
+
+    Container shapes are pinned separately below (follow-up pass,
+    pre-delivery review R1/R3-002): their repr carries
+    markdown-structural brackets/quotes, so the gate's {latest_raw!r}
+    reason text must never let the raw repr reach the PR body's Errors
+    line.
+
+    Pinned at the two levels where the symptom lives, mirroring
+    TestGenericPathNonStringScanValuesFailClosed:
+
+    - _update_pnpm_toolchain (the gate itself): the existing _wire_flag_run
+      fakes reach it directly, so the gate-level update_node-style test is
+      included (unlike the flag-run-only wiring scenarios, no extra fake
+      is needed — the step only requires _run, REPO_ROOT, and the
+      registry fake, all already wired).
+    - main (the run): the end-to-end fail-closed contract, including the
+      PR body: the toolchain step must record its OWN clean shape error
+      ("pnpm toolchain ... not a string"), never the _guard crash
+      wording, and nothing install-typed may run.
+    """
+
+    @pytest.mark.parametrize(
+        "bad_latest",
+        [8.74, None],
+        ids=["numeric-latest", "null-latest"],
+    )
+    def test_update_pnpm_toolchain_blocks_a_non_string_version(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        bad_latest: Any,
+    ) -> None:
+        """Gate-level mechanism: a non-string scan-reported `latest`
+        meets the toolchain step's shape gate and fails closed — recorded
+        shape error, None returned, nothing written, no registry fetch —
+        never a cast-passed value reaching the semver regex (TypeError)
+        or the `not latest` skip branch (silently dropped).
+        """
+        scan_json = _scan_json_with_pnpm_bad_version("analecta", bad_latest)
+        root, _run_calls = _wire_flag_run(monkeypatch, tmp_path, scan_json=scan_json)
+        fetches = _intercept_registry_fetches(monkeypatch)
+        before = _snapshot_toolchain_files(root)
+
+        raised: Exception | None = None
+        errors: list[str] = []
+        result: deps_update._ToolchainBump | None = None
+        try:
+            result = deps_update._update_pnpm_toolchain(10, errors)
+        except Exception as exc:  # the mechanism: no exception may escape
+            raised = exc
+
+        assert raised is None, (
+            f"_update_pnpm_toolchain died on an unhandled"
+            f" {type(raised).__name__} for a non-string scan-reported"
+            f" latest ({bad_latest!r}): {raised!r} — the value must meet a"
+            " shape gate and fail closed, not reach the semver regex"
+        )
+        assert result is None, (
+            f"a non-string scan-reported latest ({bad_latest!r}) returned"
+            f" {result!r} instead of a recorded failure — a shape the gate"
+            " cannot validate must fail closed with a recorded error, not"
+            " skip silently"
+        )
+        assert errors, (
+            f"the non-string latest ({bad_latest!r}) was not recorded as an"
+            " error — a shape the gate cannot validate must fail closed"
+            " with a recorded error, not be silently dropped"
+        )
+        toolchain_errors = [e for e in errors if "pnpm toolchain" in e]
+        assert toolchain_errors, (
+            f"the recorded failure for a non-string scan-reported latest"
+            f" ({bad_latest!r}) is not attributed to the toolchain step;"
+            f" errors: {errors!r}"
+        )
+        assert any("not a string" in e for e in toolchain_errors), (
+            f"the toolchain error for a non-string scan-reported latest"
+            f" ({bad_latest!r}) is not the clean S9-style shape error the"
+            f" toolchain's own gates establish; errors: {errors!r}"
+        )
+        assert not any("crashed unexpectedly" in e for e in errors), (
+            f"the failure was a _guard crash containment, not the clean"
+            f" shape error; errors: {errors!r}"
+        )
+        assert fetches == [], (
+            f"the gate fetched from the registry for a non-string"
+            f" scan-reported latest ({bad_latest!r}) — fail-closed means"
+            " nothing downstream of the shape gate runs"
+        )
+        _assert_toolchain_files_unchanged(root, before)
+
+    @pytest.mark.parametrize(
+        "bad_latest",
+        [8.74, None],
+        ids=["numeric-latest", "null-latest"],
+    )
+    def test_main_run_fails_closed_on_a_non_string_toolchain_version(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        bad_latest: Any,
+    ) -> None:
+        """End-to-end contract: a --include-pnpm run whose scan reports a
+        non-string version records the toolchain's own clean shape error
+        in the durable artifact (the Node section's Errors line — NOT a
+        _guard crash containment), exits 1, leaves every toolchain
+        manifest and the lockfile byte-identical, and performs no
+        registry fetch, no `pnpm add`, and no verification install.
+        """
+        scan_json = _scan_json_with_pnpm_bad_version("analecta", bad_latest)
+        root, run_calls = _wire_flag_run(monkeypatch, tmp_path, scan_json=scan_json)
+        fetches = _intercept_registry_fetches(monkeypatch)
+        pr_body_file = tmp_path / "pr-body.md"
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(
+            monkeypatch, ["--include-pnpm", "--pr-body-file", str(pr_body_file)]
+        )
+
+        # The mechanism: no traceback out of main — the non-string value
+        # fails closed, like any other malformed scan-reported value.
+        assert raised is None, (
+            f"main() died on an unhandled {type(raised).__name__} for a"
+            f" non-string toolchain scan version ({bad_latest!r}):"
+            f" {raised!r} — the shape gate must record the error and fail"
+            " closed, not crash the run"
+        )
+        assert exit_code == 1
+        # Fail closed: the three manifests and the lockfile are
+        # byte-identical...
+        _assert_toolchain_files_unchanged(root, before)
+        # ...nothing ran downstream of the shape gate: no registry
+        # fetch, no `pnpm add`, no verification install.
+        assert fetches == [], (
+            f"the run fetched from the registry for a non-string"
+            f" scan-reported latest ({bad_latest!r}) — fail-closed means"
+            " nothing downstream of the shape gate runs"
+        )
+        assert not [cmd for cmd in run_calls if cmd[:2] == ["pnpm", "add"]]
+        assert not [cmd for cmd in run_calls if _is_install_typed(cmd)], (
+            f"a verification install ran for a non-string scan-reported"
+            f" latest ({bad_latest!r}) — fail-closed means nothing"
+            " downstream of the shape gate runs"
+        )
+        # ...and the failure is recorded in the durable artifact as the
+        # toolchain step's OWN clean shape error — not a crash
+        # containment and not only the generic path's per-package block.
+        body = pr_body_file.read_text()
+        node_section = body.split("### Node / pnpm", 1)[1]
+        assert "**Errors" in node_section
+        errors_line = next(
+            ln for ln in node_section.splitlines() if ln.startswith("**Errors")
+        )
+        error_items = errors_line.split("checked:**", 1)[1].split("; ")
+        toolchain_items = [item for item in error_items if "pnpm toolchain" in item]
+        assert toolchain_items, (
+            f"the toolchain path did not record its own clean shape error"
+            f" for a non-string scan-reported latest ({bad_latest!r});"
+            f" errors line: {errors_line!r}"
+        )
+        assert any("not a string" in item for item in toolchain_items), (
+            f"the toolchain error for a non-string scan-reported latest"
+            f" ({bad_latest!r}) is not the S9-style shape error the"
+            f" toolchain's own gates establish; errors line: {errors_line!r}"
+        )
+        assert not any("crashed unexpectedly" in item for item in error_items), (
+            f"the failure surfaced as a _guard crash containment instead of"
+            f" the clean shape error; errors line: {errors_line!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "bad_latest",
+        [["8.74.0"], {"v": "8.74.0"}],
+        ids=["list-latest", "dict-latest"],
+    )
+    def test_main_run_never_carries_a_container_latest_repr_into_the_pr_body(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        bad_latest: Any,
+    ) -> None:
+        """Follow-up pass (pre-delivery review R1/R3-002): the toolchain
+        latest gate embeds the scan value via {latest_raw!r} and records
+        it WITHOUT the storage-time _sanitize_reason wrap the generic
+        path's gate uses, so a container shape whose repr carries
+        markdown-structural brackets/quotes reaches the PR body's Errors
+        line raw. The contract pinned here: the same end-to-end
+        fail-closed treatment as the scalar shapes above (no traceback,
+        exit 1, every manifest byte-identical, no registry fetch, no
+        `pnpm add`, no verification install, the toolchain step's own
+        clean shape error) PLUS the sanitization guarantee — no raw form
+        of the value (str, repr, or JSON literal) appears in the Errors
+        line the body renders.
+        """
+        scan_json = _scan_json_with_pnpm_bad_version("analecta", bad_latest)
+        root, run_calls = _wire_flag_run(monkeypatch, tmp_path, scan_json=scan_json)
+        fetches = _intercept_registry_fetches(monkeypatch)
+        pr_body_file = tmp_path / "pr-body.md"
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(
+            monkeypatch, ["--include-pnpm", "--pr-body-file", str(pr_body_file)]
+        )
+
+        # Fail closed, same as the scalar shapes above: no traceback out
+        # of main, exit 1, the three manifests and the lockfile
+        # byte-identical, and nothing ran downstream of the shape gate.
+        assert raised is None, (
+            f"main() died on an unhandled {type(raised).__name__} for a"
+            f" container scan-reported latest ({bad_latest!r}):"
+            f" {raised!r} — the shape gate must record the error and fail"
+            " closed, not crash the run"
+        )
+        assert exit_code == 1
+        _assert_toolchain_files_unchanged(root, before)
+        assert fetches == [], (
+            f"the run fetched from the registry for a container"
+            f" scan-reported latest ({bad_latest!r}) — fail-closed means"
+            " nothing downstream of the shape gate runs"
+        )
+        assert not [cmd for cmd in run_calls if cmd[:2] == ["pnpm", "add"]]
+        assert not [cmd for cmd in run_calls if _is_install_typed(cmd)], (
+            f"a verification install ran for a container scan-reported"
+            f" latest ({bad_latest!r}) — fail-closed means nothing"
+            " downstream of the shape gate runs"
+        )
+        # The failure is recorded as the toolchain step's OWN clean shape
+        # error — not a crash containment and not only the generic path's
+        # per-package block.
+        body = pr_body_file.read_text()
+        node_section = body.split("### Node / pnpm", 1)[1]
+        assert "**Errors" in node_section
+        errors_line = next(
+            ln for ln in node_section.splitlines() if ln.startswith("**Errors")
+        )
+        error_items = errors_line.split("checked:**", 1)[1].split("; ")
+        toolchain_items = [item for item in error_items if "pnpm toolchain" in item]
+        assert toolchain_items, (
+            f"the toolchain path did not record its own clean shape error"
+            f" for a container scan-reported latest ({bad_latest!r});"
+            f" errors line: {errors_line!r}"
+        )
+        assert any("not a string" in item for item in toolchain_items), (
+            f"the toolchain error for a container scan-reported latest"
+            f" ({bad_latest!r}) is not the S9-style shape error the"
+            f" toolchain's own gates establish; errors line: {errors_line!r}"
+        )
+        assert not any("crashed unexpectedly" in item for item in error_items), (
+            f"the failure surfaced as a _guard crash containment instead of"
+            f" the clean shape error; errors line: {errors_line!r}"
+        )
+        # The sanitization guarantee — the assertion that is RED against
+        # the pre-change state: the gate's {latest_raw!r} reason is
+        # recorded unsanitized and the render path passes brackets/quotes
+        # through, so the raw repr of the container value lands verbatim
+        # in the Errors line the committed PR body carries.
+        for raw_form in (str(bad_latest), repr(bad_latest), json.dumps(bad_latest)):
+            assert raw_form not in errors_line, (
+                f"the PR body's Errors line carries the scan-reported"
+                f" container latest ({bad_latest!r}) raw as {raw_form!r}:"
+                f" {errors_line!r}"
             )
 
 

@@ -856,16 +856,16 @@ def update_node(
         latest = ""
         shape_reason = ""
         if not isinstance(current_raw, str):
-            # The reason stays value-free on purpose (native review
-            # R1-001): for numeric shapes repr() and str() coincide, so
-            # embedding the value here would carry the raw scan value
-            # into the PR body's Errors line — the very leak the gate
-            # exists to prevent (the latest gate's {latest_raw!r} reason
-            # can only afford it because its own test contract pins no
-            # such absence).
+            # The reasons stay value-free on purpose (native review
+            # R1-001): shape-error messages for type gates never embed
+            # the scan value — for numeric shapes repr() and str()
+            # coincide, and a container's repr carries
+            # markdown-structural brackets/quotes — so value-free keeps
+            # the durable Errors line clean for every shape (scalar and
+            # container), which is exactly what the contract pins.
             shape_reason = "scan-reported current value is not a string"
         elif not isinstance(latest_raw, str):
-            shape_reason = f"scan-reported version {latest_raw!r} is not a string"
+            shape_reason = "scan-reported version is not a string"
         else:
             current = current_raw
             latest = latest_raw
@@ -1325,9 +1325,36 @@ def _update_pnpm_toolchain(cooldown: int, errors: list[str]) -> _ToolchainBump |
             reason="No pnpm update reported by the scan — toolchain unchanged",
             skipped=True,
         )
-    current = cast(str, info.get("current", ""))
-    latest = cast(str, info.get("latest", ""))
-    if not latest or latest == current:
+    # Scan-reported values are read as honest objects and type-gated
+    # before anything downstream sees them (T3-advisor-A1), mirroring the
+    # generic path's gate: the scan JSON can carry a non-string value for
+    # the current or latest key (null, number) — a truthy number would
+    # otherwise reach the semver regex as a TypeError and a null would
+    # fall into the skip branch and be silently dropped. The step owns a
+    # single package, so the gate fails the step closed: recorded error,
+    # no fetch, no write, no verification.
+    current_raw: object = info.get("current", "")
+    latest_raw: object = info.get("latest", "")
+    if not isinstance(current_raw, str):
+        # Value-free on purpose: numeric shapes render identically under
+        # repr() and str(), so embedding the value would carry the raw
+        # scan value into the PR body's Errors line (same rationale as
+        # the generic path's current gate).
+        _record_error(
+            errors,
+            "pnpm toolchain: scan-reported current value is not a string"
+            " — bump skipped",
+        )
+        return None
+    if not isinstance(latest_raw, str):
+        _record_error(
+            errors,
+            "pnpm toolchain: scan-reported version is not a string — bump skipped",
+        )
+        return None
+    current = current_raw
+    latest = latest_raw
+    if latest == current:
         return _ToolchainBump(
             current,
             latest,
