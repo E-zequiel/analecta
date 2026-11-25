@@ -2844,6 +2844,101 @@ class TestToolchainPathNonStringScanValuesFailClosed:
             )
 
 
+class TestEmptyLatestDelta:
+    """Coverage pin (pre-delivery review R3-001, L30): the toolchain
+    type-gate pass (L29) removed the `not latest` short-circuit, so an
+    empty-string scan-reported `latest` no longer falls into the "already
+    the version" skip branch — it falls through to the S9 semver gate and
+    fails closed. That skip-semantic delta is ratified-but-unpinned; this
+    class pins it at the main level on a --include-pnpm run, mirroring
+    TestToolchainPathNonStringScanValuesFailClosed's main-level tests.
+
+    The payload reports an empty-string `latest` with a NON-empty
+    `current`: the type gates pass (both are strings), the skip branch is
+    unreachable (latest != current), so the run must record the clean
+    semver-gate shape error ("not semver-shaped"), exit 1, leave every
+    toolchain manifest and the lockfile byte-identical, and perform ZERO
+    registry fetches. The fetch assertion is the review claim's verdict:
+    the semver gate precedes `_npm_registry_data("pnpm")` in
+    `_update_pnpm_toolchain`, so the pre-delivery review's claim that a
+    registry fetch precedes the semver failure is expected FALSE.
+    """
+
+    def test_main_run_fails_closed_on_empty_latest_with_non_empty_current(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An empty-string scan-reported `latest` with a non-empty
+        `current` fails closed on the semver gate — the old `not latest`
+        skip is gone: recorded "not semver-shaped" error in the PR body's
+        Errors line, exit 1, no skip trace, no registry fetch, no
+        manifest write, no `pnpm add`, no verification install.
+        """
+        doc: dict[str, Any] = json.loads(_pnpm_scan_json("analecta"))
+        doc["analecta"]["pnpm"]["latest"] = ""
+        scan_json = json.dumps(doc)
+        root, run_calls = _wire_flag_run(monkeypatch, tmp_path, scan_json=scan_json)
+        fetches = _intercept_registry_fetches(monkeypatch)
+        pr_body_file = tmp_path / "pr-body.md"
+        before = _snapshot_toolchain_files(root)
+
+        exit_code, raised = _run_main(
+            monkeypatch, ["--include-pnpm", "--pr-body-file", str(pr_body_file)]
+        )
+
+        # Fail closed: no traceback out of main, exit 1, the three
+        # manifests and the lockfile byte-identical, and nothing ran
+        # downstream of the semver gate — in particular NO registry
+        # fetch (the review's claim, expected FALSE).
+        assert raised is None, (
+            f"main() died on an unhandled {type(raised).__name__} for an"
+            " empty-string scan-reported latest:"
+            f" {raised!r} — the semver gate must record the error and"
+            " fail closed, not crash the run"
+        )
+        assert exit_code == 1, (
+            "the empty-string-latest run did not exit 1 — the old `not"
+            " latest` skip would have exited 0 with a skip trace"
+        )
+        _assert_toolchain_files_unchanged(root, before)
+        assert fetches == [], (
+            "the run fetched from the registry before the semver gate"
+            " rejected the empty-string latest — the gate must fail"
+            " closed before any fetch (pre-delivery review R3-001's"
+            " fetch-first claim, pinned FALSE here)"
+        )
+        assert not [cmd for cmd in run_calls if cmd[:2] == ["pnpm", "add"]]
+        assert not [cmd for cmd in run_calls if _is_install_typed(cmd)], (
+            "a verification install ran for an empty-string scan-reported"
+            " latest — fail-closed means nothing downstream of the semver"
+            " gate runs"
+        )
+        # The failure is recorded as the semver gate's clean shape error
+        # in the durable artifact — and the old skip trace is absent.
+        body = pr_body_file.read_text()
+        node_section = body.split("### Node / pnpm", 1)[1]
+        assert "**Errors" in node_section
+        errors_line = next(
+            ln for ln in node_section.splitlines() if ln.startswith("**Errors")
+        )
+        error_items = errors_line.split("checked:**", 1)[1].split("; ")
+        toolchain_items = [item for item in error_items if "pnpm toolchain" in item]
+        assert toolchain_items, (
+            "the toolchain path recorded no error for the empty-string"
+            f" scan-reported latest; errors line: {errors_line!r}"
+        )
+        assert any("not semver-shaped" in item for item in toolchain_items), (
+            "the toolchain error for an empty-string scan-reported latest"
+            " is not the S9-style semver-gate shape error; errors line:"
+            f" {errors_line!r}"
+        )
+        assert not any("already the version" in item for item in error_items), (
+            "the run took the removed `not latest` skip instead of the"
+            f" semver-gate failure; errors line: {errors_line!r}"
+        )
+
+
 class TestPreRunSnapshotFailureRendersInThePrBody:
     """The S6 pre-run-snapshot-failure branch (a missing/unreadable
     manifest or lockfile before anything runs) renders the recorded error
