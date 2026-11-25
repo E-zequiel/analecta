@@ -829,7 +829,7 @@ def update_node(
 
     items = sorted(outdated.items())
     for i, (name, info) in enumerate(items):
-        current: str = cast(str, info.get("current", ""))
+        current_raw: object = info.get("current", "")
         latest_raw: object = info.get("latest", "")
         # Scan-reported values are validated before anything downstream
         # sees them (T3-advisor-2): a name that is not a valid npm name
@@ -841,20 +841,33 @@ def update_node(
         # run continues with the other packages.
         #
         # The type gate comes first (pre-delivery review
-        # R3-scan-type-gate): the scan JSON can carry a non-string value
-        # for the latest key (null, number, list). `not latest` below
-        # would silently drop a null version and the regex gates would
-        # raise TypeError on the rest — a non-string value flows through
-        # the same fail-closed blocked-per-package path as any other
-        # malformed value. (A non-string NAME is unreachable from
+        # R3-scan-type-gate, native review R1-001): the scan JSON can
+        # carry a non-string value for the current or latest key (null,
+        # number, list). `not latest` below would silently drop a null
+        # version, the regex gates would raise TypeError on the rest, and
+        # a non-string current would flow past its `cast` into the
+        # applied rows — a non-string value flows through the same
+        # fail-closed blocked-per-package path as any other malformed
+        # value. (A non-string NAME is unreachable from
         # `pnpm outdated --json` — object keys are always strings after
-        # parsing — so only the version needs the type gate; the name's
+        # parsing — so only the versions need the type gate; the name's
         # content is still shape-checked below.)
+        current = ""
         latest = ""
         shape_reason = ""
-        if not isinstance(latest_raw, str):
+        if not isinstance(current_raw, str):
+            # The reason stays value-free on purpose (native review
+            # R1-001): for numeric shapes repr() and str() coincide, so
+            # embedding the value here would carry the raw scan value
+            # into the PR body's Errors line — the very leak the gate
+            # exists to prevent (the latest gate's {latest_raw!r} reason
+            # can only afford it because its own test contract pins no
+            # such absence).
+            shape_reason = "scan-reported current value is not a string"
+        elif not isinstance(latest_raw, str):
             shape_reason = f"scan-reported version {latest_raw!r} is not a string"
         else:
+            current = current_raw
             latest = latest_raw
         if not shape_reason:
             if not latest or latest == current:
@@ -869,7 +882,10 @@ def update_node(
             elif _SEMVER_RE.match(latest) is None:
                 shape_reason = f"scan-reported version {latest!r} is not ASCII semver"
         if shape_reason:
-            print(f"  {name}: {current} -> {latest_raw}")
+            current_text = (
+                current_raw if isinstance(current_raw, str) else repr(current_raw)
+            )
+            print(f"  {name}: {current_text} -> {latest_raw}")
             print(f"    [blocked] {shape_reason} — never applied")
             # Text surfaces take the value's string form; a non-string
             # scan value (caught by the type gate above) renders as its
