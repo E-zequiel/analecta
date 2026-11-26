@@ -22,6 +22,8 @@ import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import yaml
+
 from analecta.config import load_config
 from analecta.extraction import extract
 from analecta.manifest import write_vault_manifest
@@ -112,9 +114,10 @@ def build_index_output(index: Any, as_json: bool = False) -> str:
     Returns:
         Markdown sections (``# Library`` / ``# Synthesis``) or a JSON array
         of ``{title, type, read_state, created_at, path}`` — synthesis
-        items additionally carry a boolean ``stale`` field (captures do
-        not). Staleness is classified by reading every synthesis page on
-        disk, in both output modes.
+        items additionally carry boolean ``stale`` and ``deprecated``
+        fields (captures do not). Staleness and deprecation are
+        classified per synthesis page, in both output modes; the
+        ``deprecated`` marker dominates ``STALE`` in the human listing.
     """
     records: list[Any] = index.list_entries()
     items = [
@@ -127,12 +130,18 @@ def build_index_output(index: Any, as_json: bool = False) -> str:
         }
         for r in records
     ]
-    # Staleness classification reads the synthesis pages (I/O); computed
-    # up front so the JSON contract and the human marker share one verdict.
+    # Staleness and deprecation classification read the synthesis pages
+    # and the derived flag (I/O); computed up front so the JSON contract
+    # and the human marker share one verdict.
     stale_paths = _stale_synthesis_paths(records)
+    deprecated_paths = _deprecated_synthesis_paths(index)
     if as_json:
         payload = [
-            {**item, "stale": item["path"] in stale_paths}
+            {
+                **item,
+                "stale": item["path"] in stale_paths,
+                "deprecated": item["path"] in deprecated_paths,
+            }
             if item["type"] == "synthesis"
             else item
             for item in items
@@ -145,7 +154,11 @@ def build_index_output(index: Any, as_json: bool = False) -> str:
     lines += ["", "# Synthesis"]
     lines += [
         f"- [{i['title']}]({i['path']})"
-        + (" — STALE" if i["path"] in stale_paths else "")
+        + (
+            " — DEPRECATED"
+            if i["path"] in deprecated_paths
+            else (" — STALE" if i["path"] in stale_paths else "")
+        )
         for i in synths
     ]
     return "\n".join(lines)
@@ -184,15 +197,65 @@ def _stale_synthesis_paths(records: list[Any]) -> set[str]:
     return stale
 
 
+def _deprecated_synthesis_paths(index: Any) -> set[str]:
+    """Resources (``/pages/<file>.md``) of deprecated synthesis records.
+
+    Args:
+        index: ``VaultIndex`` (standalone mode) or ``_AttachedIndex``
+            shape.
+
+    Returns:
+        The page paths whose synthesis is deprecated: standalone, by the
+        derived SQL ``deprecated`` column (S2 — SQL-visible for CLI
+        consumers); attached, where no SQL is reachable, by the
+        authoritative ``status: deprecated`` page frontmatter the column
+        is derived from. Only non-deprecated syntheses are absent.
+    """
+    conn = getattr(index, "_conn", None)
+    if conn is not None:
+        rows = conn.execute(
+            "SELECT file_path FROM entries"
+            " WHERE source_type = 'synthesis' AND deprecated = 1"
+        ).fetchall()
+        return {_page_path(row["file_path"]) for row in rows}
+    from analecta.markdown.frontmatter import FM_BLOCK
+
+    deprecated: set[str] = set()
+    for r in index.list_entries():
+        if getattr(r, "source_type", None) != "synthesis" or not r.file_path:
+            continue
+        try:
+            text = Path(r.file_path).read_text(encoding="utf-8")
+        except OSError, UnicodeDecodeError:
+            continue
+        m = FM_BLOCK.match(text)
+        if not m:
+            continue
+        try:
+            data: object = yaml.safe_load(m.group(2))
+        except yaml.YAMLError:
+            continue
+        if isinstance(data, dict) and data.get("status") == "deprecated":
+            deprecated.add(_page_path(r.file_path))
+    return deprecated
+
+
 def _run_stale_report(vault_path: Path) -> int:
-    """Report every synthesis's staleness.
+    """Report every synthesis's staleness, deprecated ones count-only.
+
+    Deprecated syntheses (a cited capture was deleted) are not
+    actionable: they are named nowhere in the report and only raise the
+    final informational line ``N deprecated (not actionable)`` — omitted
+    entirely when there are none, so fresh vaults keep the previous
+    byte-compatible output.
 
     Args:
         vault_path: Root directory of the local vault.
 
     Returns:
-        1 when at least one synthesis is stale, 0 otherwise; 3 when the
-        vault lock is held (distinct from 1, which means stale exists).
+        1 when at least one actionable (non-deprecated) synthesis is
+        stale, 0 otherwise; 3 when the vault lock is held (distinct from
+        1, which means stale exists).
     """
     from analecta.session_security import VaultLock
     from analecta.storage.index import VaultIndex
@@ -209,8 +272,15 @@ def _run_stale_report(vault_path: Path) -> int:
             lines: list[str] = []
             stale_count = 0
             fresh_count = 0
+            deprecated_count = 0
+            deprecated_paths = _deprecated_synthesis_paths(index)
             for rec in index.list_entries():
                 if rec.source_type != "synthesis" or not rec.file_path:
+                    continue
+                if _page_path(rec.file_path) in deprecated_paths:
+                    # Not actionable: leaves the named report entirely;
+                    # count-only (S3).
+                    deprecated_count += 1
                     continue
                 stale = synthesis_staleness(rec)
                 if stale:
@@ -220,6 +290,8 @@ def _run_stale_report(vault_path: Path) -> int:
                     fresh_count += 1
                     lines.append(f"fresh: {rec.title}")
             lines.append(f"{stale_count} stale, {fresh_count} fresh")
+            if deprecated_count:
+                lines.append(f"{deprecated_count} deprecated (not actionable)")
             print("\n".join(lines))
         finally:
             index.close()

@@ -773,8 +773,7 @@ def _mark_deprecated(index: VaultIndex, record: EntryRecord) -> None:
     text = page.read_text(encoding="utf-8")
     end = text.index("\n---\n") + len("\n---\n")
     page.write_text(
-        f"---\n{yaml.dump(data, allow_unicode=True, sort_keys=False)}---\n"
-        f"{text[end:]}",
+        f"---\n{yaml.dump(data, allow_unicode=True, sort_keys=False)}---\n{text[end:]}",
         encoding="utf-8",
     )
     _bump_mtime(page)
@@ -782,7 +781,8 @@ def _mark_deprecated(index: VaultIndex, record: EntryRecord) -> None:
     row = index._conn.execute(
         "SELECT deprecated FROM entries WHERE id = ?", (record.id,)
     ).fetchone()
-    assert row is not None and row["deprecated"] == 1
+    assert row is not None
+    assert row["deprecated"] == 1
 
 
 def _final_line(out: str) -> str:

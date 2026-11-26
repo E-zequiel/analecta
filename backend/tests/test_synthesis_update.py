@@ -42,9 +42,17 @@ for S5/S6, the same shape test_synthesis_freshness.py documents for S2.
 Scenarios are built through the real CLI against an injected vault
 (standalone mode; ``synthesize`` never touches the attached-mode
 discovery). No network calls, no writes under backend/src/.
+
+synthesis-deprecation T3 (S5/S6/S7 of odd/tasks/synthesis-deprecation.md)
+adds a section below: ``--update`` on a deprecated synthesis is rejected
+explicitly (S5), ``--revive <ref>`` is the deliberate revival path (S6),
+and the ``--revive`` argument-rejection matrix follows the unified
+conflict pattern (S7). Deprecation states are built through the real T1
+mechanism, never hand-marked frontmatter.
 """
 
 import hashlib
+import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -153,18 +161,27 @@ def _basis(path: Path) -> str:
     return hashlib.sha256(_post_frontmatter_body_bytes(path)).hexdigest()[:16]
 
 
-def _vault_snapshot(vault_dir: Path) -> tuple[list[tuple[Any, ...]], dict[str, bytes]]:
-    """Full vault state: every DB row and every page file's bytes."""
+def _vault_snapshot(
+    vault_dir: Path,
+) -> tuple[list[tuple[Any, ...]], dict[str, bytes], dict[int, int]]:
+    """Full vault state: every DB row, every page file's bytes, and the
+    derived ``deprecated`` flag of every row (S5: the flag is part of the
+    unchanged state — the synthesis-deprecation T3 contract). Flag dict
+    is keyed by row id; the row tuples are unchanged in shape."""
     index = _open_index(vault_dir)
     try:
         rows = sorted(
             (r.id, r.url, r.file_path, r.source_type, r.title)
             for r in index.list_entries()
         )
+        flags = {
+            int(row["id"]): int(row["deprecated"])
+            for row in index._conn.execute("SELECT id, deprecated FROM entries")
+        }
     finally:
         index.close()
     pages = {p.name: p.read_bytes() for p in sorted((vault_dir / "pages").glob("*.md"))}
-    return rows, pages
+    return rows, pages, flags
 
 
 def _assert_vault_unchanged(
@@ -1200,3 +1217,479 @@ def test_update_rebuilds_canonical_frontmatter_when_yaml_is_corrupt(
     assert "broken" not in data
     # The body is refreshed.
     assert "Cuerpo nuevo de la síntesis." in page.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# synthesis-deprecation T3 (S5/S6/S7): --update on a deprecated synthesis
+# is rejected, --revive is the deliberate revival path, and the --revive
+# argument-rejection matrix follows the unified conflict pattern (S10).
+#
+# Setup: every deprecation state here is built through the REAL mechanism
+# implemented by T1 — ``deprecate_syntheses_for_entry`` + ``hard_delete`` +
+# page unlink, the exact sequence of the DELETE /api/v1/entries/{id} route —
+# so the tests exercise ``status: deprecated`` frontmatter plus the derived
+# SQL flag exactly as the app leaves them, never a hand-marked surrogate.
+#
+# Demonstrated-red note: at HEAD ``--revive`` is not a known ``synthesize``
+# argument, so argparse rejects every ``--revive`` invocation below with
+# ``SystemExit`` (exit 2) before any assertion runs — that rejection IS the
+# observed red for S6/S7, the same shape this file's header documents for
+# the original ``--update``. S5's red is different: at HEAD ``--update`` on
+# a deprecated synthesis succeeds (exit 0, page rewritten), so the test
+# fails on ``assert code == 1`` against the observed 0.
+# ``test_recovered_source_does_not_autorevive_synthesis`` is a green pin by
+# design: the T1 reconcile derivation already keeps the flag at 1 while
+# the frontmatter says deprecated; the pin protects that property in the
+# S6 recovered-source combination.
+#
+# Design pins (Agent A, for Agent B to implement):
+# - Exit codes follow the file's convention table: runtime failures
+#   (deprecated-state rejection, unknown ref, not-a-synthesis ref,
+#   not-deprecated ref) exit 1; usage errors (flag conflicts) exit 2.
+#   The spec pins only "non-zero" (ambiguity A1).
+# - The S5 rejection names the ref and the reason ("deprecated") on
+#   stderr; stdout stays empty (ambiguity A2: exact wording unpinned).
+# - ``--revive`` REMOVES the ``status`` key — restore to the canonical
+#   synthesis frontmatter shape, which carries no ``status`` key — it
+#   does not rewrite the value to ``status: stable`` (ambiguity A3).
+# - Revive success prints a message naming the synthesis title on
+#   stdout (ambiguity A2: exact wording unpinned).
+# - The derived flag must read 0 via SQL immediately after ``--revive``
+#   returns, whether the implementation write-throughs it or reconciles
+#   in-flow (the spec's own observable contract).
+# - The post-revive staleness verdict (the cited capture is still gone)
+#   is NOT pinned here — S10 territory, out of T3's items (ambiguity A4).
+# - ``--revive --json`` is not in S7's rejection list and is deliberately
+#   left untested (ambiguity A5).
+# ---------------------------------------------------------------------------
+
+
+def _deprecate_capture(vault_dir: Path, capture: EntryRecord) -> None:
+    """Delete a capture the way the app does, deprecating citing syntheses.
+
+    Replicates the DELETE route's exact sequence (T1's implemented
+    mechanism): each citing synthesis's page gains ``status: deprecated``
+    with every other key and the body preserved and the derived flag
+    written through, then the capture row and page are removed (this
+    helper's captures carry no assets).
+    """
+    from analecta.storage.synthesis import deprecate_syntheses_for_entry
+
+    assert capture.id is not None
+    index = _open_index(vault_dir)
+    try:
+        deprecate_syntheses_for_entry(index, capture)
+        index.hard_delete(capture.id)
+    finally:
+        index.close()
+    Path(capture.file_path).unlink()
+
+
+def _flag(vault_dir: Path, entry_id: int) -> bool:
+    """Read the derived ``deprecated`` flag (S2 pinned column) via SQL."""
+    index = _open_index(vault_dir)
+    try:
+        row = index._conn.execute(
+            "SELECT deprecated FROM entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+    finally:
+        index.close()
+    assert row is not None
+    return bool(row["deprecated"])
+
+
+# ---------------------------------------------------------------------------
+# S5: --update on a deprecated synthesis is rejected
+# ---------------------------------------------------------------------------
+
+
+def test_update_deprecated_synthesis_is_rejected_vault_unchanged(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S5: ``--update`` on a deprecated synthesis is an explicit error
+    naming the ref (exit 1, the runtime-failure class), and the attempt
+    leaves the vault byte/state-identical: page bytes, DB rows, AND the
+    derived ``deprecated`` flag (the snapshot covers all three).
+    """
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura depurada", "Cuerpo íntegro.")
+        live = _capture(vault_dir, index, "Captura viva", "Cuerpo vivo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    assert live.id is not None
+    _synthesize_via_cli(
+        vault_dir, "Síntesis depurada", "Cuerpo de la síntesis.", [capture.id]
+    )
+    _drain(capsys)
+    synth = _sole_synthesis(vault_dir)
+    assert synth.id is not None
+    _deprecate_capture(vault_dir, capture)
+    # Precondition: deprecated frontmatter-side and flag-side.
+    assert _frontmatter(Path(synth.file_path))["status"] == "deprecated"
+    assert _flag(vault_dir, synth.id) is True
+    before = _vault_snapshot(vault_dir)
+
+    # The regeneration arguments are fully valid (a still-alive capture
+    # is cited), so the deprecation state is the ONLY possible reason
+    # for a rejection — no source-resolution or missing-args detour.
+    code = run(
+        [
+            "synthesize",
+            "--update",
+            str(synth.id),
+            "--body",
+            "Cuerpo que no debe escribirse.",
+            "--source",
+            str(live.id),
+            "--by",
+            "bot/y",
+        ],
+        vault_path=vault_dir,
+    )
+    captured = capsys.readouterr()
+
+    assert code == 1
+    # The error names the rejected ref and the reason, on stderr only.
+    assert str(synth.id) in captured.err
+    assert "deprecated" in captured.err
+    assert captured.out == ""
+    _assert_vault_unchanged(vault_dir, before)
+
+
+# ---------------------------------------------------------------------------
+# S6: --revive is the deliberate revival path
+# ---------------------------------------------------------------------------
+
+
+def test_revive_deprecated_synthesis_removes_status_rederives_flag(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S6: ``--revive <ref>`` removes ``status: deprecated`` from the page
+    frontmatter (every other key preserved, body untouched), re-derives
+    the SQL flag to 0 (observable via SQL, whether write-through or
+    in-flow reconcile), and reports success with exit 0."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura revivida", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(
+        vault_dir, "Síntesis revivida", "Cuerpo de la síntesis.", [capture.id]
+    )
+    _drain(capsys)
+    synth = _sole_synthesis(vault_dir)
+    assert synth.id is not None
+    page = Path(synth.file_path)
+    _deprecate_capture(vault_dir, capture)
+    pre_fm = _frontmatter(page)
+    pre_body = _post_frontmatter_body_bytes(page)
+    assert pre_fm["status"] == "deprecated"
+    assert _flag(vault_dir, synth.id) is True
+
+    code = run(["synthesize", "--revive", str(synth.id)], vault_path=vault_dir)
+    captured = capsys.readouterr()
+
+    assert code == 0, captured
+    # Frontmatter: the status key is REMOVED (the canonical synthesis
+    # frontmatter carries no ``status`` key); every other key preserved.
+    data = _frontmatter(page)
+    assert "status" not in data
+    assert data == {k: v for k, v in pre_fm.items() if k != "status"}
+    # The body is untouched.
+    assert _post_frontmatter_body_bytes(page) == pre_body
+    # The derived flag reads 0 via SQL after the command returns.
+    assert _flag(vault_dir, synth.id) is False
+    # Success message naming the revived synthesis.
+    assert synth.title in captured.out
+
+
+def test_recovered_source_does_not_autorevive_synthesis(vault_dir: Path) -> None:
+    """S6, never-automatic pin (green by design): revival is deliberate.
+    Re-extraction recovers the source — simulated here by its end state,
+    a capture re-appearing at the same URL (S9's same-day case; the
+    extraction command itself is T4's pin) — and even the reconcile pass
+    that re-derives the flag must NOT un-deprecate the synthesis while
+    its frontmatter still says deprecated."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura vuelta", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(
+        vault_dir, "Síntesis vuelta", "Cuerpo de la síntesis.", [capture.id]
+    )
+    synth = _sole_synthesis(vault_dir)
+    assert synth.id is not None
+    page = Path(synth.file_path)
+    _deprecate_capture(vault_dir, capture)
+
+    # Re-extraction end state: a capture re-appears at the same URL.
+    recovered_path = VaultManager(vault_dir).page_path(
+        capture.title, datetime.now(tz=UTC)
+    )
+    recovered_path.write_text(
+        f"---\ntitle: '{capture.title}'\n---\n\nCuerpo reextraído.\n",
+        encoding="utf-8",
+    )
+    recovered = EntryRecord(
+        title=capture.title,
+        url=capture.url,
+        file_path=str(recovered_path),
+        source_type="article",
+        created_at=_now(),
+        updated_at=_now(),
+    )
+    index = _open_index(vault_dir)
+    try:
+        recovered.id = index.add_entry(recovered)
+        assert recovered.id is not None
+        # Reconcile the drifted synthesis page (the deprecation rewrite
+        # moved its mtime past indexed_mtime); belt-and-braces utime.
+        stat = page.stat()
+        os.utime(page, (stat.st_atime + 5.0, stat.st_mtime + 5.0))
+        index.reconcile_stale_entries()
+        # The recovered capture exists; the synthesis is still deprecated.
+        assert index.get_entry(recovered.id) is not None
+    finally:
+        index.close()
+    assert _frontmatter(page)["status"] == "deprecated"
+    assert _flag(vault_dir, synth.id) is True
+
+
+# ---------------------------------------------------------------------------
+# S7: --revive argument-rejection matrix
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("extra_args", "flag_name"),
+    [
+        (["--title", "Título que no debe crearse."], "--title"),
+        (["--body", "Cuerpo que no debe escribirse."], "--body"),
+        (["--by", "bot/y"], "--by"),
+    ],
+)
+def test_revive_rejects_creation_arguments_naming_both(
+    vault_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    extra_args: list[str],
+    flag_name: str,
+) -> None:
+    """S7: ``--revive`` combined with a creation argument is rejected with
+    the unified conflict pattern (S10 mechanism): exit 2 naming BOTH
+    flags on stderr, nothing runs, vault untouched."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura conflicto", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(
+        vault_dir, "Síntesis conflicto", "Cuerpo de la síntesis.", [capture.id]
+    )
+    _drain(capsys)
+    before = _vault_snapshot(vault_dir)
+    synth = _sole_synthesis(vault_dir)
+    assert synth.id is not None
+
+    code = run(
+        ["synthesize", "--revive", str(synth.id), *extra_args],
+        vault_path=vault_dir,
+    )
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "--revive" in captured.err
+    assert flag_name in captured.err
+    assert captured.out == ""
+    _assert_vault_unchanged(vault_dir, before)
+
+
+def test_revive_with_source_is_rejected_naming_both(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S7: ``--revive --source <ref>`` is rejected with the unified pattern
+    even when the source ref resolves — the conflict, not the ref, is the
+    reason (exit 2 naming both flags; if the implementation resolved the
+    source first the invocation would instead fail ref resolution)."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura origen", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(
+        vault_dir, "Síntesis origen", "Cuerpo de la síntesis.", [capture.id]
+    )
+    _drain(capsys)
+    before = _vault_snapshot(vault_dir)
+    synth = _sole_synthesis(vault_dir)
+    assert synth.id is not None
+
+    code = run(
+        ["synthesize", "--revive", str(synth.id), "--source", str(capture.id)],
+        vault_path=vault_dir,
+    )
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "--revive" in captured.err
+    assert "--source" in captured.err
+    assert captured.out == ""
+    _assert_vault_unchanged(vault_dir, before)
+
+
+def test_revive_with_stale_exits_two_naming_both(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S7: ``--revive --stale`` is rejected with the unified pattern —
+    the staleness report never runs even though it would have something
+    to count — exit 2 naming both flags, vault untouched."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura reporte", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(
+        vault_dir, "Síntesis reporte", "Cuerpo de la síntesis.", [capture.id]
+    )
+    _drain(capsys)
+    before = _vault_snapshot(vault_dir)
+    synth = _sole_synthesis(vault_dir)
+    assert synth.id is not None
+
+    code = run(
+        ["synthesize", "--revive", str(synth.id), "--stale"],
+        vault_path=vault_dir,
+    )
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "--revive" in captured.err
+    assert "--stale" in captured.err
+    # The report never prints, despite the synthesis being present.
+    assert captured.out == ""
+    _assert_vault_unchanged(vault_dir, before)
+
+
+def test_revive_with_update_exits_two_naming_both(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S7: ``--revive --update <ref>`` is rejected with the unified
+    pattern: exit 2 naming both flags, no report, no update, no revival,
+    vault untouched."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura doble", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(
+        vault_dir, "Síntesis doble", "Cuerpo de la síntesis.", [capture.id]
+    )
+    _drain(capsys)
+    before = _vault_snapshot(vault_dir)
+    synth = _sole_synthesis(vault_dir)
+    assert synth.id is not None
+
+    code = run(
+        ["synthesize", "--revive", str(synth.id), "--update", str(synth.id)],
+        vault_path=vault_dir,
+    )
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "--revive" in captured.err
+    assert "--update" in captured.err
+    assert captured.out == ""
+    _assert_vault_unchanged(vault_dir, before)
+
+
+def test_revive_unknown_ref_exits_one_and_leaves_vault_unchanged(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S7: ``--revive`` on an unknown ref fails naming the ref (exit 1,
+    the runtime-failure class), touching nothing."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura fantasma", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(
+        vault_dir, "Síntesis fantasma", "Cuerpo de la síntesis.", [capture.id]
+    )
+    _drain(capsys)
+    before = _vault_snapshot(vault_dir)
+
+    code = run(["synthesize", "--revive", "424242"], vault_path=vault_dir)
+    captured = capsys.readouterr()
+
+    assert code == 1
+    assert "424242" in captured.err
+    assert captured.out == ""
+    _assert_vault_unchanged(vault_dir, before)
+
+
+def test_revive_capture_ref_is_rejected_and_leaves_vault_unchanged(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S7: a ref that resolves to a capture (not a synthesis) fails
+    naming the ref (exit 1), exercised with the URL ref form."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura No Síntesis", "Cuerpo.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(
+        vault_dir, "Síntesis testigo", "Cuerpo de la síntesis.", [capture.id]
+    )
+    _drain(capsys)
+    before = _vault_snapshot(vault_dir)
+
+    code = run(["synthesize", "--revive", capture.url], vault_path=vault_dir)
+    captured = capsys.readouterr()
+
+    assert code == 1
+    # The error names the rejected ref (and that it is not a synthesis).
+    assert capture.url in captured.err
+    assert "synthesis" in captured.err
+    assert captured.out == ""
+    _assert_vault_unchanged(vault_dir, before)
+
+
+def test_revive_not_deprecated_synthesis_is_rejected_and_leaves_vault_unchanged(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S7: ``--revive`` on a synthesis that is NOT deprecated fails
+    naming the ref and the reason (exit 1); the synthesis stays exactly
+    as it was — no accidental revival of a stable entry."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura estable", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(
+        vault_dir, "Síntesis estable", "Cuerpo de la síntesis.", [capture.id]
+    )
+    _drain(capsys)
+    before = _vault_snapshot(vault_dir)
+    synth = _sole_synthesis(vault_dir)
+    assert synth.id is not None
+    assert _flag(vault_dir, synth.id) is False
+
+    code = run(["synthesize", "--revive", str(synth.id)], vault_path=vault_dir)
+    captured = capsys.readouterr()
+
+    assert code == 1
+    assert str(synth.id) in captured.err
+    assert "deprecated" in captured.err
+    assert captured.out == ""
+    _assert_vault_unchanged(vault_dir, before)
