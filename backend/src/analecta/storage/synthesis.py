@@ -458,18 +458,113 @@ def find_citing_syntheses(index: VaultIndex, entry: EntryRecord) -> list[EntryRe
     return out
 
 
-def delete_syntheses_for_entry(index: VaultIndex, entry: EntryRecord) -> None:
-    """Delete syntheses citing *entry*, in cascade (owner decision D13).
+class SynthesisDeprecationError(RuntimeError):
+    """A citing synthesis page cannot be rewritten to deprecated state.
+
+    Raised when the page cannot be read, or its frontmatter cannot be
+    parsed as a dict, so the ``status: deprecated`` key cannot be added
+    while preserving every other key. Abort semantics (owner-ratified
+    A3): callers must treat this as fatal for the whole deletion and
+    retry later — syntheses already rewritten stay marked (retryable
+    partial state).
+    """
+
+
+def deprecate_syntheses_for_entry(index: VaultIndex, entry: EntryRecord) -> None:
+    """Deprecate the synthesis entries citing *entry* (owner decision C).
+
+    Replaces the old D13 cascade deletion: deleting a capture no longer
+    deletes the syntheses citing it. Each citing synthesis's page gains
+    ``status: deprecated`` in its frontmatter — every other frontmatter
+    key and the body are preserved — and the page rewrite is atomic
+    (sibling temp file + a single ``os.replace``). Database rows are
+    preserved. The derived ``deprecated`` flag is then written through
+    (page rewrite first, flag second — flag-safe window) so SQL consumers
+    see the state immediately; the next reconcile pass re-derives it from
+    the page anyway.
+
+    Abort semantics (owner-ratified A3): if any deprecation rewrite
+    fails, the exception propagates and the caller must abort the whole
+    deletion — the capture row, page, and assets survive untouched, and
+    syntheses already rewritten stay marked (retryable partial state).
+    The truth of deprecation is the page frontmatter (S17): a rewrite
+    that fails or is interrupted leaves the synthesis unmarked, and
+    reconcile cannot infer the deprecation after the fact.
 
     Unidirectional by construction: a synthesis is never cited by another
     synthesis in v1 (single-source), so passing a synthesis is a no-op —
     deleting one never touches its capture.
+
+    Args:
+        index: Vault index singleton (single writer).
+        entry: The entry whose citing syntheses are deprecated.
+
+    Raises:
+        SynthesisDeprecationError: If a citing synthesis's page cannot be
+            read or rewritten preserving its frontmatter. The deletion
+            must be aborted (A3); syntheses already rewritten stay marked.
+        OSError: If the atomic page rewrite itself fails. Same abort
+            semantics; any sibling temp file is cleaned up.
     """
     for synth in find_citing_syntheses(index, entry):
         if synth.id is None:
             continue
-        index.hard_delete(synth.id)
-        try:
-            Path(synth.file_path).unlink(missing_ok=True)
-        except OSError:
-            pass
+        _deprecate_synthesis_page(synth)
+        index.set_deprecated(synth.id, True)
+
+
+def _deprecate_synthesis_page(record: EntryRecord) -> None:
+    """Rewrite a synthesis page with ``status: deprecated`` frontmatter.
+
+    The parsed frontmatter dict is the rewrite base, so every other key
+    survives; the body is preserved byte-for-byte. Published atomically:
+    the new markdown is written to a sibling temp file and published with
+    a single ``os.replace`` — bound through the ``os`` module attribute,
+    never ``from os import replace`` — so a reader never observes a
+    half-written page and the injection seam used by the crash-window
+    tests holds.
+
+    Args:
+        record: The synthesis row whose page is deprecated.
+
+    Raises:
+        SynthesisDeprecationError: If the page cannot be read or its
+            frontmatter cannot be parsed as a dict.
+        OSError: If the temp-file write or the atomic rename fails.
+    """
+    page_path = Path(record.file_path)
+    try:
+        text = page_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise SynthesisDeprecationError(
+            f"Cannot read synthesis page {page_path}: {exc}"
+        ) from exc
+    m = FM_BLOCK.match(text)
+    if m is None:
+        raise SynthesisDeprecationError(
+            f"Synthesis page {page_path} has no frontmatter block; "
+            "cannot add 'status: deprecated' preserving the other keys"
+        )
+    try:
+        data: object = yaml.safe_load(m.group(2))
+    except yaml.YAMLError as exc:
+        raise SynthesisDeprecationError(
+            f"Cannot parse frontmatter of synthesis page {page_path}: {exc}"
+        ) from exc
+    if not isinstance(data, dict):
+        raise SynthesisDeprecationError(
+            f"Frontmatter of synthesis page {page_path} is not a mapping; "
+            "cannot add 'status: deprecated' preserving the other keys"
+        )
+    data["status"] = "deprecated"
+    frontmatter = f"---\n{yaml.dump(data, allow_unicode=True, sort_keys=False)}---\n"
+    markdown = f"{frontmatter}{text[m.end() :]}"
+    # Publish the complete new page through a sibling temp file + atomic
+    # rename; a crash mid-write never leaves a truncated page behind.
+    tmp_path = page_path.with_name(f".{page_path.name}.{os.getpid()}.tmp")
+    try:
+        tmp_path.write_text(markdown, encoding="utf-8")
+        os.replace(tmp_path, page_path)
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        raise

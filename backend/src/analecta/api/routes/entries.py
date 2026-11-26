@@ -889,21 +889,36 @@ async def delete_entry(
 ) -> None:
     """Permanently delete an entry from the database and remove its vault file.
 
+    Citing syntheses are deprecated, not deleted (owner decision C): each
+    gains ``status: deprecated`` in its page frontmatter and keeps its
+    database row. Abort semantics (A3): if a deprecation rewrite fails,
+    the whole deletion is aborted and the entry is left untouched — a
+    retryable partial state where syntheses already rewritten stay marked.
+
     Args:
         entry_id: Database row id.
         index: Injected VaultIndex singleton.
 
     Raises:
-        HTTPException: 404 if the entry does not exist.
+        HTTPException: 404 if the entry does not exist; 500 if a citing
+            synthesis cannot be deprecated (deletion aborted).
     """
     record = await asyncio.to_thread(index.get_entry, entry_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Entry not found")
-    # Cascade (owner decision D13): deleting an entry deletes the synthesis
-    # entries citing it, in the same operation.
-    from analecta.storage.synthesis import delete_syntheses_for_entry
+    from analecta.storage.synthesis import deprecate_syntheses_for_entry
 
-    await asyncio.to_thread(delete_syntheses_for_entry, index, record)
+    try:
+        await asyncio.to_thread(deprecate_syntheses_for_entry, index, record)
+    except Exception as exc:
+        # Abort semantics (A3): any deprecation failure — unreadable or
+        # unparseable synthesis page, failed atomic rewrite, injected
+        # crash — aborts the whole deletion; the entry is left untouched
+        # and the partial state is retryable.
+        raise HTTPException(
+            status_code=500,
+            detail=f"Deprecation failed, deletion aborted: {exc}",
+        ) from exc
     file_path = Path(record.file_path)
     slug = file_path.stem
     assets_dir = file_path.parent.parent / "assets" / slug

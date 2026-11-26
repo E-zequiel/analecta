@@ -12,6 +12,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Concatenate
 
+import yaml
+
+from analecta.markdown.frontmatter import FM_BLOCK
 from analecta.markdown.hashtags import title_to_hashtag_key
 
 _ALLOWED_SORT_COLS: frozenset[str] = frozenset({"title", "created_at"})
@@ -1352,6 +1355,29 @@ class VaultIndex:
         self._conn.commit()
 
     @_synchronized
+    def set_deprecated(self, entry_id: int, deprecated: bool) -> None:
+        """Write through the derived ``deprecated`` flag for an entry.
+
+        Deprecation-time write-through: the page rewrite lands first, then
+        this flag write, so SQL consumers see the deprecation immediately.
+        The flag is derived state, never authoritative — it does not bump
+        ``updated_at`` and is re-derived from the page frontmatter by
+        :meth:`reconcile_stale_entries`. The ordering is flag-safe: a crash
+        between the page rewrite and this write leaves the page (the truth)
+        already marked, and the next reconcile pass re-derives the flag
+        from it.
+
+        Args:
+            entry_id: Row id of the entry to flag.
+            deprecated: ``True`` writes 1, ``False`` writes 0.
+        """
+        self._conn.execute(
+            "UPDATE entries SET deprecated = ? WHERE id = ?",
+            (1 if deprecated else 0, entry_id),
+        )
+        self._conn.commit()
+
+    @_synchronized
     def reconcile_stale_entries(self, *, force: bool = False) -> int:
         """Re-derive backlinks and FTS content for entries edited outside the app.
 
@@ -1391,6 +1417,16 @@ class VaultIndex:
         0 — mtime is the only staleness signal available short of content
         hashing, which this deliberately doesn't add.
 
+        Each reconciled entry's ``deprecated`` flag is also re-derived
+        from the page frontmatter (``status: deprecated``), the same
+        mtime-gated derived-state pattern as backlink_refs/FTS. The
+        derivation is general: ANY entry whose page carries the key
+        derives flag 1; a page whose key is removed or changed re-derives
+        to 0. Reconcile derives from frontmatter only — it never infers
+        the deprecation from anything else (S17): a page left unmarked by
+        a failed deprecation rewrite stays unmarked, and a flag written
+        without its page mark is cleared.
+
         Args:
             force: Reindex every entry regardless of its recorded mtime.
 
@@ -1425,11 +1461,50 @@ class VaultIndex:
             entry = self.get_entry(entry_id)
             if entry is None:
                 continue
+            self._rederive_deprecated_flag(entry_id, markdown)
             self.update_fts_content(entry_id, entry.title, markdown)
             self.index_backlinks(entry_id)
             if is_stale:
                 stale_count += 1
         return stale_count
+
+    def _rederive_deprecated_flag(self, entry_id: int, markdown: str) -> None:
+        """Re-derive the ``deprecated`` flag from a page's frontmatter (S2).
+
+        Truth of deprecation lives in the page: any entry whose
+        frontmatter carries ``status: deprecated`` derives flag 1, and
+        anything else — the key absent, present with another value, or
+        the whole frontmatter unparseable — derives 0 (a page whose key
+        was hand-removed outside the app un-deprecates the flag). General
+        by design, not gated on ``source_type='synthesis'``: the key is
+        the OKF vocabulary entry, not a synthesis-only marker.
+
+        This is also the S17 crash-window contract: reconcile derives
+        from frontmatter only and never infers the deprecation after the
+        fact. A page left unmarked by a failed deprecation rewrite
+        derives 0 even when revisited; a flag written without its page
+        mark (crash between the two writes) is cleared on the next pass.
+
+        No commit: the caller's following ``update_fts_content`` commit
+        covers this write.
+
+        Args:
+            entry_id: Row id whose flag to re-derive.
+            markdown: Current full page text (already read by the caller).
+        """
+        is_deprecated = False
+        m = FM_BLOCK.match(markdown)
+        if m:
+            try:
+                data: object = yaml.safe_load(m.group(2))
+            except yaml.YAMLError:
+                data = None
+            if isinstance(data, dict):
+                is_deprecated = data.get("status") == "deprecated"
+        self._conn.execute(
+            "UPDATE entries SET deprecated = ? WHERE id = ?",
+            (1 if is_deprecated else 0, entry_id),
+        )
 
     @_synchronized
     def get_backlinks(self, target_id: int) -> list[BacklinkRecord]:

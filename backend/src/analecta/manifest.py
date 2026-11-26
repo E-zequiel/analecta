@@ -91,6 +91,16 @@ are computed on the fly by `analecta index` and `analecta log`.
 source; `summary` is **bot-generated** analysis. Never confuse or merge
 them.
 
+## Deprecation crash window
+
+A synthesis whose cited capture was deleted carries `status: deprecated`
+in its page frontmatter. The frontmatter is the truth of deprecation:
+the derived SQLite `deprecated` column is re-derived from the page by
+the reconcile pass. If a deprecation rewrite fails or is interrupted,
+the synthesis stays unmarked, and reconcile cannot infer the
+deprecation after the fact — only a successful page rewrite changes
+this state.
+
 ## Flags (human decisions — bots read, never write)
 
 - `bookmark` — the person explicitly saved this entry.

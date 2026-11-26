@@ -14,19 +14,50 @@ and that collection error IS the demonstrated red for S2.
 
 import hashlib
 import re
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx2
 import pytest
+import pytest_asyncio
 import yaml
+from fastapi import FastAPI
 
+from analecta.api.events import EventBus
+from analecta.api.routes.entries import router as entries_router
+from analecta.config import AppConfig
 from analecta.storage.index import EntryRecord, VaultIndex
 from analecta.storage.synthesis import (
     create_synthesis_entry,
     synthesis_stale_sources,
 )
 from analecta.storage.vault import VaultManager
+
+
+@pytest_asyncio.fixture
+async def client(tmp_vault: Path) -> AsyncGenerator[httpx2.AsyncClient]:
+    """Full-app async client wired in-process (httpx2 ASGI transport).
+
+    Local mirror of the conftest ``client`` fixture (T1b): wires
+    ``app.state`` directly. ``ASGITransport`` does not run the FastAPI
+    lifespan, so the singletons ``get_index``/``get_event_bus`` read from
+    ``app.state`` are wired here, the ``_make_app`` pattern of
+    test_counts_synthesis.py.
+    """
+    config = AppConfig(vault_path=tmp_vault)
+    app = FastAPI()
+    app.include_router(entries_router, prefix="/api/v1")
+    index = VaultIndex(tmp_vault / "analecta.db")
+    app.state.config = config
+    app.state.index = index
+    app.state.event_bus = EventBus()
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app),
+        base_url="http://test",
+    ) as c:
+        yield c
+    index.close()
 
 
 def _now() -> str:
@@ -539,3 +570,43 @@ def test_resource_escaping_pages_dir_is_stale_without_reading_it(
         },
     )
     assert synthesis_stale_sources(record) == [shallow_resource, deep_resource]
+
+
+# ---------------------------------------------------------------------------
+# T1 S1 interaction: deprecation is a frontmatter-only write
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deprecation_preserves_freshness_verdict_of_citing_synthesis(
+    vault: VaultManager,
+    index: VaultIndex,
+    client: httpx2.AsyncClient,
+) -> None:
+    """T1 S1 interaction: after the cited capture is deleted via the API,
+    the synthesis DB row survives, ``sources_basis`` is preserved in the
+    rewritten frontmatter, and the staleness verdict still computes from
+    the untouched body: the capture's missing file makes the cited source
+    stale exactly per the S2 rule. Red at HEAD via the D13 cascade (the
+    synthesis row is deleted)."""
+    vault.ensure_dirs()
+    capture = _capture(vault, index, 1, "Cuerpo íntegro de la captura.")
+    assert capture.id is not None
+    create_synthesis_entry(
+        index,
+        vault,
+        title="Síntesis deprecada frescura",
+        body="Cuerpo de la síntesis.",
+        source_entries=[capture],
+        generated_by="bot/x",
+    )
+    synth = _synthesis_record(index)
+    pre_basis = _frontmatter_data(Path(synth.file_path))["sources_basis"]
+
+    response = await client.delete(f"/api/v1/entries/{capture.id}")
+    assert response.status_code == 204
+
+    synth_after = _synthesis_record(index)
+    assert synth_after.id == synth.id
+    assert _frontmatter_data(Path(synth_after.file_path))["sources_basis"] == pre_basis
+    assert synthesis_stale_sources(synth_after) == [_resource_of(capture)]

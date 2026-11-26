@@ -20,6 +20,16 @@ line (``- [Title](/pages/<file>.md) — STALE``). Fresh syntheses and
 reference captures carry no marker. The index command itself still
 exits 0 regardless of staleness.
 
+T2 (synthesis-deprecation S3/S4) extends both contracts for deprecated
+syntheses: ``--stale`` drops them from the actionable report (no named
+entry, count-only final informational line ``N deprecated (not
+actionable)``, exit 0 when only deprecated exist); ``index`` marks them
+``— DEPRECATED``, dominant over ``— STALE``; ``index --json`` gains an
+additive ``deprecated`` boolean on synthesis items while ``stale``
+keeps computing the full verdict. Deprecated state is produced through
+the frontmatter-truth path (``status: deprecated`` page edit + reconcile
+derivation), the canonical S2 representation.
+
 Scenarios are built through the real CLI: captures and syntheses are
 created via ``run([...])`` against an injected vault (the standalone
 mode the tests exercise is forced by patching the attached-mode
@@ -29,6 +39,7 @@ sources_basis) synthesis pages. No network calls.
 """
 
 import json
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -725,3 +736,334 @@ def test_stale_report_invalid_utf8_page_is_stale_no_traceback(
             assert any(_resource_of(synth) in ln for ln in _stale_lines(captured.out))
         else:
             assert f"- [{synth.title}]({_resource_of(synth)}) — STALE" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# T2 (synthesis-deprecation S3): ``--stale`` report with deprecated syntheses
+# ---------------------------------------------------------------------------
+
+
+def _bump_mtime(path: Path) -> None:
+    """Advance a file's mtime, simulating an external edit."""
+    stat = path.stat()
+    os.utime(path, (stat.st_atime + 5.0, stat.st_mtime + 5.0))
+
+
+def _page_frontmatter(page: Path) -> dict[str, object]:
+    """Parse a page's YAML frontmatter dict."""
+    text = page.read_text(encoding="utf-8")
+    assert text.startswith("---\n")
+    data = yaml.safe_load(text[4 : text.index("\n---\n")])
+    assert isinstance(data, dict)
+    return data
+
+
+def _mark_deprecated(index: VaultIndex, record: EntryRecord) -> None:
+    """Mark a synthesis deprecated through the frontmatter-truth path.
+
+    Writes ``status: deprecated`` into the page frontmatter (the
+    out-of-app edit S2 makes authoritative) and derives the DB flag via
+    the reconcile pass (mtime-bumped, the T1-pinned derived-state
+    pattern). Asserts the derived flag so a broken setup fails loudly.
+    """
+    assert record.id is not None
+    page = Path(record.file_path)
+    data = _page_frontmatter(page)
+    data["status"] = "deprecated"
+    text = page.read_text(encoding="utf-8")
+    end = text.index("\n---\n") + len("\n---\n")
+    page.write_text(
+        f"---\n{yaml.dump(data, allow_unicode=True, sort_keys=False)}---\n"
+        f"{text[end:]}",
+        encoding="utf-8",
+    )
+    _bump_mtime(page)
+    index.reconcile_stale_entries()
+    row = index._conn.execute(
+        "SELECT deprecated FROM entries WHERE id = ?", (record.id,)
+    ).fetchone()
+    assert row is not None and row["deprecated"] == 1
+
+
+def _final_line(out: str) -> str:
+    """The last non-empty line of a command's stdout."""
+    return out.rstrip("\n").rsplit("\n", 1)[-1]
+
+
+def test_stale_report_deprecated_synthesis_leaves_report_exits_zero(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S3: a deprecated (but not stale) synthesis leaves the actionable
+    report entirely — it is named on no line, fresh or stale — and the
+    final informational line carries the deprecated count. With no
+    actionable stale the exit is 0 even with a deprecated synthesis
+    present."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura deprecable", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis deprecada", "Cuerpo.", [capture.id])
+    index = _open_index(vault_dir)
+    try:
+        _mark_deprecated(index, _sole_synthesis(vault_dir))
+    finally:
+        index.close()
+    # Drain the setup's own output so only the invocation under test is
+    # observed (the setup legitimately prints its creation lines).
+    capsys.readouterr()
+
+    code = run(["synthesize", "--stale"], vault_path=vault_dir)
+    out = capsys.readouterr().out
+
+    assert code == 0
+    # Count-only: the deprecated synthesis is named nowhere.
+    assert "Síntesis deprecada" not in out
+    # The final informational line reports the deprecated count.
+    assert "1 deprecated (not actionable)" in _final_line(out)
+
+
+def test_stale_report_deprecated_stale_synthesis_not_actionable_exits_zero(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S3: a deprecated synthesis whose source drifted (deprecated+stale)
+    is not actionable — it is named nowhere, the report stays count-only,
+    and the exit is 0. Only actionable (non-deprecated) stale syntheses
+    may produce exit 1. The report is also read-only: the deprecated
+    page's bytes are unchanged."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura huérfana T2", "Cuerpo único.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis huérfana T2", "Cuerpo.", [capture.id])
+    _edit_body(Path(capture.file_path), "Cuerpo único.", "Cuerpo editado.")
+    synth = _sole_synthesis(vault_dir)
+    index = _open_index(vault_dir)
+    try:
+        _mark_deprecated(index, synth)
+    finally:
+        index.close()
+    # Drain the setup's own output so only the invocation under test is
+    # observed (the setup legitimately prints its creation lines).
+    capsys.readouterr()
+    pre_bytes = Path(synth.file_path).read_bytes()
+
+    code = run(["synthesize", "--stale"], vault_path=vault_dir)
+    out = capsys.readouterr().out
+
+    assert code == 0
+    assert "Síntesis huérfana T2" not in out
+    assert "1 deprecated (not actionable)" in _final_line(out)
+    # Read-only report: the deprecated synthesis's page is untouched.
+    assert Path(synth.file_path).read_bytes() == pre_bytes
+
+
+def test_stale_report_actionable_stale_with_deprecated_exits_one(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S3: exit 1 only when actionable stale exist. A deprecated
+    synthesis alongside one drifted actionable synthesis is excluded
+    from the named report (count-only), and the actionable one is still
+    named with its exact drifted resource."""
+    index = _open_index(vault_dir)
+    try:
+        a = _capture(vault_dir, index, "Captura T2 activa", "Cuerpo activo.")
+        b = _capture(vault_dir, index, "Captura T2 muerta", "Cuerpo muerto.")
+    finally:
+        index.close()
+    assert a.id is not None
+    assert b.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis activa T2", "Cuerpo.", [a.id])
+    _synthesize_via_cli(vault_dir, "Síntesis muerta T2", "Cuerpo.", [b.id])
+    _edit_body(Path(a.file_path), "Cuerpo activo.", "Cuerpo activo editado.")
+    index = _open_index(vault_dir)
+    try:
+        dead = next(r for r in index.list_entries() if r.title == "Síntesis muerta T2")
+        _mark_deprecated(index, dead)
+    finally:
+        index.close()
+    # Drain the setup's own output so only the invocation under test is
+    # observed (the setup legitimately prints its creation lines).
+    capsys.readouterr()
+
+    code = run(["synthesize", "--stale"], vault_path=vault_dir)
+    out = capsys.readouterr().out
+
+    assert code == 1
+    # The actionable synthesis is named with its drifted resource.
+    named = [ln for ln in _stale_lines(out) if "Síntesis activa T2" in ln]
+    assert named, f"actionable stale synthesis not named: {out!r}"
+    assert any(_resource_of(a) in ln for ln in named)
+    # The deprecated one is count-only: named nowhere.
+    assert "Síntesis muerta T2" not in out
+    assert "1 stale" in out
+    assert "1 deprecated (not actionable)" in _final_line(out)
+
+
+def test_stale_report_vault_with_deprecated_locked_exits_three(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S3 exit-table pin (unchanged from okf-cli S9): a held vault lock
+    exits 3 even when deprecated syntheses exist. Green at HEAD — the
+    lock is checked before any classification."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura lock T2", "Cuerpo lock.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis lock T2", "Cuerpo.", [capture.id])
+    index = _open_index(vault_dir)
+    try:
+        _mark_deprecated(index, _sole_synthesis(vault_dir))
+    finally:
+        index.close()
+    # Drain the setup's own output so only the locked invocation is
+    # observed (the setup legitimately prints its creation lines).
+    capsys.readouterr()
+
+    holder = VaultLock(vault_dir).acquire()
+    assert holder is not None
+    try:
+        code = run(["synthesize", "--stale"], vault_path=vault_dir)
+        captured = capsys.readouterr()
+    finally:
+        VaultLock(vault_dir).release(holder)
+
+    assert code == 3
+    assert "locked" in captured.err
+    assert captured.out == ""
+
+
+# ---------------------------------------------------------------------------
+# T2 (synthesis-deprecation S4): ``index`` deprecation marking + JSON field
+# ---------------------------------------------------------------------------
+
+
+def test_index_marks_deprecated_dominant_over_stale(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str], standalone_only: None
+) -> None:
+    """S4: a deprecated synthesis whose source also drifted is marked
+    ``— DEPRECATED`` only — dominant over ``— STALE``, never both."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(
+            vault_dir, index, "Captura dominante T2", "Cuerpo dominante."
+        )
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis dominante T2", "Cuerpo.", [capture.id])
+    _edit_body(Path(capture.file_path), "Cuerpo dominante.", "Cuerpo dominante ed.")
+    index = _open_index(vault_dir)
+    try:
+        synth = _sole_synthesis(vault_dir)
+        _mark_deprecated(index, synth)
+    finally:
+        index.close()
+
+    code = run(["index"], vault_path=vault_dir)
+    out = capsys.readouterr().out
+
+    assert code == 0
+    expected = f"- [{synth.title}]({_resource_of(synth)}) — DEPRECATED"
+    lines = out.splitlines()
+    assert expected in lines
+    # Dominant: no line naming the synthesis carries the stale marker.
+    assert not any("STALE" in ln for ln in _lines_named(out, synth.title))
+    synth_section = out.split("# Synthesis", 1)[1]
+    assert expected in synth_section.splitlines()
+
+
+def test_index_marks_deprecated_fresh_synthesis(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str], standalone_only: None
+) -> None:
+    """S4: a deprecated synthesis that is not stale is still marked
+    ``— DEPRECATED`` (deprecation is visible regardless of staleness)."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura marca T2", "Cuerpo marca.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis marca T2", "Cuerpo.", [capture.id])
+    index = _open_index(vault_dir)
+    try:
+        synth = _sole_synthesis(vault_dir)
+        _mark_deprecated(index, synth)
+    finally:
+        index.close()
+
+    code = run(["index"], vault_path=vault_dir)
+    out = capsys.readouterr().out
+
+    assert code == 0
+    expected = f"- [{synth.title}]({_resource_of(synth)}) — DEPRECATED"
+    assert expected in out.splitlines()
+
+
+def test_index_json_deprecated_field_additive_stale_computes_full_verdict(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str], standalone_only: None
+) -> None:
+    """S4: ``index --json`` synthesis items gain an additive boolean
+    ``deprecated`` field, while ``stale`` keeps computing the full
+    staleness verdict regardless of deprecation (deprecated+drifted is
+    both true). Captures never carry ``deprecated``."""
+    index = _open_index(vault_dir)
+    try:
+        f = _capture(vault_dir, index, "Captura json T2 fresca", "Cuerpo F.")
+        d = _capture(vault_dir, index, "Captura json T2 deprecada", "Cuerpo D.")
+        s = _capture(vault_dir, index, "Captura json T2 rancia", "Cuerpo S.")
+    finally:
+        index.close()
+    assert f.id is not None
+    assert d.id is not None
+    assert s.id is not None
+    _synthesize_via_cli(vault_dir, "Síntesis json T2 fresca", "Cuerpo.", [f.id])
+    _synthesize_via_cli(vault_dir, "Síntesis json T2 deprecada", "Cuerpo.", [d.id])
+    _synthesize_via_cli(vault_dir, "Síntesis json T2 rancia", "Cuerpo.", [s.id])
+    _edit_body(Path(s.file_path), "Cuerpo S.", "Cuerpo S editado.")
+    index = _open_index(vault_dir)
+    try:
+        recs = [r for r in index.list_entries() if r.source_type == "synthesis"]
+        dep_rec = next(r for r in recs if r.title == "Síntesis json T2 deprecada")
+        stale_rec = next(r for r in recs if r.title == "Síntesis json T2 rancia")
+        fresh_rec = next(r for r in recs if r.title == "Síntesis json T2 fresca")
+        for rec in (dep_rec, stale_rec):
+            _mark_deprecated(index, rec)
+    finally:
+        index.close()
+    # Drain the setup's own output so only the invocation under test is
+    # observed (the setup legitimately prints its creation lines).
+    capsys.readouterr()
+
+    code = run(["index", "--json"], vault_path=vault_dir)
+    out = capsys.readouterr().out
+
+    assert code == 0
+    data = json.loads(out)
+    synths = {item["path"]: item for item in data if item["type"] == "synthesis"}
+    assert {
+        _resource_of(fresh_rec),
+        _resource_of(dep_rec),
+        _resource_of(stale_rec),
+    } <= set(synths)
+    for item in synths.values():
+        assert isinstance(item.get("deprecated"), bool), f"{item!r}"
+        assert isinstance(item.get("stale"), bool), f"{item!r}"
+    # Deprecated+drifted: full staleness verdict AND deprecation.
+    assert synths[_resource_of(stale_rec)]["deprecated"] is True
+    assert synths[_resource_of(stale_rec)]["stale"] is True
+    # Deprecated+fresh.
+    assert synths[_resource_of(dep_rec)]["deprecated"] is True
+    assert synths[_resource_of(dep_rec)]["stale"] is False
+    # Fresh, non-deprecated.
+    assert synths[_resource_of(fresh_rec)]["deprecated"] is False
+    assert synths[_resource_of(fresh_rec)]["stale"] is False
+    # Captures never carry the field.
+    for item in data:
+        if item["type"] != "synthesis":
+            assert "deprecated" not in item
