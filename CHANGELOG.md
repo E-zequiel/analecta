@@ -22,10 +22,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   --by` or `PATCH /entries/{id}` with `summary` — stored in the entry's frontmatter
   together with `summary_basis`, a hash of the body that lets any consumer detect when
   the summary no longer matches the content. Summaries are capped at 500 characters.
-- Bots can create synthesis entries — CLI `analecta synthesize` or `POST
-  /api/v1/synthesis` — first-class entries citing the captured sources they synthesize.
-  Synthesis frontmatter now also records `sources_basis`, a per-source body hash that
-  lets any consumer detect when a synthesis no longer matches the captures it cites
+- Bots can create synthesis entries — CLI `analecta synthesize` or `POST /api/v1/synthesis`
+  — first-class entries citing the captured sources they synthesize. Synthesis
+  frontmatter now also records `sources_basis`, a per-source body hash that lets
+  any consumer detect when a synthesis no longer matches the captures it cites
   (missing source files and syntheses without a recorded basis count as stale).
 - The SYNTHESIS sidebar section now shows an entry counter, like the other sections.
 - The sidecar binary doubles as a CLI for bots and terminal use: `analecta
@@ -34,34 +34,28 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   Human text by default, `--json` for agents. When the app is running the CLI
   talks to it through the authenticated loopback; otherwise it opens the vault
   directly as the single writer (refusing if another process holds the lock).
-- `analecta synthesize --stale` now reports synthesis staleness instead of
-  creating an entry: each stale synthesis is named with the exact source that
-  drifted (body edits, missing source files, or syntheses without a recorded
-  basis), fresh ones are confirmed, and the command exits 1 when anything is
-  stale. `analecta index` marks stale synthesis entries with `— STALE` in its
-  listing. Any flag passed alongside `--stale` (`--json` or creation flags,
-  even with empty-string values) is rejected with an explicit error instead
-  of being silently ignored, and a held vault lock exits 3 so it can never
-  be confused with the staleness exit code (1).
-- `analecta synthesize --update <ref>` regenerates a synthesis in place:
-  the page path, slug, URL, database row id and title never change, while
-  the body, `sources[]` and `sources_basis` are rewritten together in
-  `--source` order; `generated.at` is bumped and `generated.by` is replaced
-  only when `--by` is given. Regeneration clears any recorded summary
-  (re-record it against the new body) and refreshes the entry's
-  `updated_at`. `--title` and `--json` are rejected alongside `--update`,
-  and `--stale` wins over it.
-- Synthesis staleness hardening: frontmatter-supplied source paths that
-  escape the vault's `pages/` directory are treated as stale and never
-  read; a synthesis whose own page is missing, unreadable or corrupt is
-  reported stale (both `--stale` and the `index` marking) instead of
-  crashing or reporting fresh — including pages holding invalid UTF-8;
-  `--update` exits 3 when the vault lock is held (same as `--stale`)
-  and rejects a `--source` that is not a capture; `index --json`
-  synthesis items now carry a `stale` boolean field; the missing-args
-  error now reads "required unless --stale or --update"; regeneration
-  publishes the page through an atomic rename and lands its three
-  database mutations in one transaction.
+- `analecta synthesize --stale` now reports synthesis staleness instead of creating
+  an entry: each stale synthesis is named with the exact source that drifted (body
+  edits, missing source files, or syntheses without a recorded basis), fresh ones
+  are confirmed, and the command exits 1 when anything is stale. `analecta index`
+  marks stale synthesis entries with `— STALE` in its listing. Any flag passed
+  alongside `--stale` (`--json` or creation flags, even with empty-string values)
+  is rejected with an explicit error instead of being silently ignored, and a held
+  vault lock exits 3 so it can never be confused with the staleness exit code (1).
+- `analecta synthesize --update <ref>` regenerates a synthesis in place: the page path,
+  slug, URL, database row id and title never change, while the body, `sources[]` and
+  `sources_basis` are rewritten together in `--source` order; `generated.at` is bumped and
+  `generated.by` is replaced only when `--by` is given. Regeneration clears any recorded
+  summary (re-record it against the new body) and refreshes the entry's `updated_at`.
+  `--title` and `--json` are rejected alongside `--update`, and `--stale` wins over it.
+- Synthesis staleness hardening: frontmatter-supplied source paths that escape the vault's
+  `pages/` directory are treated as stale and never read; a synthesis whose own page is
+  missing, unreadable or corrupt is reported stale (both `--stale` and the `index` marking)
+  instead of crashing or reporting fresh — including pages holding invalid UTF-8; `--update`
+  exits 3 when the vault lock is held (same as `--stale`) and rejects a `--source` that
+  is not a capture; `index --json` synthesis items now carry a `stale` boolean field; the
+  missing-args error now reads "required unless --stale or --update"; regeneration publishes
+  the page through an atomic rename and lands its three database mutations in one transaction.
 
 ### Security
 
@@ -74,8 +68,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Library, Unread, Read, Bookmark and Gem counters (sidebar and Collecta dashboard)
   now exclude synthesis entries, matching what those sections actually list.
-- Deleting an entry now deletes the bot synthesis entries that cite it, in the same
-  operation (the reverse is not true: deleting a synthesis never touches its capture).
+- Deleting a capture entry no longer deletes the bot synthesis entries citing it: each
+  citing synthesis survives and gains `status: deprecated` in its frontmatter (Open
+  Knowledge Format lifecycle). Deprecated syntheses are marked `— DEPRECATED` by `analecta
+  index` (with an additive `deprecated` field in `--json`), counted by `synthesize
+  --stale` in a `N deprecated (not actionable)` line instead of being reported as stale,
+  and rejected by `synthesize --update` until revived. Revival is deliberate only:
+  `synthesize --revive <ref>` or the app's Restore action — re-extracting the deleted
+  capture's URL never un-deprecates anything. Deleting a synthesis still never touches
+  its capture. When a re-extraction lands on a filename a deprecated synthesis cites,
+  the extract response carries a `warnings` list and the CLI prints a warning on stderr.
 - New captures carry Open Knowledge Format provenance in their frontmatter: `type:
   reference`, `generated` (pipeline version and timestamp), and `sources` (the
   captured URL, byline, and publish datetime where one exists). Existing vault

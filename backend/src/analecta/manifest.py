@@ -91,7 +91,34 @@ are computed on the fly by `analecta index` and `analecta log`.
 source; `summary` is **bot-generated** analysis. Never confuse or merge
 them.
 
-## Deprecation crash window
+## Deprecation convention
+
+When a capture entry is deleted, the synthesis entries citing it are
+**never deleted**: each citing synthesis's page gains
+`status: deprecated` in its frontmatter (OKF v0.3 §5.4 lifecycle),
+every other frontmatter key and the body preserved. The synthesis
+entry, its row, and its graph presence survive; the page is marked
+`— DEPRECATED` by `analecta index` (dominant over the stale marker),
+and `analecta synthesize --stale` counts it in a final
+`N deprecated (not actionable)` line instead of naming it. Deleting a
+synthesis never touches its capture.
+
+Only the app or the `analecta` CLI writes lifecycle keys: bots never
+write `status` (same spirit as the flags rule below). Revival is
+deliberate, never automatic — re-extracting the deleted capture's URL
+does not un-deprecate anything. The person revives via the app's
+Restore action, or a bot via `analecta synthesize --revive <ref>`;
+`--update` on a deprecated synthesis is rejected until it is revived.
+
+A note on broken references: a deprecated synthesis's wikilinks
+resolve by title and reconnect on their own when an entry with the
+same title re-appears; `sources[]`/`sources_basis` resolve by path and
+stay stale until a deliberate revival and update. When a re-extraction
+lands on the same filename a deprecated synthesis cites, the extract
+API response carries a `warnings` list and the CLI prints a `warning:`
+line on stderr.
+
+### Deprecation crash window
 
 A synthesis whose cited capture was deleted carries `status: deprecated`
 in its page frontmatter. The frontmatter is the truth of deprecation:
@@ -101,7 +128,7 @@ the synthesis stays unmarked, and reconcile cannot infer the
 deprecation after the fact — only a successful page rewrite changes
 this state.
 
-## Flags (human decisions — bots read, never write)
+## Flags (person decisions — bots read, never write)
 
 - `bookmark` — the person explicitly saved this entry.
 - `gem` — the person marked this entry as high-value.
