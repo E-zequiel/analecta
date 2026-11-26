@@ -185,7 +185,8 @@ def _vault_snapshot(
 
 
 def _assert_vault_unchanged(
-    vault_dir: Path, before: tuple[list[tuple[Any, ...]], dict[str, bytes]]
+    vault_dir: Path,
+    before: tuple[list[tuple[Any, ...]], dict[str, bytes], dict[int, int]],
 ) -> None:
     assert _vault_snapshot(vault_dir) == before
 
@@ -1606,6 +1607,39 @@ def test_revive_with_update_exits_two_naming_both(
     assert code == 2
     assert "--revive" in captured.err
     assert "--update" in captured.err
+    assert captured.out == ""
+    _assert_vault_unchanged(vault_dir, before)
+
+
+def test_revive_with_json_exits_two_naming_both(
+    vault_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S7 (owner addition, 2026-11-26): ``--revive --json`` is rejected
+    with the unified pattern — revival has no JSON report — exit 2
+    naming both flags, no revival, vault untouched."""
+    index = _open_index(vault_dir)
+    try:
+        capture = _capture(vault_dir, index, "Captura json", "Cuerpo íntegro.")
+    finally:
+        index.close()
+    assert capture.id is not None
+    _synthesize_via_cli(
+        vault_dir, "Síntesis json", "Cuerpo de la síntesis.", [capture.id]
+    )
+    _drain(capsys)
+    before = _vault_snapshot(vault_dir)
+    synth = _sole_synthesis(vault_dir)
+    assert synth.id is not None
+
+    code = run(
+        ["synthesize", "--revive", str(synth.id), "--json"],
+        vault_path=vault_dir,
+    )
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert "--revive" in captured.err
+    assert "--json" in captured.err
     assert captured.out == ""
     _assert_vault_unchanged(vault_dir, before)
 

@@ -16,6 +16,7 @@ Output: human text by default, ``--json`` for bots.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -165,13 +166,38 @@ def build_index_output(index: Any, as_json: bool = False) -> str:
 
 
 def _reject_conflicting_flags(flag: str, conflicting: list[str]) -> None:
-    """Print the flag-conflict error shared by ``--stale`` and ``--update``.
+    """Print the flag-conflict error shared by the ``synthesize`` flags.
 
     Args:
         flag: The subcommand flag whose extras are rejected.
         conflicting: The conflicting flag names, in rejection order.
     """
     print(f"error: {flag} does not support {' '.join(conflicting)}", file=sys.stderr)
+
+
+def _synthesis_frontmatter_data(record: Any) -> dict[str, object] | None:
+    """Parse a page's frontmatter dict, ``None`` if unreadable or not one.
+
+    Mirrors the storage-side frontmatter parse (kept local: the storage
+    helper is private to its module); callers decide whether the parsed
+    shape qualifies.
+    """
+    from analecta.markdown.frontmatter import FM_BLOCK
+
+    try:
+        text = Path(record.file_path).read_text(encoding="utf-8")
+    except OSError, UnicodeDecodeError:
+        return None
+    m = FM_BLOCK.match(text)
+    if not m:
+        return None
+    try:
+        data: object = yaml.safe_load(m.group(2))
+    except yaml.YAMLError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
 
 
 def _stale_synthesis_paths(records: list[Any]) -> set[str]:
@@ -317,10 +343,11 @@ def _run_synthesis_update(
             the previous actor.
 
     Returns:
-        0 on success, 1 when the ref is unknown, is not a synthesis, a
-        source ref is unknown, or a source ref resolves to a synthesis;
-        3 when the vault lock is held. Usage errors are rejected by the
-        caller.
+        0 on success, 1 when the ref is unknown, is not a synthesis, is
+        deprecated (S5 — a deprecated synthesis is not regenerable; only
+        ``--revive`` lifts the state), a source ref is unknown, or a
+        source ref resolves to a synthesis; 3 when the vault lock is
+        held. Usage errors are rejected by the caller.
     """
     from analecta.session_security import VaultLock
     from analecta.storage.index import VaultIndex
@@ -341,6 +368,18 @@ def _run_synthesis_update(
             if record.source_type != "synthesis":
                 print(
                     f"error: not a synthesis: {update_ref} ({record.title})",
+                    file=sys.stderr,
+                )
+                return 1
+            # S5: a deprecated synthesis is rejected before any source
+            # resolution or write, so the deprecation state cannot be
+            # masked by a source-ref error. The page frontmatter is the
+            # truth of deprecation (S2); the derived flag only mirrors it.
+            data = _synthesis_frontmatter_data(record)
+            if data is not None and data.get("status") == "deprecated":
+                print(
+                    f"error: synthesis is deprecated: {update_ref}"
+                    f" ({record.title}) — revive it first with --revive",
                     file=sys.stderr,
                 )
                 return 1
@@ -378,6 +417,110 @@ def _run_synthesis_update(
         return 1
     print(f"synthesis updated: {updated.title}")
     print(f"file:  {updated.file_path}")
+    return 0
+
+
+def _revive_synthesis_page(record: EntryRecord, data: dict[str, object]) -> None:
+    """Rewrite a synthesis page without its ``status: deprecated`` key.
+
+    The already-parsed frontmatter dict is the rewrite base minus the
+    ``status`` key, so the canonical synthesis frontmatter shape is
+    restored (the key is removed, never rewritten to ``status: stable``)
+    and every other key survives; the body is preserved byte-for-byte.
+    Published atomically: the new markdown is written to a sibling temp
+    file and published with a single ``os.replace`` — bound through the
+    ``os`` module attribute, never ``from os import replace`` — so a
+    reader never observes a half-written page.
+
+    Args:
+        record: The synthesis row whose page is revived.
+        data: The page's frontmatter dict as parsed by
+            ``_page_frontmatter`` (guaranteed readable and a mapping by
+            the caller's deprecation check).
+
+    Raises:
+        OSError: If the temp-file write or the atomic rename fails.
+    """
+    from analecta.markdown.frontmatter import FM_BLOCK
+
+    page_path = Path(record.file_path)
+    text = page_path.read_text(encoding="utf-8")
+    m = FM_BLOCK.match(text)
+    if m is None:  # pragma: no cover — the caller already parsed it
+        raise RuntimeError(f"Synthesis page {page_path} lost its frontmatter")
+    data.pop("status", None)
+    frontmatter = f"---\n{yaml.dump(data, allow_unicode=True, sort_keys=False)}---\n"
+    markdown = f"{frontmatter}{text[m.end() :]}"
+    # Publish the complete new page through a sibling temp file + atomic
+    # rename; a crash mid-write never leaves a truncated page behind.
+    tmp_path = page_path.with_name(f".{page_path.name}.{os.getpid()}.tmp")
+    try:
+        tmp_path.write_text(markdown, encoding="utf-8")
+        os.replace(tmp_path, page_path)
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
+def _run_synthesis_revive(vp: Path, *, revive_ref: str) -> int:
+    """Revive a deprecated synthesis deliberately (S6).
+
+    Removes ``status: deprecated`` from the page frontmatter — the
+    canonical synthesis shape restored, every other key and the body
+    preserved — and writes the derived ``deprecated`` flag through to 0,
+    so SQL consumers observe the revival immediately (one observable;
+    the next reconcile re-derives it from the page anyway). Revival is
+    deliberate, never automatic: this surface and the UI action are the
+    only un-deprecation paths; re-extraction and reconcile never lift
+    the state.
+
+    Args:
+        vp: Root directory of the local vault.
+        revive_ref: Synthesis entry id or exact URL.
+
+    Returns:
+        0 on success, 1 when the ref is unknown, is not a synthesis, or
+        is not deprecated; 3 when the vault lock is held.
+    """
+    from analecta.session_security import VaultLock
+    from analecta.storage.index import VaultIndex
+
+    lock = VaultLock(vp)
+    fd = lock.acquire()
+    if fd is None:
+        print("error: vault is locked by another Analecta process", file=sys.stderr)
+        return 3
+    try:
+        index = VaultIndex(vp / "analecta.db")
+        try:
+            record = _resolve_entry(index, revive_ref)
+            if record is None:
+                print(f"error: entry not found: {revive_ref}", file=sys.stderr)
+                return 1
+            if record.source_type != "synthesis":
+                print(
+                    f"error: not a synthesis: {revive_ref} ({record.title})",
+                    file=sys.stderr,
+                )
+                return 1
+            # S2: the page frontmatter is the truth of deprecation; the
+            # derived SQL flag only mirrors it.
+            data = _synthesis_frontmatter_data(record)
+            if data is None or data.get("status") != "deprecated":
+                print(
+                    f"error: synthesis is not deprecated: {revive_ref}"
+                    f" ({record.title})",
+                    file=sys.stderr,
+                )
+                return 1
+            _revive_synthesis_page(record, data)
+            index.set_deprecated(record.id, False)
+            write_vault_manifest(vp)
+        finally:
+            index.close()
+    finally:
+        lock.release(fd)
+    print(f"synthesis revived: {record.title}")
     return 0
 
 
@@ -497,8 +640,9 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
 
     Returns:
         0 on success, 1 on failure, 2 on usage errors, 3 when a
-        ``synthesize --stale`` or ``synthesize --update`` run cannot start
-        because the vault lock is held.
+        ``synthesize --stale``, ``synthesize --update``, or
+        ``synthesize --revive`` run cannot start because the vault lock
+        is held.
     """
     import argparse
 
@@ -522,7 +666,7 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
 
     p_syn = sub.add_parser(
         "synthesize",
-        help="create a synthesis entry, update one in place, or report staleness",
+        help="create a synthesis entry, update or revive one, or report staleness",
     )
     p_syn.add_argument(
         "--stale",
@@ -533,6 +677,11 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
         "--update",
         metavar="REF",
         help="update the synthesis with this id or exact URL in place",
+    )
+    p_syn.add_argument(
+        "--revive",
+        metavar="REF",
+        help="revive the deprecated synthesis with this id or exact URL",
     )
     p_syn.add_argument("--title")
     p_syn.add_argument("--body", help="markdown body")
@@ -650,6 +799,8 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
                 conflicting.append("--source")
             if args.update is not None:
                 conflicting.append("--update")
+            if args.revive is not None:
+                conflicting.append("--revive")
             if conflicting:
                 _reject_conflicting_flags("--stale", conflicting)
                 return 2
@@ -665,6 +816,8 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
                 update_conflicts.append("--title")
             if args.as_json:
                 update_conflicts.append("--json")
+            if args.revive is not None:
+                update_conflicts.append("--revive")
             if update_conflicts:
                 _reject_conflicting_flags("--update", update_conflicts)
                 return 2
@@ -686,6 +839,26 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
                 sources=args.sources,
                 by=args.by,
             )
+        if args.revive is not None:
+            # S7: the argument-rejection matrix uses the same unified
+            # conflict pattern. --stale and --update are already rejected
+            # in their own branches above, so only the creation
+            # arguments and --json (report-only) remain reachable here.
+            revive_conflicts: list[str] = []
+            if args.title is not None:
+                revive_conflicts.append("--title")
+            if args.as_json:
+                revive_conflicts.append("--json")
+            if args.body is not None:
+                revive_conflicts.append("--body")
+            if args.by is not None:
+                revive_conflicts.append("--by")
+            if args.sources:
+                revive_conflicts.append("--source")
+            if revive_conflicts:
+                _reject_conflicting_flags("--revive", revive_conflicts)
+                return 2
+            return _run_synthesis_revive(vp, revive_ref=args.revive)
         missing = [
             flag
             for flag, value in (
