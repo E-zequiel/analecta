@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx2
 import pytest
+import pytest_asyncio
 from fastapi import FastAPI
 
 from analecta.api.events import EventBus
@@ -121,7 +122,7 @@ def _build_full_app(cfg: AppConfig) -> FastAPI:
     return app
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client(app_config: AppConfig) -> AsyncGenerator[httpx2.AsyncClient]:
     """Async httpx client backed by a full in-process FastAPI app (all routes).
 
