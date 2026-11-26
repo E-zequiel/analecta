@@ -572,10 +572,17 @@ def run_extract_standalone(vault_path: Path, url: str) -> EntryRecord:
 
     Raises:
         RuntimeError: When another process holds the vault flock.
+
+    Emits one ``warning:`` line per deprecated synthesis citing the
+    freshly written filename (S9) on stderr — a non-error condition;
+    nothing is un-deprecated.
     """
     import asyncio
 
-    from analecta.extraction.pipeline import extract_to_vault
+    from analecta.extraction.pipeline import (
+        deprecation_collision_warnings,
+        extract_to_vault,
+    )
     from analecta.session_security import VaultLock
     from analecta.storage.index import VaultIndex
     from analecta.storage.vault import VaultManager
@@ -592,6 +599,8 @@ def run_extract_standalone(vault_path: Path, url: str) -> EntryRecord:
                 extract_to_vault(index, vault, url, extract_fn=extract)
             )
             write_vault_manifest(vault_path)
+            for warning in deprecation_collision_warnings(index, created.file_path):
+                print(f"warning: {warning}", file=sys.stderr)
             return created
         finally:
             index.close()
@@ -703,6 +712,13 @@ def run(argv: list[str], vault_path: Path | None = None) -> int:
             status, payload = posted
             if status == 200 and isinstance(payload, dict):
                 record = payload
+                # S9 in attached mode: relay the API's additive warnings
+                # field (older sidecars without it stay silent).
+                attached_warnings = payload.get("warnings")
+                if isinstance(attached_warnings, list):
+                    for warning in attached_warnings:
+                        if isinstance(warning, str):
+                            print(f"warning: {warning}", file=sys.stderr)
             else:
                 detail = payload if isinstance(payload, str) else "extract failed"
                 print(f"error: {detail}", file=sys.stderr)

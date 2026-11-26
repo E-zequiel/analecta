@@ -40,6 +40,7 @@ test_synthesis_freshness.py documents for its import-error red. The S15
 pins are green at HEAD by design: they pin unchanged behavior.
 """
 
+import json
 import os
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
@@ -631,3 +632,183 @@ async def test_delete_capture_with_zero_citing_syntheses_unchanged(
     assert _read_bytes(Path(cited.file_path)) == cited_bytes
     assert index.get_entry(synth.id) is not None
     assert _read_bytes(Path(synth.file_path)) == synth_bytes
+
+
+# ---------------------------------------------------------------------------
+# T4 (S11): inert backlink_refs from a deprecated synthesis (green pins)
+# ---------------------------------------------------------------------------
+
+
+async def _deprecated_synthesis_with_witness(
+    index: VaultIndex,
+    tmp_vault: Path,
+    client: httpx2.AsyncClient,
+) -> tuple[EntryRecord, EntryRecord, EntryRecord]:
+    """Build the S11 scenario: a deprecated synthesis citing a deleted
+    capture, plus a surviving witness capture.
+
+    The synthesis cites the capture both through ``sources[]`` (CLI
+    ``--source``) and through a body wikilink, so the resulting
+    ``backlink_refs`` rows hold an unresolved target after the capture
+    is deleted through the public DELETE route (which deprecates the
+    synthesis per S1)."""
+    capture = _capture(index, tmp_vault, "Captura inerte", "Cuerpo íntegro.")
+    witness = _capture(index, tmp_vault, "Captura testigo", "Cuerpo testigo.")
+    assert capture.id is not None
+    _synthesize_via_cli(
+        tmp_vault,
+        "Síntesis inerte",
+        "Véase [[Captura inerte]].",
+        [capture.id],
+    )
+    synth = _synthesis_by_title(index, "Síntesis inerte")
+    assert synth.id is not None
+
+    response = await client.delete(f"/api/v1/entries/{capture.id}")
+    assert response.status_code == 204
+    assert _flag(index, synth.id) is True
+    return capture, witness, synth
+
+
+@pytest.mark.asyncio
+async def test_deprecated_synthesis_refs_toward_deleted_capture_remain_inert(
+    index: VaultIndex,
+    tmp_vault: Path,
+    client: httpx2.AsyncClient,
+) -> None:
+    """S11: a deprecated synthesis's ``backlink_refs`` rows toward a
+    deleted capture remain stored — never garbage-collected — and stay
+    inert: every consumer resolves ``target_text`` against ``entries``
+    and skips the unresolved target, so no surviving entry gains a
+    phantom backlink. Green at HEAD by design (S8 verified the
+    pre-existing skip; this pins it in the deprecation scenario)."""
+    capture, witness, synth = await _deprecated_synthesis_with_witness(
+        index, tmp_vault, client
+    )
+
+    # The refs remain stored (inert storage side).
+    rows = index._conn.execute(
+        "SELECT target_text FROM backlink_refs WHERE source_id = ? AND is_hashtag = 0",
+        (synth.id,),
+    ).fetchall()
+    assert any(r["target_text"] == "captura inerte" for r in rows)
+
+    # Consumer side: no phantom backlink anywhere. The deleted capture's
+    # row is gone (unresolvable target), and the witness — never cited —
+    # gains nothing from the deprecated synthesis's stale ref.
+    assert capture.id is not None
+    assert witness.id is not None
+    assert index.get_backlinks(capture.id) == []
+    assert index.get_backlinks(witness.id) == []
+
+
+@pytest.mark.asyncio
+async def test_deprecated_synthesis_citing_deleted_capture_no_phantom_nodes(
+    index: VaultIndex,
+    tmp_vault: Path,
+    client: httpx2.AsyncClient,
+) -> None:
+    """S11: the graph/subgraph surfaces skip the deprecated synthesis's
+    unresolved target — no phantom node for the deleted capture, every
+    ``entry:`` node maps to a live row, no traceback (the calls return
+    normally). Green at HEAD by design, same as the storage pin above."""
+    _deleted, _witness, synth = await _deprecated_synthesis_with_witness(
+        index, tmp_vault, client
+    )
+    capture_title = "Captura inerte"
+
+    assert synth.id is not None
+    sub = index.get_subgraph(synth.id)
+    assert sub is not None
+    for nodes, _edges in (
+        sub,
+        index.get_graph(),
+    ):
+        # No phantom node: the deleted capture's title appears nowhere...
+        assert capture_title not in [n.label for n in nodes]
+        # ...and every entry node resolves to a live row.
+        for node in nodes:
+            if node.node_id.startswith("entry:"):
+                entry_id = int(node.node_id.split(":", 1)[1])
+                assert index.get_entry(entry_id) is not None
+
+    # The focus itself is still present in its own subgraph.
+    sub_nodes, _sub_edges = sub
+    assert f"entry:{synth.id}" in [n.node_id for n in sub_nodes]
+
+
+# ---------------------------------------------------------------------------
+# T4 (S18): deprecated+stale combined state — stability/no-traceback pins
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deprecated_stale_combined_state_stable_no_traceback(
+    index: VaultIndex,
+    tmp_vault: Path,
+    client: httpx2.AsyncClient,
+    mocker: MockerFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """S18 leftover pin: the deprecated+stale combined state (the cited
+    capture deleted leaves the synthesis both deprecated and stale — its
+    ``sources_basis`` resource no longer resolves) is reported without
+    traceback, identically across repeated runs, on every surface T2/T3
+    touched: ``--stale`` (exit 0, count-only), ``index`` (DEPRECATED
+    marker), ``index --json`` (both booleans true). The exit-code table
+    and the ``--update`` vault-byte-identical pins already exist in
+    test_synthesis_cli_stale.py / test_synthesis_update.py — only the
+    no-traceback + run-to-run stability guarantee was unpinned."""
+    mocker.patch("analecta.cli._attached_get", return_value=None)
+    capture = _capture(index, tmp_vault, "Captura combinada T4", "Cuerpo íntegro.")
+    assert capture.id is not None
+    _synthesize_via_cli(
+        tmp_vault, "Síntesis combinada T4", "Cuerpo de la síntesis.", [capture.id]
+    )
+    synth = _synthesis_by_title(index, "Síntesis combinada T4")
+    assert synth.id is not None
+
+    response = await client.delete(f"/api/v1/entries/{capture.id}")
+    assert response.status_code == 204
+    assert _flag(index, synth.id) is True
+    # Drain the setup's own output so only the invocations under test
+    # are observed (the setup legitimately prints its creation lines).
+    capsys.readouterr()
+
+    surfaces: list[tuple[list[str], int]] = [
+        (["synthesize", "--stale"], 0),
+        (["index"], 0),
+        (["index", "--json"], 0),
+    ]
+    outputs: dict[tuple[str, ...], str] = {}
+    for argv, expected_code in surfaces:
+        code = run(argv, vault_path=tmp_vault)
+        first = capsys.readouterr()
+        assert code == expected_code, f"{argv}: exited {code}"
+        assert "Traceback" not in first.out + first.err, f"{argv}: traceback"
+        code = run(argv, vault_path=tmp_vault)
+        second = capsys.readouterr()
+        assert code == expected_code, f"{argv} (rerun): exited {code}"
+        assert "Traceback" not in second.out + second.err, f"{argv} (rerun)"
+        # Stable: the combined state reports identically on every run.
+        assert second.out == first.out, f"{argv}: output not stable"
+        outputs[tuple(argv)] = first.out
+
+    # The combined state is genuinely reported by each surface.
+    stale_out = outputs[("synthesize", "--stale")]
+    assert "Síntesis combinada T4" not in stale_out
+    assert "1 deprecated (not actionable)" in stale_out
+
+    index_out = outputs[("index",)]
+    expected = f"- [{synth.title}](/pages/{Path(synth.file_path).name}) — DEPRECATED"
+    assert expected in index_out.splitlines()
+
+    data = json.loads(outputs[("index", "--json")])
+    item = next(
+        i
+        for i in data
+        if i["type"] == "synthesis"
+        and i["path"] == f"/pages/{Path(synth.file_path).name}"
+    )
+    assert item["deprecated"] is True
+    assert item["stale"] is True

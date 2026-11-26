@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sqlite3
 
@@ -8,7 +9,10 @@ from analecta.api.deps import get_event_bus, get_index, get_vault
 from analecta.api.events import EventBus
 from analecta.api.routes.entries import EntryOut, entry_out
 from analecta.extraction.core import ExtractionError
-from analecta.extraction.pipeline import extract_to_vault
+from analecta.extraction.pipeline import (
+    deprecation_collision_warnings,
+    extract_to_vault,
+)
 from analecta.storage.index import VaultIndex
 from analecta.storage.vault import VaultManager
 
@@ -26,7 +30,20 @@ class ExtractIn(BaseModel):
     url: str
 
 
-@router.post("/extract", response_model=EntryOut)
+class ExtractOut(EntryOut):
+    """Serialised extract response: EntryOut plus the additive S9 signal.
+
+    Attributes:
+        warnings: Filename-collision warnings (S9), always present — one
+            per deprecated synthesis citing the freshly written entry's
+            filename, empty when there is no collision. Additive and
+            non-error: the entry itself is the plain EntryOut shape.
+    """
+
+    warnings: list[str]
+
+
+@router.post("/extract", response_model=ExtractOut)
 async def extract_url(
     body: ExtractIn,
     index: VaultIndex = Depends(get_index),
@@ -45,7 +62,9 @@ async def extract_url(
         event_bus: SSE event bus for push notifications.
 
     Returns:
-        The newly created entry.
+        The newly created entry, plus the additive ``warnings`` field
+        (S9): one string per deprecated synthesis citing the freshly
+        written filename, empty when there is no collision.
 
     Raises:
         HTTPException: 422 if extraction fails or the source is unsupported.
@@ -54,8 +73,11 @@ async def extract_url(
     """
     try:
         record = await extract_to_vault(index, vault, body.url)
+        warnings = await asyncio.to_thread(
+            deprecation_collision_warnings, index, record.file_path
+        )
         event_bus.put_nowait({"type": "entry_added", "id": record.id})
-        return entry_out(record)
+        return ExtractOut(**entry_out(record).model_dump(), warnings=warnings)
 
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="URL already in vault") from None
